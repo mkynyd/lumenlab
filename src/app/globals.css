@@ -1,26 +1,175 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap') layer(base);
 @import "tailwindcss";
 
+/* ============================================
+   Light AI Chat — Design System
+   Industrial Minimal · No Gradients · Flat
+   ============================================ */
+
+/* ---- Light Theme (default) ---- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* No pure white background */
+  --color-bg: #F0F2F5;
+  --color-surface: #FFFFFF;
+  --color-surface-hover: #F5F6F8;
+  --color-surface-active: #EBEDF0;
+
+  /* Text — no pure black */
+  --color-text-primary: #1E293B;
+  --color-text-secondary: #64748B;
+  --color-text-tertiary: #94A3B8;
+
+  /* Accent */
+  --color-accent: #2563EB;
+  --color-accent-hover: #1D4ED8;
+  --color-accent-muted: #DBEAFE;
+
+  /* Semantic */
+  --color-success: #059669;
+  --color-success-muted: #D1FAE5;
+  --color-error: #DC2626;
+  --color-error-muted: #FEE2E2;
+  --color-warning: #D97706;
+  --color-warning-muted: #FEF3C7;
+
+  /* Borders — thin, flat */
+  --color-border: #D1D5DB;
+  --color-border-light: #E5E7EB;
+
+  /* Progress / Ring */
+  --color-ring-track: #E5E7EB;
+  --color-ring-fill: #2563EB;
+
+  /* Misc */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --shadow-none: none;
 }
 
+/* ---- Dark Theme ---- */
+.dark {
+  /* No pure black background */
+  --color-bg: #161B22;
+  --color-surface: #1C2128;
+  --color-surface-hover: #22272E;
+  --color-surface-active: #2D333B;
+
+  /* Text */
+  --color-text-primary: #E6EDF3;
+  --color-text-secondary: #8B949E;
+  --color-text-tertiary: #656D76;
+
+  /* Accent */
+  --color-accent: #58A6FF;
+  --color-accent-hover: #79B8FF;
+  --color-accent-muted: #1A2D45;
+
+  /* Semantic */
+  --color-success: #3FB950;
+  --color-success-muted: #162B18;
+  --color-error: #F85149;
+  --color-error-muted: #2D1518;
+  --color-warning: #D29922;
+  --color-warning-muted: #2D2412;
+
+  /* Borders */
+  --color-border: #30363D;
+  --color-border-light: #21262D;
+
+  /* Progress / Ring */
+  --color-ring-track: #21262D;
+  --color-ring-fill: #58A6FF;
+
+  /* Misc */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --shadow-none: none;
+}
+
+/* ---- Tailwind v4 Theme Integration ---- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-surface-active: var(--color-surface-active);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-muted: var(--color-accent-muted);
+  --color-success: var(--color-success);
+  --color-success-muted: var(--color-success-muted);
+  --color-error: var(--color-error);
+  --color-error-muted: var(--color-error-muted);
+  --color-warning: var(--color-warning);
+  --color-warning-muted: var(--color-warning-muted);
+  --color-border: var(--color-border);
+  --color-border-light: var(--color-border-light);
+  --color-ring-track: var(--color-ring-track);
+  --color-ring-fill: var(--color-ring-fill);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ---- Base Styles ---- */
+* {
+  border-color: var(--color-border);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Smooth theme transitions */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ---- Scrollbar (thin, industrial) ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-text-tertiary);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+
+/* ---- Focus ring (thin, accessible) ---- */
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ---- Progress ring animation ---- */
+@keyframes ring-fill {
+  from { stroke-dashoffset: var(--ring-circumference); }
+  to   { stroke-dashoffset: var(--ring-offset); }
+}
+
+/* ---- Typing cursor blink ---- */
+@keyframes blink {
+  0%, 50%  { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.typing-cursor::after {
+  content: '▌';
+  animation: blink 1s infinite;
+  color: var(--color-accent);
 }

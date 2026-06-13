@@ -1,0 +1,186 @@
+// Light AI Chat — Database Schema
+// PostgreSQL + pgvector for AI experiment workbench & review system
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Core models (preserved from original)
+// ============================================================
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  name          String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  apiKeys       ApiKey[]
+  conversations Conversation[]
+  projects      Project[]
+  files         FileAsset[]
+  chunks        DocumentChunk[]
+  artifacts     Artifact[]
+
+  @@index([email])
+}
+
+model ApiKey {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String   @default("deepseek")
+  encryptedKey String   // AES-256-GCM encrypted blob (base64:tag:ciphertext)
+  keyPrefix    String   // e.g., "sk-****a1b2" for display
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  projectId String?   // nullable — existing chats without project remain valid
+  title     String    @default("New Chat")
+  model     String    @default("deepseek-v4-pro")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  messages Message[]
+  artifacts Artifact[]
+
+  @@index([userId])
+  @@index([projectId])
+}
+
+model Message {
+  id               String       @id @default(cuid())
+  conversationId   String
+  role             String       // "user" | "assistant" | "system"
+  content          String
+  reasoningContent String?      // thinking mode reasoning_content
+  tokenCount       Int?
+  cacheHitTokens   Int?
+  cacheMissTokens  Int?
+  createdAt        DateTime     @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  artifacts    Artifact[]
+
+  @@index([conversationId])
+}
+
+// ============================================================
+// New models (Task 1 — AI Experiment Workbench)
+// ============================================================
+
+model Project {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String?
+  type          String   @default("general") // experiment, review, coding, general
+  defaultModel  String?
+  systemPrompt  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  files         FileAsset[]
+  chunks        DocumentChunk[]
+  artifacts     Artifact[]
+
+  @@index([userId])
+}
+
+model FileAsset {
+  id           String   @id @default(cuid())
+  userId       String
+  projectId    String?
+  filename     String   // sanitized storage filename
+  originalName String   // original upload filename
+  mimeType     String
+  size         Int      // bytes
+  storagePath  String   // relative path in uploads/
+  textContent  String?  // parsed text content (null for images/PDFs)
+  enhancedContent String?
+  enhancementStatus String @default("none") // none, enhancing, enhanced, stale, failed
+  processingMetadata Json?
+  status       String   @default("uploaded") // uploaded, parsed, failed
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chunks  DocumentChunk[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([status])
+}
+
+model Artifact {
+  id             String   @id @default(cuid())
+  userId         String
+  projectId      String?
+  conversationId String?
+  messageId      String?
+  title          String
+  type           String
+  format         String   @default("markdown")
+  content        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([type])
+}
+
+model DocumentChunk {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String?
+  fileAssetId String?
+
+  title       String?
+  content     String
+  contentHash String?
+  chunkIndex  Int      @default(0)
+  tokenCount  Int?
+  metadata    Json?
+
+  // pgvector embedding — 1536 dimensions (OpenAI text-embedding-ada-002 compatible)
+  embedding   Unsupported("vector(1536)")?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileAsset FileAsset? @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([fileAssetId])
+  @@index([contentHash])
+}
