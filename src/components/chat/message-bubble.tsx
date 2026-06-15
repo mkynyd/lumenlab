@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChevronDown, ChevronRight, User, Bot, Save } from "lucide-react";
@@ -36,7 +36,7 @@ const ARTIFACT_TYPES = [
   ["code_explanation", "代码说明"],
 ] as const;
 
-export function MessageBubble({
+function MessageBubbleComponent({
   id,
   role,
   content,
@@ -170,3 +170,24 @@ export function MessageBubble({
     </div>
   );
 }
+
+export const MessageBubble = memo(
+  MessageBubbleComponent,
+  (previous, next) => {
+    if (previous.id !== next.id || previous.isStreaming !== next.isStreaming) {
+      return false;
+    }
+    if (next.isStreaming) {
+      return (
+        previous.content === next.content &&
+        previous.reasoningContent === next.reasoningContent
+      );
+    }
+    return (
+      previous.content === next.content &&
+      previous.reasoningContent === next.reasoningContent &&
+      previous.tokenCount === next.tokenCount &&
+      previous.onSaveArtifact === next.onSaveArtifact
+    );
+  }
+);

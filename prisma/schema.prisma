@@ -1,4 +1,4 @@
-// Light AI Chat — Database Schema
+// course-ai-lab — Database Schema
 // PostgreSQL + pgvector for AI experiment workbench & review system
 
 generator client {

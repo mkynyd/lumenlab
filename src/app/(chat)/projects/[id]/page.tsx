@@ -1,39 +1,43 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { ProjectSidebar } from "@/components/project/project-sidebar";
 import { QuickTaskBar } from "@/components/chat/quick-task-bar";
 import { ChatInput } from "@/components/chat/chat-input";
-import { MessageBubble } from "@/components/chat/message-bubble";
+import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ContextRing } from "@/components/chat/context-ring";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, Hash, Loader } from "lucide-react";
-import { useChat, type ChatMessage } from "@/lib/hooks/use-chat";
+import { AlertCircle, Hash, Loader, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useChat } from "@/lib/hooks/use-chat";
 import type { ProjectFile } from "@/components/project/file-list";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { FileContentDialog } from "@/components/project/file-content-dialog";
 import { ArtifactLibrary } from "@/components/artifact/artifact-library";
 import { Button } from "@/components/ui/button";
-
-interface ProjectData {
-  id: string;
-  name: string;
-  description: string | null;
-  type: string;
-  files: ProjectFile[];
-  conversations: { id: string; title: string; updatedAt: string }[];
-}
+import { useProject } from "@/lib/hooks/use-projects";
+import {
+  conversationQueryOptions,
+} from "@/lib/hooks/use-conversations";
+import { useSaveArtifact } from "@/lib/hooks/use-artifacts";
+import { queryKeys } from "@/lib/query-keys";
+import type { ProjectDetail } from "@/lib/api/types";
 
 export default function ProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;
-
-  const [project, setProject] = useState<ProjectData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const queryClient = useQueryClient();
+  const projectQuery = useProject(projectId);
+  const saveArtifactMutation = useSaveArtifact(projectId);
+  const project = projectQuery.data || null;
+  const isLoading = projectQuery.isPending;
+  const [desktopProjectSidebarOpen, setDesktopProjectSidebarOpen] =
+    useState(true);
+  const [mobileProjectSidebarOpen, setMobileProjectSidebarOpen] =
+    useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [activeFile, setActiveFile] = useState<ProjectFile | null>(null);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
@@ -43,7 +47,6 @@ export default function ProjectDetailPage() {
     () => Array.from(selectedFileIds),
     [selectedFileIds]
   );
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Chat state
   const [chatInputValue, setChatInputValue] = useState("");
@@ -70,31 +73,6 @@ export default function ProjectDetailPage() {
     mode: (project?.type as ProjectType | undefined) ?? "general",
   });
 
-  const fetchProject = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setProject(data.project);
-      }
-    } catch {
-      // 静默处理
-    } finally {
-      setIsLoading(false);
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      void fetchProject();
-    }, 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [fetchProject]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   function handleFileToggle(id: string) {
     setSelectedFileIds((prev) => {
       const next = new Set(prev);
@@ -113,7 +91,12 @@ export default function ProjectDetailPage() {
           next.delete(id);
           return next;
         });
-        fetchProject();
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.projects.detail(projectId),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.projects.files(projectId),
+        });
       }
     } catch {
       // 静默处理
@@ -122,19 +105,21 @@ export default function ProjectDetailPage() {
 
   async function runFileAction(file: ProjectFile, action: "parse" | "enhance") {
     setFileMessage(action === "parse" ? "正在解析资料..." : "正在进行知识增强...");
-    setProject((current) =>
-      current
-        ? {
-            ...current,
-            files: current.files.map((item) =>
-              item.id === file.id
-                ? action === "parse"
-                  ? { ...item, status: "parsing" }
-                  : { ...item, enhancementStatus: "enhancing" }
-                : item
-            ),
-          }
-        : current
+    queryClient.setQueryData<ProjectDetail>(
+      queryKeys.projects.detail(projectId),
+      (current) =>
+        current
+          ? {
+              ...current,
+              files: current.files.map((item) =>
+                item.id === file.id
+                  ? action === "parse"
+                    ? { ...item, status: "parsing" }
+                    : { ...item, enhancementStatus: "enhancing" }
+                  : item
+              ),
+            }
+          : current
     );
     try {
       const res = await fetch(`/api/files/${file.id}/${action}`, { method: "POST" });
@@ -150,7 +135,12 @@ export default function ProjectDetailPage() {
     } catch (err) {
       setFileMessage(err instanceof Error ? err.message : "操作失败");
     } finally {
-      await fetchProject();
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.detail(projectId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.files(projectId),
+      });
     }
   }
 
@@ -160,20 +150,10 @@ export default function ProjectDetailPage() {
     type: string;
     content: string;
   }) {
-    const response = await fetch(`/api/projects/${projectId}/artifacts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...input,
-        conversationId,
-      }),
+    await saveArtifactMutation.mutateAsync({
+      ...input,
+      conversationId,
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(
-        typeof data.error === "string" ? data.error : "成果保存失败"
-      );
-    }
     setArtifactRefreshKey((value) => value + 1);
     setFileMessage("已保存到成果库");
   }
@@ -181,7 +161,12 @@ export default function ProjectDetailPage() {
   async function handleSend(content: string) {
     setChatInputValue("");
     await sendMessage(content);
-    await fetchProject();
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.projects.detail(projectId),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.conversations.all,
+    });
   }
 
   function handleQuickTaskFill(prompt: string) {
@@ -192,21 +177,18 @@ export default function ProjectDetailPage() {
     if (isStreaming || nextConversationId === conversationId) return;
 
     try {
-      const res = await fetch(`/api/conversations/${nextConversationId}`);
-      if (!res.ok) {
-        throw new Error("无法加载该项目对话");
-      }
-
-      const data = await res.json();
-      if (data.conversation.projectId !== projectId) {
+      const conversation = await queryClient.fetchQuery(
+        conversationQueryOptions(nextConversationId)
+      );
+      if (conversation.projectId !== projectId) {
         throw new Error("该对话不属于当前项目");
       }
 
       loadConversation(
-        data.conversation.id,
-        data.conversation.messages.map((message: ChatMessage) => ({
+        conversation.id,
+        conversation.messages.map((message) => ({
           ...message,
-          role: message.role as ChatMessage["role"],
+          role: message.role as "user" | "assistant" | "system",
         }))
       );
       setChatInputValue("");
@@ -221,6 +203,15 @@ export default function ProjectDetailPage() {
   function handleNewConversation() {
     newConversation();
     setChatInputValue("");
+  }
+
+  function toggleProjectSidebar() {
+    if (window.matchMedia("(min-width: 768px)").matches) {
+      setDesktopProjectSidebarOpen((current) => !current);
+      return;
+    }
+
+    setMobileProjectSidebarOpen((current) => !current);
   }
 
   if (isLoading) {
@@ -247,28 +238,54 @@ export default function ProjectDetailPage() {
   const projectType = project.type as ProjectType;
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="relative flex h-full overflow-hidden">
+      <button
+        type="button"
+        className={cn(
+          "absolute inset-0 z-20 bg-slate-950/20 transition-opacity duration-300 ease-out md:hidden motion-reduce:transition-none",
+          mobileProjectSidebarOpen
+            ? "pointer-events-auto opacity-100"
+            : "pointer-events-none opacity-0"
+        )}
+        onClick={() => setMobileProjectSidebarOpen(false)}
+        aria-label="关闭项目侧边栏遮罩"
+        aria-hidden={!mobileProjectSidebarOpen}
+        tabIndex={mobileProjectSidebarOpen ? 0 : -1}
+      />
+
       {/* 左侧项目侧栏 */}
       <div
         className={cn(
-          "w-[280px] shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)]",
-          "transition-all duration-200 overflow-hidden",
-          sidebarOpen ? "w-[280px]" : "w-0"
+          "absolute inset-y-0 left-0 z-30 w-[280px] overflow-hidden",
+          "border-r border-[var(--color-border)] bg-[var(--color-surface)]",
+          "transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+          mobileProjectSidebarOpen ? "translate-x-0" : "-translate-x-full",
+          "md:static md:z-auto md:translate-x-0 md:transition-[width] md:duration-300 md:ease-[cubic-bezier(0.16,1,0.3,1)]",
+          desktopProjectSidebarOpen ? "md:w-[280px]" : "md:w-0"
         )}
       >
-        <ProjectSidebar
-          project={project}
-          selectedFileIds={selectedFileIds}
-          onFileToggle={handleFileToggle}
-          onFileDelete={handleFileDelete}
-          onFileUploaded={fetchProject}
-          onFileParse={(file) => void runFileAction(file, "parse")}
-          onFileEnhance={(file) => void runFileAction(file, "enhance")}
-          onFileView={setActiveFile}
-          onNewConversation={handleNewConversation}
-          onConversationSelect={handleConversationSelect}
-          activeConversationId={conversationId}
-        />
+        <div
+          className={cn(
+            "h-full w-[280px] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+            desktopProjectSidebarOpen
+              ? "md:translate-x-0"
+              : "md:-translate-x-full"
+          )}
+        >
+          <ProjectSidebar
+            project={project}
+            selectedFileIds={selectedFileIds}
+            onFileToggle={handleFileToggle}
+            onFileDelete={handleFileDelete}
+            onFileUploaded={() => void projectQuery.refetch()}
+            onFileParse={(file) => void runFileAction(file, "parse")}
+            onFileEnhance={(file) => void runFileAction(file, "enhance")}
+            onFileView={setActiveFile}
+            onNewConversation={handleNewConversation}
+            onConversationSelect={handleConversationSelect}
+            activeConversationId={conversationId}
+          />
+        </div>
       </div>
 
       {/* 右侧工作区 */}
@@ -283,11 +300,29 @@ export default function ProjectDetailPage() {
         >
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
-              aria-label="切换侧边栏"
+              onClick={toggleProjectSidebar}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)]",
+                "border border-[var(--color-border)] bg-[var(--color-surface)]",
+                "text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
+                "transition-colors duration-150"
+              )}
+              aria-label="切换项目侧边栏"
             >
-              <Hash size={16} strokeWidth={2} />
+              <span className="md:hidden">
+                {mobileProjectSidebarOpen ? (
+                  <PanelLeftClose size={16} strokeWidth={1.8} />
+                ) : (
+                  <PanelLeftOpen size={16} strokeWidth={1.8} />
+                )}
+              </span>
+              <span className="hidden md:inline">
+                {desktopProjectSidebarOpen ? (
+                  <PanelLeftClose size={16} strokeWidth={1.8} />
+                ) : (
+                  <PanelLeftOpen size={16} strokeWidth={1.8} />
+                )}
+              </span>
             </button>
             <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
               {project.name}
@@ -330,8 +365,8 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* 消息区域 */}
-        <div className="flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
+        {messages.length === 0 ? (
+          <div className="flex-1 overflow-y-auto">
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
               <div
                 className={cn(
@@ -355,22 +390,13 @@ export default function ProjectDetailPage() {
                 </p>
               )}
             </div>
-          ) : (
-            messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                id={msg.id}
-                role={msg.role}
-                content={msg.content}
-                reasoningContent={msg.reasoningContent}
-                tokenCount={msg.tokenCount ?? undefined}
-                isStreaming={msg.isStreaming}
-                onSaveArtifact={msg.role === "assistant" ? saveArtifact : undefined}
-              />
-            ))
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+          </div>
+        ) : (
+          <VirtualMessageList
+            messages={messages}
+            onSaveArtifact={saveArtifact}
+          />
+        )}
 
         {/* 错误提示 */}
         {error && (
@@ -416,7 +442,7 @@ export default function ProjectDetailPage() {
         <FileContentDialog
           file={activeFile}
           onClose={() => setActiveFile(null)}
-          onUpdated={() => void fetchProject()}
+          onUpdated={() => void projectQuery.refetch()}
         />
       )}
       {showArtifacts && (

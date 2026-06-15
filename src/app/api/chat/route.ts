@@ -7,6 +7,8 @@ import { streamChat, DeepSeekError, DeepSeekMessage } from "@/lib/deepseek";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { GLOBAL_SYSTEM_PROMPT, getModePrompt } from "@/lib/ai/prompts";
 import { retrieveProjectContext } from "@/lib/rag/vector-store";
+import { cacheExperiments } from "@/lib/cache/experiment-config";
+import { reorderMessagesForCache } from "@/lib/cache/prompt-reorder";
 
 export async function POST(request: NextRequest) {
   // 1. 身份验证
@@ -17,7 +19,7 @@ export async function POST(request: NextRequest) {
   const userId = session.user.id;
 
   // 2. 用户级速率限制
-  const { allowed } = checkRateLimit(
+  const { allowed } = await checkRateLimit(
     `chat:${userId}`,
     RateLimits.CHAT.max,
     RateLimits.CHAT.window
@@ -197,11 +199,29 @@ export async function POST(request: NextRequest) {
       ? `${message}\n\n[系统提示：${contextNotice}]`
       : message;
 
-  const messages: DeepSeekMessage[] = [
+  const legacyMessages: DeepSeekMessage[] = [
     { role: "system", content: systemPrompt },
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: contextualUserMessage },
   ];
+  const experimentalBaseMessages: DeepSeekMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+    {
+      role: "user",
+      content: contextNotice
+        ? `${message}\n\n[系统提示：${contextNotice}]`
+        : message,
+    },
+  ];
+  const messages = cacheExperiments.adaptivePromptOrdering.enabled
+    ? reorderMessagesForCache(
+        experimentalBaseMessages,
+        systemPrompt,
+        retrievedContext,
+        cacheExperiments.adaptivePromptOrdering
+      )
+    : legacyMessages;
 
   // 11. 调用 DeepSeek
   let streamResult;

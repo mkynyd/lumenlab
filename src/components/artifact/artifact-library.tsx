@@ -1,20 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, Download, Eye, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-interface ArtifactSummary {
-  id: string;
-  title: string;
-  type: string;
-  createdAt: string;
-  conversationId?: string | null;
-}
-
-interface ArtifactDetail extends ArtifactSummary {
-  content: string;
-}
+import {
+  useArtifact,
+  useDeleteArtifact,
+  useProjectArtifacts,
+} from "@/lib/hooks/use-artifacts";
 
 export function ArtifactLibrary({
   projectId,
@@ -25,38 +18,34 @@ export function ArtifactLibrary({
   refreshKey: number;
   onClose: () => void;
 }) {
-  const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([]);
-  const [selected, setSelected] = useState<ArtifactDetail | null>(null);
+  const [selectedId, setSelectedId] = useState<string | undefined>();
   const [message, setMessage] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    const response = await fetch(`/api/projects/${projectId}/artifacts`);
-    if (response.ok) {
-      const data = await response.json();
-      setArtifacts(data.artifacts);
-    }
-  }, [projectId]);
+  const [visible, setVisible] = useState(false);
+  const artifactsQuery = useProjectArtifacts(projectId);
+  const artifactQuery = useArtifact(selectedId);
+  const deleteArtifact = useDeleteArtifact(projectId);
+  const artifacts = artifactsQuery.data || [];
+  const selected = artifactQuery.data || null;
+  const { refetch: refetchArtifacts } = artifactsQuery;
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [load, refreshKey]);
+    if (refreshKey > 0) void refetchArtifacts();
+  }, [refetchArtifacts, refreshKey]);
 
-  async function view(id: string) {
-    const response = await fetch(`/api/artifacts/${id}`);
-    if (response.ok) {
-      const data = await response.json();
-      setSelected(data.artifact);
-    }
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setVisible(true), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  function close() {
+    setVisible(false);
+    window.setTimeout(onClose, 300);
   }
 
   async function remove(id: string) {
     if (!confirm("确定删除这个成果吗？")) return;
-    const response = await fetch(`/api/artifacts/${id}`, { method: "DELETE" });
-    if (response.ok) {
-      if (selected?.id === id) setSelected(null);
-      await load();
-    }
+    await deleteArtifact.mutateAsync(id);
+    if (selectedId === id) setSelectedId(undefined);
   }
 
   async function copy(content: string) {
@@ -65,14 +54,25 @@ export function ArtifactLibrary({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/30">
-      <div className="flex h-full w-full max-w-2xl flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
+    <div
+      className={`fixed inset-0 z-40 flex justify-end bg-black/30 transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+    >
+      <div
+        className={`flex h-full w-full max-w-2xl flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+          visible ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold">成果库</h2>
             <p className="text-[11px] text-[var(--color-text-tertiary)]">Markdown 为唯一内容源</p>
           </div>
-          <button onClick={onClose} aria-label="关闭成果库"><X size={16} /></button>
+          <button onClick={close} aria-label="关闭成果库"><X size={16} /></button>
         </div>
         <div className="grid min-h-0 flex-1 grid-cols-[240px_1fr]">
           <div className="overflow-y-auto border-r border-[var(--color-border)] p-2">
@@ -83,7 +83,7 @@ export function ArtifactLibrary({
                 <p className="truncate text-xs font-medium">{artifact.title}</p>
                 <p className="text-[10px] text-[var(--color-text-tertiary)]">{artifact.type} · {new Date(artifact.createdAt).toLocaleDateString("zh-CN")}</p>
                 <div className="mt-1 flex gap-1">
-                  <button onClick={() => view(artifact.id)} aria-label="查看成果"><Eye size={12} /></button>
+                  <button onClick={() => setSelectedId(artifact.id)} aria-label="查看成果"><Eye size={12} /></button>
                   <a href={`/api/artifacts/${artifact.id}/export?format=markdown`} aria-label="导出 Markdown"><Download size={12} /></a>
                   <button onClick={() => remove(artifact.id)} aria-label="删除成果"><Trash2 size={12} /></button>
                 </div>

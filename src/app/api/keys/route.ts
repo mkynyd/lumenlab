@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   const userId = session.user.id;
 
   // 速率限制
-  const { allowed } = checkRateLimit(
+  const { allowed } = await checkRateLimit(
     `apikey:${userId}`,
     RateLimits.API_KEY.max,
     RateLimits.API_KEY.window

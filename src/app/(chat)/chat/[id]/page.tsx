@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
 import { ChatArea } from "@/components/chat/chat-area";
+import { getConversation } from "@/lib/data/conversations";
 
 export default async function ConversationPage({
   params,
@@ -15,23 +15,7 @@ export default async function ConversationPage({
 
   const { id } = await params;
 
-  const conversation = await prisma.conversation.findFirst({
-    where: { id, userId: session.user.id },
-    include: {
-      messages: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          role: true,
-          content: true,
-          reasoningContent: true,
-          tokenCount: true,
-          cacheHitTokens: true,
-          cacheMissTokens: true,
-        },
-      },
-    },
-  });
+  const conversation = await getConversation(id, session.user.id);
 
   if (!conversation) {
     notFound();

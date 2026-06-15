@@ -1,19 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Plus, FolderOpen, Trash2, MessageSquare, FileText } from "lucide-react";
-
-interface ProjectWithCount {
-  id: string;
-  name: string;
-  description: string | null;
-  type: string;
-  updatedAt: string;
-  _count: { conversations: number; files: number };
-}
+import { useDeleteProject, useProjects } from "@/lib/hooks/use-projects";
 
 const TYPE_LABELS: Record<string, string> = {
   experiment: "实验工作台",
@@ -23,38 +14,14 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<ProjectWithCount[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const fetchProjects = useCallback(async () => {
-    try {
-      const res = await fetch("/api/projects");
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data.projects || []);
-      }
-    } catch {
-      // 静默处理
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => void fetchProjects(), 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [fetchProjects]);
+  const projectsQuery = useProjects();
+  const deleteProjectMutation = useDeleteProject();
+  const projects = projectsQuery.data || [];
+  const isLoading = projectsQuery.isPending;
 
   async function deleteProject(id: string, name: string) {
     if (!confirm(`确定要删除项目「${name}」吗？相关文件和数据将被一并删除。`)) return;
-    try {
-      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setProjects((prev) => prev.filter((p) => p.id !== id));
-      }
-    } catch {
-      // 静默处理
-    }
+    await deleteProjectMutation.mutateAsync(id);
   }
 
   return (

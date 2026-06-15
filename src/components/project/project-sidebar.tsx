@@ -6,11 +6,12 @@ import { FileUpload } from "@/components/project/file-upload";
 import { FileList, type ProjectFile } from "@/components/project/file-list";
 import { Button } from "@/components/ui/button";
 import {
+  ArrowLeft,
   FolderOpen,
   MessageSquare,
   Plus,
-  Settings,
 } from "lucide-react";
+import { useProjectFiles } from "@/lib/hooks/use-project-files";
 
 interface ProjectData {
   id: string;
@@ -57,8 +58,36 @@ export function ProjectSidebar({
   activeConversationId,
   className,
 }: ProjectSidebarProps) {
+  const filesQuery = useProjectFiles(project.id, project.files || []);
+  const files = filesQuery.data || project.files || [];
+
   return (
     <div className={cn("flex h-full flex-col overflow-hidden", className)}>
+      <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-[var(--color-border)] p-3">
+        <Link
+          href="/projects"
+          className={cn(
+            "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-2 text-sm font-medium",
+            "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)]",
+            "transition-colors duration-150 hover:bg-[var(--color-surface-hover)]"
+          )}
+        >
+          <ArrowLeft size={15} strokeWidth={2} />
+          项目空间
+        </Link>
+        <Link
+          href="/projects/new"
+          className={cn(
+            "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-2 text-sm font-medium",
+            "border border-transparent bg-[var(--color-accent)] text-white",
+            "transition-colors duration-150 hover:bg-[var(--color-accent-hover)]"
+          )}
+        >
+          <Plus size={15} strokeWidth={2} />
+          新建项目
+        </Link>
+      </div>
+
       {/* 项目信息 */}
       <div className="p-4 border-b border-[var(--color-border)] shrink-0">
         <div className="flex items-center gap-2 mb-1">
@@ -85,7 +114,7 @@ export function ProjectSidebar({
               资料文件
             </span>
             <span className="text-[10px] font-mono text-[var(--color-text-tertiary)]">
-              {selectedFileIds.size}/{project.files?.length || 0}
+              {selectedFileIds.size}/{files.length}
             </span>
           </div>
           <FileUpload
@@ -93,7 +122,7 @@ export function ProjectSidebar({
             onUploaded={onFileUploaded}
           />
           <FileList
-            files={project.files || []}
+            files={files}
             selectedIds={selectedFileIds}
             onToggle={onFileToggle}
             onDelete={onFileDelete}
@@ -141,17 +170,6 @@ export function ProjectSidebar({
             </p>
           )}
         </div>
-      </div>
-
-      {/* 底部链接 */}
-      <div className="px-4 py-2 border-t border-[var(--color-border)] shrink-0">
-        <Link
-          href="/projects"
-          className="flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
-        >
-          <Settings size={12} strokeWidth={2} />
-          所有项目
-        </Link>
       </div>
     </div>
   );

@@ -1,9 +1,8 @@
 "use client";
 
-import { useRef, useEffect } from "react";
 import { useChat } from "@/lib/hooks/use-chat";
 import { ChatInput } from "@/components/chat/chat-input";
-import { MessageBubble } from "@/components/chat/message-bubble";
+import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { TokenUsageBar } from "@/components/chat/token-usage-bar";
 import { ContextRing } from "@/components/chat/context-ring";
@@ -29,8 +28,6 @@ export function ChatArea({
   initialConversationId,
   initialMessages,
 }: ChatAreaProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
   const {
     messages,
     isStreaming,
@@ -50,11 +47,6 @@ export function ChatArea({
       role: m.role as "user" | "assistant" | "system",
     })),
   });
-
-  // 自动滚动到底部
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // 计算 Token 总数
   const totalTokens = messages.reduce(
@@ -120,8 +112,8 @@ export function ChatArea({
       )}
 
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
+      {messages.length === 0 ? (
+        <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div
               className={cn(
@@ -139,21 +131,10 @@ export function ChatArea({
               选择一个模型，切换思考模式，然后发送消息即可与 DeepSeek 开始对话。
             </p>
           </div>
-        ) : (
-          messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              id={msg.id}
-              role={msg.role}
-              content={msg.content}
-              reasoningContent={msg.reasoningContent}
-              tokenCount={msg.tokenCount ?? undefined}
-              isStreaming={msg.isStreaming}
-            />
-          ))
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+        </div>
+      ) : (
+        <VirtualMessageList messages={messages} />
+      )}
 
       {/* Token 用量条（移动端底部显示） */}
       {usage && (

@@ -1,4 +1,6 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# course-ai-lab
+
+`course-ai-lab` is a [Next.js](https://nextjs.org) application for AI-assisted course material management, project context, and chat.
 
 ## Getting Started
 
@@ -15,6 +17,17 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+Start PostgreSQL and Redis before running the app:
+
+```bash
+docker compose up -d
+```
+
+Copy `.env.example` to `.env.local` and configure `DATABASE_URL`,
+`REDIS_URL`, authentication secrets, and encryption keys. Redis is optional at
+runtime: rate limiting falls back to memory and exports fall back to direct
+generation when it is unavailable.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

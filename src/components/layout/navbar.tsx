@@ -1,25 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useState, useRef, useEffect } from "react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 import {
-  Menu,
   Settings,
   LogOut,
   ChevronDown,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 interface NavbarProps {
   onMenuToggle?: () => void;
+  sidebarCollapsed?: boolean;
 }
 
-export function Navbar({ onMenuToggle }: NavbarProps) {
+export function Navbar({ onMenuToggle, sidebarCollapsed = false }: NavbarProps) {
   const { data: session } = useSession();
-  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -48,41 +48,27 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuToggle}
-          className="lg:hidden p-1 -ml-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
-          aria-label="切换侧边栏"
+          className={cn(
+            "inline-flex h-8 w-8 -ml-1 items-center justify-center rounded-[var(--radius-md)]",
+            "border border-[var(--color-border)] bg-[var(--color-surface)]",
+            "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
+            "transition-colors duration-150"
+          )}
+          aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+          aria-expanded={!sidebarCollapsed}
         >
-          <Menu size={18} strokeWidth={2} />
+          {sidebarCollapsed ? (
+            <PanelLeftOpen size={17} strokeWidth={1.8} />
+          ) : (
+            <PanelLeftClose size={17} strokeWidth={1.8} />
+          )}
         </button>
         <Link
           href="/chat"
           className="text-sm font-semibold tracking-tight text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
         >
-          Light AI Chat
+          course-ai-lab
         </Link>
-        <nav className="hidden sm:flex items-center gap-1 ml-2">
-          <Link
-            href="/chat"
-            className={cn(
-              "px-2 py-1 text-xs rounded-[var(--radius-md)] transition-colors",
-              pathname.startsWith("/chat") && !pathname.startsWith("/projects")
-                ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
-                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            )}
-          >
-            聊天
-          </Link>
-          <Link
-            href="/projects"
-            className={cn(
-              "px-2 py-1 text-xs rounded-[var(--radius-md)] transition-colors",
-              pathname.startsWith("/projects")
-                ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
-                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            )}
-          >
-            项目
-          </Link>
-        </nav>
       </div>
 
       {/* 右侧 */}

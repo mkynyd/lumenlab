@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { cacheExperiments } from "@/lib/cache/experiment-config";
+import { applyActiveCache } from "@/lib/cache/minimax-active-cache";
 
 const MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic";
 
@@ -30,7 +32,7 @@ export async function parseImageWithMiniMax(options: {
   });
 
   try {
-    const response = await client.messages.create({
+    const requestBody: Anthropic.MessageCreateParamsNonStreaming = {
       model: "MiniMax-M3",
       max_tokens: 4096,
       temperature: 0.2,
@@ -57,7 +59,10 @@ export async function parseImageWithMiniMax(options: {
           ],
         },
       ],
-    });
+    };
+    const response = await client.messages.create(
+      applyActiveCache(requestBody, cacheExperiments.minimaxActiveCache)
+    );
 
     const text = response.content
       .filter((block) => block.type === "text")

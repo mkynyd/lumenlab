@@ -1,13 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Key, AlertTriangle, Check } from "lucide-react";
+import { Key, AlertTriangle, Check, Database } from "lucide-react";
+import {
+  useApiKeys,
+  useDeleteApiKey,
+  useUpdateApiKeys,
+} from "@/lib/hooks/use-api-keys";
+import { useCacheMetrics } from "@/lib/hooks/use-cache-metrics";
 
 export default function SettingsPage() {
   const { data: session } = useSession();
@@ -19,68 +25,38 @@ export default function SettingsPage() {
     deepseek: "",
     minimax: "",
   });
-  const [saving, setSaving] = useState<"deepseek" | "minimax" | null>(null);
-  const [keyInfo, setKeyInfo] = useState<Record<
-    string,
-    { hasKey: boolean; keyPrefix?: string; createdAt?: string }
-  >>({});
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
-
-  const fetchKeyInfo = useCallback(async () => {
-    try {
-      const res = await fetch("/api/keys");
-      if (res.ok) {
-        const data = await res.json();
-        setKeyInfo(data.providers || {});
-      }
-    } catch {
-      // 静默处理
-    }
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => void fetchKeyInfo(), 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [fetchKeyInfo]);
+  const apiKeysQuery = useApiKeys();
+  const updateApiKeys = useUpdateApiKeys();
+  const deleteApiKey = useDeleteApiKey();
+  const keyInfo = apiKeysQuery.data?.providers || {};
+  const cacheMetrics = useCacheMetrics(7);
 
   async function saveKey(
     e: React.FormEvent,
     provider: "deepseek" | "minimax"
   ) {
     e.preventDefault();
-    setSaving(provider);
     setMessage(null);
 
     try {
-      const res = await fetch("/api/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, key: apiKeys[provider].trim() }),
+      await updateApiKeys.mutateAsync({
+        provider,
+        key: apiKeys[provider].trim(),
       });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setMessage({ type: "success", text: "API Key 已安全保存" });
-        setApiKeys((current) => ({ ...current, [provider]: "" }));
-        fetchKeyInfo();
-        if (isSetup) {
-          if (provider === "deepseek") router.push("/chat");
-        }
-      } else {
-        const errMsg =
-          typeof data.error === "string"
-            ? data.error
-            : data.error?.key?.[0] || "保存失败，请重试";
-        setMessage({ type: "error", text: errMsg });
+      setMessage({ type: "success", text: "API Key 已安全保存" });
+      setApiKeys((current) => ({ ...current, [provider]: "" }));
+      if (isSetup && provider === "deepseek") {
+        router.push("/chat");
       }
-    } catch {
-      setMessage({ type: "error", text: "网络异常，请检查连接后重试" });
-    } finally {
-      setSaving(null);
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "网络异常，请检查连接后重试",
+      });
     }
   }
 
@@ -88,17 +64,8 @@ export default function SettingsPage() {
     if (!confirm("确定要移除 API Key 吗？移除后将无法使用聊天功能。")) return;
 
     try {
-      const res = await fetch(`/api/keys?provider=${provider}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setMessage({ type: "success", text: "API Key 已移除" });
-        setKeyInfo((current) => {
-          const next = { ...current };
-          delete next[provider];
-          return next;
-        });
-      }
+      await deleteApiKey.mutateAsync(provider);
+      setMessage({ type: "success", text: "API Key 已移除" });
     } catch {
       setMessage({ type: "error", text: "移除失败，请重试" });
     }
@@ -218,7 +185,10 @@ export default function SettingsPage() {
                   <Button
                     type="submit"
                     variant="primary"
-                    isLoading={saving === provider}
+                    isLoading={
+                      updateApiKeys.isPending &&
+                      updateApiKeys.variables?.provider === provider
+                    }
                     disabled={!apiKeys[provider].trim()}
                   >
                     {info?.hasKey ? `更新 ${label} Key` : `保存 ${label} Key`}
@@ -252,6 +222,123 @@ export default function SettingsPage() {
         </section>
 
         {/* 分割线 */}
+        <hr className="border-[var(--color-border)]" />
+
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Database size={16} className="text-[var(--color-text-tertiary)]" />
+            <h2 className="text-sm font-medium text-[var(--color-text-primary)]">
+              Cache
+            </h2>
+          </div>
+          {cacheMetrics.isPending ? (
+            <div className="h-32 animate-pulse rounded-[var(--radius-md)] bg-[var(--color-surface-hover)]" />
+          ) : cacheMetrics.data ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                  <p className="text-[11px] text-[var(--color-text-tertiary)]">
+                    近 7 天 Token 命中率
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {(cacheMetrics.data.overall.hitRate * 100).toFixed(1)}%
+                  </p>
+                  <p className="text-[10px] text-[var(--color-text-tertiary)]">
+                    {cacheMetrics.data.overall.requestCount} 条缓存用量记录
+                  </p>
+                </div>
+                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
+                  {(["deepseek", "minimax"] as const).map((provider) => (
+                    <div key={provider} className="flex justify-between py-1">
+                      <span className="capitalize">{provider}</span>
+                      <span className="font-mono">
+                        {(
+                          cacheMetrics.data.providers[provider].hitRate * 100
+                        ).toFixed(1)}
+                        %
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                <p className="text-xs font-medium">每日 Hit / Miss Tokens</p>
+                {cacheMetrics.data.daily.length === 0 ? (
+                  <p className="text-xs text-[var(--color-text-tertiary)]">
+                    暂无缓存用量数据
+                  </p>
+                ) : (
+                  cacheMetrics.data.daily.map((day) => {
+                    const total = day.totalHitTokens + day.totalMissTokens;
+                    const hitWidth =
+                      total > 0 ? (day.totalHitTokens / total) * 100 : 0;
+                    return (
+                      <div key={day.date} className="grid grid-cols-[72px_1fr] items-center gap-2">
+                        <span className="text-[10px] font-mono">{day.date.slice(5)}</span>
+                        <div className="flex h-2 overflow-hidden rounded-full bg-[var(--color-error-muted)]">
+                          <span
+                            className="bg-[var(--color-success)]"
+                            style={{ width: `${hitWidth}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                {(["markdown", "docx", "pdf"] as const).map((format) => (
+                  <div key={format} className="rounded border border-[var(--color-border)] p-2">
+                    <p className="font-medium uppercase">{format}</p>
+                    <p className="font-mono">
+                      {(cacheMetrics.data.exports[format].hitRate * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {cacheMetrics.data.overall.requestCount > 0 &&
+                cacheMetrics.data.overall.hitRate < 0.8 && (
+                  <p className="rounded-[var(--radius-md)] bg-[var(--color-warning-muted)] p-3 text-xs">
+                    检测到缓存命中率偏低，可在收集足够基线后评估 Prompt 重排实验。
+                  </p>
+                )}
+              <div className="space-y-2 rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] p-3">
+                <p className="text-xs font-medium">实验性功能</p>
+                {[
+                  {
+                    name: "自适应 Prompt 重排",
+                    env: "CACHE_EXPERIMENT_PROMPT_REORDER",
+                  },
+                  {
+                    name: "MiniMax Active Cache",
+                    env: "CACHE_EXPERIMENT_MINIMAX_ACTIVE",
+                  },
+                ].map((experiment) => (
+                  <div
+                    key={experiment.env}
+                    className="flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div>
+                      <p>{experiment.name}</p>
+                      <p className="font-mono text-[10px] text-[var(--color-text-tertiary)]">
+                        {experiment.env}=true
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-[var(--color-surface-hover)] px-2 py-1 text-[10px]">
+                      默认关闭
+                    </span>
+                  </div>
+                ))}
+                <p className="text-[10px] text-[var(--color-text-tertiary)]">
+                  修改 `.env.local` 后重启应用才能启用。建议先收集至少一周基线数据。
+                </p>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-[var(--color-error)]">缓存指标加载失败</p>
+          )}
+        </section>
+
         <hr className="border-[var(--color-border)]" />
 
         {/* 外观设置 */}

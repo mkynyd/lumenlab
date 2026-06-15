@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   readSSEStream,
   type UsageInfo,
@@ -9,6 +10,7 @@ import {
   buildChatRequestBody,
 } from "@/lib/chat-request";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
+import { queryKeys } from "@/lib/query-keys";
 
 export interface ChatMessage {
   id: string;
@@ -33,6 +35,7 @@ interface UseChatOptions {
 }
 
 export function useChat(options: UseChatOptions = {}) {
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>(
     options.initialMessages || []
   );
@@ -48,7 +51,7 @@ export function useChat(options: UseChatOptions = {}) {
   );
   const abortRef = useRef<AbortController | null>(null);
 
-  const sendMessage = useCallback(
+  const performSend = useCallback(
     async (content: string) => {
       if (!content.trim()) return;
 
@@ -157,6 +160,16 @@ export function useChat(options: UseChatOptions = {}) {
               : m
           )
         );
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.conversations.all,
+        });
+        if (newConvId || conversationId) {
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.conversations.detail(
+              newConvId || conversationId || ""
+            ),
+          });
+        }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
           // User aborted — mark streaming message as done
@@ -183,7 +196,13 @@ export function useChat(options: UseChatOptions = {}) {
       options.projectId,
       options.selectedFileIds,
       options.mode,
+      queryClient,
     ]
+  );
+  const sendMutation = useMutation({ mutationFn: performSend });
+  const sendMessage = useCallback(
+    (content: string) => sendMutation.mutateAsync(content),
+    [sendMutation]
   );
 
   const abort = useCallback(() => {

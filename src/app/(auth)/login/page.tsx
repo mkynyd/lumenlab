@@ -49,7 +49,7 @@ export default function LoginPage() {
       {/* 品牌标识 */}
       <div className="text-center mb-8">
         <h1 className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-          Light AI Chat
+          course-ai-lab
         </h1>
         <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
           登录你的账户

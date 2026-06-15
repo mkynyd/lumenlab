@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   // 速率限制
   const forwardedFor = (await headers()).get("x-forwarded-for");
   const ip = forwardedFor?.split(",")[0]?.trim() || "unknown";
-  const { allowed } = checkRateLimit(
+  const { allowed } = await checkRateLimit(
     `register:${ip}`,
     RateLimits.REGISTER.max,
     RateLimits.REGISTER.window

@@ -4,7 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 
 export const metadata: Metadata = {
-  title: "Light AI Chat",
+  title: "course-ai-lab",
   description: "Industrial-grade AI chat. Bring your own DeepSeek key.",
 };
 

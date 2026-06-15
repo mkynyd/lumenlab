@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FolderOpen } from "lucide-react";
+import { useCreateProject } from "@/lib/hooks/use-projects";
 
 const PROJECT_TYPES = [
   { value: "experiment" as const, label: "实验工作台", desc: "处理实验数据、生成报告、绘图和计算" },
@@ -19,8 +20,8 @@ export default function NewProjectPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<string>("experiment");
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const createProject = useCreateProject();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,30 +30,17 @@ export default function NewProjectPage() {
       return;
     }
 
-    setIsLoading(true);
     setError(null);
 
     try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim() || undefined,
-          type,
-        }),
+      const data = await createProject.mutateAsync({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        type: type as "experiment" | "review" | "coding" | "general",
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(typeof data.error === "string" ? data.error : "创建失败");
-      }
-
-      const data = await res.json();
       router.push(`/projects/${data.project.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建项目失败，请重试");
-      setIsLoading(false);
     }
   }
 
@@ -155,7 +143,7 @@ export default function NewProjectPage() {
               type="submit"
               variant="primary"
               size="lg"
-              isLoading={isLoading}
+              isLoading={createProject.isPending}
             >
               创建项目
             </Button>

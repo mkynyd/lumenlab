@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Upload, X } from "lucide-react";
+import { useUploadFile } from "@/lib/hooks/use-project-files";
 
 interface FileUploadProps {
   projectId: string;
@@ -20,38 +21,23 @@ const ALLOWED_TYPES = [
 ];
 
 export function FileUpload({ projectId, onUploaded, className }: FileUploadProps) {
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadMutation = useUploadFile(projectId);
 
   const uploadFile = useCallback(
     async (file: File) => {
       setError(null);
-      setUploading(true);
 
       try {
-        const formData = new FormData();
-        formData.append("file", file);
-
-        const res = await fetch(`/api/projects/${projectId}/files`, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "上传失败");
-        }
-
+        await uploadMutation.mutateAsync(file);
         onUploaded();
       } catch (err) {
         setError(err instanceof Error ? err.message : "上传失败，请重试");
-      } finally {
-        setUploading(false);
       }
     },
-    [projectId, onUploaded]
+    [onUploaded, uploadMutation]
   );
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -90,7 +76,7 @@ export function FileUpload({ projectId, onUploaded, className }: FileUploadProps
         )}
         onClick={() => inputRef.current?.click()}
       >
-        {uploading ? (
+        {uploadMutation.isPending ? (
           <span className="text-xs text-[var(--color-text-secondary)]">
             上传中…
           </span>
