@@ -15,29 +15,35 @@ datasource db {
 // ============================================================
 
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  name          String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                  String   @id @default(cuid())
+  email               String   @unique
+  passwordHash        String
+  name                String?
+  accessStatus        String   @default("active")
+  credentialProfileId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  apiKeys       ApiKey[]
-  conversations Conversation[]
-  projects      Project[]
-  files         FileAsset[]
-  chunks        DocumentChunk[]
-  artifacts     Artifact[]
+  apiKeys           ApiKey[]
+  conversations     Conversation[]
+  projects          Project[]
+  files             FileAsset[]
+  chunks            DocumentChunk[]
+  artifacts         Artifact[]
+  credentialProfile CredentialProfile?      @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
+  redemption        RegistrationRedemption?
 
   @@index([email])
+  @@index([credentialProfileId])
+  @@index([accessStatus])
 }
 
 model ApiKey {
   id           String   @id @default(cuid())
   userId       String
   provider     String   @default("deepseek")
-  encryptedKey String   // AES-256-GCM encrypted blob (base64:tag:ciphertext)
-  keyPrefix    String   // e.g., "sk-****a1b2" for display
+  encryptedKey String // AES-256-GCM encrypted blob (base64:tag:ciphertext)
+  keyPrefix    String // e.g., "sk-****a1b2" for display
   createdAt    DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -46,18 +52,111 @@ model ApiKey {
   @@index([userId])
 }
 
-model Conversation {
-  id        String    @id @default(cuid())
-  userId    String
-  projectId String?   // nullable — existing chats without project remain valid
-  title     String    @default("New Chat")
-  model     String    @default("deepseek-v4-pro")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+// ============================================================
+// Alpha registration and centrally managed provider access
+// ============================================================
 
-  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  messages Message[]
+model CredentialProfile {
+  id         String   @id @default(cuid())
+  externalId String   @unique
+  name       String
+  status     String   @default("active")
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  credentials ProviderCredential[]
+  codes       RegistrationCode[]
+  users       User[]
+
+  @@index([status])
+}
+
+model ProviderCredential {
+  id                  String   @id @default(cuid())
+  externalId          String   @unique
+  credentialProfileId String
+  provider            String
+  encryptedKey        String
+  keyPrefix           String
+  status              String   @default("active")
+  validatedAt         DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  credentialProfile CredentialProfile @relation(fields: [credentialProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([credentialProfileId, provider])
+  @@index([credentialProfileId])
+  @@index([provider, status])
+}
+
+model RegistrationCode {
+  id                  String    @id @default(cuid())
+  externalId          String    @unique
+  credentialProfileId String
+  label               String
+  codeDigest          String    @unique
+  codeHint            String
+  status              String    @default("active")
+  maxRedemptions      Int
+  redemptionCount     Int       @default(0)
+  expiresAt           DateTime?
+  publishedVersion    Int
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  credentialProfile CredentialProfile        @relation(fields: [credentialProfileId], references: [id], onDelete: Restrict)
+  redemptions       RegistrationRedemption[]
+
+  @@index([credentialProfileId])
+  @@index([status, expiresAt])
+}
+
+model RegistrationRedemption {
+  id        String   @id @default(cuid())
+  codeId    String
+  userId    String   @unique
+  createdAt DateTime @default(now())
+
+  code RegistrationCode @relation(fields: [codeId], references: [id], onDelete: Restrict)
+  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([codeId])
+}
+
+model RegistrationPublication {
+  id             String   @id @default(cuid())
+  externalId     String   @unique
+  version        Int      @unique
+  payloadDigest  String
+  sourceIssuedAt DateTime
+  appliedAt      DateTime @default(now())
+
+  @@index([appliedAt])
+}
+
+model RegistrationSyncNonce {
+  id        String   @id @default(cuid())
+  nonce     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String? // nullable — existing chats without project remain valid
+  title     String   @default("New Chat")
+  model     String   @default("deepseek-v4-pro")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  messages  Message[]
   artifacts Artifact[]
 
   @@index([userId])
@@ -65,15 +164,15 @@ model Conversation {
 }
 
 model Message {
-  id               String       @id @default(cuid())
+  id               String   @id @default(cuid())
   conversationId   String
-  role             String       // "user" | "assistant" | "system"
+  role             String // "user" | "assistant" | "system"
   content          String
-  reasoningContent String?      // thinking mode reasoning_content
+  reasoningContent String? // thinking mode reasoning_content
   tokenCount       Int?
   cacheHitTokens   Int?
   cacheMissTokens  Int?
-  createdAt        DateTime     @default(now())
+  createdAt        DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   artifacts    Artifact[]
@@ -86,17 +185,17 @@ model Message {
 // ============================================================
 
 model Project {
-  id            String   @id @default(cuid())
-  userId        String
-  name          String
-  description   String?
-  type          String   @default("general") // experiment, review, coding, general
-  defaultModel  String?
-  systemPrompt  String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  description  String?
+  type         String   @default("general") // experiment, review, coding, general
+  defaultModel String?
+  systemPrompt String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversations Conversation[]
   files         FileAsset[]
   chunks        DocumentChunk[]
@@ -106,21 +205,21 @@ model Project {
 }
 
 model FileAsset {
-  id           String   @id @default(cuid())
-  userId       String
-  projectId    String?
-  filename     String   // sanitized storage filename
-  originalName String   // original upload filename
-  mimeType     String
-  size         Int      // bytes
-  storagePath  String   // relative path in uploads/
-  textContent  String?  // parsed text content (null for images/PDFs)
-  enhancedContent String?
-  enhancementStatus String @default("none") // none, enhancing, enhanced, stale, failed
+  id                 String   @id @default(cuid())
+  userId             String
+  projectId          String?
+  filename           String // sanitized storage filename
+  originalName       String // original upload filename
+  mimeType           String
+  size               Int // bytes
+  storagePath        String // relative path in uploads/
+  textContent        String? // parsed text content (null for images/PDFs)
+  enhancedContent    String?
+  enhancementStatus  String   @default("none") // none, enhancing, enhanced, stale, failed
   processingMetadata Json?
-  status       String   @default("uploaded") // uploaded, parsed, failed
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  status             String   @default("uploaded") // uploaded, parsed, failed
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -157,7 +256,7 @@ model Artifact {
 }
 
 model DocumentChunk {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   userId      String
   projectId   String?
   fileAssetId String?
@@ -165,15 +264,15 @@ model DocumentChunk {
   title       String?
   content     String
   contentHash String?
-  chunkIndex  Int      @default(0)
+  chunkIndex  Int     @default(0)
   tokenCount  Int?
   metadata    Json?
 
   // pgvector embedding — 1536 dimensions (OpenAI text-embedding-ada-002 compatible)
-  embedding   Unsupported("vector(1536)")?
+  embedding Unsupported("vector(1536)")?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   project   Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)

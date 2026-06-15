@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   fileFindMany: vi.fn(),
   conversationFindFirst: vi.fn(),
   conversationCreate: vi.fn(),
-  apiKeyFindUnique: vi.fn(),
+  getProviderApiKey: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -22,8 +22,11 @@ vi.mock("@/lib/db", () => ({
       findFirst: mocks.conversationFindFirst,
       create: mocks.conversationCreate,
     },
-    apiKey: { findUnique: mocks.apiKeyFindUnique },
   },
+}));
+
+vi.mock("@/lib/data/provider-access", () => ({
+  getProviderApiKey: mocks.getProviderApiKey,
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -52,7 +55,9 @@ describe("POST /api/chat", () => {
       description: null,
     });
     mocks.fileFindMany.mockResolvedValue([]);
-    mocks.apiKeyFindUnique.mockResolvedValue(null);
+    mocks.getProviderApiKey.mockRejectedValue(
+      new Error("当前账户没有可用的 Alpha 访问配置")
+    );
     mocks.conversationCreate.mockResolvedValue({
       id: "conversation-1",
       userId: "user-1",
@@ -60,7 +65,7 @@ describe("POST /api/chat", () => {
     });
   });
 
-  it("does not create an empty conversation when the API key is missing", async () => {
+  it("does not create an empty conversation when Alpha access is unavailable", async () => {
     const request = new NextRequest("http://localhost/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -77,9 +82,9 @@ describe("POST /api/chat", () => {
 
     const response = await POST(request);
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "尚未配置 API Key，请在设置中添加",
+      error: "服务密钥暂时不可用",
     });
     expect(mocks.conversationCreate).not.toHaveBeenCalled();
   });

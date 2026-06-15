@@ -3,11 +3,12 @@ import path from "path";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
 import { createDocumentChunks } from "@/lib/rag/vector-store";
 import { parseImageWithMiniMax } from "@/lib/vision/minimax";
 import { parsePdf } from "@/lib/files/pdf-parser";
 import type { Prisma } from "@/generated/prisma/client";
+import { getProviderApiKey } from "@/lib/data/provider-access";
+import { ProviderAccessError } from "@/lib/provider-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -28,11 +29,17 @@ function mergeMetadata(
 }
 
 async function getMiniMaxKey(userId: string): Promise<string | undefined> {
-  const record = await prisma.apiKey.findUnique({
-    where: { userId_provider: { userId, provider: "minimax" } },
-  });
-  if (!record) return undefined;
-  return decrypt(record.encryptedKey);
+  try {
+    return await getProviderApiKey(userId, "minimax");
+  } catch (error) {
+    if (
+      error instanceof ProviderAccessError &&
+      error.code === "credential_unavailable"
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 export async function POST(

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
 import { sendMessageSchema, type SendMessageInput } from "@/lib/validators";
 import { streamChat, DeepSeekError, DeepSeekMessage } from "@/lib/deepseek";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
@@ -9,6 +8,8 @@ import { GLOBAL_SYSTEM_PROMPT, getModePrompt } from "@/lib/ai/prompts";
 import { retrieveProjectContext } from "@/lib/rag/vector-store";
 import { cacheExperiments } from "@/lib/cache/experiment-config";
 import { reorderMessagesForCache } from "@/lib/cache/prompt-reorder";
+import { getProviderApiKey } from "@/lib/data/provider-access";
+import { ProviderAccessError } from "@/lib/provider-access";
 
 export async function POST(request: NextRequest) {
   // 1. 身份验证
@@ -103,25 +104,18 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. 获取并解密 API Key
-  const apiKeyRecord = await prisma.apiKey.findUnique({
-    where: {
-      userId_provider: { userId, provider: "deepseek" },
-    },
-  });
-  if (!apiKeyRecord) {
-    return NextResponse.json(
-      { error: "尚未配置 API Key，请在设置中添加" },
-      { status: 400 }
-    );
-  }
-
   let apiKey: string;
   try {
-    apiKey = decrypt(apiKeyRecord.encryptedKey);
-  } catch {
+    apiKey = await getProviderApiKey(userId, "deepseek");
+  } catch (error) {
     return NextResponse.json(
-      { error: "API Key 解密失败，请重新添加" },
-      { status: 500 }
+      {
+        error:
+          error instanceof ProviderAccessError
+            ? error.message
+            : "服务密钥暂时不可用",
+      },
+      { status: 403 }
     );
   }
 

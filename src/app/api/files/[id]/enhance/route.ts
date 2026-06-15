@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
 import { createTextMessage, DeepSeekError } from "@/lib/deepseek";
 import type { Prisma } from "@/generated/prisma/client";
+import { getProviderApiKey } from "@/lib/data/provider-access";
+import { ProviderAccessError } from "@/lib/provider-access";
 
 const ENHANCE_PROMPT = `你是大学课程资料 OCR 结果整理器。以下内容来自图片 OCR/视觉解析，可能存在识别错误。
 只做结构化整理和知识增强，不要解题，不要生成最终实验报告，不要编造看不清的数据，不要把不确定内容改成确定结论。
@@ -54,13 +55,18 @@ export async function POST(
     );
   }
 
-  const keyRecord = await prisma.apiKey.findUnique({
-    where: { userId_provider: { userId, provider: "deepseek" } },
-  });
-  if (!keyRecord) {
+  let apiKey: string;
+  try {
+    apiKey = await getProviderApiKey(userId, "deepseek");
+  } catch (error) {
     return NextResponse.json(
-      { error: "尚未配置 DeepSeek API Key，请先在设置中添加" },
-      { status: 400 }
+      {
+        error:
+          error instanceof ProviderAccessError
+            ? error.message
+            : "服务密钥暂时不可用",
+      },
+      { status: 403 }
     );
   }
 
@@ -71,7 +77,7 @@ export async function POST(
 
   try {
     const enhancedContent = await createTextMessage(
-      decrypt(keyRecord.encryptedKey),
+      apiKey,
       {
         model: "deepseek-v4-flash",
         system: ENHANCE_PROMPT,

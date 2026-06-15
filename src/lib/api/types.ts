@@ -62,15 +62,3 @@ export interface ArtifactSummary {
 export interface ArtifactDetail extends ArtifactSummary {
   content: string;
 }
-
-export type ApiKeyProvider = "deepseek" | "minimax";
-
-export interface ApiKeyInfo {
-  hasKey: boolean;
-  keyPrefix?: string;
-  createdAt?: string;
-}
-
-export interface ApiKeyResponse {
-  providers: Partial<Record<ApiKeyProvider, ApiKeyInfo>>;
-}

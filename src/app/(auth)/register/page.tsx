@@ -16,9 +16,9 @@ export default function RegisterPage() {
     setError(null);
 
     const form = new FormData(e.currentTarget);
-    const name = form.get("name") as string;
     const email = form.get("email") as string;
     const password = form.get("password") as string;
+    const registrationCode = form.get("registrationCode") as string;
 
     if (password.length < 8) {
       setError("密码至少需要 8 个字符");
@@ -30,13 +30,15 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name: name || undefined }),
+        body: JSON.stringify({ email, password, registrationCode }),
       });
 
       if (!res.ok) {
         const data = await res.json();
         if (res.status === 409) {
           setError("该邮箱已被注册");
+        } else if (data.error?.registrationCode) {
+          setError(data.error.registrationCode[0]);
         } else if (data.error?.email) {
           setError(data.error.email[0]);
         } else {
@@ -71,30 +73,6 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
-              htmlFor="name"
-              className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5"
-            >
-              昵称
-            </label>
-            <input
-              id="name"
-              name="name"
-              type="text"
-              autoComplete="name"
-              className={cn(
-                "w-full h-10 px-3 text-sm rounded-[var(--radius-md)]",
-                "border border-[var(--color-border)]",
-                "bg-[var(--color-bg)] text-[var(--color-text-primary)]",
-                "placeholder:text-[var(--color-text-tertiary)]",
-                "focus:outline-none focus:border-[var(--color-accent)]",
-                "transition-colors duration-150"
-              )}
-              placeholder="你的昵称（选填）"
-            />
-          </div>
-
-          <div>
-            <label
               htmlFor="email"
               className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5"
             >
@@ -115,6 +93,33 @@ export default function RegisterPage() {
                 "transition-colors duration-150"
               )}
               placeholder="you@example.com"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="registrationCode"
+              className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5"
+            >
+              注册码
+            </label>
+            <input
+              id="registrationCode"
+              name="registrationCode"
+              type="text"
+              autoComplete="off"
+              required
+              minLength={8}
+              className={cn(
+                "w-full h-10 px-3 text-sm rounded-[var(--radius-md)]",
+                "border border-[var(--color-border)]",
+                "bg-[var(--color-bg)] text-[var(--color-text-primary)]",
+                "placeholder:text-[var(--color-text-tertiary)]",
+                "focus:outline-none focus:border-[var(--color-accent)]",
+                "transition-colors duration-150",
+                "font-mono uppercase tracking-wide"
+              )}
+              placeholder="输入 Alpha 注册码"
             />
           </div>
 

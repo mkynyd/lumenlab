@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-export const apiKeySchema = z.object({
-  provider: z.enum(["deepseek", "minimax"]),
-  key: z
-    .string()
-    .min(1, "请输入 API Key")
-    .max(256, "API Key 长度超出限制")
-    .refine((k) => !/\s/.test(k), "API Key 不能包含空白字符"),
-});
-
 export const sendMessageSchema = z.object({
   conversationId: z.string().optional(),
   message: z.string().min(1, "消息不能为空").max(200000),
@@ -22,12 +13,15 @@ export const sendMessageSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  email: z.string().email("邮箱格式不正确"),
+  email: z.string().trim().toLowerCase().email("邮箱格式不正确"),
   password: z.string().min(8, "密码至少需要 8 个字符").max(128),
 });
 
 export const registerSchema = loginSchema.extend({
-  name: z.string().min(1, "昵称不能为空").max(100).optional(),
+  registrationCode: z
+    .string()
+    .min(8, "注册码至少需要 8 个字符")
+    .max(128, "注册码长度超出限制"),
 });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

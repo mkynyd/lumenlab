@@ -18,6 +18,7 @@ light-ai-chat/
 ├── PRODUCT.md                         # 产品设计文档
 ├── README.md                          # 项目说明
 ├── REPOSITORY_INDEX.md                # 本文件 — 仓库索引
+├── Dockerfile                         # Next.js standalone 生产镜像
 ├── docker-compose.yml                 # PostgreSQL + Redis 容器编排
 ├── eslint.config.mjs                  # ESLint 配置
 ├── next.config.ts                     # Next.js 配置（安全头、Turbopack）
@@ -42,7 +43,7 @@ light-ai-chat/
 │   └── project-innovations.md         #   项目创新点汇总（15 项）
 │
 ├── prisma/                            # 数据库
-│   ├── schema.prisma                  #   Prisma schema（7 个模型）
+│   ├── schema.prisma                  #   Prisma schema（14 个模型）
 │   └── migrations/                    #   数据库迁移文件
 │       ├── 20260613075534_migrate_to_postgresql_pgvector/
 │       └── 20260613143000_add_minimax_pipeline_and_artifacts/
@@ -51,9 +52,11 @@ light-ai-chat/
 │   └── *.svg                          #   图标
 │
 ├── uploads/                           # 用户上传文件存储
+├── scripts/
+│   └── clear-alpha-users.sql          # 备份后显式清理旧测试用户
 │
 └── src/                               # 源代码
-    ├── middleware.ts                  #   NextAuth 路由保护中间件
+    ├── proxy.ts                       #   NextAuth 路由保护 Proxy
     ├── types/
     │   └── next-auth.d.ts             #   NextAuth 类型扩展
     │
@@ -109,7 +112,8 @@ light-ai-chat/
     │       │   └── [id]/
     │       │       ├── route.ts       #   成果 CRUD
     │       │       └── export/route.ts     # 成果导出（MD/DOCX/PDF）
-    │       ├── keys/route.ts          #   API Key CRUD
+    │       ├── internal/
+    │       │   └── registration-sync/route.ts # 加密版本快照同步
     │       └── metrics/cache/route.ts #   缓存命中率指标 API
     │
     ├── components/                    #   React 组件
@@ -154,6 +158,11 @@ light-ai-chat/
     │   ├── db.ts                      #   Prisma Client 单例（PostgreSQL）
     │   ├── redis.ts                   #   Redis 连接管理（惰性连接）
     │   ├── crypto.ts                  #   AES-256-GCM 加密/解密
+    │   ├── provider-access.ts         #   中央密钥组访问判定
+    │   ├── register-user.ts           #   注册码事务兑换
+    │   ├── registration-code.ts       #   注册码规范化与 HMAC 摘要
+    │   ├── registration-sync.ts       #   同步快照校验
+    │   ├── registration-sync-crypto.ts #  同步验签与混合解密
     │   ├── deepseek.ts                #   **核心** — DeepSeek API（Anthropic SDK 流式）
     │   ├── deepseek.test.ts
     │   ├── sse-client.ts              #   前端 SSE 流解析器
@@ -202,7 +211,8 @@ light-ai-chat/
     │   │   ├── conversations.ts
     │   │   ├── projects.ts
     │   │   ├── messages.ts
-    │   │   └── api-keys.ts
+    │   │   ├── provider-access.ts
+    │   │   └── registration-repository.ts
     │   │
     │   ├── hooks/                     #   客户端数据 Hooks（TanStack Query）
     │   │   ├── use-chat.ts            #   聊天状态与流式消息管理
@@ -210,7 +220,6 @@ light-ai-chat/
     │   │   ├── use-projects.ts
     │   │   ├── use-project-files.ts
     │   │   ├── use-artifacts.ts
-    │   │   ├── use-api-keys.ts
     │   │   └── use-cache-metrics.ts
     │   │
     │   ├── api/                       #   API 客户端
@@ -229,12 +238,18 @@ light-ai-chat/
 
 ## 核心架构
 
-### 数据模型（7 个表）
+### 数据模型（14 个表）
 
 | 模型 | 说明 | 关键字段 |
 |------|------|---------|
-| `User` | 用户账户 | id, email, passwordHash, name |
-| `ApiKey` | API Key 加密存储 | userId, provider, encryptedKey (AES-256-GCM), keyPrefix |
+| `User` | 用户账户与 Alpha 访问状态 | id, email, passwordHash, accessStatus, credentialProfileId |
+| `ApiKey` | 旧版个人 API Key（仅保留到显式清理） | userId, provider, encryptedKey, keyPrefix |
+| `CredentialProfile` | 管理端发布的可复用密钥组 | externalId, name, status, version |
+| `ProviderCredential` | 密钥组内供应商凭据 | credentialProfileId, provider, encryptedKey, validatedAt |
+| `RegistrationCode` | 可兑换注册码摘要与次数 | codeDigest, status, maxRedemptions, redemptionCount, expiresAt |
+| `RegistrationRedemption` | 用户与注册码的一次绑定记录 | codeId, userId, createdAt |
+| `RegistrationPublication` | 已应用管理端版本 | externalId, version, payloadDigest, sourceIssuedAt |
+| `RegistrationSyncNonce` | 同步请求防重放 nonce | nonce, expiresAt |
 | `Conversation` | 对话记录 | userId, projectId, title, model |
 | `Message` | 消息记录 | conversationId, role, content, reasoningContent, tokenCount, cacheHitTokens, cacheMissTokens |
 | `Project` | 项目空间 | userId, name, description, type, defaultModel, systemPrompt |
@@ -291,11 +306,18 @@ light-ai-chat/
 `src/lib/export/` — Markdown 为唯一真相源 → AST 级转换为 DOCX/PDF（无 Chromium 依赖）
 
 ### 7. 安全设计
-- API Key: AES-256-GCM 加密存储 (`src/lib/crypto.ts`)
+- API Key: 管理端密钥组同步后使用主业务 `ENCRYPTION_KEY` 重新 AES-256-GCM 加密
+- 注册码: 主库仅保存 HMAC-SHA-256 摘要，不保存可兑换明文
+- 内部同步: RSA-OAEP 包裹 AES-256-GCM 数据密钥，HMAC + 时间戳 + nonce 防重放
 - 密码: bcrypt 哈希
 - Session: NextAuth JWT 策略
+- 注册: 邮箱 + 密码 + 必填注册码，Serializable 事务原子消耗次数
+- 撤销: 停止新兑换与撤销该码既有用户分离，撤销仅通过显式发布指令生效
 - 全路由归属校验（userId + projectId + conversationId 链路）
-- 安全响应头：X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy
+- 安全响应头：CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy
+
+### 9. 独立注册码管理工具
+`course-ai-regadmin` 使用独立仓库、容器、PostgreSQL 和加密密钥。主业务不向管理端暴露数据库凭据；管理端通过 Docker 内部网络向 `/api/internal/registration-sync` 显式发布版本快照。
 
 ### 8. Redis 故障自动降级
 `src/lib/rate-limit.ts` — Redis 滑动窗口（Lua 原子操作），失败后 30 秒熔断 + 有界内存窗口降级。
@@ -334,6 +356,9 @@ npm run lint
 | `REDIS_URL` | Redis 连接字符串 | 否（降级到内存） |
 | `AUTH_SECRET` | NextAuth JWT 签名密钥 | 是 |
 | `ENCRYPTION_KEY` | AES-256-GCM 加密密钥（64 hex） | 是 |
+| `REGISTRATION_CODE_PEPPER` | 注册码 HMAC 摘要密钥 | 是 |
+| `REGISTRATION_SYNC_SECRET` | 与管理端共享的同步 HMAC 密钥 | 是 |
+| `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | 同步 RSA 私钥 PEM 的 Base64 | 是 |
 | `DEEPSEEK_BASE_URL` | DeepSeek API 地址 | 是 |
 | `AUTH_URL` | 应用 URL | 是 |
 | `NEXT_PUBLIC_APP_NAME` | 应用名称 | 否 |

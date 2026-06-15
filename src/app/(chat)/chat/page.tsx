@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/db";
 import { ChatArea } from "@/components/chat/chat-area";
+import { getProviderApiKey } from "@/lib/data/provider-access";
 
 export default async function ChatPage() {
   const session = await auth();
@@ -9,19 +9,10 @@ export default async function ChatPage() {
     redirect("/login");
   }
 
-  // Check if user has an API key configured
-  const apiKey = await prisma.apiKey.findUnique({
-    where: {
-      userId_provider: {
-        userId: session.user.id,
-        provider: "deepseek",
-      },
-    },
-    select: { id: true },
-  });
-
-  if (!apiKey) {
-    redirect("/settings?setup=true");
+  try {
+    await getProviderApiKey(session.user.id, "deepseek");
+  } catch {
+    redirect("/settings?access=unavailable");
   }
 
   return (

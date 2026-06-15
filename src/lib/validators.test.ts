@@ -1,19 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { apiKeySchema } from "@/lib/validators";
+import { registerSchema } from "@/lib/validators";
 
-describe("apiKeySchema", () => {
-  it("accepts both supported providers", () => {
+describe("registerSchema", () => {
+  it("requires a registration code", () => {
     expect(
-      apiKeySchema.parse({ provider: "deepseek", key: "sk-deepseek-key" })
-    ).toEqual({ provider: "deepseek", key: "sk-deepseek-key" });
-    expect(
-      apiKeySchema.parse({ provider: "minimax", key: "minimax-key" })
-    ).toEqual({ provider: "minimax", key: "minimax-key" });
-  });
+      registerSchema.parse({
+        email: "alpha@example.com",
+        password: "password123",
+        registrationCode: "ALPHA-7X9P",
+      })
+    ).toEqual({
+      email: "alpha@example.com",
+      password: "password123",
+      registrationCode: "ALPHA-7X9P",
+    });
 
-  it("rejects unknown providers", () => {
     expect(() =>
-      apiKeySchema.parse({ provider: "other", key: "secret" })
+      registerSchema.parse({
+        email: "alpha@example.com",
+        password: "password123",
+      })
     ).toThrow();
   });
 });

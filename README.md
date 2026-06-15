@@ -92,8 +92,7 @@
 
 - Node.js 20+
 - Docker Desktop（用于 PostgreSQL + Redis）
-- DeepSeek API Key（从 [platform.deepseek.com](https://platform.deepseek.com) 获取）
-- （可选）MiniMax API Key（用于图片/扫描 PDF 的 OCR 解析）
+- 由 `course-ai-regadmin` 发布的 Alpha 注册码与密钥组
 
 ### 1. 克隆仓库
 
@@ -142,11 +141,13 @@ AUTH_SECRET="your-generated-secret"
 # API Key 加密密钥 — 生成命令: openssl rand -hex 32
 ENCRYPTION_KEY="your-64-char-hex-string"
 
-# DeepSeek API
-DEEPSEEK_BASE_URL="https://api.deepseek.com"
+# Alpha 注册与内部同步
+REGISTRATION_CODE_PEPPER="generate-with-openssl-rand-base64-48"
+REGISTRATION_SYNC_SECRET="shared-with-course-ai-regadmin"
+REGISTRATION_SYNC_PRIVATE_KEY_BASE64="base64-encoded-RSA-private-key-PEM"
 
 # 应用
-AUTH_URL="http://localhost:3000"
+AUTH_URL="https://lab.mkynstudio.top"
 NEXT_PUBLIC_APP_NAME="AI 实验工作台"
 ```
 
@@ -162,7 +163,7 @@ npx prisma migrate dev
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000)，注册账号，在设置页面添加你的 DeepSeek API Key，即可开始使用。
+打开 [http://localhost:3000](http://localhost:3000)，使用邮箱、密码和已发布的 Alpha 注册码创建账户。供应商 Key 由测试管理员统一配置，不会发送到浏览器。
 
 ---
 
@@ -175,6 +176,7 @@ src/
 │   ├── (chat)/                   # 主应用（聊天/项目/设置）
 │   └── api/                      # REST API
 │       ├── chat/route.ts         # SSE 流式聊天（核心路由）
+│       ├── internal/registration-sync/ # 管理工具内部发布端点
 │       ├── files/[id]/parse/     # 文件解析（PDF.js + MiniMax OCR）
 │       ├── files/[id]/enhance/   # 文件知识增强
 │       └── artifacts/[id]/export/ # 成果导出（MD/DOCX/PDF）
@@ -199,7 +201,7 @@ src/
 │   └── layout/                   # 布局组件（导航栏/侧边栏）
 │
 └── prisma/
-    └── schema.prisma             # 数据模型定义（7 个模型）
+    └── schema.prisma             # 数据模型定义（14 个模型）
 ```
 
 > 完整文件树见 [`REPOSITORY_INDEX.md`](REPOSITORY_INDEX.md)
@@ -234,7 +236,7 @@ src/
 请求 → 中间件（JWT 验证）
      → 路由层（userId 归属校验）
      → 数据层（projectId/conversationId 关联校验）
-     → 敏感数据（API Key AES-256-GCM 加密，密码 bcrypt 哈希）
+     → 敏感数据（集中 API Key AES-256-GCM 加密，密码 bcrypt 哈希）
 ```
 
 ---

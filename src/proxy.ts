@@ -9,7 +9,6 @@ export const config = {
     "/settings/:path*",
     "/projects/:path*",
     "/api/chat/:path*",
-    "/api/keys/:path*",
     "/api/projects/:path*",
     "/api/files/:path*",
   ],
