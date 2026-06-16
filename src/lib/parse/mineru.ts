@@ -17,7 +17,7 @@ export class MinerUError extends Error {
 }
 
 function mapMinerUError(code: string | number | undefined, message?: string) {
-  const normalized = String(code || "");
+  const normalized = String(code ?? "");
   const messages: Record<string, string> = {
     "-60005": "文件大小超过 200MB 限制，请压缩或拆分后重试",
     "-60006": "文件页数超过 200 页限制，请拆分后重试",
@@ -73,18 +73,16 @@ export async function submitFileToMinerU(options: {
     msg?: string;
     data?: {
       batch_id?: string;
-      file_urls?: Array<{
-        file_name: string;
-        upload_url: string;
-      }>;
+      file_urls?: string[];
     };
   }>(resp);
 
-  if (body.code !== 0 || !body.data?.batch_id || !body.data.file_urls?.[0]?.upload_url) {
+  if (body.code !== 0 || !body.data?.batch_id || !body.data.file_urls?.[0]) {
     throw new MinerUError(body.code, mapMinerUError(body.code, body.msg));
   }
 
-  const uploadResp = await fetch(body.data.file_urls[0].upload_url, {
+  const uploadUrl = body.data.file_urls[0];
+  const uploadResp = await fetch(uploadUrl, {
     method: "PUT",
     body: new Uint8Array(options.fileBuffer),
   });
