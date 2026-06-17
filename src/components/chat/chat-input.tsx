@@ -3,7 +3,6 @@
 import { useRef, useState } from "react";
 import { FileText, Paperclip, Send, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
-import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
 import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
@@ -28,7 +27,6 @@ export function ChatInput({
   onValueChange,
   attachments = [],
   onAttachmentsChange,
-  contextHint,
   blockedReason,
 }: ChatInputProps) {
   const [internalValue, setInternalValue] = useState("");
@@ -81,10 +79,10 @@ export function ChatInput({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        "workbench-input-dock flex flex-col gap-2 border-t border-[var(--color-border)] bg-[var(--color-panel)] p-3"
+        "workbench-input-dock flex flex-col gap-2 border-t border-[var(--color-border-light)] bg-[var(--color-panel)] p-3 backdrop-blur-[var(--glass-blur)]"
       )}
     >
-      {(contextHint || blockedReason || isStreaming) && (
+      {blockedReason && (
         <div
           className={cn(
             "flex min-h-7 flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2 py-1",
@@ -94,16 +92,8 @@ export function ChatInput({
           )}
         >
           <span className="min-w-0 truncate text-[11px]">
-            {blockedReason || contextHint}
+            {blockedReason}
           </span>
-          {isStreaming && (
-            <MathCurveLoader
-              size="sm"
-              variant="orbit"
-              label="生成中"
-              className="shrink-0"
-            />
-          )}
         </div>
       )}
       {attachments.length > 0 && (
@@ -130,8 +120,8 @@ export function ChatInput({
       )}
       <div
         className={cn(
-          "flex items-end gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5",
-          "focus-within:border-[var(--color-accent)] focus-within:ring-2 focus-within:ring-[var(--color-accent-muted)]"
+	          "flex items-end gap-2 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 shadow-[var(--shadow-panel)]",
+	          "focus-within:border-[var(--color-accent)] focus-within:ring-2 focus-within:ring-[var(--color-accent-muted)]"
         )}
       >
         <input
@@ -147,7 +137,7 @@ export function ChatInput({
           onClick={() => fileInputRef.current?.click()}
           className={cn(
             "flex items-center justify-center w-9 h-9 shrink-0",
-            "rounded-[var(--radius-md)]",
+	            "rounded-[var(--radius-lg)]",
             "border border-[var(--color-border-light)]",
             "bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]",
             "hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
@@ -185,7 +175,7 @@ export function ChatInput({
             onClick={onStop}
             className={cn(
               "flex items-center justify-center w-9 h-9 shrink-0",
-              "rounded-[var(--radius-md)]",
+              "rounded-[var(--radius-lg)]",
               "border border-[var(--color-error-muted)]",
               "bg-[var(--color-error-muted)] text-[var(--color-error)]",
               "hover:bg-[var(--color-error)] hover:text-[var(--color-accent-contrast)]",
@@ -201,7 +191,7 @@ export function ChatInput({
             disabled={!hasSendableContent || disabled}
             className={cn(
               "flex items-center justify-center w-9 h-9 shrink-0",
-              "rounded-[var(--radius-md)]",
+              "rounded-[var(--radius-lg)]",
               "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]",
               "hover:bg-[var(--color-accent-hover)]",
               "disabled:opacity-40 disabled:cursor-not-allowed",

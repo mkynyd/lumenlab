@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Plus, FolderOpen, Trash2, MessageSquare, FileText } from "lucide-react";
 import { useDeleteProject, useProjects } from "@/lib/hooks/use-projects";
+import { SpotlightCard } from "@/components/workbench/spotlight-card";
+import { AmbientField } from "@/components/workbench/ambient-field";
 
 const TYPE_LABELS: Record<string, string> = {
   experiment: "实验工作台",
@@ -25,15 +27,16 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="relative h-full overflow-y-auto">
+      <AmbientField density="wide" className="opacity-55" />
+      <div className="relative mx-auto max-w-5xl px-4 py-8">
         {/* 页头 */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="mb-8 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">
+            <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
               项目空间
             </h1>
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1">
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
               管理你的实验工作台、资料复习和代码项目
             </p>
           </div>
@@ -47,17 +50,17 @@ export default function ProjectsPage() {
 
         {/* 项目列表 */}
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-32 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] animate-pulse"
+                className="h-36 animate-pulse rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-surface)]"
               />
             ))}
           </div>
         ) : projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="flex items-center justify-center w-12 h-12 mb-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-[var(--shadow-panel)]">
               <FolderOpen size={24} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
             </div>
             <h2 className="text-base font-medium text-[var(--color-text-primary)] mb-1">
@@ -74,14 +77,12 @@ export default function ProjectsPage() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {projects.map((project) => (
-              <div
+              <SpotlightCard
                 key={project.id}
                 className={cn(
-                  "group relative p-5 rounded-[var(--radius-lg)]",
-                  "border border-[var(--color-border)] bg-[var(--color-surface)]",
-                  "hover:border-[var(--color-accent)] transition-colors duration-150"
+                  "group relative p-5"
                 )}
               >
                 <Link
@@ -90,10 +91,10 @@ export default function ProjectsPage() {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-semibold text-[var(--color-text-primary)] truncate">
+                      <h3 className="truncate text-base font-semibold text-[var(--color-text-primary)]">
                         {project.name}
                       </h3>
-                      <span className="text-[10px] font-mono text-[var(--color-text-tertiary)] uppercase tracking-wider">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-tertiary)]">
                         {TYPE_LABELS[project.type] || project.type}
                       </span>
                     </div>
@@ -104,7 +105,7 @@ export default function ProjectsPage() {
                         deleteProject(project.id, project.name);
                       }}
                       className={cn(
-                        "shrink-0 p-1 rounded-[2px]",
+                        "shrink-0 rounded-[var(--radius-sm)] border border-transparent p-1.5",
                         "opacity-0 group-hover:opacity-100",
                         "text-[var(--color-text-tertiary)] hover:text-[var(--color-error)] hover:bg-[var(--color-error-muted)]",
                         "transition-all duration-100"
@@ -115,16 +116,16 @@ export default function ProjectsPage() {
                     </button>
                   </div>
                   {project.description && (
-                    <p className="text-xs text-[var(--color-text-secondary)] line-clamp-2 mb-3">
+                    <p className="mb-4 line-clamp-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">
                       {project.description}
                     </p>
                   )}
-                  <div className="flex items-center gap-3 text-[11px] font-mono text-[var(--color-text-tertiary)]">
-                    <span className="flex items-center gap-1">
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-[var(--color-text-tertiary)]">
+                    <span className="flex items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 py-1">
                       <MessageSquare size={12} strokeWidth={2} />
                       {project._count.conversations} 对话
                     </span>
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 py-1">
                       <FileText size={12} strokeWidth={2} />
                       {project._count.files} 文件
                     </span>
@@ -133,7 +134,7 @@ export default function ProjectsPage() {
                     </span>
                   </div>
                 </Link>
-              </div>
+              </SpotlightCard>
             ))}
           </div>
         )}

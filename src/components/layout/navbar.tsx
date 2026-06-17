@@ -39,18 +39,18 @@ export function Navbar({ onMenuToggle, sidebarCollapsed = false }: NavbarProps) 
   return (
     <header
       className={cn(
-        "h-12 shrink-0 flex items-center justify-between px-4",
-        "border-b border-[var(--color-border)]",
-        "bg-[var(--color-panel)]"
+        "h-14 shrink-0 flex items-center justify-between gap-2 px-3 sm:px-4",
+        "border-b border-[var(--color-border-light)]",
+        "bg-[var(--color-panel)] backdrop-blur-[var(--glass-blur)]"
       )}
     >
       {/* 左侧 */}
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <button
           onClick={onMenuToggle}
           className={cn(
-            "inline-flex h-8 w-8 -ml-1 items-center justify-center rounded-[var(--radius-md)]",
-            "border border-[var(--color-border)] bg-[var(--color-surface)]",
+            "inline-flex h-9 w-9 -ml-1 items-center justify-center rounded-[var(--radius-md)]",
+            "border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-sm",
             "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
             "transition-colors duration-150"
           )}
@@ -65,14 +65,14 @@ export function Navbar({ onMenuToggle, sidebarCollapsed = false }: NavbarProps) 
         </button>
         <Link
           href="/chat"
-          className="text-sm font-semibold tracking-tight text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+          className="truncate rounded-[var(--radius-sm)] px-1 text-sm font-semibold tracking-tight text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)]"
         >
           course-ai-lab
         </Link>
       </div>
 
       {/* 右侧 */}
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         <ThemeToggle />
 
         {/* 用户菜单 */}
@@ -80,13 +80,13 @@ export function Navbar({ onMenuToggle, sidebarCollapsed = false }: NavbarProps) 
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             className={cn(
-              "flex items-center gap-1.5 h-8 px-2 rounded-[var(--radius-md)]",
+	              "flex items-center gap-1.5 h-9 px-2 rounded-[var(--radius-md)] sm:px-2.5",
               "text-sm text-[var(--color-text-secondary)]",
-              "hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
+              "border border-transparent hover:border-[var(--color-border-light)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
               "transition-colors duration-150"
             )}
           >
-            <span className="max-w-[120px] truncate">
+	            <span className="max-w-[82px] truncate sm:max-w-[120px]">
               {session.user.name || session.user.email}
             </span>
             <ChevronDown
@@ -103,8 +103,8 @@ export function Navbar({ onMenuToggle, sidebarCollapsed = false }: NavbarProps) 
             <div
               className={cn(
                 "absolute right-0 top-full mt-1 w-48 py-1 z-50",
-                "border border-[var(--color-border)] rounded-[var(--radius-md)]",
-                "bg-[var(--color-panel)] shadow-[var(--shadow-panel)]"
+                "border border-[var(--color-border-light)] rounded-[var(--radius-lg)]",
+                "bg-[var(--color-panel)] shadow-[var(--shadow-float)] backdrop-blur-[var(--glass-blur)]"
               )}
             >
               <Link

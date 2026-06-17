@@ -86,7 +86,7 @@ export function Sidebar({
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-64 flex-col overflow-hidden",
-          "border-r border-[var(--color-border)] bg-[var(--color-panel)]",
+          "border-r border-[var(--color-border-light)] bg-[var(--color-panel)] backdrop-blur-[var(--glass-blur)]",
           "transition-[transform,width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
           "lg:static lg:translate-x-0",
@@ -94,7 +94,7 @@ export function Sidebar({
         )}
         aria-label="主导航侧边栏"
       >
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-3">
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border-light)] px-3">
           <span
             className={cn(
               "whitespace-nowrap text-xs font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]",
@@ -116,13 +116,13 @@ export function Sidebar({
           </button>
         </div>
 
-        <nav className="grid shrink-0 grid-cols-2 gap-1 border-b border-[var(--color-border)] p-2 lg:grid-cols-1">
+        <nav className="m-2 grid shrink-0 grid-cols-2 gap-1 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 lg:grid-cols-1">
           <button
             type="button"
             onClick={() => openSection("chat")}
             className={cn(
               "flex h-10 items-center gap-2.5 rounded-[var(--radius-md)] px-3 text-sm font-medium",
-              "transition-colors duration-150",
+              "transition-[background-color,color,box-shadow] duration-150",
               activeSection === "chat"
                 ? "workbench-glow bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
@@ -141,7 +141,7 @@ export function Sidebar({
             onClick={() => openSection("projects")}
             className={cn(
               "flex h-10 items-center gap-2.5 rounded-[var(--radius-md)] px-3 text-sm font-medium",
-              "transition-colors duration-150",
+              "transition-[background-color,color,box-shadow] duration-150",
               activeSection === "projects"
                 ? "workbench-glow bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
@@ -168,7 +168,7 @@ export function Sidebar({
           aria-hidden={collapsed && !mobileOpen}
           inert={collapsed && !mobileOpen ? true : undefined}
         >
-          <div className="shrink-0 p-3">
+          <div className="shrink-0 px-3 pb-3 pt-1">
             <Button
               type="button"
               onClick={createItem}
@@ -197,18 +197,18 @@ export function Sidebar({
               </div>
             ) : activeSection === "chat" ? (
               conversations.length > 0 ? (
-                <div className="space-y-0.5">
+                <div className="space-y-1">
                   {conversations.map((conversation) => (
                     <Link
                       key={conversation.id}
                       href={`/chat/${conversation.id}`}
                       onClick={onClose}
                       className={cn(
-                        "group flex h-9 items-center gap-2 rounded-[var(--radius-md)] px-2 text-sm",
-                        "transition-colors duration-100 hover:bg-[var(--color-surface-hover)]",
+                        "group flex h-9 items-center gap-2 rounded-[var(--radius-md)] border px-2 text-sm",
+                        "transition-[background-color,border-color,color] duration-150 hover:border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]",
                         activeConversationId === conversation.id
-                          ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                          : "text-[var(--color-text-secondary)]"
+                          ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                          : "border-transparent text-[var(--color-text-secondary)]"
                       )}
                     >
                       <MessageSquare
@@ -238,18 +238,18 @@ export function Sidebar({
                 </p>
               )
             ) : projects.length > 0 ? (
-              <div className="space-y-0.5">
+              <div className="space-y-1">
                 {projects.map((project) => (
                   <Link
                     key={project.id}
                     href={`/projects/${project.id}`}
                     onClick={onClose}
                     className={cn(
-                      "flex min-h-10 items-center gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-sm",
-                      "transition-colors duration-100 hover:bg-[var(--color-surface-hover)]",
+                      "flex min-h-10 items-center gap-2 rounded-[var(--radius-md)] border px-2 py-1.5 text-sm",
+                      "transition-[background-color,border-color,color] duration-150 hover:border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]",
                       activeProjectId === project.id
-                        ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                        : "text-[var(--color-text-secondary)]"
+                        ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                        : "border-transparent text-[var(--color-text-secondary)]"
                     )}
                   >
                     <FolderOpen
@@ -273,7 +273,7 @@ export function Sidebar({
 
         <div
           className={cn(
-            "shrink-0 border-t border-[var(--color-border)] px-4 py-2",
+            "shrink-0 border-t border-[var(--color-border-light)] px-4 py-2",
             "transition-opacity duration-200 ease-out motion-reduce:transition-none",
             collapsed && "lg:opacity-0"
           )}

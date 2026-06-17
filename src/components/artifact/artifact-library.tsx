@@ -91,11 +91,11 @@ export function ArtifactLibrary({
       }}
     >
       <div
-        className={`flex h-full w-full max-w-4xl flex-col border-l border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-panel)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+	        className={`flex h-full w-full max-w-4xl flex-col border-l border-[var(--color-border-light)] bg-[var(--color-panel)] shadow-[var(--shadow-float)] backdrop-blur-[var(--glass-blur)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
           visible ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+	        <div className="flex min-h-14 items-center justify-between border-b border-[var(--color-border-light)] px-4 py-3">
           <div>
             <h2 className="text-base font-semibold">成果库</h2>
             <p className="text-xs text-[var(--color-text-tertiary)]">保存、阅读和导出 AI 生成成果</p>
@@ -122,7 +122,7 @@ export function ArtifactLibrary({
               </div>
             ) : artifacts.length === 0 ? (
               <div className="relative min-h-48 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-4">
-                <AmbientField className="opacity-25" />
+	                <AmbientField density="compact" className="opacity-60" />
                 <div className="relative">
                   <p className="text-sm font-medium text-[var(--color-text-primary)]">暂无成果</p>
                   <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
@@ -220,7 +220,7 @@ export function ArtifactLibrary({
               </>
             ) : (
               <div className="relative flex min-h-60 items-center justify-center overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-panel)] p-4 text-center">
-                <AmbientField className="opacity-25" />
+	                <AmbientField density="compact" className="opacity-60" />
                 <p className="relative text-sm text-[var(--color-text-tertiary)]">选择一个成果查看内容和导出选项</p>
               </div>
             )}

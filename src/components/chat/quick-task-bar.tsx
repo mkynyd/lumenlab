@@ -62,11 +62,11 @@ function ActionButton({
       }
       disabled={disabled}
       className={cn(
-        "rounded-[var(--radius-md)] px-2.5 py-1 text-xs",
-        "border border-[var(--color-border-light)] bg-[var(--color-panel)]",
+        "rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
+        "border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-sm",
         "text-[var(--color-text-secondary)]",
         "hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)]",
-        "transition-colors duration-150 whitespace-nowrap",
+        "transition-[background-color,border-color,color] duration-150 whitespace-nowrap",
         "disabled:opacity-40 disabled:cursor-not-allowed"
       )}
       title={action.prompt}
@@ -107,8 +107,8 @@ export function QuickTaskBar({
             type="button"
             onClick={() => setCustomOpen((current) => !current)}
             className={cn(
-              "inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-[var(--radius-md)]",
-              "border border-[var(--color-border-light)] bg-[var(--color-panel)] text-[var(--color-text-secondary)]",
+	              "inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
+	              "border border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] shadow-sm",
               "hover:bg-[var(--color-surface-hover)] transition-colors duration-150"
             )}
             aria-expanded={customOpen}

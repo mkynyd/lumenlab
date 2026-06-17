@@ -10,6 +10,7 @@ interface MathCurveLoaderProps {
   detail?: string;
   variant?: CurveVariant;
   size?: "sm" | "md" | "lg";
+  speed?: "calm" | "normal" | "fast";
   className?: string;
 }
 
@@ -20,8 +21,15 @@ export function MathCurveLoader({
   detail,
   variant = "lissajous",
   size = "md",
+  speed = "calm",
   className,
 }: MathCurveLoaderProps) {
+  const speedMap = {
+    calm: "3.25s",
+    normal: "2.65s",
+    fast: "2.1s",
+  };
+
   return (
     <div
       className={cn("math-curve-status", className)}
@@ -32,6 +40,7 @@ export function MathCurveLoader({
       <div
         className={cn("math-curve-loader", `math-curve-${size}`)}
         data-curve={variant}
+        style={{ "--math-curve-speed": speedMap[speed] } as CSSProperties}
         aria-hidden="true"
       >
         {particleIndexes.map((index) => (

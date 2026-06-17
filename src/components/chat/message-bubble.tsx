@@ -10,6 +10,7 @@ import { ChevronDown, ChevronRight, User, Bot, Save } from "lucide-react";
 import { MermaidBlock } from "@/components/chat/mermaid-block";
 import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
 import { Button } from "@/components/ui/button";
+import { SelectMenu } from "@/components/ui/select-menu";
 import { cn } from "@/lib/utils";
 
 interface MessageBubbleProps {
@@ -85,7 +86,7 @@ function MessageBubbleComponent({
     >
       <div
         className={cn(
-          "flex items-center justify-center w-7 h-7 rounded-[var(--radius-md)] shrink-0 mt-0.5 border",
+	          "flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-lg)] border mt-0.5 shadow-sm",
           isUser
             ? "border-transparent bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
             : "border-[var(--color-border-light)] bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]"
@@ -117,7 +118,7 @@ function MessageBubbleComponent({
           className={cn(
             "text-sm",
             isUser
-              ? "max-w-[85%] rounded-[var(--radius-lg)] border border-[var(--color-accent-muted)] bg-[var(--color-accent-soft)] px-3 py-2 leading-relaxed"
+	              ? "max-w-[85%] rounded-[var(--radius-xl)] border border-[var(--color-accent-muted)] bg-[var(--color-accent-soft)] px-3.5 py-2.5 leading-relaxed shadow-[var(--shadow-panel)]"
               : "workbench-readable text-[var(--color-text-primary)]"
           )}
         >
@@ -151,7 +152,7 @@ function MessageBubbleComponent({
               </ReactMarkdown>
             </div>
           ) : isStreaming ? (
-            <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-panel)] px-3 py-2">
+	            <div className="rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-panel)] px-3 py-2 shadow-[var(--shadow-panel)] backdrop-blur-[var(--glass-blur)]">
               <MathCurveLoader
                 size="sm"
                 variant="lissajous"
@@ -168,31 +169,32 @@ function MessageBubbleComponent({
             <button
               type="button"
               onClick={() => setShowSave((current) => !current)}
-              className="flex items-center gap-1 rounded-[var(--radius-md)] px-1 py-0.5 text-[11px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-accent)]"
+	              className="flex items-center gap-1 rounded-[var(--radius-md)] border border-transparent px-2 py-1 text-[11px] text-[var(--color-text-tertiary)] hover:border-[var(--color-border-light)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-accent)]"
               aria-expanded={showSave}
             >
               <Save size={12} />
               保存为成果
             </button>
             {showSave && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-panel)] p-2">
+	              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-panel)] p-2 shadow-[var(--shadow-panel)] backdrop-blur-[var(--glass-blur)]">
                 <input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  className="h-8 min-w-40 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs"
+	                  className="h-8 min-w-40 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 text-xs focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)]"
                   maxLength={150}
                   aria-label="成果标题"
                 />
-                <select
-                  value={type}
-                  onChange={(event) => setType(event.target.value)}
-                  className="h-8 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs"
-                  aria-label="成果类型"
-                >
-                  {ARTIFACT_TYPES.map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
+	                <SelectMenu
+	                  value={type}
+	                  placeholder="成果类型"
+	                  ariaLabel="成果类型"
+	                  options={ARTIFACT_TYPES.map(([value, label]) => ({
+	                    value,
+	                    label,
+	                  }))}
+	                  onChange={setType}
+	                  className="w-36"
+	                />
                 <Button
                   type="button"
                   size="sm"

@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { useProject } from "@/lib/hooks/use-projects";
 import {
   conversationQueryOptions,
+  useDeleteConversation,
 } from "@/lib/hooks/use-conversations";
 import { useSaveArtifact } from "@/lib/hooks/use-artifacts";
 import { queryKeys } from "@/lib/query-keys";
@@ -39,6 +40,7 @@ export default function ProjectDetailPage() {
   const queryClient = useQueryClient();
   const projectQuery = useProject(projectId);
   const saveArtifactMutation = useSaveArtifact(projectId);
+  const deleteConversationMutation = useDeleteConversation();
   const project = projectQuery.data || null;
   const refetchProject = projectQuery.refetch;
   const isLoading = projectQuery.isPending;
@@ -164,16 +166,6 @@ export default function ProjectDetailPage() {
   function handleClearFileSelection() {
     setSelectedFileIds(new Set());
     lastSelectedFileIndexRef.current = null;
-  }
-
-  function handleInvertFileSelection() {
-    setSelectedFileIds((prev) => {
-      const next = new Set<string>();
-      for (const file of project?.files || []) {
-        if (!prev.has(file.id)) next.add(file.id);
-      }
-      return next;
-    });
   }
 
   function handleSelectFilesByCategory(category: FileCategory) {
@@ -410,6 +402,17 @@ export default function ProjectDetailPage() {
     setChatAttachments([]);
   }
 
+  async function handleConversationDelete(id: string, title: string) {
+    if (!confirm(`确定要删除项目对话「${title}」吗？`)) return;
+    await deleteConversationMutation.mutateAsync(id);
+    if (conversationId === id) {
+      handleNewConversation();
+    }
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.projects.detail(projectId),
+    });
+  }
+
   function toggleProjectSidebar() {
     if (window.matchMedia("(min-width: 768px)").matches) {
       setDesktopProjectSidebarOpen((current) => !current);
@@ -458,7 +461,7 @@ export default function ProjectDetailPage() {
     selectedFileIds.size > 0
       ? `当前上下文：${selectedFileIds.size} 个已选文件`
       : project.files.length > 0
-        ? "未选择文件，系统会在当前项目中自动检索"
+        ? "项目资料按问题自动匹配"
         : "等待上传资料后构建项目上下文";
   const blockedReason = hasParsingFiles
     ? "文件解析中，消息会等待资料就绪后发送"
@@ -484,7 +487,7 @@ export default function ProjectDetailPage() {
       <div
         className={cn(
           "absolute inset-y-0 left-0 z-30 w-[280px] overflow-hidden",
-          "border-r border-[var(--color-border)] bg-[var(--color-surface)]",
+          "border-r border-[var(--color-border-light)] bg-[var(--color-surface)]",
           "transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
           mobileProjectSidebarOpen ? "translate-x-0" : "-translate-x-full",
           "md:static md:z-auto md:translate-x-0 md:transition-[width] md:duration-300 md:ease-[cubic-bezier(0.16,1,0.3,1)]",
@@ -505,7 +508,6 @@ export default function ProjectDetailPage() {
             onFileToggle={handleFileToggle}
             onSelectAllFiles={handleSelectAllFiles}
             onClearFileSelection={handleClearFileSelection}
-            onInvertFileSelection={handleInvertFileSelection}
             onSelectFilesByCategory={handleSelectFilesByCategory}
             onFileDelete={handleFileDelete}
             onFileUploaded={() => void projectQuery.refetch()}
@@ -517,14 +519,14 @@ export default function ProjectDetailPage() {
             }
             onBatchDelete={() => void runBatchAction("delete")}
             onBatchReparse={() => void runBatchAction("reparse")}
-            onBatchCategorize={(category) =>
-              void runBatchAction("categorize", category)
-            }
             onBatchAutoCategorize={() => void handleBatchAutoCategorize()}
             onBatchReparseFailed={() => void handleBatchReparseFailed()}
             onBatchDownload={() => void runBatchAction("download")}
             onNewConversation={handleNewConversation}
             onConversationSelect={handleConversationSelect}
+            onConversationDelete={(id, title) =>
+              void handleConversationDelete(id, title)
+            }
             activeConversationId={conversationId}
           />
         </div>
@@ -535,17 +537,17 @@ export default function ProjectDetailPage() {
         {/* 顶部信息栏 */}
         <div
           className={cn(
-            "flex items-center justify-between gap-3 px-4 py-2",
-            "border-b border-[var(--color-border)]",
-            "bg-[var(--color-panel)] shrink-0"
+            "flex min-h-14 items-center justify-between gap-3 px-4 py-2",
+            "border-b border-[var(--color-border-light)]",
+            "bg-[var(--color-panel)] shrink-0 backdrop-blur-[var(--glass-blur)]"
           )}
         >
           <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={toggleProjectSidebar}
               className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)]",
-                "border border-[var(--color-border)] bg-[var(--color-surface)]",
+	                "inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)]",
+	                "border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-sm",
                 "text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
                 "transition-colors duration-150"
               )}
@@ -603,7 +605,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* 快捷任务按钮 */}
-        <div className="border-b border-[var(--color-border-light)] bg-[var(--color-surface)] px-4 py-2 shrink-0">
+	        <div className="border-b border-[var(--color-border-light)] bg-[var(--color-panel)] px-4 py-2 shrink-0 backdrop-blur-[var(--glass-blur)]">
           <QuickTaskBar
             projectType={projectType}
             actions={project.quickActions}
@@ -615,7 +617,7 @@ export default function ProjectDetailPage() {
         {/* 消息区域 */}
         {messages.length === 0 ? (
           <div className="relative flex-1 overflow-y-auto">
-            <AmbientField className="opacity-35" />
+	            <AmbientField density="wide" className="opacity-80" />
             <div className="relative flex h-full flex-col items-center justify-center px-4 text-center">
               <div
                 className={cn(
@@ -701,14 +703,9 @@ export default function ProjectDetailPage() {
           onValueChange={setChatInputValue}
           attachments={chatAttachments}
           onAttachmentsChange={setChatAttachments}
-          contextHint={contextHint}
+          contextHint={selectedFileIds.size > 0 ? contextHint : undefined}
           blockedReason={blockedReason}
         />
-        {project.files.length > 0 && selectedFileIds.size === 0 && (
-          <p className="-mt-1 bg-[var(--color-panel)] px-4 pb-2 text-[11px] text-[var(--color-text-tertiary)]">
-            未选择文件时，系统会在当前项目中进行关键词检索。
-          </p>
-        )}
       </div>
       {activeFile && (
         <FileContentDialog

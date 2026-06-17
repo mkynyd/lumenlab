@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import { Button } from "@/components/ui/button";
+import { SelectMenu } from "@/components/ui/select-menu";
 import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
 
 export interface ProjectFile {
@@ -186,10 +187,10 @@ export function FileList({
       <div
         key={file.id}
         className={cn(
-          "rounded-[var(--radius-lg)] border transition-colors duration-150",
+          "rounded-[var(--radius-lg)] border transition-[background-color,border-color,box-shadow] duration-150",
           selected
-            ? "workbench-glow border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-            : "border-transparent bg-transparent hover:bg-[var(--color-surface-hover)]"
+            ? "workbench-border-glow border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
+            : "border-transparent bg-transparent hover:border-[var(--color-border-light)] hover:bg-[var(--color-surface-hover)]"
         )}
       >
         <div className="p-1">
@@ -205,7 +206,7 @@ export function FileList({
                 index,
               })
             }
-            className="flex w-full min-w-0 items-start gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-left hover:bg-[var(--color-surface-hover)]"
+            className="flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-left hover:bg-[var(--color-surface-hover)]"
           >
             <FileText size={14} className="mt-0.5 shrink-0 opacity-70" />
             <div className="flex-1 min-w-0">
@@ -236,25 +237,25 @@ export function FileList({
           </button>
           <div className="mt-1 flex flex-wrap items-center gap-1 border-t border-[var(--color-border-light)] px-1 pt-1">
             {onCategoryChange && (
-              <select
+              <SelectMenu
                 value={file.category || ""}
-                onChange={(event) =>
+                placeholder="未分类"
+                ariaLabel={`修改 ${file.originalName} 分类`}
+                options={[
+                  { value: "", label: "未分类" },
+                  ...FILE_CATEGORIES.map((category) => ({
+                    value: category,
+                    label: category,
+                  })),
+                ]}
+                onChange={(value) =>
                   onCategoryChange(
                     file.id,
-                    event.target.value ? (event.target.value as FileCategory) : null
+                    value ? (value as FileCategory) : null
                   )
                 }
-                onClick={(event) => event.stopPropagation()}
-                className="h-7 min-w-24 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-[10px]"
-                aria-label={`修改 ${file.originalName} 分类`}
-              >
-                <option value="">未分类</option>
-                {FILE_CATEGORIES.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
+                className="min-w-24"
+              />
             )}
             {file.status === "parsing" && <Loader size={12} className="animate-spin text-[var(--color-info)]" />}
             {canParse && onParse && (

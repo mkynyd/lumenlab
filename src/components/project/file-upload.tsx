@@ -92,12 +92,12 @@ export function FileUpload({ projectId, onUploaded, className }: FileUploadProps
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         className={cn(
-          "flex flex-col items-center justify-center rounded-[var(--radius-lg)] px-3 py-4",
-          "border border-dashed cursor-pointer transition-colors duration-150",
-          "bg-[var(--color-panel)]",
+          "flex flex-col items-center justify-center rounded-[var(--radius-xl)] px-3 py-4",
+          "border border-dashed cursor-pointer transition-[background-color,border-color,box-shadow] duration-150",
+          "bg-[var(--color-surface)]",
           dragging
-            ? "border-[var(--color-accent)] bg-[var(--color-accent-muted)]"
-            : "border-[var(--color-border)] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
+            ? "workbench-border-glow border-[var(--color-accent)] bg-[var(--color-accent-muted)]"
+            : "border-[var(--color-border-light)] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
         )}
         onClick={() => inputRef.current?.click()}
       >

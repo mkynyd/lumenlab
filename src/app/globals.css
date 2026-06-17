@@ -10,12 +10,12 @@
 
 /* ---- Light Theme (default) ---- */
 :root {
-  --color-bg: oklch(0.965 0.006 255);
-  --color-surface: oklch(0.992 0.004 255);
-  --color-surface-hover: oklch(0.958 0.008 255);
-  --color-surface-active: oklch(0.928 0.012 255);
-  --color-panel: oklch(0.984 0.005 255);
-  --color-panel-muted: oklch(0.943 0.009 255);
+  --color-bg: oklch(0.974 0.006 250);
+  --color-surface: oklch(0.992 0.004 250 / 0.84);
+  --color-surface-hover: oklch(0.955 0.014 250 / 0.92);
+  --color-surface-active: oklch(0.925 0.022 252 / 0.96);
+  --color-panel: oklch(0.985 0.006 250 / 0.78);
+  --color-panel-muted: oklch(0.948 0.012 250 / 0.72);
 
   --color-text-primary: oklch(0.265 0.032 257);
   --color-text-secondary: oklch(0.495 0.031 257);
@@ -38,8 +38,8 @@
   --color-info-muted: oklch(0.925 0.045 235);
 
   /* Borders */
-  --color-border: oklch(0.835 0.012 255);
-  --color-border-light: oklch(0.9 0.009 255);
+  --color-border: oklch(0.84 0.018 252 / 0.76);
+  --color-border-light: oklch(0.9 0.014 252 / 0.62);
 
   /* Progress / Ring */
   --color-ring-track: oklch(0.9 0.009 255);
@@ -50,22 +50,26 @@
   --color-overlay: oklch(0.15 0.02 255 / 0.34);
 
   /* Misc */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 6px;
-  --radius-xl: 8px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
   --shadow-none: none;
-  --shadow-panel: 0 18px 40px oklch(0.25 0.03 257 / 0.08);
+  --shadow-panel: 0 18px 50px oklch(0.25 0.03 257 / 0.10);
+  --shadow-float: 0 18px 60px oklch(0.25 0.03 257 / 0.13);
+  --glass-blur: 18px;
+  --dot-grid-base: oklch(0.72 0.08 255 / 0.18);
+  --dot-grid-active: oklch(0.57 0.21 260 / 0.8);
 }
 
 /* ---- Dark Theme ---- */
 .dark {
-  --color-bg: oklch(0.205 0.018 255);
-  --color-surface: oklch(0.245 0.018 255);
-  --color-surface-hover: oklch(0.29 0.019 255);
-  --color-surface-active: oklch(0.35 0.021 255);
-  --color-panel: oklch(0.265 0.019 255);
-  --color-panel-muted: oklch(0.225 0.016 255);
+  --color-bg: oklch(0.19 0.018 255);
+  --color-surface: oklch(0.255 0.018 255 / 0.78);
+  --color-surface-hover: oklch(0.31 0.021 255 / 0.86);
+  --color-surface-active: oklch(0.37 0.026 255 / 0.94);
+  --color-panel: oklch(0.245 0.018 255 / 0.72);
+  --color-panel-muted: oklch(0.295 0.02 255 / 0.58);
 
   /* Text */
   --color-text-primary: oklch(0.925 0.012 255);
@@ -90,8 +94,8 @@
   --color-info-muted: oklch(0.29 0.035 235);
 
   /* Borders */
-  --color-border: oklch(0.36 0.018 255);
-  --color-border-light: oklch(0.31 0.016 255);
+  --color-border: oklch(0.42 0.02 255 / 0.72);
+  --color-border-light: oklch(0.35 0.018 255 / 0.58);
 
   /* Progress / Ring */
   --color-ring-track: oklch(0.31 0.016 255);
@@ -102,12 +106,16 @@
   --color-overlay: oklch(0.05 0.01 255 / 0.48);
 
   /* Misc */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 6px;
-  --radius-xl: 8px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
   --shadow-none: none;
   --shadow-panel: 0 24px 50px oklch(0.05 0.01 255 / 0.35);
+  --shadow-float: 0 22px 70px oklch(0.05 0.01 255 / 0.45);
+  --glass-blur: 18px;
+  --dot-grid-base: oklch(0.68 0.08 255 / 0.16);
+  --dot-grid-active: oklch(0.74 0.14 255 / 0.84);
 }
 
 /* ---- Tailwind v4 Theme Integration ---- */
@@ -232,25 +240,98 @@ pre code {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.42;
+  opacity: 0.72;
   overflow: hidden;
   mask-image: linear-gradient(to bottom, transparent, black 18%, black 80%, transparent);
 }
 
 .workbench-ambient-medium {
-  opacity: 0.62;
+  opacity: 0.86;
 }
 
-.workbench-ambient-dots {
-  background-image:
-    radial-gradient(circle at center, var(--color-accent) 0 1px, transparent 1.35px);
-  background-size: 22px 22px;
-  animation: ambient-drift 18s linear infinite;
+.workbench-ambient-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
-@keyframes ambient-drift {
-  from { background-position: 0 0; }
-  to { background-position: 88px 44px; }
+.workbench-glass {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
+}
+
+.workbench-select {
+  height: 2rem;
+  min-width: 0;
+  appearance: none;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
+  background-color: var(--color-surface);
+  background-image: url("data:image/svg+xml,%3Csvg width='14' height='14' viewBox='0 0 14 14' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3.5 5.25 7 8.75l3.5-3.5' fill='none' stroke='%2364758b' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.55rem center;
+  color: var(--color-text-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0 1.9rem 0 0.7rem;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.workbench-select:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background-color: var(--color-surface-hover);
+}
+
+.workbench-select:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-muted);
+}
+
+.workbench-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.workbench-action-card {
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border-light);
+  background: var(--color-panel);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
+}
+
+.workbench-border-glow {
+  box-shadow: 0 0 0 1px var(--color-accent-muted);
+}
+
+.workbench-spotlight {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.workbench-spotlight::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      420px circle at var(--spotlight-x, 50%) var(--spotlight-y, 0%),
+      var(--color-accent-muted),
+      transparent 45%
+    );
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.workbench-spotlight:hover::before,
+.workbench-spotlight:focus-within::before {
+  opacity: 0.95;
 }
 
 .workbench-readable {
@@ -291,9 +372,9 @@ pre code {
   inset: -1px;
   z-index: -1;
   border-radius: inherit;
-  background:
-    linear-gradient(90deg, transparent, var(--color-accent-muted), transparent);
-  opacity: 0.75;
+  border: 1px solid var(--color-accent-muted);
+  background: transparent;
+  opacity: 1;
 }
 
 .workbench-input-dock {
@@ -353,7 +434,7 @@ pre code {
   box-shadow: 0 0 10px var(--color-loader-dot-soft);
   offset-path: path("M 21 6 C 44 6 44 36 21 36 C -2 36 -2 6 21 6 C 34 6 34 36 21 36 C 8 36 8 6 21 6");
   offset-rotate: 0deg;
-  animation: math-curve-travel 1.75s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  animation: math-curve-travel var(--math-curve-speed, 2.85s) cubic-bezier(0.16, 1, 0.3, 1) infinite;
   animation-delay: calc(var(--particle-index) * -0.18s);
 }
 

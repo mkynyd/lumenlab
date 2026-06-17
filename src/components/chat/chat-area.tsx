@@ -67,9 +67,9 @@ export function ChatArea({
       {/* 顶部模型切换栏 */}
       <div
         className={cn(
-          "flex items-center justify-between gap-3 px-4 py-2",
-          "border-b border-[var(--color-border)]",
-          "bg-[var(--color-panel)] shrink-0"
+          "flex min-h-14 items-center justify-between gap-3 px-4 py-2",
+          "border-b border-[var(--color-border-light)]",
+          "bg-[var(--color-panel)] shrink-0 backdrop-blur-[var(--glass-blur)]"
         )}
       >
         <div className="flex items-center gap-3">
@@ -118,7 +118,7 @@ export function ChatArea({
       {/* 消息列表 */}
       {messages.length === 0 ? (
         <div className="relative flex-1 overflow-y-auto">
-          <AmbientField className="opacity-30" />
+          <AmbientField density="wide" className="opacity-75" />
           <div className="relative flex h-full flex-col items-center justify-center px-4 text-center">
             <div
               className={cn(

@@ -11,7 +11,7 @@ const variantStyles = {
   primary:
     "bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:bg-[var(--color-accent-hover)] border-transparent",
   secondary:
-    "bg-[var(--color-surface)] text-[var(--color-text-primary)] border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]",
+    "bg-[var(--color-surface)] text-[var(--color-text-primary)] border-[var(--color-border-light)] hover:bg-[var(--color-surface-hover)] hover:border-[var(--color-accent)]",
   ghost:
     "bg-transparent text-[var(--color-text-secondary)] border-transparent hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
   danger:
@@ -19,7 +19,7 @@ const variantStyles = {
 };
 
 const sizeStyles = {
-  sm: "h-7 px-2.5 text-xs gap-1.5",
+  sm: "h-8 px-3 text-xs gap-1.5",
   md: "h-9 px-3.5 text-sm gap-2",
   lg: "h-11 px-5 text-sm gap-2.5",
 };
@@ -43,7 +43,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || isLoading}
         className={cn(
           "inline-flex items-center justify-center font-medium rounded-[var(--radius-md)]",
-          "border transition-colors duration-150",
+          "border transition-[background-color,border-color,color,box-shadow,transform] duration-150",
           "disabled:opacity-40 disabled:cursor-not-allowed",
           "focus-visible:outline-2 focus-visible:outline-[var(--color-accent)] focus-visible:outline-offset-2",
           variantStyles[variant],
