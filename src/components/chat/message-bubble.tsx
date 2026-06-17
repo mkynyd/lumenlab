@@ -8,6 +8,8 @@ import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import { ChevronDown, ChevronRight, User, Bot, Save } from "lucide-react";
 import { MermaidBlock } from "@/components/chat/mermaid-block";
+import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface MessageBubbleProps {
@@ -75,13 +77,18 @@ function MessageBubbleComponent({
   }
 
   return (
-    <div className={cn("flex gap-3 px-4 py-3", isUser && "flex-row-reverse")}>
+    <div
+      className={cn(
+        "flex gap-3 px-4 py-4 md:px-6",
+        isUser && "flex-row-reverse"
+      )}
+    >
       <div
         className={cn(
-          "flex items-center justify-center w-7 h-7 rounded-[var(--radius-sm)] shrink-0 mt-0.5",
+          "flex items-center justify-center w-7 h-7 rounded-[var(--radius-md)] shrink-0 mt-0.5 border",
           isUser
-            ? "bg-[var(--color-accent)] text-white"
-            : "bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]"
+            ? "border-transparent bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
+            : "border-[var(--color-border-light)] bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]"
         )}
       >
         {isUser ? <User size={14} /> : <Bot size={14} />}
@@ -89,16 +96,17 @@ function MessageBubbleComponent({
 
       <div className={cn("flex-1 min-w-0", isUser && "flex flex-col items-end")}>
         {reasoningContent && (
-          <div className="mb-2">
+          <div className="mb-2 w-full max-w-[74ch]">
             <button
               onClick={toggleReasoning}
-              className="flex items-center gap-1 text-xs text-[var(--color-text-tertiary)]"
+              className="flex items-center gap-1 rounded-[var(--radius-md)] px-1 py-0.5 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-secondary)]"
+              aria-expanded={showReasoning}
             >
               {showReasoning ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               思考过程
             </button>
             {showReasoning && (
-              <div className="mt-1.5 pl-3 border-l-2 border-[var(--color-border)] text-xs whitespace-pre-wrap">
+              <div className="mt-1.5 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-panel-muted)] px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap text-[var(--color-text-secondary)]">
                 {reasoningContent}
               </div>
             )}
@@ -107,10 +115,10 @@ function MessageBubbleComponent({
 
         <div
           className={cn(
-            "text-sm leading-relaxed",
+            "text-sm",
             isUser
-              ? "bg-[var(--color-accent-muted)] px-3 py-2 rounded-[var(--radius-md)] max-w-[85%]"
-              : "text-[var(--color-text-primary)]"
+              ? "max-w-[85%] rounded-[var(--radius-lg)] border border-[var(--color-accent-muted)] bg-[var(--color-accent-soft)] px-3 py-2 leading-relaxed"
+              : "workbench-readable text-[var(--color-text-primary)]"
           )}
         >
           {content ? (
@@ -143,7 +151,14 @@ function MessageBubbleComponent({
               </ReactMarkdown>
             </div>
           ) : isStreaming ? (
-            <span className="typing-cursor" />
+            <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-panel)] px-3 py-2">
+              <MathCurveLoader
+                size="sm"
+                variant="lissajous"
+                label="等待模型响应"
+                detail="正在建立输出流"
+              />
+            </div>
           ) : null}
           {isStreaming && content && <span className="typing-cursor" />}
         </div>
@@ -153,36 +168,41 @@ function MessageBubbleComponent({
             <button
               type="button"
               onClick={() => setShowSave((current) => !current)}
-              className="flex items-center gap-1 text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)]"
+              className="flex items-center gap-1 rounded-[var(--radius-md)] px-1 py-0.5 text-[11px] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-accent)]"
+              aria-expanded={showSave}
             >
               <Save size={12} />
               保存为成果
             </button>
             {showSave && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-panel)] p-2">
                 <input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  className="h-8 min-w-40 rounded border border-[var(--color-border)] bg-transparent px-2 text-xs"
+                  className="h-8 min-w-40 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs"
                   maxLength={150}
+                  aria-label="成果标题"
                 />
                 <select
                   value={type}
                   onChange={(event) => setType(event.target.value)}
-                  className="h-8 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs"
+                  className="h-8 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs"
+                  aria-label="成果类型"
                 >
                   {ARTIFACT_TYPES.map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="primary"
                   disabled={saving || !title.trim()}
                   onClick={saveArtifact}
-                  className="h-8 rounded bg-[var(--color-accent)] px-3 text-xs text-white disabled:opacity-50"
+                  isLoading={saving}
                 >
                   {saving ? "保存中" : "保存"}
-                </button>
+                </Button>
               </div>
             )}
           </div>

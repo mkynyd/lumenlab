@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
 
@@ -132,7 +133,7 @@ export function VirtualMessageList({
   }, []);
 
   return (
-    <div ref={parentRef} className="flex-1 overflow-y-auto">
+    <div ref={parentRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)]">
       <div
         className="relative w-full"
         style={{ height: `${virtualizer.getTotalSize()}px` }}
@@ -162,21 +163,10 @@ export function VirtualMessageList({
             setPinned(false);
             userAtBottomRef.current = true;
           }}
-          className="fixed bottom-24 right-8 z-20 flex size-10 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg transition-opacity hover:bg-[var(--color-bg)]"
+          className="fixed bottom-24 right-8 z-20 flex size-10 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] shadow-[var(--shadow-panel)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
           aria-label="滚动到底部"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <path d="M4 6l4 4 4-4" />
-          </svg>
+          <ArrowDown size={16} strokeWidth={2} aria-hidden="true" />
         </button>
       )}
     </div>

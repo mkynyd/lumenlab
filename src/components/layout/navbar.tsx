@@ -41,7 +41,7 @@ export function Navbar({ onMenuToggle, sidebarCollapsed = false }: NavbarProps) 
       className={cn(
         "h-12 shrink-0 flex items-center justify-between px-4",
         "border-b border-[var(--color-border)]",
-        "bg-[var(--color-surface)]"
+        "bg-[var(--color-panel)]"
       )}
     >
       {/* 左侧 */}
@@ -104,7 +104,7 @@ export function Navbar({ onMenuToggle, sidebarCollapsed = false }: NavbarProps) 
               className={cn(
                 "absolute right-0 top-full mt-1 w-48 py-1 z-50",
                 "border border-[var(--color-border)] rounded-[var(--radius-md)]",
-                "bg-[var(--color-surface)]"
+                "bg-[var(--color-panel)] shadow-[var(--shadow-panel)]"
               )}
             >
               <Link

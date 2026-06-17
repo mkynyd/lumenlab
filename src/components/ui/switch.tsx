@@ -20,7 +20,7 @@ export function Switch({
   return (
     <label
       className={cn(
-        "inline-flex items-center gap-2 cursor-pointer select-none",
+        "inline-flex shrink-0 items-center gap-2 cursor-pointer select-none",
         disabled && "opacity-50 cursor-not-allowed",
         className
       )}
@@ -41,14 +41,14 @@ export function Switch({
       >
         <span
           className={cn(
-            "inline-block h-3.5 w-3.5 rounded-full bg-white",
+            "inline-block h-3.5 w-3.5 rounded-full bg-[var(--color-accent-contrast)]",
             "transition-transform duration-150",
             checked ? "translate-x-[18px]" : "translate-x-[2px]"
           )}
         />
       </button>
       {label && (
-        <span className="text-sm text-[var(--color-text-secondary)]">{label}</span>
+        <span className="whitespace-nowrap text-sm text-[var(--color-text-secondary)]">{label}</span>
       )}
     </label>
   );

@@ -17,6 +17,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useProjectFiles } from "@/lib/hooks/use-project-files";
+import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
 
 interface ProjectData {
   id: string;
@@ -88,12 +89,16 @@ export function ProjectSidebar({
   const filesQuery = useProjectFiles(project.id, project.files || []);
   const files = filesQuery.data || project.files || [];
   const failedCount = files.filter((file) => file.status === "failed").length;
+  const parsingCount = files.filter((file) => file.status === "parsing").length;
+  const enhancingCount = files.filter((file) => file.enhancementStatus === "enhancing").length;
   const categorizableCount = files.filter((file) =>
     ["parsed", "partial"].includes(file.status)
   ).length;
+  const selectedCount = selectedFileIds.size;
+  const parsedCount = files.filter((file) => ["parsed", "partial"].includes(file.status)).length;
 
   return (
-    <div className={cn("flex h-full flex-col overflow-hidden", className)}>
+    <div className={cn("flex h-full flex-col overflow-hidden bg-[var(--color-panel)]", className)}>
       <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-[var(--color-border)] p-3">
         <Link
           href="/projects"
@@ -110,7 +115,7 @@ export function ProjectSidebar({
           href="/projects/new"
           className={cn(
             "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-2 text-sm font-medium",
-            "border border-transparent bg-[var(--color-accent)] text-white",
+            "border border-transparent bg-[var(--color-accent)] text-[var(--color-accent-contrast)]",
             "transition-colors duration-150 hover:bg-[var(--color-accent-hover)]"
           )}
         >
@@ -120,7 +125,7 @@ export function ProjectSidebar({
       </div>
 
       {/* 项目信息 */}
-      <div className="p-4 border-b border-[var(--color-border)] shrink-0">
+      <div className="shrink-0 border-b border-[var(--color-border)] p-4">
         <div className="flex items-center gap-2 mb-1">
           <FolderOpen size={16} strokeWidth={2} className="text-[var(--color-text-tertiary)]" />
           <h2 className="text-sm font-semibold truncate text-[var(--color-text-primary)]">
@@ -135,20 +140,52 @@ export function ProjectSidebar({
             {project.description}
           </p>
         )}
+        <div className="mt-3 grid grid-cols-3 gap-1.5">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1">
+            <p className="font-mono text-[11px] text-[var(--color-text-primary)]">{files.length}</p>
+            <p className="text-[10px] text-[var(--color-text-tertiary)]">资料</p>
+          </div>
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1">
+            <p className="font-mono text-[11px] text-[var(--color-text-primary)]">{parsedCount}</p>
+            <p className="text-[10px] text-[var(--color-text-tertiary)]">可检索</p>
+          </div>
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1">
+            <p className="font-mono text-[11px] text-[var(--color-text-primary)]">{selectedCount}</p>
+            <p className="text-[10px] text-[var(--color-text-tertiary)]">上下文</p>
+          </div>
+        </div>
       </div>
 
       {/* 文件区域 */}
       <div className="flex-1 overflow-y-auto">
-        <div className="px-3 py-2 border-b border-[var(--color-border-light)]">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase tracking-wider">
-              资料文件
-            </span>
-            <span className="text-[10px] font-mono text-[var(--color-text-tertiary)]">
-              {selectedFileIds.size}/{files.length}
+        <div className="border-b border-[var(--color-border-light)] px-3 py-2">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]">
+                资料索引
+              </span>
+              <p className="mt-0.5 text-[10px] text-[var(--color-text-tertiary)]">
+                选择文件会显式参与下一轮回答
+              </p>
+            </div>
+            <span className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-text-tertiary)]">
+              {selectedCount}/{files.length}
             </span>
           </div>
-          <div className="mb-2 flex flex-wrap items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] p-1">
+          {(parsingCount > 0 || enhancingCount > 0) && (
+            <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-info-muted)] bg-[var(--color-info-muted)] px-2 py-1.5">
+              <MathCurveLoader
+                size="sm"
+                variant="lissajous"
+                label={parsingCount > 0 ? "资料解析中" : "知识增强中"}
+                detail={[
+                  parsingCount > 0 ? `${parsingCount} 个解析队列` : null,
+                  enhancingCount > 0 ? `${enhancingCount} 个增强队列` : null,
+                ].filter(Boolean).join("，")}
+              />
+            </div>
+          )}
+          <div className="mb-2 flex flex-wrap items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1">
             <Button
               variant="ghost"
               size="sm"
@@ -182,7 +219,7 @@ export function ProjectSidebar({
                 onSelectFilesByCategory(event.target.value as FileCategory);
                 event.target.value = "";
               }}
-              className="h-7 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-xs disabled:opacity-40"
+              className="h-7 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-xs disabled:opacity-40"
             >
               <option value="">按分类选择</option>
               {FILE_CATEGORIES.map((category) => (
@@ -200,7 +237,7 @@ export function ProjectSidebar({
                 onBatchCategorize(event.target.value as FileCategory);
                 event.target.value = "";
               }}
-              className="h-7 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-xs disabled:opacity-40"
+              className="h-7 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-xs disabled:opacity-40"
             >
               <option value="">修改分类</option>
               {FILE_CATEGORIES.map((category) => (
@@ -228,17 +265,22 @@ export function ProjectSidebar({
               一键强制重新分类
             </Button>
           </div>
-          {selectedFileIds.size > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] p-1">
-              <Button variant="ghost" size="sm" onClick={onBatchDelete}>
-                删除
-              </Button>
-              <Button variant="ghost" size="sm" onClick={onBatchReparse}>
-                重新解析
-              </Button>
-              <Button variant="ghost" size="sm" onClick={onBatchDownload}>
-                下载 Markdown
-              </Button>
+          {selectedCount > 0 && (
+            <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-1.5">
+              <p className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wider text-[var(--color-accent)]">
+                当前上下文 · {selectedCount} 个文件
+              </p>
+              <div className="flex flex-wrap items-center gap-1">
+                <Button variant="ghost" size="sm" onClick={onBatchDelete}>
+                  删除
+                </Button>
+                <Button variant="ghost" size="sm" onClick={onBatchReparse}>
+                  重新解析
+                </Button>
+                <Button variant="ghost" size="sm" onClick={onBatchDownload}>
+                  下载 Markdown
+                </Button>
+              </div>
             </div>
           )}
           <FileUpload

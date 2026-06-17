@@ -29,7 +29,7 @@ export function ModelSelector({
   disabled = false,
 }: ModelSelectorProps) {
   return (
-    <div className="flex items-center gap-1" role="radiogroup" aria-label="Model">
+    <div className="flex shrink-0 items-center gap-1" role="radiogroup" aria-label="Model">
       {models.map((m) => {
         const active = model === m.id;
         return (
@@ -40,10 +40,10 @@ export function ModelSelector({
             disabled={disabled}
             onClick={() => onChange(m.id)}
             className={cn(
-              "px-2.5 py-1 text-xs rounded-[var(--radius-md)]",
+              "rounded-[var(--radius-md)] px-2 py-1 text-xs sm:px-2.5",
               "border transition-colors duration-150",
               active
-                ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]"
+                ? "bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]"
                 : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
             )}
             title={`${m.desc} · ${m.price} per 1M tokens`}

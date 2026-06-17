@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Upload, AlertCircle, Check } from "lucide-react";
 import { useUploadFiles } from "@/lib/hooks/use-project-files";
+import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
 
 interface FileUploadProps {
   projectId: string;
@@ -91,22 +92,26 @@ export function FileUpload({ projectId, onUploaded, className }: FileUploadProps
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         className={cn(
-          "flex flex-col items-center justify-center py-4 px-3 rounded-[var(--radius-md)]",
+          "flex flex-col items-center justify-center rounded-[var(--radius-lg)] px-3 py-4",
           "border border-dashed cursor-pointer transition-colors duration-150",
+          "bg-[var(--color-panel)]",
           dragging
             ? "border-[var(--color-accent)] bg-[var(--color-accent-muted)]"
-            : "border-[var(--color-border)] hover:border-[var(--color-text-tertiary)]"
+            : "border-[var(--color-border)] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
         )}
         onClick={() => inputRef.current?.click()}
       >
         {uploading ? (
-          <span className="text-xs text-[var(--color-text-secondary)]">
-            上传中…
-          </span>
+          <MathCurveLoader
+            size="sm"
+            variant="orbit"
+            label="上传中"
+            detail="准备进入解析队列"
+          />
         ) : (
           <>
             <Upload size={16} strokeWidth={1.5} className="text-[var(--color-text-tertiary)] mb-1" />
-            <span className="text-xs text-[var(--color-text-tertiary)]">
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               点击或拖拽文件上传（≤20MB，支持批量）
             </span>
             <span className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">

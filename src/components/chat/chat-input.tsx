@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { FileText, Paperclip, Send, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
+import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
 import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
@@ -14,6 +15,8 @@ interface ChatInputProps {
   onValueChange?: (value: string) => void;
   attachments?: FileAttachment[];
   onAttachmentsChange?: (files: FileAttachment[]) => void;
+  contextHint?: string;
+  blockedReason?: string;
 }
 
 export function ChatInput({
@@ -25,6 +28,8 @@ export function ChatInput({
   onValueChange,
   attachments = [],
   onAttachmentsChange,
+  contextHint,
+  blockedReason,
 }: ChatInputProps) {
   const [internalValue, setInternalValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -76,17 +81,37 @@ export function ChatInput({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        "flex flex-col gap-2 p-3",
-        "border-t border-[var(--color-border)]",
-        "bg-[var(--color-surface)]"
+        "workbench-input-dock flex flex-col gap-2 border-t border-[var(--color-border)] bg-[var(--color-panel)] p-3"
       )}
     >
+      {(contextHint || blockedReason || isStreaming) && (
+        <div
+          className={cn(
+            "flex min-h-7 flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2 py-1",
+            blockedReason
+              ? "border-[var(--color-warning-muted)] bg-[var(--color-warning-muted)] text-[var(--color-warning)]"
+              : "border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text-secondary)]"
+          )}
+        >
+          <span className="min-w-0 truncate text-[11px]">
+            {blockedReason || contextHint}
+          </span>
+          {isStreaming && (
+            <MathCurveLoader
+              size="sm"
+              variant="orbit"
+              label="生成中"
+              className="shrink-0"
+            />
+          )}
+        </div>
+      )}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {attachments.map((attachment) => (
             <span
               key={attachment.id}
-              className="inline-flex h-7 max-w-56 items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2 text-xs"
+              className="inline-flex h-7 max-w-56 items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs"
               title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
             >
               <FileText size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
@@ -94,7 +119,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => removeAttachment(attachment.id)}
-                className="text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+                className="rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
                 aria-label={`移除附件 ${attachment.name}`}
               >
                 <X size={12} />
@@ -103,7 +128,12 @@ export function ChatInput({
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2">
+      <div
+        className={cn(
+          "flex items-end gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5",
+          "focus-within:border-[var(--color-accent)] focus-within:ring-2 focus-within:ring-[var(--color-accent-muted)]"
+        )}
+      >
         <input
           ref={fileInputRef}
           type="file"
@@ -116,10 +146,10 @@ export function ChatInput({
           disabled={disabled || isStreaming}
           onClick={() => fileInputRef.current?.click()}
           className={cn(
-            "flex items-center justify-center w-10 h-10 shrink-0",
+            "flex items-center justify-center w-9 h-9 shrink-0",
             "rounded-[var(--radius-md)]",
-            "border border-[var(--color-border)]",
-            "bg-[var(--color-bg)] text-[var(--color-text-secondary)]",
+            "border border-[var(--color-border-light)]",
+            "bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]",
             "hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
             "disabled:opacity-40 disabled:cursor-not-allowed",
             "transition-colors duration-150"
@@ -127,26 +157,21 @@ export function ChatInput({
           aria-label="添加附件"
           title="添加附件"
         >
-          <Paperclip size={18} strokeWidth={2} />
+          <Paperclip size={17} strokeWidth={2} />
         </button>
         <textarea
           value={currentValue}
           onChange={(e) => updateValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入消息…"
+          placeholder="输入问题，或让 AI 基于当前资料生成实验报告、复习提纲、代码说明"
           rows={1}
           disabled={disabled}
           className={cn(
-            "flex-1 resize-none max-h-32 py-2.5 px-3 text-sm",
-            "rounded-[var(--radius-md)]",
-            "border border-[var(--color-border)]",
-            "bg-[var(--color-bg)] text-[var(--color-text-primary)]",
-            "placeholder:text-[var(--color-text-tertiary)]",
-            "focus:outline-none focus:border-[var(--color-accent)]",
-            "transition-colors duration-150",
-            "disabled:opacity-50"
+            "flex-1 resize-none max-h-32 border-0 bg-transparent px-1 py-2 text-sm",
+            "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
+            "focus:outline-none disabled:opacity-50"
           )}
-          style={{ minHeight: "40px" }}
+          style={{ minHeight: "36px" }}
           onInput={(e) => {
             const el = e.currentTarget;
             el.style.height = "auto";
@@ -159,32 +184,32 @@ export function ChatInput({
             type="button"
             onClick={onStop}
             className={cn(
-              "flex items-center justify-center w-10 h-10 shrink-0",
+              "flex items-center justify-center w-9 h-9 shrink-0",
               "rounded-[var(--radius-md)]",
               "border border-[var(--color-error-muted)]",
               "bg-[var(--color-error-muted)] text-[var(--color-error)]",
-              "hover:bg-[var(--color-error)] hover:text-white",
+              "hover:bg-[var(--color-error)] hover:text-[var(--color-accent-contrast)]",
               "transition-colors duration-150"
             )}
             aria-label="停止生成"
           >
-            <StopCircle size={18} strokeWidth={2} />
+            <StopCircle size={17} strokeWidth={2} />
           </button>
         ) : (
           <button
             type="submit"
             disabled={!hasSendableContent || disabled}
             className={cn(
-              "flex items-center justify-center w-10 h-10 shrink-0",
+              "flex items-center justify-center w-9 h-9 shrink-0",
               "rounded-[var(--radius-md)]",
-              "bg-[var(--color-accent)] text-white",
+              "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]",
               "hover:bg-[var(--color-accent-hover)]",
               "disabled:opacity-40 disabled:cursor-not-allowed",
               "transition-colors duration-150"
             )}
             aria-label="发送消息"
           >
-            <Send size={18} strokeWidth={2} />
+            <Send size={17} strokeWidth={2} />
           </button>
         )}
       </div>

@@ -86,7 +86,7 @@ export function Sidebar({
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-64 flex-col overflow-hidden",
-          "border-r border-[var(--color-border)] bg-[var(--color-surface)]",
+          "border-r border-[var(--color-border)] bg-[var(--color-panel)]",
           "transition-[transform,width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
           "lg:static lg:translate-x-0",
@@ -124,7 +124,7 @@ export function Sidebar({
               "flex h-10 items-center gap-2.5 rounded-[var(--radius-md)] px-3 text-sm font-medium",
               "transition-colors duration-150",
               activeSection === "chat"
-                ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
+                ? "workbench-glow bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
               collapsed && "lg:justify-center lg:px-0"
             )}
@@ -143,7 +143,7 @@ export function Sidebar({
               "flex h-10 items-center gap-2.5 rounded-[var(--radius-md)] px-3 text-sm font-medium",
               "transition-colors duration-150",
               activeSection === "projects"
-                ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
+                ? "workbench-glow bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
               collapsed && "lg:justify-center lg:px-0"
             )}
@@ -187,11 +187,11 @@ export function Sidebar({
 
           <div className="flex-1 overflow-y-auto px-2 pb-2">
             {isLoading ? (
-              <div className="space-y-1 px-2">
+              <div className="space-y-1 px-2" role="status" aria-label="正在加载工作区列表">
                 {[1, 2, 3].map((item) => (
                   <div
                     key={item}
-                    className="h-9 animate-pulse rounded-[var(--radius-md)] bg-[var(--color-surface-hover)]"
+                    className="h-9 animate-pulse rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)]"
                   />
                 ))}
               </div>
@@ -207,7 +207,7 @@ export function Sidebar({
                         "group flex h-9 items-center gap-2 rounded-[var(--radius-md)] px-2 text-sm",
                         "transition-colors duration-100 hover:bg-[var(--color-surface-hover)]",
                         activeConversationId === conversation.id
-                          ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
+                          ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                           : "text-[var(--color-text-secondary)]"
                       )}
                     >
@@ -248,7 +248,7 @@ export function Sidebar({
                       "flex min-h-10 items-center gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-sm",
                       "transition-colors duration-100 hover:bg-[var(--color-surface-hover)]",
                       activeProjectId === project.id
-                        ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
+                        ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                         : "text-[var(--color-text-secondary)]"
                     )}
                   >

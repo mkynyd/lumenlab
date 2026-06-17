@@ -9,13 +9,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles = {
   primary:
-    "bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] border-transparent",
+    "bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:bg-[var(--color-accent-hover)] border-transparent",
   secondary:
     "bg-[var(--color-surface)] text-[var(--color-text-primary)] border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]",
   ghost:
     "bg-transparent text-[var(--color-text-secondary)] border-transparent hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
   danger:
-    "bg-[var(--color-error)] text-white hover:opacity-90 border-transparent",
+    "bg-[var(--color-error)] text-[var(--color-accent-contrast)] hover:opacity-90 border-transparent",
 };
 
 const sizeStyles = {
@@ -58,7 +58,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
               "inline-block border-2 rounded-full animate-spin",
               size === "sm" ? "w-3 h-3" : "w-4 h-4",
               variant === "primary" || variant === "danger"
-                ? "border-white/30 border-t-white"
+                ? "border-[var(--color-accent-contrast)]/30 border-t-[var(--color-accent-contrast)]"
                 : "border-[var(--color-text-tertiary)]/30 border-t-[var(--color-text-secondary)]"
             )}
           />

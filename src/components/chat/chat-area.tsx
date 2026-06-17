@@ -10,6 +10,7 @@ import { TokenUsageBar } from "@/components/chat/token-usage-bar";
 import { ContextRing } from "@/components/chat/context-ring";
 import { CostDisplay } from "@/components/chat/cost-display";
 import { Switch } from "@/components/ui/switch";
+import { AmbientField } from "@/components/workbench/ambient-field";
 import { AlertCircle, Hash } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -62,13 +63,13 @@ export function ChatArea({
     usage?.completionTokens || Math.round(totalTokens * 0.6);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-[var(--color-bg)]">
       {/* 顶部模型切换栏 */}
       <div
         className={cn(
-          "flex items-center justify-between px-4 py-2",
+          "flex items-center justify-between gap-3 px-4 py-2",
           "border-b border-[var(--color-border)]",
-          "bg-[var(--color-surface)] shrink-0"
+          "bg-[var(--color-panel)] shrink-0"
         )}
       >
         <div className="flex items-center gap-3">
@@ -116,21 +117,22 @@ export function ChatArea({
 
       {/* 消息列表 */}
       {messages.length === 0 ? (
-        <div className="flex-1 overflow-y-auto">
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+        <div className="relative flex-1 overflow-y-auto">
+          <AmbientField className="opacity-30" />
+          <div className="relative flex h-full flex-col items-center justify-center px-4 text-center">
             <div
               className={cn(
-                "flex items-center justify-center w-12 h-12 mb-4 rounded-[var(--radius-md)]",
+                "mb-4 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)]",
                 "border border-[var(--color-border)]",
-                "bg-[var(--color-surface)]"
+                "bg-[var(--color-panel)] shadow-[var(--shadow-panel)]"
               )}
             >
               <Hash size={24} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
             </div>
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">
+            <h2 className="mb-2 text-lg font-semibold text-[var(--color-text-primary)]">
               开始对话
             </h2>
-            <p className="text-sm text-[var(--color-text-secondary)] max-w-sm">
+            <p className="max-w-sm text-sm leading-relaxed text-[var(--color-text-secondary)]">
               选择一个模型，切换思考模式，然后发送消息即可与 DeepSeek 开始对话。
             </p>
           </div>
@@ -156,6 +158,7 @@ export function ChatArea({
         isStreaming={isStreaming}
         attachments={attachments}
         onAttachmentsChange={setAttachments}
+        contextHint="普通对话模式，未绑定项目资料"
       />
     </div>
   );

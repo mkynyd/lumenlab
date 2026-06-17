@@ -62,8 +62,8 @@ function ActionButton({
       }
       disabled={disabled}
       className={cn(
-        "px-2.5 py-1 text-xs rounded-[var(--radius-md)]",
-        "border border-[var(--color-border)]",
+        "rounded-[var(--radius-md)] px-2.5 py-1 text-xs",
+        "border border-[var(--color-border-light)] bg-[var(--color-panel)]",
         "text-[var(--color-text-secondary)]",
         "hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)]",
         "transition-colors duration-150 whitespace-nowrap",
@@ -92,7 +92,7 @@ export function QuickTaskBar({
   const customActions = resolvedActions.filter((action) => action.isSystem === false);
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+    <div className={cn("workbench-animated-list flex flex-wrap items-center gap-1.5", className)}>
       {systemActions.map((action) => (
         <ActionButton
           key={action.id || action.title}
@@ -108,7 +108,7 @@ export function QuickTaskBar({
             onClick={() => setCustomOpen((current) => !current)}
             className={cn(
               "inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-[var(--radius-md)]",
-              "border border-[var(--color-border)] text-[var(--color-text-secondary)]",
+              "border border-[var(--color-border-light)] bg-[var(--color-panel)] text-[var(--color-text-secondary)]",
               "hover:bg-[var(--color-surface-hover)] transition-colors duration-150"
             )}
             aria-expanded={customOpen}

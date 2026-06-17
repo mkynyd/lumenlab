@@ -39,7 +39,7 @@ export default function ChatLayout({
   return (
     <SessionProvider>
       <QueryProvider>
-        <div className="h-screen flex flex-col">
+        <div className="h-screen flex flex-col bg-[var(--color-bg)]">
           <Navbar
             sidebarCollapsed={sidebarCollapsed}
             onMenuToggle={toggleSidebar}

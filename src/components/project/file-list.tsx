@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import { Button } from "@/components/ui/button";
+import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
 
 export interface ProjectFile {
   id: string;
@@ -59,6 +60,7 @@ function formatSize(bytes: number): string {
 
 function statusLabel(file: ProjectFile) {
   const parser = file.processingMetadata?.parser;
+  const chipClass = "inline-flex items-center gap-0.5 rounded-[var(--radius-sm)] px-1.5 py-0.5";
   if (file.status === "parsed") {
     const base =
       parser === "pdf-text"
@@ -76,21 +78,21 @@ function statusLabel(file: ProjectFile) {
         : file.enhancementStatus === "stale"
           ? " · 增强已过期"
           : "";
-    return <span className="text-[var(--color-success)]"><Check size={10} className="inline mr-0.5" />{base}{enhanced}</span>;
+    return <span className={cn(chipClass, "bg-[var(--color-success-muted)] text-[var(--color-success)]")}><Check size={10} />{base}{enhanced}</span>;
   }
   if (file.status === "partial") {
-    return <span className="text-[var(--color-warning)]"><AlertCircle size={10} className="inline mr-0.5" />部分解析成功</span>;
+    return <span className={cn(chipClass, "bg-[var(--color-warning-muted)] text-[var(--color-warning)]")}><AlertCircle size={10} />部分解析成功</span>;
   }
   if (file.status === "parsing") {
-    return <span className="text-[var(--color-warning)]">解析中</span>;
+    return <span className={cn(chipClass, "bg-[var(--color-info-muted)] text-[var(--color-info)]")}>解析中</span>;
   }
   if (file.status === "failed") {
-    return <span className="text-[var(--color-error)]"><XCircle size={10} className="inline mr-0.5" />解析失败</span>;
+    return <span className={cn(chipClass, "bg-[var(--color-error-muted)] text-[var(--color-error)]")}><XCircle size={10} />解析失败</span>;
   }
   if (file.status === "unsupported") {
     return <span>暂不支持</span>;
   }
-  return <span className="text-[var(--color-warning)]"><AlertCircle size={10} className="inline mr-0.5" />待解析</span>;
+  return <span className={cn(chipClass, "bg-[var(--color-warning-muted)] text-[var(--color-warning)]")}><AlertCircle size={10} />待解析</span>;
 }
 
 function parsingStageLabel(file: ProjectFile) {
@@ -184,13 +186,13 @@ export function FileList({
       <div
         key={file.id}
         className={cn(
-          "rounded-[var(--radius-md)] border",
+          "rounded-[var(--radius-lg)] border transition-colors duration-150",
           selected
-            ? "bg-[var(--color-accent-muted)] border-[var(--color-accent)]"
-            : "border-transparent hover:bg-[var(--color-surface-hover)]"
+            ? "workbench-glow border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
+            : "border-transparent bg-transparent hover:bg-[var(--color-surface-hover)]"
         )}
       >
-        <div className="flex items-center">
+        <div className="p-1">
           <button
             type="button"
             role="checkbox"
@@ -203,33 +205,36 @@ export function FileList({
                 index,
               })
             }
-            className="flex flex-1 min-w-0 items-center gap-2 px-2 py-1.5 text-left"
+            className="flex w-full min-w-0 items-start gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-left hover:bg-[var(--color-surface-hover)]"
           >
-            <FileText size={14} className="shrink-0 opacity-70" />
+            <FileText size={14} className="mt-0.5 shrink-0 opacity-70" />
             <div className="flex-1 min-w-0">
-              <p className="text-xs truncate">{file.originalName}</p>
-              <p className="text-[10px] font-mono text-[var(--color-text-tertiary)]">
-                {formatSize(file.size)} · {statusLabel(file)}
+              <p className="truncate text-xs font-medium">{file.originalName}</p>
+              <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] font-mono text-[var(--color-text-tertiary)]">
+                <span>{formatSize(file.size)}</span>
+                {statusLabel(file)}
               </p>
               {file.status === "parsing" && (
-                <div className="mt-1 space-y-1">
+                <div className="mt-1 space-y-1 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-panel)] px-2 py-1.5">
                   <div
                     role="progressbar"
                     aria-label={`${file.originalName} 解析进度`}
                     className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-ring-track)]"
                   >
-                    <div className="h-full w-1/2 animate-pulse rounded-full bg-[var(--color-warning)]" />
+                    <div className="h-full w-1/2 animate-pulse rounded-full bg-[var(--color-info)]" />
                   </div>
-                  <p className="text-[10px] text-[var(--color-warning)]">
-                    {progress
+                  <MathCurveLoader
+                    size="sm"
+                    variant="rose"
+                    label={progress
                       ? `解析中：${progress.extractedPages}/${progress.totalPages} 页`
                       : parsingStageLabel(file)}
-                  </p>
+                  />
                 </div>
               )}
             </div>
           </button>
-          <div className="mr-1 flex shrink-0 items-center gap-0.5">
+          <div className="mt-1 flex flex-wrap items-center gap-1 border-t border-[var(--color-border-light)] px-1 pt-1">
             {onCategoryChange && (
               <select
                 value={file.category || ""}
@@ -240,7 +245,7 @@ export function FileList({
                   )
                 }
                 onClick={(event) => event.stopPropagation()}
-                className="h-7 max-w-20 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-[10px]"
+                className="h-7 min-w-24 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-[10px]"
                 aria-label={`修改 ${file.originalName} 分类`}
               >
                 <option value="">未分类</option>
@@ -251,7 +256,7 @@ export function FileList({
                 ))}
               </select>
             )}
-            {file.status === "parsing" && <Loader size={12} className="animate-spin" />}
+            {file.status === "parsing" && <Loader size={12} className="animate-spin text-[var(--color-info)]" />}
             {canParse && onParse && (
               <Button type="button" variant="ghost" size="sm" onClick={() => onParse(file)} aria-label={`解析 ${file.originalName}`} title="重新解析">
                 <ScanText size={12} />
@@ -279,11 +284,11 @@ export function FileList({
   }
 
   return (
-    <div className={cn("space-y-0.5", className)}>
+    <div className={cn("workbench-animated-list space-y-1", className)}>
       {groupedFiles(files).map((group) => {
         const open = isGroupOpen(group.category);
         return (
-          <div key={group.category} className="space-y-0.5">
+          <div key={group.category} className="space-y-1">
             <button
               type="button"
               onClick={() => toggleGroup(group.category)}

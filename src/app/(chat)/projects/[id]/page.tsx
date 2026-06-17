@@ -11,7 +11,9 @@ import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ContextRing } from "@/components/chat/context-ring";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, Hash, Loader, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { AlertCircle, Hash, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { AmbientField } from "@/components/workbench/ambient-field";
+import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
 import { useChat, type SendMessageInput } from "@/lib/hooks/use-chat";
 import type { FileAttachment } from "@/lib/chat/router";
 import type {
@@ -420,7 +422,12 @@ export default function ProjectDetailPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader size={20} strokeWidth={1.5} className="animate-spin text-[var(--color-text-tertiary)]" />
+        <MathCurveLoader
+          size="md"
+          variant="lissajous"
+          label="加载项目工作台"
+          detail="正在读取资料索引"
+        />
       </div>
     );
   }
@@ -439,6 +446,23 @@ export default function ProjectDetailPage() {
   }
 
   const projectType = project.type as ProjectType;
+  const projectModeLabel =
+    projectType === "experiment"
+      ? "实验工作台"
+      : projectType === "review"
+        ? "资料复习"
+        : projectType === "coding"
+          ? "代码项目"
+          : "通用模式";
+  const contextHint =
+    selectedFileIds.size > 0
+      ? `当前上下文：${selectedFileIds.size} 个已选文件`
+      : project.files.length > 0
+        ? "未选择文件，系统会在当前项目中自动检索"
+        : "等待上传资料后构建项目上下文";
+  const blockedReason = hasParsingFiles
+    ? "文件解析中，消息会等待资料就绪后发送"
+    : undefined;
 
   return (
     <div className="relative flex h-full overflow-hidden">
@@ -507,16 +531,16 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* 右侧工作区 */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-[var(--color-bg)]">
         {/* 顶部信息栏 */}
         <div
           className={cn(
-            "flex items-center justify-between px-4 py-2",
+            "flex items-center justify-between gap-3 px-4 py-2",
             "border-b border-[var(--color-border)]",
-            "bg-[var(--color-surface)] shrink-0"
+            "bg-[var(--color-panel)] shrink-0"
           )}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={toggleProjectSidebar}
               className={cn(
@@ -542,24 +566,27 @@ export default function ProjectDetailPage() {
                 )}
               </span>
             </button>
-            <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
-              {project.name}
-            </span>
-            <span className="hidden sm:inline text-[11px] font-mono text-[var(--color-text-tertiary)]">
-              {projectType === "experiment"
-                ? "实验工作台"
-                : projectType === "review"
-                  ? "资料复习"
-                  : projectType === "coding"
-                    ? "代码项目"
-                    : "通用模式"}
-            </span>
-            <span className="text-[11px] font-mono text-[var(--color-text-secondary)]">
-              已选 {selectedFileIds.size} 个文件
-            </span>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
+                  {project.name}
+                </span>
+                <span className="hidden rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-text-tertiary)] sm:inline">
+                  {projectModeLabel}
+                </span>
+              </div>
+              <p className="hidden truncate text-[11px] text-[var(--color-text-tertiary)] sm:block">
+                {contextHint}
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => setShowArtifacts(true)}>
+          <div className="flex min-w-0 shrink-0 items-center gap-2 overflow-x-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowArtifacts(true)}
+              className="shrink-0"
+            >
               成果库
             </Button>
             <ModelSelector model={model} onChange={setModel} disabled={isStreaming} />
@@ -567,6 +594,7 @@ export default function ProjectDetailPage() {
               checked={thinkingEnabled}
               onChange={setThinkingEnabled}
               label="思考模式"
+              className="[&>span]:hidden sm:[&>span]:inline"
             />
             {usage && (
               <ContextRing used={usage.totalTokens} />
@@ -575,7 +603,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* 快捷任务按钮 */}
-        <div className="px-4 py-2 border-b border-[var(--color-border-light)] shrink-0">
+        <div className="border-b border-[var(--color-border-light)] bg-[var(--color-surface)] px-4 py-2 shrink-0">
           <QuickTaskBar
             projectType={projectType}
             actions={project.quickActions}
@@ -586,13 +614,14 @@ export default function ProjectDetailPage() {
 
         {/* 消息区域 */}
         {messages.length === 0 ? (
-          <div className="flex-1 overflow-y-auto">
-            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+          <div className="relative flex-1 overflow-y-auto">
+            <AmbientField className="opacity-35" />
+            <div className="relative flex h-full flex-col items-center justify-center px-4 text-center">
               <div
                 className={cn(
-                  "flex items-center justify-center w-12 h-12 mb-4 rounded-[var(--radius-md)]",
+                  "mb-4 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)]",
                   "border border-[var(--color-border)]",
-                  "bg-[var(--color-surface)]"
+                  "bg-[var(--color-panel)] shadow-[var(--shadow-panel)]"
                 )}
               >
                 <Hash size={24} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
@@ -601,11 +630,11 @@ export default function ProjectDetailPage() {
                 {project.name}
               </h2>
               {selectedFileIds.size > 0 ? (
-                <p className="text-sm text-[var(--color-text-secondary)]">
+                <p className="max-w-md text-sm leading-relaxed text-[var(--color-text-secondary)]">
                   已选择 {selectedFileIds.size} 个文件作为上下文，点击快捷任务或输入问题开始对话
                 </p>
               ) : (
-                <p className="text-sm text-[var(--color-text-secondary)] max-w-sm">
+                <p className="max-w-sm text-sm leading-relaxed text-[var(--color-text-secondary)]">
                   上传实验截图、代码、数据表、课件或试卷，开始构建项目上下文
                 </p>
               )}
@@ -638,17 +667,26 @@ export default function ProjectDetailPage() {
           </div>
         )}
         {fileMessage && (
-          <div className="mx-4 mb-2 flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-xs">
+          <div className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
             <span>{fileMessage}</span>
-            <button onClick={() => setFileMessage(null)}>关闭</button>
+            <button
+              onClick={() => setFileMessage(null)}
+              className="rounded-[var(--radius-sm)] px-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+            >
+              关闭
+            </button>
           </div>
         )}
 
         {/* 输入框 */}
         {hasParsingFiles && (
-          <div className="mx-4 mb-2 flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-            <Loader size={12} className="animate-spin" />
-            <span>文件解析中，请稍候...</span>
+          <div className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-info-muted)] bg-[var(--color-info-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+            <MathCurveLoader
+              size="sm"
+              variant="rose"
+              label="文件解析中"
+              detail="消息会等待资料完成后发送"
+            />
             {pendingMessageQueue.length > 0 && (
               <span className="font-mono">已排队 {pendingMessageQueue.length} 条</span>
             )}
@@ -663,9 +701,11 @@ export default function ProjectDetailPage() {
           onValueChange={setChatInputValue}
           attachments={chatAttachments}
           onAttachmentsChange={setChatAttachments}
+          contextHint={contextHint}
+          blockedReason={blockedReason}
         />
         {project.files.length > 0 && selectedFileIds.size === 0 && (
-          <p className="px-4 pb-2 -mt-1 text-[11px] text-[var(--color-text-tertiary)] bg-[var(--color-surface)]">
+          <p className="-mt-1 bg-[var(--color-panel)] px-4 pb-2 text-[11px] text-[var(--color-text-tertiary)]">
             未选择文件时，系统会在当前项目中进行关键词检索。
           </p>
         )}
