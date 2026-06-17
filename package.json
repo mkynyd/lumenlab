@@ -25,6 +25,7 @@
     "docx": "^9.7.1",
     "fonteditor-core": "^2.6.3",
     "highlight.js": "^11.11.1",
+    "iconoir-react": "^7.11.0",
     "ioredis": "^5.11.1",
     "katex": "^0.17.0",
     "lucide-react": "^1.18.0",

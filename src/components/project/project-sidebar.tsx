@@ -12,16 +12,18 @@ import { Button } from "@/components/ui/button";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import {
-  ArrowLeft,
-  FolderOpen,
-  MessageSquare,
-  Plus,
-  RotateCcw,
-  Trash2,
   Download,
-} from "lucide-react";
+  Folder,
+  MagicWand,
+  NavArrowLeft,
+  Plus,
+  RefreshDouble,
+  ScanQrCode,
+  Trash,
+  ChatLines,
+} from "iconoir-react";
 import { useProjectFiles } from "@/lib/hooks/use-project-files";
-import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
+import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 
 interface ProjectData {
   id: string;
@@ -39,12 +41,7 @@ interface ProjectSidebarProps {
   onSelectAllFiles: () => void;
   onClearFileSelection: () => void;
   onSelectFilesByCategory: (category: FileCategory) => void;
-  onFileDelete: (id: string) => void;
   onFileUploaded: () => void;
-  onFileParse: (file: ProjectFile) => void;
-  onFileEnhance: (file: ProjectFile) => void;
-  onFileView: (file: ProjectFile) => void;
-  onFileCategoryChange: (id: string, category: FileCategory | null) => void;
   onBatchDelete: () => void;
   onBatchReparse: () => void;
   onBatchAutoCategorize: () => void;
@@ -71,12 +68,7 @@ export function ProjectSidebar({
   onSelectAllFiles,
   onClearFileSelection,
   onSelectFilesByCategory,
-  onFileDelete,
   onFileUploaded,
-  onFileParse,
-  onFileEnhance,
-  onFileView,
-  onFileCategoryChange,
   onBatchDelete,
   onBatchReparse,
   onBatchAutoCategorize,
@@ -101,8 +93,8 @@ export function ProjectSidebar({
   const parsedCount = files.filter((file) => ["parsed", "partial"].includes(file.status)).length;
 
   return (
-    <div className={cn("flex h-full flex-col overflow-hidden bg-[var(--color-panel)] backdrop-blur-[var(--glass-blur)]", className)}>
-      <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-[var(--color-border-light)] p-3">
+    <div className={cn("flex h-full flex-col gap-2 overflow-hidden bg-[var(--color-panel)] p-3 backdrop-blur-[var(--glass-blur)]", className)}>
+      <div className="grid shrink-0 grid-cols-2 gap-2">
         <Link
           href="/projects"
           className={cn(
@@ -111,7 +103,7 @@ export function ProjectSidebar({
             "transition-colors duration-150 hover:bg-[var(--color-surface-hover)]"
           )}
         >
-          <ArrowLeft size={15} strokeWidth={2} />
+          <NavArrowLeft width={15} height={15} strokeWidth={2} />
           项目空间
         </Link>
         <Link
@@ -122,15 +114,15 @@ export function ProjectSidebar({
             "transition-colors duration-150 hover:bg-[var(--color-accent-hover)]"
           )}
         >
-          <Plus size={15} strokeWidth={2} />
+          <Plus width={15} height={15} strokeWidth={2} />
           新建项目
         </Link>
       </div>
 
       {/* 项目信息 */}
-      <div className="shrink-0 border-b border-[var(--color-border-light)] p-4">
+      <div className="shrink-0 px-1 py-2">
         <div className="flex items-center gap-2 mb-1">
-          <FolderOpen size={16} strokeWidth={2} className="text-[var(--color-text-tertiary)]" />
+          <Folder width={16} height={16} strokeWidth={2} className="text-[var(--color-text-tertiary)]" />
           <h2 className="text-sm font-semibold truncate text-[var(--color-text-primary)]">
             {project.name}
           </h2>
@@ -157,7 +149,7 @@ export function ProjectSidebar({
 
       {/* 文件区域 */}
       <div className="flex-1 overflow-y-auto">
-        <div className="border-b border-[var(--color-border-light)] px-3 py-2">
+        <div className="px-0 py-1">
           <div className="mb-2 flex items-center justify-between">
             <div>
               <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]">
@@ -173,7 +165,7 @@ export function ProjectSidebar({
           </div>
           {(parsingCount > 0 || enhancingCount > 0) && (
             <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-info-muted)] bg-[var(--color-info-muted)] px-2 py-1.5">
-              <MathCurveLoader
+              <LoadingIndicator
                 size="sm"
                 variant="lissajous"
                 label={parsingCount > 0 ? "资料解析中" : "知识增强中"}
@@ -202,7 +194,7 @@ export function ProjectSidebar({
                 disabled={failedCount === 0}
                 className="w-full"
               >
-                <RotateCcw size={13} />
+                <RefreshDouble width={13} height={13} strokeWidth={2} />
                 重新解析
               </Button>
             </div>
@@ -211,7 +203,6 @@ export function ProjectSidebar({
                 ariaLabel="筛选"
                 placeholder="筛选"
                 disabled={files.length === 0}
-                labelAlign="center"
                 options={FILE_CATEGORIES.map((category) => ({
                   value: category,
                   label: category,
@@ -225,31 +216,46 @@ export function ProjectSidebar({
                 disabled={categorizableCount === 0}
                 className="w-full"
               >
+                <MagicWand width={13} height={13} strokeWidth={2} />
                 重新分类
               </Button>
             </div>
-          </div>
-          {selectedCount > 0 && (
-            <div className="workbench-border-glow mb-2 rounded-[var(--radius-xl)] border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-2">
-              <p className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-[var(--color-accent)]">
-                当前上下文 · {selectedCount} 个文件
-              </p>
-              <div className="grid grid-cols-3 gap-1.5">
-                <Button variant="secondary" size="sm" onClick={onBatchDelete} className="w-full hover:border-[var(--color-error)] hover:text-[var(--color-error)]">
-                  <Trash2 size={13} />
-                  删除
-                </Button>
-                <Button variant="secondary" size="sm" onClick={onBatchReparse} className="w-full">
-                  <RotateCcw size={13} />
-                  解析
-                </Button>
-                <Button variant="secondary" size="sm" onClick={onBatchDownload} className="w-full">
-                  <Download size={13} />
-                  下载
-                </Button>
-              </div>
+            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onBatchDelete}
+                disabled={selectedCount === 0}
+                className="w-full hover:border-[var(--color-error)] hover:text-[var(--color-error)]"
+                aria-label="删除当前上下文文件"
+                title="删除"
+              >
+                <Trash width={14} height={14} strokeWidth={2} />
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onBatchReparse}
+                disabled={selectedCount === 0}
+                className="w-full"
+                aria-label="重新解析当前上下文文件"
+                title="解析"
+              >
+                <ScanQrCode width={14} height={14} strokeWidth={2} />
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onBatchDownload}
+                disabled={selectedCount === 0}
+                className="w-full"
+                aria-label="下载当前上下文 Markdown"
+                title="下载"
+              >
+                <Download width={14} height={14} strokeWidth={2} />
+              </Button>
             </div>
-          )}
+          </div>
           <FileUpload
             projectId={project.id}
             onUploaded={onFileUploaded}
@@ -258,24 +264,19 @@ export function ProjectSidebar({
             files={files}
             selectedIds={selectedFileIds}
             onToggle={onFileToggle}
-            onDelete={onFileDelete}
-            onParse={onFileParse}
-            onEnhance={onFileEnhance}
-            onView={onFileView}
-            onCategoryChange={onFileCategoryChange}
             defaultGroupsCollapsed
             className="mt-2"
           />
         </div>
 
         {/* 对话列表 */}
-        <div className="px-3 py-2">
+        <div className="px-0 py-2">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase tracking-wider">
               项目对话
             </span>
             <Button variant="ghost" size="sm" onClick={onNewConversation}>
-              <Plus size={12} strokeWidth={2} />
+              <Plus width={12} height={12} strokeWidth={2} />
             </Button>
           </div>
           {project.conversations && project.conversations.length > 0 ? (
@@ -296,7 +297,7 @@ export function ProjectSidebar({
                     onClick={() => onConversationSelect(conv.id)}
                     className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] px-2 text-left"
                   >
-                    <MessageSquare size={12} strokeWidth={2} className="shrink-0 opacity-70" />
+                    <ChatLines width={12} height={12} strokeWidth={2} className="shrink-0 opacity-70" />
                     <span className="truncate flex-1">{conv.title}</span>
                   </button>
                   <button
@@ -309,7 +310,7 @@ export function ProjectSidebar({
                     aria-label={`删除项目对话 ${conv.title}`}
                     title="删除"
                   >
-                    <Trash2 size={12} strokeWidth={2} />
+                    <Trash width={12} height={12} strokeWidth={2} />
                   </button>
                 </div>
               ))}

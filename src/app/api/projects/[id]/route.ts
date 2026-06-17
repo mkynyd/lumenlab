@@ -140,7 +140,12 @@ export async function DELETE(
     return NextResponse.json({ error: "项目不存在" }, { status: 404 });
   }
 
-  await prisma.project.delete({ where: { id } });
+  await prisma.$transaction([
+    prisma.conversation.deleteMany({
+      where: { projectId: id, userId: session.user.id },
+    }),
+    prisma.project.delete({ where: { id } }),
+  ]);
 
   return NextResponse.json({ success: true });
 }

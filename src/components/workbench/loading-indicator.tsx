@@ -3,12 +3,12 @@
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 
-type CurveVariant = "lissajous" | "rose" | "orbit";
+type LoadingVariant = "lissajous" | "rose" | "orbit";
 
-interface MathCurveLoaderProps {
+interface LoadingIndicatorProps {
   label?: string;
   detail?: string;
-  variant?: CurveVariant;
+  variant?: LoadingVariant;
   size?: "sm" | "md" | "lg";
   speed?: "calm" | "normal" | "fast";
   className?: string;
@@ -16,14 +16,14 @@ interface MathCurveLoaderProps {
 
 const particleIndexes = [0, 1, 2, 3, 4, 5];
 
-export function MathCurveLoader({
+export function LoadingIndicator({
   label = "正在计算",
   detail,
   variant = "lissajous",
   size = "md",
   speed = "calm",
   className,
-}: MathCurveLoaderProps) {
+}: LoadingIndicatorProps) {
   const speedMap = {
     calm: "3.25s",
     normal: "2.65s",
@@ -32,25 +32,25 @@ export function MathCurveLoader({
 
   return (
     <div
-      className={cn("math-curve-status", className)}
+      className={cn("loading-indicator-status", className)}
       role="status"
       aria-live="polite"
       aria-label={detail ? `${label}，${detail}` : label}
     >
       <div
-        className={cn("math-curve-loader", `math-curve-${size}`)}
-        data-curve={variant}
-        style={{ "--math-curve-speed": speedMap[speed] } as CSSProperties}
+        className={cn("loading-indicator", `loading-indicator-${size}`)}
+        data-variant={variant}
+        style={{ "--loading-indicator-speed": speedMap[speed] } as CSSProperties}
         aria-hidden="true"
       >
         {particleIndexes.map((index) => (
           <span
             key={index}
-            className="math-curve-particle"
+            className="loading-indicator-dot"
             style={{ "--particle-index": index } as CSSProperties}
           />
         ))}
-        <span className="math-curve-axis" />
+        <span className="loading-indicator-ring" />
       </div>
       <span className="min-w-0">
         <span className="block truncate text-xs font-medium text-[var(--color-text-primary)]">

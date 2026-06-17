@@ -74,7 +74,7 @@ describe("FileList", () => {
     );
   });
 
-  it("shows an indeterminate progress bar and parsing stage for parsing files", () => {
+  it("renders uploaded files as compact selectable rows", () => {
     render(
       <FileList
         files={files}
@@ -83,7 +83,7 @@ describe("FileList", () => {
       />
     );
 
-    expect(screen.getByText("模型解析中")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "实验讲义.pdf 解析进度" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "选择文件 实验讲义.pdf" })).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 });

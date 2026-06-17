@@ -2,9 +2,9 @@
 
 import { useState, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { Upload, AlertCircle, Check } from "lucide-react";
+import { Check, CloudUpload, WarningTriangle } from "iconoir-react";
 import { useUploadFiles } from "@/lib/hooks/use-project-files";
-import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
+import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 
 interface FileUploadProps {
   projectId: string;
@@ -102,7 +102,7 @@ export function FileUpload({ projectId, onUploaded, className }: FileUploadProps
         onClick={() => inputRef.current?.click()}
       >
         {uploading ? (
-          <MathCurveLoader
+          <LoadingIndicator
             size="sm"
             variant="orbit"
             label="上传中"
@@ -110,7 +110,7 @@ export function FileUpload({ projectId, onUploaded, className }: FileUploadProps
           />
         ) : (
           <>
-            <Upload size={16} strokeWidth={1.5} className="text-[var(--color-text-tertiary)] mb-1" />
+            <CloudUpload width={16} height={16} strokeWidth={1.5} className="text-[var(--color-text-tertiary)] mb-1" />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               点击或拖拽文件上传（≤20MB，支持批量）
             </span>
@@ -123,14 +123,14 @@ export function FileUpload({ projectId, onUploaded, className }: FileUploadProps
 
       {error && (
         <div className="flex items-start gap-1 text-xs text-[var(--color-error)]">
-          <AlertCircle size={12} strokeWidth={2} className="shrink-0 mt-0.5" />
+          <WarningTriangle width={12} height={12} strokeWidth={2} className="shrink-0 mt-0.5" />
           <span className="leading-relaxed">{error}</span>
         </div>
       )}
 
       {uploadMutation.data && uploadMutation.data.errors.length === 0 && uploadMutation.data.files.length > 0 && !uploading && (
         <div className="flex items-center gap-1 text-xs text-[var(--color-success)]">
-          <Check size={12} strokeWidth={2} />
+          <Check width={12} height={12} strokeWidth={2} />
           已上传 {uploadMutation.data.files.length} 个文件
         </div>
       )}

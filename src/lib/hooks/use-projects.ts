@@ -84,6 +84,7 @@ export function useDeleteProject() {
     },
     onSuccess: (_data, id) => {
       queryClient.removeQueries({ queryKey: queryKeys.projects.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all });
     },
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all }),

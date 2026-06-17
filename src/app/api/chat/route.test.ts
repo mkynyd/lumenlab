@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   conversationFindFirst: vi.fn(),
   conversationCreate: vi.fn(),
   getProviderApiKey: vi.fn(),
+  retrieveProjectContext: vi.fn(),
+  embedQuery: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -27,6 +29,14 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/data/provider-access", () => ({
   getProviderApiKey: mocks.getProviderApiKey,
+}));
+
+vi.mock("@/lib/rag/vector-store", () => ({
+  retrieveProjectContext: mocks.retrieveProjectContext,
+}));
+
+vi.mock("@/lib/rag/embedding", () => ({
+  embedQuery: mocks.embedQuery,
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -58,6 +68,13 @@ describe("POST /api/chat", () => {
     mocks.getProviderApiKey.mockRejectedValue(
       new Error("当前账户没有可用的 Alpha 访问配置")
     );
+    mocks.retrieveProjectContext.mockResolvedValue({
+      context: "",
+      notice: "未找到可用于回答的项目资料。",
+      usedFileIds: [],
+      truncated: false,
+    });
+    mocks.embedQuery.mockResolvedValue(undefined);
     mocks.conversationCreate.mockResolvedValue({
       id: "conversation-1",
       userId: "user-1",

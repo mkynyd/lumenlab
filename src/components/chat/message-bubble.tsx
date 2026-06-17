@@ -8,7 +8,7 @@ import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import { ChevronDown, ChevronRight, User, Bot, Save } from "lucide-react";
 import { MermaidBlock } from "@/components/chat/mermaid-block";
-import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
+import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 import { Button } from "@/components/ui/button";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { cn } from "@/lib/utils";
@@ -153,7 +153,7 @@ function MessageBubbleComponent({
             </div>
           ) : isStreaming ? (
 	            <div className="rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-panel)] px-3 py-2 shadow-[var(--shadow-panel)] backdrop-blur-[var(--glass-blur)]">
-              <MathCurveLoader
+              <LoadingIndicator
                 size="sm"
                 variant="lissajous"
                 label="等待模型响应"

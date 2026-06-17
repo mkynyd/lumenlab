@@ -5,12 +5,12 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
-  FolderOpen,
-  MessageSquare,
+  ChatLines,
+  Folder,
   Plus,
-  Trash2,
-  X,
-} from "lucide-react";
+  Trash,
+  Xmark,
+} from "iconoir-react";
 import {
   useConversations,
   useDeleteConversation,
@@ -94,7 +94,7 @@ export function Sidebar({
         )}
         aria-label="主导航侧边栏"
       >
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border-light)] px-3">
+        <div className="flex h-14 shrink-0 items-center justify-between px-3">
           <span
             className={cn(
               "whitespace-nowrap text-xs font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]",
@@ -112,7 +112,7 @@ export function Sidebar({
             className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] lg:hidden"
             aria-label="关闭侧边栏"
           >
-            <X size={15} strokeWidth={2} />
+            <Xmark width={15} height={15} strokeWidth={2} />
           </button>
         </div>
 
@@ -131,7 +131,7 @@ export function Sidebar({
             aria-current={activeSection === "chat" ? "page" : undefined}
             title={collapsed ? "展开聊天" : undefined}
           >
-            <MessageSquare size={17} strokeWidth={1.8} className="shrink-0" />
+            <ChatLines width={17} height={17} strokeWidth={1.8} className="shrink-0" />
             <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
               聊天
             </span>
@@ -150,7 +150,7 @@ export function Sidebar({
             aria-current={activeSection === "projects" ? "page" : undefined}
             title={collapsed ? "展开项目" : undefined}
           >
-            <FolderOpen size={17} strokeWidth={1.8} className="shrink-0" />
+            <Folder width={17} height={17} strokeWidth={1.8} className="shrink-0" />
             <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
               项目
             </span>
@@ -176,7 +176,7 @@ export function Sidebar({
               size="md"
               className="w-full"
             >
-              <Plus size={16} strokeWidth={2} />
+              <Plus width={16} height={16} strokeWidth={2} />
               {activeSection === "chat" ? "新对话" : "新建项目"}
             </Button>
           </div>
@@ -211,8 +211,9 @@ export function Sidebar({
                           : "border-transparent text-[var(--color-text-secondary)]"
                       )}
                     >
-                      <MessageSquare
-                        size={14}
+                      <ChatLines
+                        width={14}
+                        height={14}
                         strokeWidth={2}
                         className="shrink-0 opacity-70"
                       />
@@ -222,10 +223,10 @@ export function Sidebar({
                         onClick={(event) =>
                           void deleteConversation(conversation.id, event)
                         }
-                        className="shrink-0 rounded-[2px] p-0.5 opacity-0 transition-all duration-100 hover:bg-[var(--color-error-muted)] hover:text-[var(--color-error)] group-hover:opacity-100"
+	                        className="shrink-0 rounded-[var(--radius-xs)] p-0.5 opacity-0 transition-all duration-100 hover:bg-[var(--color-error-muted)] hover:text-[var(--color-error)] group-hover:opacity-100"
                         aria-label={`删除「${conversation.title}」`}
                       >
-                        <Trash2 size={12} strokeWidth={2} />
+	                        <Trash width={12} height={12} strokeWidth={2} />
                       </button>
                     </Link>
                   ))}
@@ -252,8 +253,9 @@ export function Sidebar({
                         : "border-transparent text-[var(--color-text-secondary)]"
                     )}
                   >
-                    <FolderOpen
-                      size={14}
+                    <Folder
+                      width={14}
+                      height={14}
                       strokeWidth={2}
                       className="shrink-0 opacity-70"
                     />
@@ -273,7 +275,7 @@ export function Sidebar({
 
         <div
           className={cn(
-            "shrink-0 border-t border-[var(--color-border-light)] px-4 py-2",
+	            "shrink-0 px-4 py-2",
             "transition-opacity duration-200 ease-out motion-reduce:transition-none",
             collapsed && "lg:opacity-0"
           )}
