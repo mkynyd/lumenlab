@@ -77,13 +77,13 @@ export default function ProjectsPage() {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-36 animate-pulse rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-surface)]"
+                className="h-36 animate-pulse rounded-[var(--radius-xl)] bg-[var(--color-surface)]"
               />
             ))}
           </div>
         ) : projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-surface)]">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-surface)]">
 		              <Folder width={24} height={24} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
             </div>
             <h2 className="text-base font-medium text-[var(--color-text-primary)] mb-1">
@@ -122,7 +122,7 @@ export default function ProjectsPage() {
 	                      <AlertDialogTrigger asChild>
 	                        <button
 	                          className={cn(
-	                            "shrink-0 rounded-[var(--radius-sm)] border border-transparent p-1.5",
+	                            "shrink-0 rounded-[var(--radius-sm)] p-1.5",
 	                            "opacity-0 group-hover:opacity-100",
 	                            "text-[var(--color-text-tertiary)] hover:text-[var(--color-error)] hover:bg-[var(--color-error-muted)]",
 	                            "transition-all duration-100"

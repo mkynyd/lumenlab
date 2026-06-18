@@ -69,7 +69,7 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
           <KeyRound size={16} className="text-[var(--color-text-tertiary)]" />
           <h2 className="text-sm font-medium">Alpha 服务访问</h2>
         </div>
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-4">
           <div className="flex items-start gap-3">
             <ShieldCheck
               size={18}
@@ -83,7 +83,7 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
             </div>
           </div>
         </div>
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-4">
           <div className="mb-3 flex items-center gap-2">
             <RefreshCw size={14} className="text-[var(--color-text-tertiary)]" />
             <span className="text-sm font-medium">更换注册码</span>
@@ -133,7 +133,7 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
           <Skeleton className="h-32 rounded-[var(--radius-md)]" />
         ) : cacheMetrics.data ? (
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-3">
               <p className="text-[11px] text-[var(--color-text-tertiary)]">
                 近 7 天 Token 命中率
               </p>
@@ -141,7 +141,7 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
                 {(cacheMetrics.data.overall.hitRate * 100).toFixed(1)}%
               </p>
             </div>
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
+            <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-3 text-xs">
               {(["deepseek", "minimax"] as const).map((provider) => (
                 <div key={provider} className="flex justify-between py-1">
                   <span className="capitalize">{provider}</span>
@@ -161,7 +161,7 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium">外观</h2>
-        <div className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+        <div className="flex items-center justify-between rounded-[var(--radius-md)] bg-[var(--color-surface)] p-3">
           <span className="text-sm text-[var(--color-text-secondary)]">主题</span>
           <ThemeToggle />
         </div>
@@ -171,7 +171,7 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium">账户</h2>
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+        <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-3">
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs text-[var(--color-text-tertiary)]">邮箱</span>
             <span className="truncate text-sm">{session?.user?.email}</span>

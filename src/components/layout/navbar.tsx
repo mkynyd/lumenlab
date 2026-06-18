@@ -28,7 +28,7 @@ export function Navbar({ onMenuToggle, sidebarCollapsed = false }: NavbarProps) 
           onClick={onMenuToggle}
           className={cn(
             "inline-flex h-9 w-9 -ml-1 items-center justify-center rounded-[var(--radius-md)]",
-            "border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-sm",
+            "bg-[var(--color-surface)]",
             "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
             "transition-colors duration-150"
           )}

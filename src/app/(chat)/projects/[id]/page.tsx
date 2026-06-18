@@ -440,7 +440,7 @@ export default function ProjectDetailPage() {
               onClick={toggleProjectSidebar}
               className={cn(
 	                "inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)]",
-	                "border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-sm",
+	                "bg-[var(--color-surface)]",
                 "text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
                 "transition-colors duration-150"
               )}
@@ -466,7 +466,7 @@ export default function ProjectDetailPage() {
                 <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
                   {project.name}
                 </span>
-                <span className="hidden rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-text-tertiary)] sm:inline">
+                <span className="hidden rounded-[var(--radius-md)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-text-tertiary)] sm:inline">
                   {projectModeLabel}
                 </span>
               </div>
@@ -508,7 +508,6 @@ export default function ProjectDetailPage() {
               <div
                 className={cn(
 	                  "mb-4 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)]",
-	                  "border border-[var(--color-border)]",
 	                  "bg-[var(--color-panel)]"
 	                )}
               >
@@ -551,7 +550,7 @@ export default function ProjectDetailPage() {
           </div>
         )}
         {fileMessage && (
-          <div className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+          <div className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] bg-[var(--color-panel)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
             <span>{fileMessage}</span>
             <button
               onClick={() => setFileMessage(null)}

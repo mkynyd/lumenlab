@@ -63,7 +63,7 @@ function ActionButton({
       disabled={disabled}
       className={cn(
         "rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
-        "border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-sm",
+        "bg-[var(--color-surface)]",
         "text-[var(--color-text-secondary)]",
         "hover:bg-[var(--color-accent-muted)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)]",
         "transition-[background-color,border-color,color] duration-150 whitespace-nowrap",
@@ -107,7 +107,7 @@ export function QuickTaskBar({
             onClick={() => setCustomOpen((current) => !current)}
             className={cn(
 	              "inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
-	              "border border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] shadow-sm",
+	              "bg-[var(--color-surface)] text-[var(--color-text-secondary)]",
               "hover:bg-[var(--color-surface-hover)] transition-colors duration-150"
             )}
             aria-expanded={customOpen}

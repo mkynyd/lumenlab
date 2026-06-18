@@ -178,14 +178,14 @@ export function Sidebar({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] lg:hidden"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] lg:hidden"
             aria-label="关闭侧边栏"
           >
             <Xmark width={15} height={15} strokeWidth={2} />
           </button>
         </SidebarHeader>
 
-        <SidebarGroup className="mx-2 my-2 w-auto shrink-0 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5">
+        <SidebarGroup className="mx-2 my-2 w-auto shrink-0 rounded-[var(--radius-xl)] bg-[var(--color-surface)] p-1.5">
           <SidebarMenu className="grid min-w-0 grid-cols-2 gap-1 lg:grid-cols-1">
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -370,7 +370,7 @@ export function Sidebar({
               <button
                 type="button"
                 className={cn(
-                  "flex h-11 w-full min-w-0 items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 text-left",
+                  "flex h-11 w-full min-w-0 items-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-surface)] px-2 text-left",
                   "text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
                   collapsed && "lg:justify-center lg:px-0"
                 )}

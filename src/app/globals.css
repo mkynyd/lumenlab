@@ -469,20 +469,18 @@ pre code {
 
 .workbench-glass {
   background: var(--color-panel);
-  border: 1px solid var(--color-border-light);
   box-shadow: var(--shadow-panel);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
 }
 
 .workbench-action-card {
   border-radius: var(--radius-xl);
-  border: 1px solid var(--color-border-light);
   background: var(--color-panel);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
 }
 
 .workbench-border-glow {
-  box-shadow: 0 0 0 1px var(--color-accent-muted);
+  box-shadow: 0 0 18px oklch(from var(--color-accent-muted) l c h / 0.45);
 }
 
 .workbench-spotlight {
