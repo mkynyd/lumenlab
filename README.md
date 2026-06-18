@@ -309,11 +309,6 @@ npm run start
 
 欢迎提交 Issue 和 Pull Request。
 
-开始前请先阅读：
-- [`AGENTS.md`](AGENTS.md) — Agent 行为约束
-- [`REPOSITORY_INDEX.md`](REPOSITORY_INDEX.md) — 仓库索引与架构说明
-- [`docs/project-innovations.md`](docs/project-innovations.md) — 项目创新点详解
-
 ### 开发约定
 
 - 使用 `npm test` 运行测试
