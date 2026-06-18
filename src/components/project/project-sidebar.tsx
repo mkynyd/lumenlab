@@ -206,7 +206,7 @@ export function ProjectSidebar({
 
       {/* 文件区域 */}
       <SidebarContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3">
-        <SidebarGroup className="flex min-h-0 flex-1 flex-col px-0 py-1">
+        <SidebarGroup className="flex min-h-0 shrink-0 flex-col px-0 py-1">
           <div className="mb-2 flex items-center justify-between">
             <div>
               <SidebarGroupLabel className="h-auto px-0 text-xs uppercase tracking-wider">
@@ -337,7 +337,7 @@ export function ProjectSidebar({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <ScrollArea className="min-h-0 w-full flex-1 overflow-x-hidden">
+          <ScrollArea className="max-h-[44vh] min-h-0 w-full overflow-x-hidden">
             <FileList
               files={files}
               selectedIds={selectedFileIds}

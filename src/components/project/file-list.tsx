@@ -6,7 +6,6 @@ import {
   CubeScan,
   Download,
   Eye,
-  NavArrowDown,
   NavArrowRight,
   Page,
   Trash,
@@ -28,6 +27,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 export interface ProjectFile {
   id: string;
@@ -94,11 +98,12 @@ export function FileList({
     return defaultGroupsCollapsed ? openGroups.has(category) : !openGroups.has(category);
   }
 
-  function toggleGroup(category: string) {
+  function setGroupOpen(category: string, open: boolean) {
     setOpenGroups((current) => {
       const next = new Set(current);
-      if (next.has(category)) next.delete(category);
-      else next.add(category);
+      const shouldStore = defaultGroupsCollapsed ? open : !open;
+      if (shouldStore) next.add(category);
+      else next.delete(category);
       return next;
     });
   }
@@ -178,21 +183,40 @@ export function FileList({
         {groupedFiles(files).map((group) => {
           const open = isGroupOpen(group.category);
           return (
-            <div key={group.category} className="flex flex-col gap-1">
-              <button
-                type="button"
-                onClick={() => toggleGroup(group.category)}
-                className="flex h-7 w-full items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] focus-visible:outline-none focus-visible:bg-[var(--color-interaction-hover)]"
-                aria-expanded={open}
-              >
-                <span className="inline-flex items-center gap-1">
-                  {open ? <NavArrowDown width={12} height={12} /> : <NavArrowRight width={12} height={12} />}
-                  {group.category}
-                </span>
-                <span className="font-mono">{group.files.length}</span>
-              </button>
-              {open && group.files.map((file) => renderFile(file, files.indexOf(file)))}
-            </div>
+            <Collapsible
+              key={group.category}
+              open={open}
+              onOpenChange={(nextOpen) => setGroupOpen(group.category, nextOpen)}
+              className="flex flex-col gap-1"
+            >
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-7 w-full items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] focus-visible:outline-none focus-visible:bg-[var(--color-interaction-hover)]"
+                  aria-expanded={open}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    <NavArrowRight
+                      width={12}
+                      height={12}
+                      className={cn(
+                        "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                        open && "rotate-90"
+                      )}
+                    />
+                    {group.category}
+                  </span>
+                  <span className="font-mono">{group.files.length}</span>
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="grid overflow-hidden transition-[grid-template-rows,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-[state=closed]:grid-rows-[0fr] data-[state=closed]:-translate-y-1 data-[state=closed]:opacity-0 data-[state=open]:grid-rows-[1fr] data-[state=open]:translate-y-0 data-[state=open]:opacity-100 motion-reduce:transition-none">
+                <div className="min-h-0 overflow-hidden">
+                  <div className="flex flex-col gap-1 pt-1">
+                    {group.files.map((file) => renderFile(file, files.indexOf(file)))}
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           );
         })}
       </div>
