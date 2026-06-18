@@ -89,8 +89,19 @@ export function useChat(options: UseChatOptions = {}) {
           ? `${content.trim()}\n\n${attachments.map((attachment) => `[附件] ${attachment.name}`).join("\n")}`
           : content.trim(),
       };
+      let streamingId = `assistant-${Date.now()}`;
 
-      setMessages((prev) => [...prev, userMessage]);
+      setMessages((prev) => [
+        ...prev,
+        userMessage,
+        {
+          id: streamingId,
+          role: "assistant",
+          content: "",
+          reasoningContent: null,
+          isStreaming: true,
+        },
+      ]);
 
       try {
         const controller = new AbortController();
@@ -139,19 +150,18 @@ export function useChat(options: UseChatOptions = {}) {
         const reader = response.body?.getReader();
         if (!reader) throw new Error("No response body");
 
-        // Track streaming assistant message
-        const streamingId =
-          response.headers.get("X-Message-Id") || `assistant-${Date.now()}`;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: streamingId,
-            role: "assistant",
-            content: "",
-            reasoningContent: null,
-            isStreaming: true,
-          },
-        ]);
+        const responseMessageId = response.headers.get("X-Message-Id");
+        if (responseMessageId && responseMessageId !== streamingId) {
+          const optimisticId = streamingId;
+          streamingId = responseMessageId;
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === optimisticId
+                ? { ...message, id: responseMessageId }
+                : message
+            )
+          );
+        }
 
         let fullContent = "";
         let fullReasoning = "";

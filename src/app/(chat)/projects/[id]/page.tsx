@@ -8,9 +8,7 @@ import { ProjectSidebar } from "@/components/project/project-sidebar";
 import { QuickTaskBar, type QuickTaskSendInput } from "@/components/chat/quick-task-bar";
 import { ChatInput } from "@/components/chat/chat-input";
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
-import { ModelSelector } from "@/components/chat/model-selector";
 import { ContextRing } from "@/components/chat/context-ring";
-import { Switch } from "@/components/ui/switch";
 import {
   Hashtag,
   SidebarCollapse,
@@ -25,7 +23,6 @@ import type {
   FileSelectionIntent,
 } from "@/components/project/file-list";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
-import type { FileCategory } from "@/lib/file-categories";
 import { ArtifactLibrary } from "@/components/artifact/artifact-library";
 import { Button } from "@/components/ui/button";
 import { useProject } from "@/lib/hooks/use-projects";
@@ -169,17 +166,8 @@ export default function ProjectDetailPage() {
     lastSelectedFileIndexRef.current = null;
   }
 
-  function handleSelectFilesByCategory(category: FileCategory) {
-    setSelectedFileIds(new Set(
-      (project?.files || [])
-        .filter((file) => file.category === category && (file.categoryConfidence ?? 1) >= 0.7)
-        .map((file) => file.id)
-    ));
-  }
-
   async function runBatchAction(
     action: "delete" | "reparse" | "categorize" | "download",
-    category?: FileCategory,
     explicitFileIds?: string[]
   ) {
     const fileIds = explicitFileIds || Array.from(selectedFileIds);
@@ -187,7 +175,7 @@ export default function ProjectDetailPage() {
     const res = await fetch(`/api/projects/${projectId}/files/batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, fileIds, category }),
+      body: JSON.stringify({ action, fileIds }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -215,14 +203,21 @@ export default function ProjectDetailPage() {
     const fileIds = (project?.files || [])
       .filter((file) => file.status === "failed")
       .map((file) => file.id);
-    await runBatchAction("reparse", undefined, fileIds);
+    await runBatchAction("reparse", fileIds);
   }
 
   async function handleBatchAutoCategorize() {
     const fileIds = (project?.files || [])
       .filter((file) => ["parsed", "partial"].includes(file.status))
       .map((file) => file.id);
-    await runBatchAction("categorize", undefined, fileIds);
+    await runBatchAction("categorize", fileIds);
+  }
+
+  async function handleFileAction(
+    action: "delete" | "reparse" | "download",
+    fileId: string
+  ) {
+    await runBatchAction(action, [fileId]);
   }
 
   async function saveArtifact(input: {
@@ -305,8 +300,7 @@ export default function ProjectDetailPage() {
     setChatAttachments([]);
   }
 
-  async function handleConversationDelete(id: string, title: string) {
-    if (!confirm(`确定要删除项目对话「${title}」吗？`)) return;
+  async function handleConversationDelete(id: string) {
     await deleteConversationMutation.mutateAsync(id);
     if (conversationId === id) {
       handleNewConversation();
@@ -408,18 +402,16 @@ export default function ProjectDetailPage() {
             onFileToggle={handleFileToggle}
             onSelectAllFiles={handleSelectAllFiles}
             onClearFileSelection={handleClearFileSelection}
-            onSelectFilesByCategory={handleSelectFilesByCategory}
             onFileUploaded={() => void projectQuery.refetch()}
             onBatchDelete={() => void runBatchAction("delete")}
             onBatchReparse={() => void runBatchAction("reparse")}
             onBatchAutoCategorize={() => void handleBatchAutoCategorize()}
             onBatchReparseFailed={() => void handleBatchReparseFailed()}
             onBatchDownload={() => void runBatchAction("download")}
+            onFileAction={(action, fileId) => void handleFileAction(action, fileId)}
             onNewConversation={handleNewConversation}
             onConversationSelect={handleConversationSelect}
-            onConversationDelete={(id, title) =>
-              void handleConversationDelete(id, title)
-            }
+            onConversationDelete={(id) => void handleConversationDelete(id)}
             activeConversationId={conversationId}
           />
         </div>
@@ -484,18 +476,6 @@ export default function ProjectDetailPage() {
             >
               成果库
             </Button>
-            <ModelSelector model={model} onChange={setModel} disabled={isStreaming} />
-            <label className="inline-flex shrink-0 items-center gap-2">
-              <Switch
-                checked={thinkingEnabled}
-                onCheckedChange={setThinkingEnabled}
-                disabled={isStreaming}
-                aria-label="思考模式"
-              />
-              <span className="hidden whitespace-nowrap text-sm text-[var(--color-text-secondary)] sm:inline">
-                思考模式
-              </span>
-            </label>
             {usage && (
               <ContextRing used={usage.totalTokens} />
             )}
@@ -584,6 +564,10 @@ export default function ProjectDetailPage() {
           attachments={chatAttachments}
           onAttachmentsChange={setChatAttachments}
           contextHint={selectedFileIds.size > 0 ? contextHint : undefined}
+          model={model}
+          onModelChange={setModel}
+          thinkingEnabled={thinkingEnabled}
+          onThinkingEnabledChange={setThinkingEnabled}
         />
       </div>
       {showArtifacts && (

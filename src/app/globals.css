@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap') layer(base);
 @import "katex/dist/katex.min.css";
-@import "highlight.js/styles/github-dark.css";
+@import "highlight.js/styles/github.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -22,6 +22,8 @@
   --color-panel-muted: oklch(0.946 0.006 255 / 0.72);
   --color-control: oklch(0.99 0.002 255);
   --color-control-menu: oklch(0.985 0.003 255);
+  --color-interaction-hover: oklch(0.91 0.002 255 / 0.72);
+  --color-interaction-active: oklch(0.87 0.003 255 / 0.76);
 
   --color-text-primary: oklch(0.24 0.014 255);
   --color-text-secondary: oklch(0.47 0.012 255);
@@ -112,6 +114,8 @@
   --color-panel-muted: oklch(0.295 0.009 255 / 0.58);
   --color-control: oklch(0.235 0.008 255);
   --color-control-menu: oklch(0.255 0.008 255);
+  --color-interaction-hover: oklch(0.92 0.004 255 / 0.1);
+  --color-interaction-active: oklch(0.92 0.004 255 / 0.16);
 
   /* Text */
   --color-text-primary: oklch(0.925 0.006 255);
@@ -346,6 +350,101 @@ pre code {
 .prose-sm pre {
   overflow-x: auto;
   border-radius: var(--radius-md);
+}
+
+.markdown-body {
+  color: var(--color-text-primary);
+  font-size: 0.925rem;
+  line-height: 1.72;
+}
+
+.markdown-body :where(h1, h2, h3, h4, h5, h6) {
+  margin: 1.25em 0 0.55em;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.markdown-body :where(h1, h2) {
+  padding-bottom: 0.32em;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.markdown-body h1 {
+  font-size: 1.55em;
+}
+
+.markdown-body h2 {
+  font-size: 1.3em;
+}
+
+.markdown-body h3 {
+  font-size: 1.12em;
+}
+
+.markdown-body :where(p, blockquote, ul, ol, table, pre) {
+  margin: 0.75em 0;
+}
+
+.markdown-body :where(ul, ol) {
+  padding-left: 1.45em;
+}
+
+.markdown-body li + li {
+  margin-top: 0.25em;
+}
+
+.markdown-body blockquote {
+  padding: 0.15em 0 0.15em 1em;
+  border-left: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.markdown-body :where(code):not(pre code) {
+  border-radius: var(--radius-xs);
+  background: var(--color-panel-muted);
+  padding: 0.14em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.markdown-body pre {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-panel-muted);
+  padding: 0.85em 1em;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.88em;
+}
+
+.markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+
+.markdown-body :where(th, td) {
+  border: 1px solid var(--color-border-light);
+  padding: 0.45em 0.65em;
+}
+
+.markdown-body th {
+  background: var(--color-panel-muted);
+  font-weight: 600;
+}
+
+.markdown-body hr {
+  height: 1px;
+  margin: 1.5em 0;
+  border: 0;
+  background: var(--color-border-light);
 }
 
 .workbench-ambient {

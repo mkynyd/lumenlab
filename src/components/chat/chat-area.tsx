@@ -5,11 +5,9 @@ import { useChat } from "@/lib/hooks/use-chat";
 import type { FileAttachment } from "@/lib/chat/router";
 import { ChatInput } from "@/components/chat/chat-input";
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
-import { ModelSelector } from "@/components/chat/model-selector";
 import { TokenUsageBar } from "@/components/chat/token-usage-bar";
 import { ContextRing } from "@/components/chat/context-ring";
 import { CostDisplay } from "@/components/chat/cost-display";
-import { Switch } from "@/components/ui/switch";
 import { AmbientField } from "@/components/workbench/ambient-field";
 import { AlertCircle, Hash } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -72,18 +70,8 @@ export function ChatArea({
           "bg-[var(--color-panel)] shrink-0 backdrop-blur-[var(--glass-blur)]"
         )}
       >
-        <div className="flex items-center gap-3">
-          <ModelSelector model={model} onChange={setModel} disabled={isStreaming} />
-          <label className="inline-flex shrink-0 items-center gap-2">
-            <Switch
-              checked={thinkingEnabled}
-              onCheckedChange={setThinkingEnabled}
-              aria-label="思考模式"
-            />
-            <span className="whitespace-nowrap text-sm text-[var(--color-text-secondary)]">
-              思考模式
-            </span>
-          </label>
+        <div className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]">
+          聊天
         </div>
 
         {usage && (
@@ -163,6 +151,10 @@ export function ChatArea({
         isStreaming={isStreaming}
         attachments={attachments}
         onAttachmentsChange={setAttachments}
+        model={model}
+        onModelChange={setModel}
+        thinkingEnabled={thinkingEnabled}
+        onThinkingEnabledChange={setThinkingEnabled}
       />
     </div>
   );

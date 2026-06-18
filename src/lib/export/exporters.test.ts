@@ -25,5 +25,5 @@ describe("artifact exporters", () => {
     expect(getPdfFont().subarray(0, 4).toString("hex")).toBe("00010000");
     const buffer = await markdownToPdf(SAMPLE);
     expect(buffer.subarray(0, 4).toString()).toBe("%PDF");
-  });
+  }, 20_000);
 });

@@ -149,7 +149,7 @@ function MessageBubbleComponent({
           )}
         >
           {content ? (
-            <div className="prose-sm break-words">
+            <div className="markdown-body break-words">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[rehypeKatex, rehypeHighlight]}

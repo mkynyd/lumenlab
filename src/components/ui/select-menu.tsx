@@ -1,6 +1,6 @@
 "use client";
 
-import { NavArrowDown } from "iconoir-react";
+import { Check, NavArrowDown, NavArrowRight } from "iconoir-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,10 +80,15 @@ export function SelectMenu({
               key={option.value}
               onSelect={() => onChange(option.value)}
               className={cn(
-                labelAlign === "center" ? "justify-center text-center" : "justify-start text-left",
+                "justify-start text-left",
                 option.value === value && "bg-accent text-accent-foreground"
               )}
             >
+              {option.value === value ? (
+                <Check strokeWidth={2} />
+              ) : (
+                <NavArrowRight strokeWidth={2} />
+              )}
               {option.label}
             </DropdownMenuItem>
           ))}

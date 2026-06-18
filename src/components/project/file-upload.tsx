@@ -5,11 +5,27 @@ import { cn } from "@/lib/utils";
 import { Check, CloudUpload, WarningTriangle } from "iconoir-react";
 import { useUploadFiles } from "@/lib/hooks/use-project-files";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface FileUploadProps {
   projectId: string;
   onUploaded: () => void;
   className?: string;
+  triggerClassName?: string;
 }
 
 const ALLOWED_TYPES = [
@@ -25,7 +41,13 @@ const ALLOWED_TYPES = [
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
-export function FileUpload({ projectId, onUploaded, className }: FileUploadProps) {
+export function FileUpload({
+  projectId,
+  onUploaded,
+  className,
+  triggerClassName,
+}: FileUploadProps) {
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -54,6 +76,7 @@ export function FileUpload({ projectId, onUploaded, className }: FileUploadProps
         }
         if (result.files.length > 0) {
           onUploaded();
+          setOpen(false);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "上传失败，请重试");
@@ -83,66 +106,99 @@ export function FileUpload({ projectId, onUploaded, className }: FileUploadProps
   const uploading = uploadMutation.isPending;
 
   return (
-    <div className={cn("space-y-2", className)}>
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
-        className={cn(
-          "flex flex-col items-center justify-center rounded-[var(--radius-xl)] px-3 py-4",
-          "border border-dashed cursor-pointer transition-[background-color,border-color,box-shadow] duration-150",
-          "bg-[var(--color-surface)]",
-          dragging
-            ? "workbench-border-glow border-[var(--color-accent)] bg-[var(--color-accent-muted)]"
-            : "border-[var(--color-border-light)] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
-        )}
-        onClick={() => inputRef.current?.click()}
-      >
-        {uploading ? (
-          <LoadingIndicator
-            size="sm"
-            variant="orbit"
-            label="上传中"
-            detail="准备进入解析队列"
-          />
-        ) : (
-          <>
-            <CloudUpload width={16} height={16} strokeWidth={1.5} className="text-[var(--color-text-tertiary)] mb-1" />
-            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
-              点击或拖拽文件上传（≤20MB，支持批量）
-            </span>
-            <span className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">
-              支持 Office、WPS、iWork、PDF、图片、文本/代码
-            </span>
-          </>
-        )}
-      </div>
-
-      {error && (
-        <div className="flex items-start gap-1 text-xs text-[var(--color-error)]">
-          <WarningTriangle width={12} height={12} strokeWidth={2} className="shrink-0 mt-0.5" />
-          <span className="leading-relaxed">{error}</span>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon-sm"
+                className={cn("shrink-0", triggerClassName)}
+                aria-label="上传资料"
+              >
+                <CloudUpload strokeWidth={2} />
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">上传资料</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <DialogContent className={cn("sm:max-w-md", className)}>
+        <DialogHeader>
+          <DialogTitle>上传资料</DialogTitle>
+          <DialogDescription>
+            支持批量上传，单个文件不超过 20MB。
+          </DialogDescription>
+        </DialogHeader>
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          className={cn(
+            "flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-[var(--radius-lg)] px-4 py-6 text-center",
+            "transition-[background-color] duration-150",
+            dragging
+              ? "bg-[var(--color-interaction-active)]"
+              : "bg-[var(--color-surface)] hover:bg-[var(--color-interaction-hover)]"
+          )}
+          onClick={() => inputRef.current?.click()}
+        >
+          {uploading ? (
+            <LoadingIndicator
+              size="sm"
+              variant="orbit"
+              label="上传中"
+              detail="准备进入解析队列"
+            />
+          ) : (
+            <>
+              <CloudUpload
+                width={18}
+                height={18}
+                strokeWidth={1.7}
+                className="mb-2 text-[var(--color-text-tertiary)]"
+              />
+              <span className="text-sm font-medium text-[var(--color-text-primary)]">
+                点击选择文件，或拖入此区域
+              </span>
+              <span className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+                Office、WPS、iWork、PDF、图片、文本/代码
+              </span>
+            </>
+          )}
         </div>
-      )}
 
-      {uploadMutation.data && uploadMutation.data.errors.length === 0 && uploadMutation.data.files.length > 0 && !uploading && (
-        <div className="flex items-center gap-1 text-xs text-[var(--color-success)]">
-          <Check width={12} height={12} strokeWidth={2} />
-          已上传 {uploadMutation.data.files.length} 个文件
-        </div>
-      )}
+        {error && (
+          <div className="flex items-start gap-1 text-xs text-[var(--color-error)]">
+            <WarningTriangle width={12} height={12} strokeWidth={2} className="mt-0.5 shrink-0" />
+            <span className="leading-relaxed">{error}</span>
+          </div>
+        )}
 
-      <input
-        ref={inputRef}
-        type="file"
-        className="hidden"
-        accept={ALLOWED_TYPES.join(",")}
-        multiple
-        onChange={handleChange}
-      />
-    </div>
+        {uploadMutation.data &&
+          uploadMutation.data.errors.length === 0 &&
+          uploadMutation.data.files.length > 0 &&
+          !uploading && (
+            <div className="flex items-center gap-1 text-xs text-[var(--color-success)]">
+              <Check width={12} height={12} strokeWidth={2} />
+              已上传 {uploadMutation.data.files.length} 个文件
+            </div>
+          )}
+
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          accept={ALLOWED_TYPES.join(",")}
+          multiple
+          onChange={handleChange}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }

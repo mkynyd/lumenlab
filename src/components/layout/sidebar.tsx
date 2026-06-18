@@ -7,6 +7,17 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -64,10 +75,7 @@ export function Sidebar({
   const isLoading =
     conversationsQuery.isPending || projectsQuery.isPending;
 
-  async function deleteConversation(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    e.preventDefault();
-
+  async function deleteConversation(id: string) {
     await deleteConversationMutation.mutateAsync(id);
     if (pathname === `/chat/${id}`) router.push("/chat");
   }
@@ -234,17 +242,36 @@ export function Sidebar({
                           <span>{conversation.title}</span>
                         </Link>
                       </SidebarMenuButton>
-                      <SidebarMenuAction
-                        type="button"
-                        showOnHover
-                        onClick={(event) =>
-                          void deleteConversation(conversation.id, event)
-                        }
-                        className="hover:text-destructive"
-                        aria-label={`删除「${conversation.title}」`}
-                      >
-                        <Trash strokeWidth={2} />
-                      </SidebarMenuAction>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <SidebarMenuAction
+                            type="button"
+                            showOnHover
+                            onClick={(event) => event.stopPropagation()}
+                            className="hover:text-destructive"
+                            aria-label={`删除「${conversation.title}」`}
+                          >
+                            <Trash strokeWidth={2} />
+                          </SidebarMenuAction>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>删除对话</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              确定要删除「{conversation.title}」吗？这条对话记录将无法恢复。
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>取消</AlertDialogCancel>
+                            <AlertDialogAction
+                              variant="destructive"
+                              onClick={() => void deleteConversation(conversation.id)}
+                            >
+                              删除
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </SidebarMenuItem>
                   ))}
                 </SidebarMenu>

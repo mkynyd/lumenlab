@@ -6,6 +6,14 @@ import type { FileAttachment } from "@/lib/chat/router";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { ModelSelector } from "@/components/chat/model-selector";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ChatInputProps {
   onSend: (message: string, attachments: FileAttachment[]) => void;
@@ -18,6 +26,10 @@ interface ChatInputProps {
   onAttachmentsChange?: (files: FileAttachment[]) => void;
   contextHint?: string;
   blockedReason?: string;
+  model?: string;
+  onModelChange?: (model: string) => void;
+  thinkingEnabled?: boolean;
+  onThinkingEnabledChange?: (checked: boolean) => void;
 }
 
 export function ChatInput({
@@ -30,6 +42,10 @@ export function ChatInput({
   attachments = [],
   onAttachmentsChange,
   blockedReason,
+  model,
+  onModelChange,
+  thinkingEnabled,
+  onThinkingEnabledChange,
 }: ChatInputProps) {
   const [internalValue, setInternalValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -77,13 +93,21 @@ export function ChatInput({
     onAttachmentsChange?.(attachments.filter((attachment) => attachment.id !== id));
   }
 
+  function resizeTextarea(el: HTMLTextAreaElement) {
+    el.style.height = "auto";
+    const nextHeight = Math.min(el.scrollHeight, 128);
+    el.style.height = `${Math.max(nextHeight, 36)}px`;
+    el.style.overflowY = el.scrollHeight > 128 ? "auto" : "hidden";
+  }
+
   return (
-    <form
-      onSubmit={handleSubmit}
-      className={cn(
-        "workbench-input-dock flex flex-col gap-2 border-t border-[var(--color-border-light)] bg-[var(--color-panel)] p-3 backdrop-blur-[var(--glass-blur)]"
-      )}
-    >
+    <TooltipProvider>
+      <form
+        onSubmit={handleSubmit}
+        className={cn(
+          "workbench-input-dock bg-[var(--color-panel)] p-3 backdrop-blur-[var(--glass-blur)]"
+        )}
+      >
       {blockedReason && (
         <div
           className={cn(
@@ -98,34 +122,34 @@ export function ChatInput({
           </span>
         </div>
       )}
-      {attachments.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {attachments.map((attachment) => (
-            <span
-              key={attachment.id}
-              className="inline-flex h-7 max-w-56 items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs"
-              title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
-            >
-              <FileText size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
-              <span className="truncate">{attachment.name}</span>
-              <button
-                type="button"
-                onClick={() => removeAttachment(attachment.id)}
-                className="rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
-                aria-label={`移除附件 ${attachment.name}`}
-              >
-                <X size={12} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
       <div
         className={cn(
-          "flex items-end gap-2 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5",
-          "transition-[border-color,box-shadow] focus-within:border-[var(--color-accent-muted)] focus-within:ring-2 focus-within:ring-[var(--color-accent-muted)]"
+          "rounded-[calc(var(--radius-xl)+10px)] bg-[var(--color-surface)] p-2",
+          "transition-[box-shadow] focus-within:ring-2 focus-within:ring-[var(--color-accent-muted)]"
         )}
       >
+        {attachments.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap gap-1.5 px-1">
+            {attachments.map((attachment) => (
+              <span
+                key={attachment.id}
+                className="inline-flex h-7 max-w-56 items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 text-xs"
+                title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
+              >
+                <FileText size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
+                <span className="truncate">{attachment.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(attachment.id)}
+                  className="rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+                  aria-label={`移除附件 ${attachment.name}`}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <input
           ref={fileInputRef}
           type="file"
@@ -133,18 +157,6 @@ export function ChatInput({
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
-        <Button
-          type="button"
-          disabled={disabled || isStreaming}
-          onClick={() => fileInputRef.current?.click()}
-          variant="outline"
-          size="icon-lg"
-          className="shrink-0 rounded-full bg-[var(--color-panel-muted)]"
-          aria-label="添加附件"
-          title="添加附件"
-        >
-          <Paperclip size={17} strokeWidth={2} />
-        </Button>
         <Textarea
           value={currentValue}
           onChange={(e) => updateValue(e.target.value)}
@@ -153,42 +165,88 @@ export function ChatInput({
           rows={1}
           disabled={disabled}
           className={cn(
-            "min-h-9 max-h-32 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm shadow-none focus-visible:ring-0",
+            "max-h-32 min-h-9 resize-none overflow-y-hidden border-0 bg-transparent px-2 py-2 text-sm shadow-none focus-visible:ring-0",
             "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
             "focus:outline-none disabled:opacity-50"
           )}
           style={{ minHeight: "36px" }}
-          onInput={(e) => {
-            const el = e.currentTarget;
-            el.style.height = "auto";
-            el.style.height = Math.min(el.scrollHeight, 128) + "px";
-          }}
+          onInput={(e) => resizeTextarea(e.currentTarget)}
         />
-
-        {isStreaming ? (
-          <Button
-            type="button"
-            onClick={onStop}
-            variant="destructive"
-            size="icon-lg"
-            className="shrink-0 rounded-full"
-            aria-label="停止生成"
-          >
-            <StopCircle size={17} strokeWidth={2} />
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            disabled={!hasSendableContent || disabled}
-            variant="primary"
-            size="icon-lg"
-            className="shrink-0 rounded-full"
-            aria-label="发送消息"
-          >
-            <Send size={17} strokeWidth={2} />
-          </Button>
-        )}
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  disabled={disabled || isStreaming}
+                  onClick={() => fileInputRef.current?.click()}
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 rounded-full"
+                  aria-label="添加附件"
+                >
+                  <Paperclip size={17} strokeWidth={2} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">添加附件</TooltipContent>
+            </Tooltip>
+            {model && onModelChange && (
+              <ModelSelector
+                model={model}
+                onChange={onModelChange}
+                disabled={isStreaming || disabled}
+                compact
+              />
+            )}
+            {onThinkingEnabledChange && thinkingEnabled !== undefined && (
+              <label className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-2 text-xs text-[var(--color-text-secondary)]">
+                <Switch
+                  checked={thinkingEnabled}
+                  onCheckedChange={onThinkingEnabledChange}
+                  disabled={isStreaming || disabled}
+                  size="sm"
+                  aria-label="思考模式"
+                />
+                思考
+              </label>
+            )}
+          </div>
+          {isStreaming ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  onClick={onStop}
+                  variant="destructive"
+                  size="icon-lg"
+                  className="shrink-0 rounded-full"
+                  aria-label="停止生成"
+                >
+                  <StopCircle size={17} strokeWidth={2} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">停止生成</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="submit"
+                  disabled={!hasSendableContent || disabled}
+                  variant="primary"
+                  size="icon-lg"
+                  className="shrink-0 rounded-full"
+                  aria-label="发送消息"
+                >
+                  <Send size={17} strokeWidth={2} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">发送消息</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
-    </form>
+      </form>
+    </TooltipProvider>
   );
 }

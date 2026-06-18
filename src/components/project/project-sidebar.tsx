@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentProps, ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { FileUpload } from "@/components/project/file-upload";
@@ -10,9 +11,18 @@ import {
 } from "@/components/project/file-list";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { SelectMenu } from "@/components/ui/select-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   SidebarContent,
   SidebarGroup,
@@ -26,8 +36,9 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@/components/ui/sidebar";
-import { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import {
+  CheckCircle,
+  CheckCircleSolid,
   CubeScan,
   Download,
   Folder,
@@ -40,6 +51,12 @@ import {
 } from "iconoir-react";
 import { useProjectFiles } from "@/lib/hooks/use-project-files";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ProjectData {
   id: string;
@@ -56,13 +73,13 @@ interface ProjectSidebarProps {
   onFileToggle: (id: string, intent: FileSelectionIntent) => void;
   onSelectAllFiles: () => void;
   onClearFileSelection: () => void;
-  onSelectFilesByCategory: (category: FileCategory) => void;
   onFileUploaded: () => void;
   onBatchDelete: () => void;
   onBatchReparse: () => void;
   onBatchAutoCategorize: () => void;
   onBatchReparseFailed: () => void;
   onBatchDownload: () => void;
+  onFileAction: (action: "delete" | "reparse" | "download", fileId: string) => void;
   onNewConversation: () => void;
   onConversationSelect: (id: string) => void;
   onConversationDelete: (id: string, title: string) => void;
@@ -77,19 +94,47 @@ const TYPE_LABELS: Record<string, string> = {
   general: "通用项目",
 };
 
+function ToolbarButton({
+  label,
+  children,
+  className,
+  ...props
+}: ComponentProps<typeof Button> & {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon-sm"
+          className={cn("size-8 rounded-[var(--radius-sm)] border-0", className)}
+          aria-label={label}
+          {...props}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function ProjectSidebar({
   project,
   selectedFileIds,
   onFileToggle,
   onSelectAllFiles,
   onClearFileSelection,
-  onSelectFilesByCategory,
   onFileUploaded,
   onBatchDelete,
   onBatchReparse,
   onBatchAutoCategorize,
   onBatchReparseFailed,
   onBatchDownload,
+  onFileAction,
   onNewConversation,
   onConversationSelect,
   onConversationDelete,
@@ -106,7 +151,6 @@ export function ProjectSidebar({
   ).length;
   const selectedCount = selectedFileIds.size;
   const allSelected = files.length > 0 && selectedCount === files.length;
-  const parsedCount = files.filter((file) => ["parsed", "partial"].includes(file.status)).length;
 
   return (
     <SidebarProvider defaultOpen className="h-full min-h-0 w-full">
@@ -142,21 +186,11 @@ export function ProjectSidebar({
             {project.description}
           </p>
         )}
-        <div className="mt-3 grid grid-cols-2 gap-1.5">
-          <Badge variant="outline" className="h-auto justify-start rounded-[var(--radius-md)] px-2 py-1.5">
-            <span className="font-mono text-[11px] text-foreground">{files.length}</span>
-            <span className="text-[10px] text-muted-foreground">资料</span>
-          </Badge>
-          <Badge variant="outline" className="h-auto justify-start rounded-[var(--radius-md)] px-2 py-1.5">
-            <span className="font-mono text-[11px] text-foreground">{parsedCount}</span>
-            <span className="text-[10px] text-muted-foreground">可检索</span>
-          </Badge>
-        </div>
       </SidebarGroup>
 
       {/* 文件区域 */}
       <SidebarContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3">
-        <SidebarGroup className="flex min-h-0 flex-1 flex-col px-0 py-1">
+        <SidebarGroup className="flex min-h-0 shrink-0 flex-col px-0 py-1">
           <div className="mb-2 flex items-center justify-between">
             <div>
               <SidebarGroupLabel className="h-auto px-0 text-xs uppercase tracking-wider">
@@ -166,9 +200,9 @@ export function ProjectSidebar({
                 选择文件会显式参与下一轮回答
               </p>
             </div>
-            <Badge variant="outline" className="font-mono text-[10px]">
+            <span className="font-mono text-[10px] text-[var(--color-text-tertiary)]">
               {selectedCount}/{files.length}
-            </Badge>
+            </span>
           </div>
           {(parsingCount > 0 || enhancingCount > 0) && (
             <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-info-muted)] bg-[var(--color-info-muted)] px-2 py-1.5">
@@ -183,104 +217,81 @@ export function ProjectSidebar({
               />
             </div>
           )}
-          <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5">
-            <ButtonGroup className="grid w-full grid-cols-2 gap-1.5 [&>[data-slot=button]]:rounded-[var(--radius-md)]">
-              <Button
-                variant={allSelected ? "secondary" : "primary"}
-                size="sm"
+          <TooltipProvider>
+            <ButtonGroup className="mb-2 grid w-fit grid-cols-4 gap-1 [&>*]:rounded-[var(--radius-sm)]! [&>*]:border-0!">
+              <ToolbarButton
+                label={allSelected ? "取消全选" : "全选"}
                 onClick={allSelected ? onClearFileSelection : onSelectAllFiles}
                 disabled={files.length === 0}
-                className="w-full"
-              >
-                {allSelected ? "取消" : "全选"}
-              </Button>
-              <Button
                 variant="secondary"
-                size="sm"
-                onClick={onBatchReparseFailed}
-                disabled={failedCount === 0}
-                className="w-full"
+                className={cn(
+                  allSelected &&
+                    "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)] hover:bg-[var(--color-interaction-active)]"
+                )}
               >
-                <RefreshDouble data-icon="inline-start" strokeWidth={2} />
-                重新解析
-              </Button>
-            </ButtonGroup>
-            <ButtonGroup className="mt-1.5 grid w-full grid-cols-2 gap-1.5 [&>[data-slot=button]]:rounded-[var(--radius-md)]">
-              <SelectMenu
-                ariaLabel="筛选"
-                placeholder="筛选"
-                labelAlign="center"
-                disabled={files.length === 0}
-                options={FILE_CATEGORIES.map((category) => ({
-                  value: category,
-                  label: category,
-                }))}
-                onChange={(value) => onSelectFilesByCategory(value as FileCategory)}
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onBatchAutoCategorize}
-                disabled={categorizableCount === 0}
-                className="w-full"
-              >
-                <MagicWand data-icon="inline-start" strokeWidth={2} />
-                重新分类
-              </Button>
-            </ButtonGroup>
-            <ButtonGroup className="mt-1.5 grid w-full grid-cols-3 gap-1.5 [&>[data-slot=button]]:rounded-[var(--radius-md)]">
-              <Button
-                variant="secondary"
-                size="icon-sm"
+                {allSelected ? (
+                  <CheckCircleSolid strokeWidth={2} />
+                ) : (
+                  <CheckCircle strokeWidth={2} />
+                )}
+              </ToolbarButton>
+              <ToolbarButton
+                label="删除当前上下文"
                 onClick={onBatchDelete}
                 disabled={selectedCount === 0}
-                className="w-full hover:text-destructive"
-                aria-label="删除当前上下文文件"
-                title="删除"
+                className="hover:text-destructive"
               >
                 <Trash strokeWidth={2} />
-              </Button>
-              <Button
-                variant="secondary"
-                size="icon-sm"
+              </ToolbarButton>
+              <ToolbarButton
+                label="重新解析"
+                onClick={onBatchReparseFailed}
+                disabled={failedCount === 0}
+              >
+                <RefreshDouble strokeWidth={2} />
+              </ToolbarButton>
+              <ToolbarButton
+                label="重新分类"
+                onClick={onBatchAutoCategorize}
+                disabled={categorizableCount === 0}
+              >
+                <MagicWand strokeWidth={2} />
+              </ToolbarButton>
+              <FileUpload
+                projectId={project.id}
+                onUploaded={onFileUploaded}
+                triggerClassName="size-8 rounded-[var(--radius-sm)] border-0"
+              />
+              <ToolbarButton
+                label="解析当前上下文"
                 onClick={onBatchReparse}
                 disabled={selectedCount === 0}
-                className="w-full"
-                aria-label="重新解析当前上下文文件"
-                title="解析"
               >
                 <CubeScan strokeWidth={2} />
-              </Button>
-              <Button
-                variant="secondary"
-                size="icon-sm"
+              </ToolbarButton>
+              <ToolbarButton
+                label="下载当前上下文"
                 onClick={onBatchDownload}
                 disabled={selectedCount === 0}
-                className="w-full"
-                aria-label="下载当前上下文 Markdown"
-                title="下载"
               >
                 <Download strokeWidth={2} />
-              </Button>
+              </ToolbarButton>
             </ButtonGroup>
-          </div>
-          <FileUpload
-            projectId={project.id}
-            onUploaded={onFileUploaded}
-          />
-          <ScrollArea className="mt-2 min-h-0 flex-1 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)]">
+          </TooltipProvider>
+          <ScrollArea className="max-h-[42vh] min-h-0">
             <FileList
               files={files}
               selectedIds={selectedFileIds}
               onToggle={onFileToggle}
+              onFileAction={(action, file) => onFileAction(action, file.id)}
               defaultGroupsCollapsed
-              className="p-1.5 pr-3"
+              className="pr-3"
             />
           </ScrollArea>
         </SidebarGroup>
 
         {/* 对话列表 */}
-        <SidebarGroup className="max-h-[34%] shrink-0 px-0 py-2">
+        <SidebarGroup className="min-h-0 shrink px-0 py-2">
           <SidebarGroupLabel className="text-xs uppercase tracking-wider">
             项目对话
           </SidebarGroupLabel>
@@ -288,7 +299,7 @@ export function ProjectSidebar({
             <Plus strokeWidth={2} />
           </SidebarGroupAction>
           <SidebarGroupContent>
-          <ScrollArea className="max-h-40">
+          <ScrollArea className="max-h-32">
             {project.conversations && project.conversations.length > 0 ? (
               <SidebarMenu className="pr-3">
                 {project.conversations.map((conv) => (
@@ -304,19 +315,36 @@ export function ProjectSidebar({
                       <ChatLines strokeWidth={2} />
                       <span>{conv.title}</span>
                     </SidebarMenuButton>
-                    <SidebarMenuAction
-                      type="button"
-                      showOnHover
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onConversationDelete(conv.id, conv.title);
-                      }}
-                      className="hover:text-destructive"
-                      aria-label={`删除项目对话 ${conv.title}`}
-                      title="删除"
-                    >
-                      <Trash strokeWidth={2} />
-                    </SidebarMenuAction>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <SidebarMenuAction
+                          type="button"
+                          showOnHover
+                          onClick={(event) => event.stopPropagation()}
+                          className="hover:text-destructive"
+                          aria-label={`删除项目对话 ${conv.title}`}
+                        >
+                          <Trash strokeWidth={2} />
+                        </SidebarMenuAction>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>删除项目对话</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            确定要删除「{conv.title}」吗？这条对话记录将无法恢复。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            onClick={() => onConversationDelete(conv.id, conv.title)}
+                          >
+                            删除
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>

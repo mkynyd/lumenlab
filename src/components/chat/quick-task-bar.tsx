@@ -69,7 +69,6 @@ function ActionButton({
         "transition-[background-color,border-color,color] duration-150 whitespace-nowrap",
         "disabled:opacity-40 disabled:cursor-not-allowed"
       )}
-      title={action.prompt}
     >
       {action.title}
     </button>
