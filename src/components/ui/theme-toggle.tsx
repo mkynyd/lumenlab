@@ -11,7 +11,7 @@ const options = [
 ];
 
 export function ThemeToggle({ className }: { className?: string }) {
-  const { theme, setTheme } = useTheme();
+  const { theme = "system", setTheme } = useTheme();
 
   return (
     <div

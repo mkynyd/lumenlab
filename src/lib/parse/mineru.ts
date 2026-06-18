@@ -205,6 +205,12 @@ export async function downloadAndExtractMarkdown(zipUrl: string): Promise<string
   return markdownEntry.getData().toString("utf-8").trim();
 }
 
+function countMarkdownImages(content: string) {
+  const markdownImages = content.match(/!\[[^\]]*]\([^)]*\)/g) || [];
+  const htmlImages = content.match(/<img\b[^>]*>/gi) || [];
+  return markdownImages.length + htmlImages.length;
+}
+
 export async function parseFileWithMinerU(options: {
   token: string;
   fileBuffer: Buffer;
@@ -212,12 +218,14 @@ export async function parseFileWithMinerU(options: {
   onProgress?: (stage: string, progress?: { current: number; total: number }) => void;
 }): Promise<{
   content: string;
-  metadata: {
-    parser: "mineru-pipeline" | "mineru-vlm";
-    taskId: string;
-    parsedAt: string;
-  };
-}> {
+	  metadata: {
+	    parser: "mineru-pipeline" | "mineru-vlm";
+	    taskId: string;
+	    parsedAt: string;
+	    retainedImageCount?: number;
+	    requiresVisionModel?: boolean;
+	  };
+	}> {
   options.onProgress?.("uploading");
   const submitted = await submitFileToMinerU({
     token: options.token,
@@ -245,12 +253,19 @@ export async function parseFileWithMinerU(options: {
   }
 
   const content = await downloadAndExtractMarkdown(result.fullZipUrl);
+  const retainedImageCount = countMarkdownImages(content);
   return {
     content,
     metadata: {
       parser: "mineru-pipeline",
       taskId: submitted.taskId,
       parsedAt: new Date().toISOString(),
+      ...(retainedImageCount > 0
+        ? {
+            retainedImageCount,
+            requiresVisionModel: true,
+          }
+        : {}),
     },
   };
 }

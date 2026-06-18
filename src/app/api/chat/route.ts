@@ -65,6 +65,31 @@ async function textAttachmentContext(attachments: ServerFileAttachment[]) {
   return sections.join("\n\n");
 }
 
+function metadataRequiresVision(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return false;
+  const record = metadata as Record<string, unknown>;
+  return record.requiresVisionModel === true ||
+    (typeof record.retainedImageCount === "number" && record.retainedImageCount > 0);
+}
+
+function summarizeHistoryForMiniMax(
+  history: Array<{ role: string; content: string }>
+) {
+  const lines = history
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .slice(-12)
+    .map((message) => {
+      const role = message.role === "user" ? "用户" : "助手";
+      return `${role}: ${message.content.replace(/\s+/g, " ").trim()}`;
+    })
+    .filter((line) => line.length > 4);
+
+  const summary = lines.join("\n").slice(-12000);
+  return summary
+    ? `【此前对话压缩上下文】\n${summary}\n\n请在后续回答中继承这些事实与约束。`
+    : "";
+}
+
 export async function POST(request: NextRequest) {
   // 1. 身份验证
   const session = await auth();
@@ -147,7 +172,9 @@ export async function POST(request: NextRequest) {
         select: {
           id: true,
           originalName: true,
+          mimeType: true,
           status: true,
+          processingMetadata: true,
         },
       })
     : [];
@@ -159,7 +186,61 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const preflightRoute = !conversationId ? routeModel(null, attachments) : null;
+  let systemPrompt = GLOBAL_SYSTEM_PROMPT;
+  let retrievedContext = "";
+  let contextNotice: string | null = null;
+  let retrievalUsedFileIds: string[] = [];
+
+  if (project) {
+    const projectMode = mode || project.type || "general";
+    const modePrompt = getModePrompt(projectMode);
+    systemPrompt = `${systemPrompt}\n\n【模式指令】\n${modePrompt}`;
+    if (hiddenPrompt) {
+      systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
+    }
+
+    let queryEmbedding: number[] | undefined;
+    try {
+      const bailianKey = await getProviderApiKey(userId, "bailian");
+      queryEmbedding = await embedQuery(effectivePrompt, bailianKey);
+    } catch {
+      queryEmbedding = undefined;
+    }
+
+    const retrieval = await retrieveProjectContext({
+      userId,
+      projectId: project.id,
+      selectedFileIds: uniqueFileIds,
+      query: effectivePrompt,
+      maxChars: 60000,
+      queryEmbedding,
+    });
+    retrievedContext = retrieval.context;
+    contextNotice = retrieval.notice;
+    retrievalUsedFileIds = retrieval.usedFileIds;
+  }
+
+  const contextFileIds = [...new Set([...uniqueFileIds, ...retrievalUsedFileIds])];
+  const contextFilesWithMetadata = contextFileIds.length > 0
+    ? await prisma.fileAsset.findMany({
+        where: {
+          id: { in: contextFileIds },
+          userId,
+          ...(projectId ? { projectId } : {}),
+        },
+        select: {
+          id: true,
+          processingMetadata: true,
+        },
+      })
+    : [];
+  const requiresVisionModel = contextFilesWithMetadata.some((file) =>
+    metadataRequiresVision(file.processingMetadata)
+  );
+
+  const preflightRoute = !conversationId
+    ? routeModel(null, attachments, { requiresVisionModel })
+    : null;
   let preflightApiKey: string | null = null;
   if (preflightRoute) {
     try {
@@ -217,7 +298,11 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const modelRoute = routeModel(conversation, attachments);
+  const modelRoute = routeModel(conversation, attachments, {
+    requiresVisionModel,
+  });
+  const shouldCompressDeepSeekHistory =
+    modelRoute.provider === "minimax" && conversation.modelLock !== "minimax";
   if (modelRoute.shouldLock) {
     conversation = await prisma.conversation.update({
       where: { id: conversation.id },
@@ -250,39 +335,6 @@ export async function POST(request: NextRequest) {
     orderBy: { createdAt: "asc" },
     select: { role: true, content: true },
   });
-
-  // 8. 构建固定系统提示词，动态资料放在最后一条 user message 中以提高缓存命中率
-  let systemPrompt = GLOBAL_SYSTEM_PROMPT;
-  let retrievedContext = "";
-  let contextNotice: string | null = null;
-
-  if (project) {
-    const projectMode = mode || project.type || "general";
-    const modePrompt = getModePrompt(projectMode);
-    systemPrompt = `${systemPrompt}\n\n【模式指令】\n${modePrompt}`;
-    if (hiddenPrompt) {
-      systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
-    }
-
-    let queryEmbedding: number[] | undefined;
-    try {
-      const bailianKey = await getProviderApiKey(userId, "bailian");
-      queryEmbedding = await embedQuery(effectivePrompt, bailianKey);
-    } catch {
-      queryEmbedding = undefined;
-    }
-
-    const retrieval = await retrieveProjectContext({
-      userId,
-      projectId: project.id,
-      selectedFileIds: uniqueFileIds,
-      query: effectivePrompt,
-      maxChars: 60000,
-      queryEmbedding,
-    });
-    retrievedContext = retrieval.context;
-    contextNotice = retrieval.notice;
-  }
 
   // 9. 保存用户消息
   await prisma.message.create({
@@ -323,13 +375,23 @@ export async function POST(request: NextRequest) {
         cacheExperiments.adaptivePromptOrdering
       )
     : legacyMessages;
+  const minimaxHistorySummary = shouldCompressDeepSeekHistory
+    ? summarizeHistoryForMiniMax(history)
+    : "";
+  const routedMessages = minimaxHistorySummary
+    ? [
+        { role: "system", content: systemPrompt } as DeepSeekMessage,
+        { role: "user", content: minimaxHistorySummary } as DeepSeekMessage,
+        { role: "user", content: contextualUserMessage } as DeepSeekMessage,
+      ]
+    : messages;
 
   // 11. 调用模型
   let streamResult;
   try {
     if (modelRoute.provider === "minimax") {
       streamResult = await streamMiniMaxChat(apiKey, {
-        messages: filterThinkingForMiniMax(messages),
+        messages: filterThinkingForMiniMax(routedMessages),
         attachments: attachments.filter((attachment) => !isTextAttachment(attachment)),
       });
     } else {

@@ -10,7 +10,7 @@ import rehypeHighlight from "rehype-highlight";
 import { Button } from "@/components/ui/button";
 import { MermaidBlock } from "@/components/chat/mermaid-block";
 import { AmbientField } from "@/components/workbench/ambient-field";
-import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
+import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 import { cn } from "@/lib/utils";
 import {
   useArtifact,
@@ -113,7 +113,7 @@ export function ArtifactLibrary({
           <div className="overflow-y-auto border-b border-[var(--color-border)] p-2 md:border-b-0 md:border-r">
             {artifactsQuery.isPending ? (
               <div className="p-3">
-                <MathCurveLoader
+                <LoadingIndicator
                   size="sm"
                   variant="orbit"
                   label="读取成果"
@@ -172,7 +172,7 @@ export function ArtifactLibrary({
           <div className="min-w-0 overflow-y-auto bg-[var(--color-bg)] p-4">
             {artifactQuery.isPending && selectedId ? (
               <div className="flex min-h-60 items-center justify-center">
-                <MathCurveLoader
+                <LoadingIndicator
                   size="md"
                   variant="lissajous"
                   label="打开成果"

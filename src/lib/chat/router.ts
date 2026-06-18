@@ -84,13 +84,17 @@ export function hasMultimodalContent(
 
 export function routeModel(
   conversation: { modelLock: string | null } | null,
-  attachments: Array<Pick<FileAttachment | ServerFileAttachment, "name" | "mimeType">>
+  attachments: Array<Pick<FileAttachment | ServerFileAttachment, "name" | "mimeType">>,
+  options: { requiresVisionModel?: boolean } = {}
 ): {
   provider: "deepseek" | "minimax";
   shouldLock: boolean;
 } {
   if (conversation?.modelLock === "minimax") {
     return { provider: "minimax", shouldLock: false };
+  }
+  if (options.requiresVisionModel) {
+    return { provider: "minimax", shouldLock: true };
   }
   if (hasMultimodalContent(attachments)) {
     return { provider: "minimax", shouldLock: true };

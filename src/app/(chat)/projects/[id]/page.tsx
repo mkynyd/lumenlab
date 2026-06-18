@@ -11,18 +11,21 @@ import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ContextRing } from "@/components/chat/context-ring";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, Hash, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Hashtag,
+  SidebarCollapse,
+  SidebarExpand,
+  WarningTriangle,
+} from "iconoir-react";
 import { AmbientField } from "@/components/workbench/ambient-field";
-import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
+import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 import { useChat, type SendMessageInput } from "@/lib/hooks/use-chat";
 import type { FileAttachment } from "@/lib/chat/router";
 import type {
   FileSelectionIntent,
-  ProjectFile,
 } from "@/components/project/file-list";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 import type { FileCategory } from "@/lib/file-categories";
-import { FileContentDialog } from "@/components/project/file-content-dialog";
 import { ArtifactLibrary } from "@/components/artifact/artifact-library";
 import { Button } from "@/components/ui/button";
 import { useProject } from "@/lib/hooks/use-projects";
@@ -32,7 +35,6 @@ import {
 } from "@/lib/hooks/use-conversations";
 import { useSaveArtifact } from "@/lib/hooks/use-artifacts";
 import { queryKeys } from "@/lib/query-keys";
-import type { ProjectDetail } from "@/lib/api/types";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -49,7 +51,6 @@ export default function ProjectDetailPage() {
   const [mobileProjectSidebarOpen, setMobileProjectSidebarOpen] =
     useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
-  const [activeFile, setActiveFile] = useState<ProjectFile | null>(null);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const [showArtifacts, setShowArtifacts] = useState(false);
   const [artifactRefreshKey, setArtifactRefreshKey] = useState(0);
@@ -174,104 +175,6 @@ export default function ProjectDetailPage() {
         .filter((file) => file.category === category && (file.categoryConfidence ?? 1) >= 0.7)
         .map((file) => file.id)
     ));
-  }
-
-  async function handleFileDelete(id: string) {
-    try {
-      const res = await fetch(`/api/files/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setSelectedFileIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-        await queryClient.invalidateQueries({
-          queryKey: queryKeys.projects.detail(projectId),
-        });
-        await queryClient.invalidateQueries({
-          queryKey: queryKeys.projects.files(projectId),
-        });
-      }
-    } catch {
-      // 静默处理
-    }
-  }
-
-  async function runFileAction(file: ProjectFile, action: "parse" | "enhance") {
-    setFileMessage(action === "parse" ? "正在解析资料..." : "正在进行知识增强...");
-    queryClient.setQueryData<ProjectDetail>(
-      queryKeys.projects.detail(projectId),
-      (current) =>
-        current
-          ? {
-              ...current,
-              files: current.files.map((item) =>
-                item.id === file.id
-                  ? action === "parse"
-                    ? { ...item, status: "parsing" }
-                    : { ...item, enhancementStatus: "enhancing" }
-                  : item
-              ),
-            }
-          : current
-    );
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 300_000);
-    try {
-      const res = await fetch(`/api/files/${file.id}/${action}`, {
-        method: "POST",
-        signal: controller.signal,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "操作失败");
-      setFileMessage(
-        action === "parse"
-          ? data.file?.truncated
-            ? "解析完成，仅处理了首批页面，已可用于上下文"
-            : "解析完成，已可用于上下文"
-          : "知识增强完成"
-      );
-    } catch (err) {
-      if (action === "parse" && err instanceof Error && err.name === "AbortError") {
-        queryClient.setQueryData<ProjectDetail>(
-          queryKeys.projects.detail(projectId),
-          (current) =>
-            current
-              ? {
-                  ...current,
-                  files: current.files.map((item) =>
-                    item.id === file.id ? { ...item, status: "failed" } : item
-                  ),
-                }
-              : current
-        );
-        setFileMessage("解析超过 5 分钟，已在前端标记为失败");
-      } else {
-        setFileMessage(err instanceof Error ? err.message : "操作失败");
-      }
-    } finally {
-      window.clearTimeout(timeout);
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.detail(projectId),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.files(projectId),
-      });
-    }
-  }
-
-  async function handleFileCategoryChange(id: string, category: FileCategory | null) {
-    const res = await fetch(`/api/files/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ category }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setFileMessage(data.error || "分类更新失败");
-      return;
-    }
-    await projectQuery.refetch();
   }
 
   async function runBatchAction(
@@ -425,7 +328,7 @@ export default function ProjectDetailPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <MathCurveLoader
+        <LoadingIndicator
           size="md"
           variant="lissajous"
           label="加载项目工作台"
@@ -485,6 +388,7 @@ export default function ProjectDetailPage() {
 
       {/* 左侧项目侧栏 */}
       <div
+        aria-label="项目资料侧边栏"
         className={cn(
           "absolute inset-y-0 left-0 z-30 w-[280px] overflow-hidden",
           "border-r border-[var(--color-border-light)] bg-[var(--color-surface)]",
@@ -509,14 +413,7 @@ export default function ProjectDetailPage() {
             onSelectAllFiles={handleSelectAllFiles}
             onClearFileSelection={handleClearFileSelection}
             onSelectFilesByCategory={handleSelectFilesByCategory}
-            onFileDelete={handleFileDelete}
             onFileUploaded={() => void projectQuery.refetch()}
-            onFileParse={(file) => void runFileAction(file, "parse")}
-            onFileEnhance={(file) => void runFileAction(file, "enhance")}
-            onFileView={setActiveFile}
-            onFileCategoryChange={(id, category) =>
-              void handleFileCategoryChange(id, category)
-            }
             onBatchDelete={() => void runBatchAction("delete")}
             onBatchReparse={() => void runBatchAction("reparse")}
             onBatchAutoCategorize={() => void handleBatchAutoCategorize()}
@@ -554,18 +451,18 @@ export default function ProjectDetailPage() {
               aria-label="切换项目侧边栏"
             >
               <span className="md:hidden">
-                {mobileProjectSidebarOpen ? (
-                  <PanelLeftClose size={16} strokeWidth={1.8} />
-                ) : (
-                  <PanelLeftOpen size={16} strokeWidth={1.8} />
-                )}
+	                {mobileProjectSidebarOpen ? (
+	                  <SidebarCollapse width={16} height={16} strokeWidth={1.8} />
+	                ) : (
+	                  <SidebarExpand width={16} height={16} strokeWidth={1.8} />
+	                )}
               </span>
               <span className="hidden md:inline">
-                {desktopProjectSidebarOpen ? (
-                  <PanelLeftClose size={16} strokeWidth={1.8} />
-                ) : (
-                  <PanelLeftOpen size={16} strokeWidth={1.8} />
-                )}
+	                {desktopProjectSidebarOpen ? (
+	                  <SidebarCollapse width={16} height={16} strokeWidth={1.8} />
+	                ) : (
+	                  <SidebarExpand width={16} height={16} strokeWidth={1.8} />
+	                )}
               </span>
             </button>
             <div className="min-w-0">
@@ -626,7 +523,7 @@ export default function ProjectDetailPage() {
                   "bg-[var(--color-panel)] shadow-[var(--shadow-panel)]"
                 )}
               >
-                <Hash size={24} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
+	                <Hashtag width={24} height={24} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
               </div>
               <h2 className="text-base font-medium text-[var(--color-text-primary)] mb-1">
                 {project.name}
@@ -658,7 +555,7 @@ export default function ProjectDetailPage() {
               "text-sm text-[var(--color-error)]"
             )}
           >
-            <AlertCircle size={14} strokeWidth={2} className="shrink-0" />
+	            <WarningTriangle width={14} height={14} strokeWidth={2} className="shrink-0" />
             <span className="flex-1">{error}</span>
             <button
               onClick={clearError}
@@ -683,7 +580,7 @@ export default function ProjectDetailPage() {
         {/* 输入框 */}
         {hasParsingFiles && (
           <div className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-info-muted)] bg-[var(--color-info-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-            <MathCurveLoader
+            <LoadingIndicator
               size="sm"
               variant="rose"
               label="文件解析中"
@@ -707,13 +604,6 @@ export default function ProjectDetailPage() {
           blockedReason={blockedReason}
         />
       </div>
-      {activeFile && (
-        <FileContentDialog
-          file={activeFile}
-          onClose={() => setActiveFile(null)}
-          onUpdated={() => void projectQuery.refetch()}
-        />
-      )}
       {showArtifacts && (
         <ArtifactLibrary
           projectId={projectId}

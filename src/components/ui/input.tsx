@@ -1,31 +1,19 @@
-import { forwardRef, type InputHTMLAttributes } from "react";
-import { cn } from "@/lib/utils";
+import * as React from "react"
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
-  mono?: boolean; // Use monospace font for API keys, tokens, etc.
+import { cn } from "@/lib/utils"
+
+function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+  return (
+    <input
+      type={type}
+      data-slot="input"
+      className={cn(
+        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        className
+      )}
+      {...props}
+    />
+  )
 }
 
-export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, mono = false, type, ...props }, ref) => {
-    return (
-      <input
-        ref={ref}
-        type={type}
-        className={cn(
-          "h-10 px-3 text-sm rounded-[var(--radius-md)]",
-          "border border-[var(--color-border)]",
-          "bg-[var(--color-bg)] text-[var(--color-text-primary)]",
-          "placeholder:text-[var(--color-text-tertiary)]",
-          "focus:outline-none focus:border-[var(--color-accent)]",
-          "transition-colors duration-150",
-          "disabled:opacity-50 disabled:cursor-not-allowed",
-          mono && "font-mono",
-          className
-        )}
-        {...props}
-      />
-    );
-  }
-);
-
-Input.displayName = "Input";
+export { Input }

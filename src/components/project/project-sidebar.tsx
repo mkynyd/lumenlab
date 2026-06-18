@@ -9,19 +9,36 @@ import {
   type ProjectFile,
 } from "@/components/project/file-list";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { SelectMenu } from "@/components/ui/select-menu";
+import {
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
 import { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import {
-  ArrowLeft,
-  FolderOpen,
-  MessageSquare,
-  Plus,
-  RotateCcw,
-  Trash2,
+  CubeScan,
   Download,
-} from "lucide-react";
+  Folder,
+  MagicWand,
+  NavArrowLeft,
+  Plus,
+  RefreshDouble,
+  Trash,
+  ChatLines,
+} from "iconoir-react";
 import { useProjectFiles } from "@/lib/hooks/use-project-files";
-import { MathCurveLoader } from "@/components/workbench/math-curve-loader";
+import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 
 interface ProjectData {
   id: string;
@@ -39,12 +56,7 @@ interface ProjectSidebarProps {
   onSelectAllFiles: () => void;
   onClearFileSelection: () => void;
   onSelectFilesByCategory: (category: FileCategory) => void;
-  onFileDelete: (id: string) => void;
   onFileUploaded: () => void;
-  onFileParse: (file: ProjectFile) => void;
-  onFileEnhance: (file: ProjectFile) => void;
-  onFileView: (file: ProjectFile) => void;
-  onFileCategoryChange: (id: string, category: FileCategory | null) => void;
   onBatchDelete: () => void;
   onBatchReparse: () => void;
   onBatchAutoCategorize: () => void;
@@ -71,12 +83,7 @@ export function ProjectSidebar({
   onSelectAllFiles,
   onClearFileSelection,
   onSelectFilesByCategory,
-  onFileDelete,
   onFileUploaded,
-  onFileParse,
-  onFileEnhance,
-  onFileView,
-  onFileCategoryChange,
   onBatchDelete,
   onBatchReparse,
   onBatchAutoCategorize,
@@ -101,36 +108,27 @@ export function ProjectSidebar({
   const parsedCount = files.filter((file) => ["parsed", "partial"].includes(file.status)).length;
 
   return (
-    <div className={cn("flex h-full flex-col overflow-hidden bg-[var(--color-panel)] backdrop-blur-[var(--glass-blur)]", className)}>
-      <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-[var(--color-border-light)] p-3">
-        <Link
-          href="/projects"
-          className={cn(
-            "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-2 text-sm font-medium",
-            "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)]",
-            "transition-colors duration-150 hover:bg-[var(--color-surface-hover)]"
-          )}
-        >
-          <ArrowLeft size={15} strokeWidth={2} />
-          项目空间
-        </Link>
-        <Link
-          href="/projects/new"
-          className={cn(
-            "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-2 text-sm font-medium",
-            "border border-transparent bg-[var(--color-accent)] text-[var(--color-accent-contrast)]",
-            "transition-colors duration-150 hover:bg-[var(--color-accent-hover)]"
-          )}
-        >
-          <Plus size={15} strokeWidth={2} />
-          新建项目
-        </Link>
-      </div>
+    <SidebarProvider defaultOpen className="h-full min-h-0 w-full">
+    <div className={cn("flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground backdrop-blur-[var(--glass-blur)]", className)}>
+      <SidebarHeader className="grid shrink-0 grid-cols-2 gap-2 p-3">
+        <Button asChild variant="outline" size="md" className="w-full">
+          <Link href="/projects">
+            <NavArrowLeft data-icon="inline-start" strokeWidth={2} />
+            项目空间
+          </Link>
+        </Button>
+        <Button asChild variant="primary" size="md" className="w-full">
+          <Link href="/projects/new">
+            <Plus data-icon="inline-start" strokeWidth={2} />
+            新建项目
+          </Link>
+        </Button>
+      </SidebarHeader>
 
       {/* 项目信息 */}
-      <div className="shrink-0 border-b border-[var(--color-border-light)] p-4">
-        <div className="flex items-center gap-2 mb-1">
-          <FolderOpen size={16} strokeWidth={2} className="text-[var(--color-text-tertiary)]" />
+      <SidebarGroup className="shrink-0 px-3 py-2">
+        <div className="mb-1 flex items-center gap-2">
+          <Folder width={16} height={16} strokeWidth={2} className="text-[var(--color-text-tertiary)]" />
           <h2 className="text-sm font-semibold truncate text-[var(--color-text-primary)]">
             {project.name}
           </h2>
@@ -144,36 +142,36 @@ export function ProjectSidebar({
           </p>
         )}
         <div className="mt-3 grid grid-cols-2 gap-1.5">
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1.5">
-            <p className="font-mono text-[11px] text-[var(--color-text-primary)]">{files.length}</p>
-            <p className="text-[10px] text-[var(--color-text-tertiary)]">资料</p>
-          </div>
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1.5">
-            <p className="font-mono text-[11px] text-[var(--color-text-primary)]">{parsedCount}</p>
-            <p className="text-[10px] text-[var(--color-text-tertiary)]">可检索</p>
-          </div>
+          <Badge variant="outline" className="h-auto justify-start rounded-[var(--radius-md)] px-2 py-1.5">
+            <span className="font-mono text-[11px] text-foreground">{files.length}</span>
+            <span className="text-[10px] text-muted-foreground">资料</span>
+          </Badge>
+          <Badge variant="outline" className="h-auto justify-start rounded-[var(--radius-md)] px-2 py-1.5">
+            <span className="font-mono text-[11px] text-foreground">{parsedCount}</span>
+            <span className="text-[10px] text-muted-foreground">可检索</span>
+          </Badge>
         </div>
-      </div>
+      </SidebarGroup>
 
       {/* 文件区域 */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="border-b border-[var(--color-border-light)] px-3 py-2">
+      <SidebarContent className="px-3 pb-3">
+        <SidebarGroup className="px-0 py-1">
           <div className="mb-2 flex items-center justify-between">
             <div>
-              <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]">
+              <SidebarGroupLabel className="h-auto px-0 text-xs uppercase tracking-wider">
                 资料索引
-              </span>
+              </SidebarGroupLabel>
               <p className="mt-0.5 text-[10px] text-[var(--color-text-tertiary)]">
                 选择文件会显式参与下一轮回答
               </p>
             </div>
-            <span className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-text-tertiary)]">
+            <Badge variant="outline" className="font-mono text-[10px]">
               {selectedCount}/{files.length}
-            </span>
+            </Badge>
           </div>
           {(parsingCount > 0 || enhancingCount > 0) && (
             <div className="mb-2 rounded-[var(--radius-lg)] border border-[var(--color-info-muted)] bg-[var(--color-info-muted)] px-2 py-1.5">
-              <MathCurveLoader
+              <LoadingIndicator
                 size="sm"
                 variant="lissajous"
                 label={parsingCount > 0 ? "资料解析中" : "知识增强中"}
@@ -184,7 +182,8 @@ export function ProjectSidebar({
               />
             </div>
           )}
-          <div className="mb-2 workbench-action-card p-2">
+          <Card size="sm" className="mb-2 bg-card/80 shadow-none">
+            <CardContent className="flex flex-col gap-1.5">
             <div className="grid grid-cols-[1fr_1fr] gap-1.5">
               <Button
                 variant={allSelected ? "secondary" : "primary"}
@@ -202,16 +201,15 @@ export function ProjectSidebar({
                 disabled={failedCount === 0}
                 className="w-full"
               >
-                <RotateCcw size={13} />
+                <RefreshDouble data-icon="inline-start" strokeWidth={2} />
                 重新解析
               </Button>
             </div>
-            <div className="mt-1.5 grid grid-cols-[1fr_1fr] gap-1.5">
+            <div className="grid grid-cols-[1fr_1fr] gap-1.5">
               <SelectMenu
                 ariaLabel="筛选"
                 placeholder="筛选"
                 disabled={files.length === 0}
-                labelAlign="center"
                 options={FILE_CATEGORIES.map((category) => ({
                   value: category,
                   label: category,
@@ -225,31 +223,47 @@ export function ProjectSidebar({
                 disabled={categorizableCount === 0}
                 className="w-full"
               >
+                <MagicWand data-icon="inline-start" strokeWidth={2} />
                 重新分类
               </Button>
             </div>
-          </div>
-          {selectedCount > 0 && (
-            <div className="workbench-border-glow mb-2 rounded-[var(--radius-xl)] border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-2">
-              <p className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-[var(--color-accent)]">
-                当前上下文 · {selectedCount} 个文件
-              </p>
-              <div className="grid grid-cols-3 gap-1.5">
-                <Button variant="secondary" size="sm" onClick={onBatchDelete} className="w-full hover:border-[var(--color-error)] hover:text-[var(--color-error)]">
-                  <Trash2 size={13} />
-                  删除
-                </Button>
-                <Button variant="secondary" size="sm" onClick={onBatchReparse} className="w-full">
-                  <RotateCcw size={13} />
-                  解析
-                </Button>
-                <Button variant="secondary" size="sm" onClick={onBatchDownload} className="w-full">
-                  <Download size={13} />
-                  下载
-                </Button>
-              </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                onClick={onBatchDelete}
+                disabled={selectedCount === 0}
+                className="w-full hover:text-destructive"
+                aria-label="删除当前上下文文件"
+                title="删除"
+              >
+                <Trash strokeWidth={2} />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                onClick={onBatchReparse}
+                disabled={selectedCount === 0}
+                className="w-full"
+                aria-label="重新解析当前上下文文件"
+                title="解析"
+              >
+                <CubeScan strokeWidth={2} />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                onClick={onBatchDownload}
+                disabled={selectedCount === 0}
+                className="w-full"
+                aria-label="下载当前上下文 Markdown"
+                title="下载"
+              >
+                <Download strokeWidth={2} />
+              </Button>
             </div>
-          )}
+            </CardContent>
+          </Card>
           <FileUpload
             projectId={project.id}
             onUploaded={onFileUploaded}
@@ -258,69 +272,60 @@ export function ProjectSidebar({
             files={files}
             selectedIds={selectedFileIds}
             onToggle={onFileToggle}
-            onDelete={onFileDelete}
-            onParse={onFileParse}
-            onEnhance={onFileEnhance}
-            onView={onFileView}
-            onCategoryChange={onFileCategoryChange}
             defaultGroupsCollapsed
             className="mt-2"
           />
-        </div>
+        </SidebarGroup>
 
         {/* 对话列表 */}
-        <div className="px-3 py-2">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase tracking-wider">
-              项目对话
-            </span>
-            <Button variant="ghost" size="sm" onClick={onNewConversation}>
-              <Plus size={12} strokeWidth={2} />
-            </Button>
-          </div>
+        <SidebarGroup className="px-0 py-2">
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider">
+            项目对话
+          </SidebarGroupLabel>
+          <SidebarGroupAction onClick={onNewConversation} aria-label="新建项目对话">
+            <Plus strokeWidth={2} />
+          </SidebarGroupAction>
+          <SidebarGroupContent>
           {project.conversations && project.conversations.length > 0 ? (
-            <div className="space-y-0.5">
+            <SidebarMenu>
               {project.conversations.map((conv) => (
-                <div
+                <SidebarMenuItem
                   key={conv.id}
-                  className={cn(
-                    "group flex w-full items-center gap-1 rounded-[var(--radius-md)] pr-1",
-                    "text-xs transition-colors duration-100 hover:bg-[var(--color-surface-hover)]",
-                    activeConversationId === conv.id
-                      ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
-                      : "text-[var(--color-text-secondary)]"
-                  )}
                 >
-                  <button
+                  <SidebarMenuButton
                     type="button"
                     onClick={() => onConversationSelect(conv.id)}
-                    className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] px-2 text-left"
+                    isActive={activeConversationId === conv.id}
+                    size="sm"
                   >
-                    <MessageSquare size={12} strokeWidth={2} className="shrink-0 opacity-70" />
-                    <span className="truncate flex-1">{conv.title}</span>
-                  </button>
-                  <button
+                    <ChatLines strokeWidth={2} />
+                    <span>{conv.title}</span>
+                  </SidebarMenuButton>
+                  <SidebarMenuAction
                     type="button"
+                    showOnHover
                     onClick={(event) => {
                       event.stopPropagation();
                       onConversationDelete(conv.id, conv.title);
                     }}
-                    className="inline-flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] opacity-0 transition-opacity duration-150 hover:bg-[var(--color-error-muted)] hover:text-[var(--color-error)] group-hover:opacity-100 focus-visible:opacity-100"
+                    className="hover:text-destructive"
                     aria-label={`删除项目对话 ${conv.title}`}
                     title="删除"
                   >
-                    <Trash2 size={12} strokeWidth={2} />
-                  </button>
-                </div>
+                    <Trash strokeWidth={2} />
+                  </SidebarMenuAction>
+                </SidebarMenuItem>
               ))}
-            </div>
+            </SidebarMenu>
           ) : (
             <p className="text-xs text-[var(--color-text-tertiary)] py-2">
               暂无对话
             </p>
           )}
-        </div>
-      </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
     </div>
+    </SidebarProvider>
   );
 }

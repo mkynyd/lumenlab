@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { FolderOpen } from "lucide-react";
 import { useCreateProject } from "@/lib/hooks/use-projects";
 
@@ -227,8 +228,9 @@ export default function NewProjectPage() {
               type="submit"
               variant="primary"
               size="lg"
-              isLoading={createProject.isPending}
+              disabled={createProject.isPending}
             >
+              {createProject.isPending && <Spinner data-icon="inline-start" />}
               创建项目
             </Button>
             <Button
