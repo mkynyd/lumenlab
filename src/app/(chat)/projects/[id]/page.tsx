@@ -17,7 +17,11 @@ import {
 } from "iconoir-react";
 import { AmbientField } from "@/components/workbench/ambient-field";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
-import { useChat, type SendMessageInput } from "@/lib/hooks/use-chat";
+import {
+  useChat,
+  type ChatMessage,
+  type SendMessageInput,
+} from "@/lib/hooks/use-chat";
 import type { FileAttachment } from "@/lib/chat/router";
 import type {
   FileSelectionIntent,
@@ -34,6 +38,40 @@ import {
 } from "@/lib/hooks/use-conversations";
 import { useSaveArtifact } from "@/lib/hooks/use-artifacts";
 import { queryKeys } from "@/lib/query-keys";
+
+type PersistedConversationMessage = {
+  id: string;
+  role: string;
+  content: string;
+  reasoningContent?: string | null;
+  tokenCount?: number | null;
+  cacheHitTokens?: number | null;
+  cacheMissTokens?: number | null;
+};
+
+function isEmptyAssistantPlaceholder(message: PersistedConversationMessage) {
+  return (
+    message.role === "assistant" &&
+    !message.content.trim() &&
+    !message.reasoningContent?.trim() &&
+    message.tokenCount == null
+  );
+}
+
+function toChatMessages(messages: PersistedConversationMessage[]): ChatMessage[] {
+  const pendingIndex = messages.reduce(
+    (foundIndex, message, index) =>
+      isEmptyAssistantPlaceholder(message) ? index : foundIndex,
+    -1
+  );
+
+  return messages.map((message, index) => ({
+    ...message,
+    role: message.role as "user" | "assistant" | "system",
+    isStreaming: index === pendingIndex || undefined,
+    streamingSource: index === pendingIndex ? "background" : undefined,
+  }));
+}
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -92,6 +130,30 @@ export default function ProjectDetailPage() {
   const hasParsingFiles = Boolean(
     project?.files.some((file) => file.status === "parsing")
   );
+  const hasBackgroundPendingMessage = messages.some(
+    (message) =>
+      message.role === "assistant" &&
+      message.isStreaming &&
+      message.streamingSource === "background"
+  );
+  const emptyForegroundPersistedMessageKey = messages
+    .filter(
+      (message) =>
+        message.role === "assistant" &&
+        message.isStreaming &&
+        message.streamingSource === "foreground" &&
+        !message.id.startsWith("assistant-") &&
+        !message.content.trim() &&
+        !message.reasoningContent?.trim()
+    )
+    .map((message) => message.id)
+    .join("|");
+  const [stalledForegroundMessageKey, setStalledForegroundMessageKey] =
+    useState<string | null>(null);
+  const shouldPollPendingConversation =
+    hasBackgroundPendingMessage ||
+    (Boolean(emptyForegroundPersistedMessageKey) &&
+      stalledForegroundMessageKey === emptyForegroundPersistedMessageKey);
 
   useEffect(() => {
     fetch("/api/files/cleanup-stale", { method: "POST" })
@@ -139,6 +201,64 @@ export default function ProjectDetailPage() {
     projectId,
     queryClient,
     sendMessage,
+  ]);
+
+  useEffect(() => {
+    if (!emptyForegroundPersistedMessageKey) return;
+
+    const timer = window.setTimeout(() => {
+      setStalledForegroundMessageKey(emptyForegroundPersistedMessageKey);
+    }, 12000);
+
+    return () => window.clearTimeout(timer);
+  }, [emptyForegroundPersistedMessageKey]);
+
+  useEffect(() => {
+    if (!conversationId || !shouldPollPendingConversation) return;
+
+    const activeConversationId = conversationId;
+    let cancelled = false;
+    async function refreshPendingConversation() {
+      try {
+        const conversation = await queryClient.fetchQuery(
+          conversationQueryOptions(activeConversationId)
+        );
+        if (cancelled || conversation.projectId !== projectId) return;
+
+        const nextMessages = toChatMessages(conversation.messages);
+        loadConversation(conversation.id, nextMessages, {
+          model: conversation.model,
+          thinkingEnabled: conversation.thinkingEnabled ?? true,
+        });
+
+        if (!nextMessages.some((message) => message.isStreaming)) {
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.projects.detail(projectId),
+          });
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.conversations.all,
+          });
+        }
+      } catch {
+        // Keep the background placeholder visible; the next tick can recover.
+      }
+    }
+
+    void refreshPendingConversation();
+    const timer = window.setInterval(() => {
+      void refreshPendingConversation();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    conversationId,
+    loadConversation,
+    projectId,
+    queryClient,
+    shouldPollPendingConversation,
   ]);
 
   function handleFileToggle(id: string, intent: FileSelectionIntent) {
@@ -271,7 +391,7 @@ export default function ProjectDetailPage() {
   }
 
   async function handleConversationSelect(nextConversationId: string) {
-    if (isStreaming || nextConversationId === conversationId) return;
+    if (nextConversationId === conversationId) return;
 
     try {
       const conversation = await queryClient.fetchQuery(
@@ -283,10 +403,7 @@ export default function ProjectDetailPage() {
 
       loadConversation(
         conversation.id,
-        conversation.messages.map((message) => ({
-          ...message,
-          role: message.role as "user" | "assistant" | "system",
-        })),
+        toChatMessages(conversation.messages),
         {
           model: conversation.model,
           thinkingEnabled: conversation.thinkingEnabled ?? true,

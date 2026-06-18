@@ -22,6 +22,8 @@ export interface ChatMessage {
   cacheHitTokens?: number | null;
   cacheMissTokens?: number | null;
   isStreaming?: boolean;
+  streamingSource?: "foreground" | "background";
+  streamingStartedAt?: number;
 }
 
 export interface SendMessageInput {
@@ -43,6 +45,10 @@ interface UseChatOptions {
 
 type ReasoningEffort = NonNullable<UseChatOptions["reasoningEffort"]>;
 
+function hasStreamingMessage(messages: ChatMessage[]) {
+  return messages.some((message) => message.isStreaming);
+}
+
 export function useChat(options: UseChatOptions = {}) {
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>(
@@ -60,6 +66,10 @@ export function useChat(options: UseChatOptions = {}) {
     options.reasoningEffort ?? "max"
   );
   const abortRef = useRef<AbortController | null>(null);
+  const conversationIdRef = useRef<string | undefined>(
+    options.initialConversationId
+  );
+  const streamSessionRef = useRef(0);
 
   const setThinkingEnabled = useCallback(() => {
     setThinkingEnabledState(true);
@@ -84,8 +94,10 @@ export function useChat(options: UseChatOptions = {}) {
       const content = input.content.trim() || (attachments.length > 0 ? "请阅读附件。" : "");
       if (!content.trim() && attachments.length === 0) return;
 
-      // Abort any previous stream
+      // Abort any still-attached foreground stream before sending a new message.
       abortRef.current?.abort();
+      const streamSession = streamSessionRef.current + 1;
+      streamSessionRef.current = streamSession;
 
       setError(null);
       setIsStreaming(true);
@@ -98,6 +110,8 @@ export function useChat(options: UseChatOptions = {}) {
           : content.trim(),
       };
       let streamingId = `assistant-${Date.now()}`;
+      const streamingStartedAt = Date.now();
+      let streamConversationId = conversationId;
 
       setMessages((prev) => [
         ...prev,
@@ -108,11 +122,14 @@ export function useChat(options: UseChatOptions = {}) {
           content: "",
           reasoningContent: null,
           isStreaming: true,
+          streamingSource: "foreground",
+          streamingStartedAt,
         },
       ]);
 
+      let controller: AbortController | null = null;
       try {
-        const controller = new AbortController();
+        controller = new AbortController();
         abortRef.current = controller;
 
         const requestBody = buildChatRequestBody({
@@ -152,7 +169,11 @@ export function useChat(options: UseChatOptions = {}) {
         // Get conversation ID from header if new
         const newConvId = response.headers.get("X-Conversation-Id");
         if (newConvId && !conversationId) {
+          conversationIdRef.current = newConvId;
+          streamConversationId = newConvId;
           setConversationId(newConvId);
+        } else if (newConvId) {
+          streamConversationId = newConvId;
         }
 
         const reader = response.body?.getReader();
@@ -180,7 +201,8 @@ export function useChat(options: UseChatOptions = {}) {
           fullContent += chunk.content;
           fullReasoning += chunk.reasoningContent;
 
-          // Update the streaming message in-place
+          // Update the streaming message in-place. If this stream was detached
+          // by a conversation switch, the id will not exist in the visible list.
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamingId
@@ -207,6 +229,8 @@ export function useChat(options: UseChatOptions = {}) {
                   content: fullContent,
                   reasoningContent: fullReasoning || null,
                   isStreaming: false,
+                  streamingSource: undefined,
+                  streamingStartedAt: undefined,
                   tokenCount: result.usage?.totalTokens ?? null,
                   cacheHitTokens: result.usage?.cacheHitTokens ?? null,
                   cacheMissTokens: result.usage?.cacheMissTokens ?? null,
@@ -226,20 +250,37 @@ export function useChat(options: UseChatOptions = {}) {
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
-          // User aborted — mark streaming message as done
-          setMessages((prev) =>
-            prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
-          );
+          // User aborted the attached foreground stream.
+          if (
+            streamSessionRef.current === streamSession ||
+            conversationIdRef.current === streamConversationId
+          ) {
+            setMessages((prev) =>
+              prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+            );
+          }
         } else {
-          setError(
-            err instanceof Error ? err.message : "An unexpected error occurred"
-          );
-          // Remove the streaming placeholder on error
-          setMessages((prev) => prev.filter((m) => !m.isStreaming));
+          if (
+            streamSessionRef.current === streamSession ||
+            conversationIdRef.current === streamConversationId
+          ) {
+            setError(
+              err instanceof Error ? err.message : "An unexpected error occurred"
+            );
+            // Remove the streaming placeholder on foreground error.
+            setMessages((prev) => prev.filter((m) => !m.isStreaming));
+          }
         }
       } finally {
-        setIsStreaming(false);
-        abortRef.current = null;
+        if (
+          streamSessionRef.current === streamSession ||
+          conversationIdRef.current === streamConversationId
+        ) {
+          setIsStreaming(false);
+        }
+        if (controller && abortRef.current === controller) {
+          abortRef.current = null;
+        }
       }
     },
     [
@@ -268,11 +309,14 @@ export function useChat(options: UseChatOptions = {}) {
   const clearError = useCallback(() => setError(null), []);
 
   const newConversation = useCallback(() => {
+    streamSessionRef.current += 1;
+    abortRef.current = null;
+    conversationIdRef.current = undefined;
     setMessages([]);
     setConversationId(undefined);
     setUsage(null);
     setError(null);
-    abortRef.current?.abort();
+    setIsStreaming(false);
   }, []);
 
   const loadConversation = useCallback(
@@ -281,14 +325,16 @@ export function useChat(options: UseChatOptions = {}) {
       nextMessages: ChatMessage[],
       settings?: { model?: string; thinkingEnabled?: boolean }
     ) => {
-      abortRef.current?.abort();
+      streamSessionRef.current += 1;
+      abortRef.current = null;
+      conversationIdRef.current = nextConversationId;
       setConversationId(nextConversationId);
       setMessages(nextMessages);
       if (settings?.model) setModel(settings.model);
       setThinkingEnabledState(true);
       setUsage(null);
       setError(null);
-      setIsStreaming(false);
+      setIsStreaming(hasStreamingMessage(nextMessages));
     },
     []
   );
