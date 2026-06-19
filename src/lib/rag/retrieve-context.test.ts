@@ -279,6 +279,69 @@ describe("retrieveProjectContext", () => {
     expect(result.debug.matchedChunkCount).toBe(1);
   });
 
+  it("uses all parsed courseware instead of agentic narrowing for corpus-wide knowledge extraction", async () => {
+    mocks.chunkCount.mockResolvedValue(25);
+    mocks.fileFindMany.mockResolvedValueOnce([
+      { id: "file-1", originalName: "1-1 电路模型.ppt", status: "parsed" },
+      { id: "file-2", originalName: "2-1 等效变换.ppt", status: "parsed" },
+      { id: "file-3", originalName: "3-1 电容.ppt", status: "parsed" },
+    ]);
+    mocks.chunkFindMany
+      .mockResolvedValueOnce([
+        {
+          id: "chunk-1",
+          content: "知识点：电路模型与参考方向。",
+          title: "1-1 电路模型.ppt",
+          fileAssetId: "file-1",
+          projectId: "project-1",
+          chunkIndex: 0,
+          fileAsset: { originalName: "1-1 电路模型.ppt" },
+        },
+        {
+          id: "chunk-2",
+          content: "知识点：等效变换与电源变换。",
+          title: "2-1 等效变换.ppt",
+          fileAssetId: "file-2",
+          projectId: "project-1",
+          chunkIndex: 0,
+          fileAsset: { originalName: "2-1 等效变换.ppt" },
+        },
+        {
+          id: "chunk-3",
+          content: "知识点：电容元件与动态响应。",
+          title: "3-1 电容.ppt",
+          fileAssetId: "file-3",
+          projectId: "project-1",
+          chunkIndex: 0,
+          fileAsset: { originalName: "3-1 电容.ppt" },
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const result = await retrieveProjectContext({
+      userId: "user-1",
+      projectId: "project-1",
+      selectedFileIds: [],
+      query: "请基于我选中的资料提取核心知识点，按章节和依赖关系组织，标注重点、难点和易混点。",
+      maxChars: 60000,
+      loadQueryEmbedding: mocks.loadQueryEmbedding,
+    });
+
+    expect(mocks.createTextMessage).not.toHaveBeenCalled();
+    expect(mocks.chunkFindMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          fileAssetId: { in: ["file-1", "file-2", "file-3"] },
+        }),
+      })
+    );
+    expect(result.debug.scopeSource).toBe("project");
+    expect(result.debug.candidateFileCount).toBe(3);
+    expect(result.context).toContain("1-1 电路模型.ppt");
+    expect(result.context).toContain("2-1 等效变换.ppt");
+    expect(result.context).toContain("3-1 电容.ppt");
+  });
+
   it("does not generate query embedding when the scoped project has no searchable chunks", async () => {
     mocks.chunkCount.mockResolvedValue(0);
     mocks.fileFindMany.mockResolvedValue([

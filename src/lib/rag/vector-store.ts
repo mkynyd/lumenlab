@@ -170,6 +170,13 @@ const CROSS_DOCUMENT_PATTERNS = [
   /(跨文档|多个文件|多份|两份|所有资料|项目资料)/,
 ];
 
+const CORPUS_WIDE_PATTERNS = [
+  /(提取|梳理|整理).*(知识点|核心知识点)/,
+  /(生成|整理).*(考点索引|速记版|考前速记|逻辑图|思维导图)/,
+  /(全部|所有|整门|全课程|全项目).*(课件|资料|文件|文档|知识点|考点)/,
+  /(按章节|章节和依赖关系|依赖关系).*(组织|梳理|整理)/,
+];
+
 const EXACT_QUERY_PATTERNS = [
   /第\s*[0-9一二三四五六七八九十]+\s*[章节讲]/,
   /chapter\s*\d+/i,
@@ -183,7 +190,7 @@ export function shouldUseProjectContext(
   selectedFileIds: string[] = []
 ) {
   if (selectedFileIds.length > 0) return true;
-  return hasAnyPattern(query, PROJECT_CONTEXT_PATTERNS);
+  return hasAnyPattern(query, PROJECT_CONTEXT_PATTERNS) || isCorpusWideTask(query);
 }
 
 function isWholeDocumentTask(query: string) {
@@ -193,6 +200,10 @@ function isWholeDocumentTask(query: string) {
 function shouldUseHybridSearch(query: string, candidateFileCount: number) {
   if (candidateFileCount > 1) return true;
   return hasAnyPattern(query, CROSS_DOCUMENT_PATTERNS);
+}
+
+function isCorpusWideTask(query: string) {
+  return hasAnyPattern(query, CORPUS_WIDE_PATTERNS);
 }
 
 function isExplicitKeywordQuery(query: string) {
@@ -493,6 +504,45 @@ export async function searchChunksByKeyword(params: {
   }));
 }
 
+async function searchCorpusOverviewChunks(params: {
+  userId: string;
+  projectId: string;
+  fileAssetIds: string[];
+  limit?: number;
+}): Promise<KeywordChunkResult[]> {
+  if (params.fileAssetIds.length === 0) return [];
+
+  const rows = await prisma.documentChunk.findMany({
+    where: {
+      userId: params.userId,
+      projectId: params.projectId,
+      fileAssetId: { in: params.fileAssetIds },
+      chunkIndex: 0,
+    },
+    orderBy: [{ fileAssetId: "asc" }, { chunkIndex: "asc" }],
+    take: params.limit || params.fileAssetIds.length,
+    select: {
+      id: true,
+      content: true,
+      title: true,
+      fileAssetId: true,
+      projectId: true,
+      chunkIndex: true,
+      fileAsset: { select: { originalName: true } },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    title: row.title,
+    fileAssetId: row.fileAssetId,
+    projectId: row.projectId,
+    chunkIndex: row.chunkIndex,
+    originalName: row.fileAsset?.originalName || row.title,
+  }));
+}
+
 export async function hybridSearch(params: {
   userId: string;
   projectId: string;
@@ -601,6 +651,8 @@ export async function retrieveProjectContext(
   let scopeSource: ContextRetrievalDebug["scopeSource"] =
     selectedFileIds.length > 0 ? "selected_files" : "project";
   let candidateFiles: ContextFile[] = [];
+  const corpusWideTask = selectedFileIds.length === 0 &&
+    isCorpusWideTask(params.query);
 
   if (!shouldUseProjectContext(params.query, selectedFileIds)) {
     const debug = debugPayload({ strategy: "no_context" });
@@ -613,7 +665,27 @@ export async function retrieveProjectContext(
     };
   }
 
-  if (contextFileIds.length === 0) {
+  if (corpusWideTask) {
+    candidateFiles = await prisma.fileAsset.findMany({
+      where: {
+        userId: params.userId,
+        projectId: params.projectId,
+        status: { in: ["parsed", "partial"] },
+      },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        originalName: true,
+        mimeType: true,
+        status: true,
+        textContent: true,
+        enhancedContent: true,
+        enhancementStatus: true,
+        processingMetadata: true,
+      },
+    });
+    contextFileIds = candidateFiles.map((file) => file.id);
+  } else if (contextFileIds.length === 0) {
     try {
       const selection = await selectFilesWithDeepSeek({
         userId: params.userId,
@@ -630,7 +702,7 @@ export async function retrieveProjectContext(
     }
   }
 
-  if (contextFileIds.length > 0) {
+  if (!corpusWideTask && contextFileIds.length > 0) {
     const fileOrder = new Map(contextFileIds.map((id, index) => [id, index]));
     const files = await prisma.fileAsset.findMany({
       where: {
@@ -661,7 +733,9 @@ export async function retrieveProjectContext(
       : file.textContent;
     return Boolean(content) && ["parsed", "partial"].includes(file.status);
   });
-  const candidateFileIds = parsedCandidateFiles.map((file) => file.id);
+  const candidateFileIds = candidateFiles
+    .filter((file) => ["parsed", "partial"].includes(file.status))
+    .map((file) => file.id);
   const hasFileScope = contextFileIds.length > 0;
   const scopedFileIds = hasFileScope ? candidateFileIds : undefined;
   const candidateFileCount = contextFileIds.length > 0
@@ -708,6 +782,28 @@ export async function retrieveProjectContext(
         },
       });
 
+  if (corpusWideTask && chunkCount > 0 && candidateFileIds.length > 0) {
+    const overviewChunks = await searchCorpusOverviewChunks({
+      userId: params.userId,
+      projectId: params.projectId,
+      fileAssetIds: candidateFileIds,
+      limit: Math.min(candidateFileIds.length, 50),
+    });
+
+    matchedChunkCount += overviewChunks.length;
+    for (const chunk of overviewChunks) {
+      const key = `${chunk.fileAssetId || "none"}:${chunk.chunkIndex}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      sections.push({
+        key,
+        kind: "chunk",
+        fileAssetId: chunk.fileAssetId || "",
+        markdown: `## 来源：${chunk.originalName || chunk.title || "项目资料"}（chunk ${chunk.chunkIndex + 1}）\n\n> 以下资料来自全项目课件整理范围。\n\n${chunk.content}`,
+      });
+    }
+  }
+
   if (strategy !== "full_document" && chunkCount > 0) {
     let chunks: KeywordChunkResult[] = [];
     if (strategy === "hybrid_search") {
@@ -731,7 +827,7 @@ export async function retrieveProjectContext(
       });
     }
 
-    matchedChunkCount = chunks.length;
+    matchedChunkCount += chunks.length;
     for (const chunk of chunks) {
       const key = `${chunk.fileAssetId || "none"}:${chunk.chunkIndex}`;
       if (seen.has(key)) continue;
