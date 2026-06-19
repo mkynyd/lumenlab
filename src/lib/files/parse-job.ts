@@ -1,6 +1,4 @@
 import crypto from "crypto";
-import { readFile } from "fs/promises";
-import path from "path";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { getProviderApiKey } from "@/lib/data/provider-access";
@@ -12,8 +10,7 @@ import {
 import { categorizeFiles } from "@/lib/files/categorize";
 import { parseFileWithMinerU } from "@/lib/parse/mineru";
 import { embedChunksForFile } from "@/lib/rag/embedding";
-
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+import { readStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
 
 export const PARSING_STAGES = {
   uploading: "上传文件中",
@@ -73,15 +70,8 @@ function mergeMetadata(current: unknown, next: Record<string, unknown>): Prisma.
 }
 
 function extensionOf(filename: string) {
-  return path.extname(filename).toLowerCase().slice(1);
-}
-
-function resolveUploadPath(storagePath: string) {
-  const resolvedPath = path.resolve(UPLOAD_DIR, storagePath);
-  if (!resolvedPath.startsWith(`${path.resolve(UPLOAD_DIR)}${path.sep}`)) {
-    throw new Error("文件路径无效");
-  }
-  return resolvedPath;
+  const index = filename.lastIndexOf(".");
+  return index >= 0 ? filename.slice(index + 1).toLowerCase() : "";
 }
 
 async function updateStage(
@@ -124,13 +114,16 @@ async function parseFileContent(options: {
     id: string;
     originalName: string;
     mimeType: string;
+    storageProvider: string;
     storagePath: string;
     processingMetadata: unknown;
   };
 }) {
-  const resolvedPath = resolveUploadPath(options.file.storagePath);
   const ext = extensionOf(options.file.originalName || options.file.storagePath);
-  const data = await readFile(resolvedPath);
+  const data = await readStoredObject({
+    provider: options.file.storageProvider as StorageProvider,
+    key: options.file.storagePath,
+  });
 
   if (TEXT_EXTENSIONS.has(ext)) {
     return {

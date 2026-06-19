@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { startFileParseBatch } from "@/lib/files/parse-job";
+import { uploadFileBuffer } from "@/lib/storage/object-storage";
 
 const CODE_EXTENSIONS: Record<string, string> = {
   "txt": "text/plain",
@@ -50,7 +50,19 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const MAX_FILES_PER_REQUEST = 20;
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+
+function isUploadFile(value: unknown): value is File {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "name" in value &&
+      typeof (value as { name?: unknown }).name === "string" &&
+      "size" in value &&
+      typeof (value as { size?: unknown }).size === "number" &&
+      "arrayBuffer" in value &&
+      typeof (value as { arrayBuffer?: unknown }).arrayBuffer === "function"
+  );
+}
 
 export async function GET(
   request: Request,
@@ -138,12 +150,9 @@ export async function POST(
       note?: string;
     }> = [];
 
-    // Ensure upload directory exists
-    await mkdir(UPLOAD_DIR, { recursive: true });
-
     for (const file of rawFiles) {
       try {
-        if (!(file instanceof File) || !file.name) {
+        if (!isUploadFile(file) || !file.name) {
           results.push({ success: false, error: "无效的文件" });
           continue;
         }
@@ -169,8 +178,7 @@ export async function POST(
           continue;
         }
 
-        // Sanitize filename
-        const safeName = `${crypto.randomUUID()}${path.extname(originalName)}`;
+        const fileId = crypto.randomUUID();
         const mimeType =
           CODE_EXTENSIONS[ext] ||
           DOCUMENT_EXTENSIONS[ext] ||
@@ -178,20 +186,27 @@ export async function POST(
           file.type ||
           "application/octet-stream";
 
-        // Save file to disk
         const buffer = Buffer.from(await file.arrayBuffer());
-        const storagePath = path.join(UPLOAD_DIR, safeName);
-        await writeFile(storagePath, buffer);
+        const stored = await uploadFileBuffer({
+          userId: session.user.id,
+          projectId,
+          fileId,
+          originalName,
+          mimeType,
+          buffer,
+        });
 
         const fileAsset = await prisma.fileAsset.create({
           data: {
+            id: fileId,
             userId: session.user.id,
             projectId,
-            filename: safeName,
+            filename: stored.filename,
             originalName,
             mimeType,
             size: file.size,
-            storagePath: safeName,
+            storageProvider: stored.provider,
+            storagePath: stored.key,
             textContent: null,
             status: "parsing",
             processingMetadata: {

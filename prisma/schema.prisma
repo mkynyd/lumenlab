@@ -217,7 +217,8 @@ model FileAsset {
   originalName       String // original upload filename
   mimeType           String
   size               Int // bytes
-  storagePath        String // relative path in uploads/
+  storageProvider    String   @default("local") // local, qiniu
+  storagePath        String // local relative path or object storage key
   textContent        String? // parsed text content (null for images/PDFs)
   enhancedContent    String?
   enhancementStatus  String   @default("none") // none, enhancing, enhanced, stale, failed
@@ -236,6 +237,7 @@ model FileAsset {
   @@index([projectId])
   @@index([status])
   @@index([category])
+  @@index([storageProvider])
 }
 
 model ProjectIndex {

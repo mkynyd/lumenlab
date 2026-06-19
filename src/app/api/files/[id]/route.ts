@@ -7,9 +7,8 @@ import {
 } from "@/lib/rag/vector-store";
 import { FILE_CATEGORIES } from "@/lib/file-categories";
 import { refreshProjectIndex } from "@/lib/rag/project-index";
-import { unlink } from "fs/promises";
-import path from "path";
 import { z } from "zod";
+import { deleteStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
 
 const updateFileSchema = z
   .object({
@@ -19,8 +18,6 @@ const updateFileSchema = z
   .refine((value) => value.textContent !== undefined || value.category !== undefined, {
     message: "没有可更新的内容",
   });
-
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
 export async function GET(
   request: Request,
@@ -135,13 +132,12 @@ export async function DELETE(
   // Delete related chunks
   await deleteChunksByFileAsset(file.id, session.user.id);
 
-  // Delete physical file
-  try {
-    const filePath = path.join(UPLOAD_DIR, file.storagePath);
-    await unlink(filePath);
-  } catch {
-    // File might not exist on disk, that's ok
-  }
+  await deleteStoredObject({
+    provider: file.storageProvider as StorageProvider,
+    key: file.storagePath,
+  }).catch((error) => {
+    console.warn("File object deletion failed:", file.id, error);
+  });
 
   await prisma.fileAsset.delete({ where: { id } });
   if (file.projectId) {

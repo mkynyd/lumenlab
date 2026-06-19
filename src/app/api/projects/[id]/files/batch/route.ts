@@ -1,5 +1,3 @@
-import { unlink } from "fs/promises";
-import path from "path";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
@@ -9,14 +7,13 @@ import { FILE_CATEGORIES } from "@/lib/file-categories";
 import { refreshProjectIndex } from "@/lib/rag/project-index";
 import { startFileParseBatch } from "@/lib/files/parse-job";
 import { categorizeFiles } from "@/lib/files/categorize";
+import { deleteStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
 
 const batchFileSchema = z.object({
   action: z.enum(["delete", "reparse", "categorize", "download"]),
   fileIds: z.array(z.string().min(1)).min(1).max(100),
   category: z.enum(FILE_CATEGORIES).optional(),
 });
-
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
 function timestampForFilename() {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -94,7 +91,12 @@ export async function POST(
       files.map(async (file) => {
         await deleteChunksByFileAsset(file.id, session.user.id);
         if (file.storagePath) {
-          await unlink(path.join(UPLOAD_DIR, file.storagePath)).catch(() => {});
+          await deleteStoredObject({
+            provider: file.storageProvider as StorageProvider,
+            key: file.storagePath,
+          }).catch((error) => {
+            console.warn("File object deletion failed:", file.id, error);
+          });
         }
       })
     );

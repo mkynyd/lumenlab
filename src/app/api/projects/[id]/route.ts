@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { deleteStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
 
 const updateProjectSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -139,6 +140,21 @@ export async function DELETE(
   if (!project) {
     return NextResponse.json({ error: "项目不存在" }, { status: 404 });
   }
+
+  const files = await prisma.fileAsset.findMany({
+    where: { projectId: id, userId: session.user.id },
+    select: { storageProvider: true, storagePath: true },
+  });
+  await Promise.all(
+    files.map((file) =>
+      deleteStoredObject({
+        provider: file.storageProvider as StorageProvider,
+        key: file.storagePath,
+      }).catch((error) => {
+        console.warn("Project file object deletion failed:", id, error);
+      })
+    )
+  );
 
   await prisma.$transaction([
     prisma.conversation.deleteMany({

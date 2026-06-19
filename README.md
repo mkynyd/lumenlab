@@ -146,10 +146,20 @@ REGISTRATION_CODE_PEPPER="generate-with-openssl-rand-base64-48"
 REGISTRATION_SYNC_SECRET="shared-with-course-ai-regadmin"
 REGISTRATION_SYNC_PRIVATE_KEY_BASE64="base64-encoded-RSA-private-key-PEM"
 
+# 七牛云 Kodo 私有对象存储（生产环境必填）
+QINIU_ACCESS_KEY="your-qiniu-access-key"
+QINIU_SECRET_KEY="your-qiniu-secret-key"
+QINIU_BUCKET="course-ai-lab"
+QINIU_REGION="z2"
+QINIU_UPLOAD_HOST="https://up-z2.qiniup.com"
+QINIU_PRIVATE_DOMAIN="coursecdn.mkynstudio.top"
+
 # 应用
 AUTH_URL="https://lab.mkynstudio.top"
 NEXT_PUBLIC_APP_NAME="AI 实验工作台"
 ```
+
+生产环境用户上传的原始文件存放在七牛云 Kodo 私有空间中。应用服务端负责接收上传、写入 Kodo、保存 `FileAsset` 元数据，并在下载时完成登录态和文件归属校验后生成 10 分钟有效的私有下载链接。开发环境未配置七牛变量时会回退到本地 `uploads/`，生产环境缺少七牛配置会直接拒绝上传，避免文件落到服务器系统盘。
 
 ### 5. 初始化数据库
 

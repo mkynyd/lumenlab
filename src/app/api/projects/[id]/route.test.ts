@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   projectFindFirst: vi.fn(),
+  fileFindMany: vi.fn(),
+  deleteStoredObject: vi.fn(),
   conversationDeleteMany: vi.fn(),
   projectDelete: vi.fn(),
   transaction: vi.fn(),
@@ -19,11 +21,18 @@ vi.mock("@/lib/db", () => ({
       findFirst: mocks.projectFindFirst,
       delete: mocks.projectDelete,
     },
+    fileAsset: {
+      findMany: mocks.fileFindMany,
+    },
     conversation: {
       deleteMany: mocks.conversationDeleteMany,
     },
     $transaction: mocks.transaction,
   },
+}));
+
+vi.mock("@/lib/storage/object-storage", () => ({
+  deleteStoredObject: mocks.deleteStoredObject,
 }));
 
 import { DELETE } from "@/app/api/projects/[id]/route";
@@ -33,6 +42,13 @@ describe("DELETE /api/projects/[id]", () => {
     vi.clearAllMocks();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
     mocks.projectFindFirst.mockResolvedValue({ id: "project-1", userId: "user-1" });
+    mocks.fileFindMany.mockResolvedValue([
+      {
+        storageProvider: "qiniu",
+        storagePath: "users/user-1/projects/project-1/files/file-1/file.pdf",
+      },
+    ]);
+    mocks.deleteStoredObject.mockResolvedValue(undefined);
     mocks.conversationDeleteMany.mockReturnValue("delete-conversations");
     mocks.projectDelete.mockReturnValue("delete-project");
     mocks.transaction.mockResolvedValue([]);
@@ -47,6 +63,14 @@ describe("DELETE /api/projects/[id]", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(mocks.fileFindMany).toHaveBeenCalledWith({
+      where: { projectId: "project-1", userId: "user-1" },
+      select: { storageProvider: true, storagePath: true },
+    });
+    expect(mocks.deleteStoredObject).toHaveBeenCalledWith({
+      provider: "qiniu",
+      key: "users/user-1/projects/project-1/files/file-1/file.pdf",
+    });
     expect(mocks.conversationDeleteMany).toHaveBeenCalledWith({
       where: { projectId: "project-1", userId: "user-1" },
     });

@@ -345,6 +345,31 @@ export default function ProjectDetailPage() {
       if (file) setPreviewFile(file);
       return;
     }
+    if (action === "download") {
+      const res = await fetch(`/api/files/${fileId}/download`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setFileMessage(data?.error || "文件下载失败");
+        return;
+      }
+      const contentType = res.headers.get("Content-Type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await res.json();
+        if (data.url) {
+          window.open(data.url, "_blank", "noopener,noreferrer");
+          return;
+        }
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const file = project?.files.find((item) => item.id === fileId);
+      link.href = url;
+      link.download = file?.originalName || "download";
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
     await runBatchAction(action, [fileId]);
   }
 
