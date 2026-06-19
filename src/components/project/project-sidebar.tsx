@@ -320,7 +320,12 @@ export function ProjectSidebar({
         </SidebarGroup>
 
         {/* 对话列表 */}
-        <SidebarGroup className="min-h-0 shrink px-0 py-2">
+        <SidebarGroup
+          className={cn(
+            "min-h-0 px-0 py-2",
+            conversationsOpen ? "flex flex-1 flex-col" : "shrink-0"
+          )}
+        >
           <div className="mb-1 flex items-center justify-between gap-2">
             <button
               type="button"
@@ -347,9 +352,11 @@ export function ProjectSidebar({
               <Plus width={14} height={14} strokeWidth={2} />
             </button>
           </div>
-          <SidebarGroupContent>
+          <SidebarGroupContent
+            className={cn("min-h-0", conversationsOpen && "flex-1")}
+          >
             {conversationsOpen && (
-              <ScrollArea className="max-h-36 w-full overflow-x-hidden">
+              <ScrollArea className="h-full min-h-0 w-full overflow-x-hidden">
                 {project.conversations && project.conversations.length > 0 ? (
                   <div className="flex w-full flex-col gap-1 overflow-hidden">
                     {project.conversations.map((conv) => {
