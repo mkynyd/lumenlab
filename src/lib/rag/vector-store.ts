@@ -12,7 +12,6 @@ import { getProviderApiKey } from "@/lib/data/provider-access";
 import {
   matchProjectIndex,
   refreshProjectIndex,
-  type ProjectIndexMatch,
 } from "@/lib/rag/project-index";
 
 // ============================================================
@@ -27,6 +26,12 @@ const CHUNK_SIZE = 1500;
 
 /** Overlap between consecutive chunks in characters */
 const CHUNK_OVERLAP = 150;
+
+/** Small-file direct full-text loading limit, measured in characters. */
+export const FULL_DOCUMENT_CHAR_LIMIT = 8000;
+
+const DEFAULT_RETRIEVAL_LIMIT = 10;
+const AGENTIC_FILE_SCOPE_LIMIT = 12;
 
 // ============================================================
 // Types
@@ -45,6 +50,7 @@ export interface SearchParams {
   projectId?: string;
   /** Query embedding vector (if available) */
   queryEmbedding?: number[];
+  fileAssetIds?: string[];
   limit?: number;
 }
 
@@ -74,7 +80,25 @@ export interface RetrieveProjectContextParams {
   selectedFileIds: string[];
   query: string;
   maxChars: number;
-  queryEmbedding?: number[];
+  loadQueryEmbedding?: () => Promise<number[] | undefined>;
+}
+
+export type ContextRetrievalStrategy =
+  | "no_context"
+  | "full_document"
+  | "keyword_search"
+  | "hybrid_search";
+
+export interface ContextRetrievalDebug {
+  strategy: ContextRetrievalStrategy;
+  path: string;
+  scopeSource: "none" | "selected_files" | "agentic_file_scope" | "project";
+  candidateFileCount: number;
+  matchedChunkCount: number;
+  generatedQueryEmbedding: boolean;
+  fullDocumentChars: number;
+  finalContextChars: number;
+  truncated: boolean;
 }
 
 export interface RetrievedProjectContext {
@@ -82,6 +106,97 @@ export interface RetrievedProjectContext {
   notice: string | null;
   usedFileIds: string[];
   truncated: boolean;
+  debug: ContextRetrievalDebug;
+}
+
+interface ContextSection {
+  key: string;
+  fileAssetId: string;
+  markdown: string;
+  kind: "chunk" | "full";
+}
+
+interface ContextFile {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  status: string;
+  textContent: string | null;
+  enhancedContent: string | null;
+  enhancementStatus: string;
+  processingMetadata: unknown;
+}
+
+function debugPayload(
+  overrides: Partial<ContextRetrievalDebug>
+): ContextRetrievalDebug {
+  const strategy = overrides.strategy ?? "no_context";
+  const scopeSource = overrides.scopeSource ?? "none";
+  return {
+    strategy,
+    path:
+      overrides.path ??
+      (scopeSource === "agentic_file_scope"
+        ? `agentic_file_scope + ${strategy}`
+        : strategy),
+    scopeSource,
+    candidateFileCount: overrides.candidateFileCount ?? 0,
+    matchedChunkCount: overrides.matchedChunkCount ?? 0,
+    generatedQueryEmbedding: overrides.generatedQueryEmbedding ?? false,
+    fullDocumentChars: overrides.fullDocumentChars ?? 0,
+    finalContextChars: overrides.finalContextChars ?? 0,
+    truncated: overrides.truncated ?? false,
+  };
+}
+
+function hasAnyPattern(query: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(query));
+}
+
+const PROJECT_CONTEXT_PATTERNS = [
+  /根据.*(资料|文件|文档|课件|笔记|项目|报告|材料)/,
+  /(项目资料|上传的?文件|选中.*文件|这些资料|课程资料|实验报告|资料库)/,
+  /(文件|文档|课件|笔记|资料|材料|报告).*(说明|回答|查找|定位|总结|比较|分析)/,
+];
+
+const FULL_DOCUMENT_PATTERNS = [
+  /(总结|摘要|翻译|改写|润色).*(全文|整份|整篇|整个|文件|文档|资料|报告)/,
+  /(全文|整份|整篇|整个).*(总结|摘要|翻译|改写|润色|检查|分析|梳理)/,
+  /(通读|阅读全文|检查全文|按全文|完整阅读)/,
+];
+
+const CROSS_DOCUMENT_PATTERNS = [
+  /(比较|对比|差异|共同点|联系|关联|综合|归纳|整合)/,
+  /(跨文档|多个文件|多份|两份|所有资料|项目资料)/,
+];
+
+const EXACT_QUERY_PATTERNS = [
+  /第\s*[0-9一二三四五六七八九十]+\s*[章节讲]/,
+  /chapter\s*\d+/i,
+  /\b[A-Z][A-Z0-9_+-]{1,}\b/,
+  /\b[a-zA-Z_$][\w$]*\s*\(/,
+  /[`"“”'‘’][^`"“”'‘’]{2,}[`"“”'‘’]/,
+];
+
+export function shouldUseProjectContext(
+  query: string,
+  selectedFileIds: string[] = []
+) {
+  if (selectedFileIds.length > 0) return true;
+  return hasAnyPattern(query, PROJECT_CONTEXT_PATTERNS);
+}
+
+function isWholeDocumentTask(query: string) {
+  return hasAnyPattern(query, FULL_DOCUMENT_PATTERNS);
+}
+
+function shouldUseHybridSearch(query: string, candidateFileCount: number) {
+  if (candidateFileCount > 1) return true;
+  return hasAnyPattern(query, CROSS_DOCUMENT_PATTERNS);
+}
+
+function isExplicitKeywordQuery(query: string) {
+  return hasAnyPattern(query, EXACT_QUERY_PATTERNS);
 }
 
 // ============================================================
@@ -177,7 +292,7 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
 export async function searchSimilarChunks(
   params: SearchParams
 ): Promise<ChunkSearchResult[]> {
-  const { userId, projectId, queryEmbedding, limit = 10 } = params;
+  const { userId, projectId, queryEmbedding, fileAssetIds, limit = 10 } = params;
 
   // MVP: no embedding → return empty
   if (!queryEmbedding || queryEmbedding.length !== EMBEDDING_DIM) {
@@ -189,21 +304,27 @@ export async function searchSimilarChunks(
   const projectFilter = projectId
     ? `AND "projectId" = '${projectId}'`
     : "";
+  const fileFilter = fileAssetIds?.length
+    ? `AND "fileAssetId" = ANY($4)`
+    : "";
 
   // Use raw SQL for pgvector distance operator
+  const sql = `SELECT
+    id, content, title, "fileAssetId", "projectId", "chunkIndex",
+    embedding <-> $1::vector AS distance
+  FROM "DocumentChunk"
+  WHERE "userId" = $2
+    AND embedding IS NOT NULL
+    ${projectFilter}
+    ${fileFilter}
+  ORDER BY embedding <-> $1::vector
+  LIMIT $3`;
+  const args = fileAssetIds?.length
+    ? [vectorStr, userId, limit, fileAssetIds]
+    : [vectorStr, userId, limit];
   const rows = await prisma.$queryRawUnsafe<ChunkSearchResult[]>(
-    `SELECT
-      id, content, title, "fileAssetId", "projectId", "chunkIndex",
-      embedding <-> $1::vector AS distance
-    FROM "DocumentChunk"
-    WHERE "userId" = $2
-      AND embedding IS NOT NULL
-      ${projectFilter}
-    ORDER BY embedding <-> $1::vector
-    LIMIT $3`,
-    vectorStr,
-    userId,
-    limit
+    sql,
+    ...args
   );
 
   return rows || [];
@@ -331,6 +452,7 @@ export async function searchChunksByKeyword(params: {
   userId: string;
   projectId: string;
   query: string;
+  fileAssetIds?: string[];
   limit?: number;
 }): Promise<KeywordChunkResult[]> {
   const keywords = extractKeywords(params.query);
@@ -340,6 +462,9 @@ export async function searchChunksByKeyword(params: {
     where: {
       userId: params.userId,
       projectId: params.projectId,
+      ...(params.fileAssetIds?.length
+        ? { fileAssetId: { in: params.fileAssetIds } }
+        : {}),
       OR: keywords.map((keyword) => ({
         content: { contains: keyword, mode: "insensitive" as const },
       })),
@@ -373,6 +498,7 @@ export async function hybridSearch(params: {
   projectId: string;
   query: string;
   queryEmbedding?: number[];
+  fileAssetIds?: string[];
   limit?: number;
 }): Promise<KeywordChunkResult[]> {
   const limit = params.limit ?? 10;
@@ -382,6 +508,7 @@ export async function hybridSearch(params: {
           userId: params.userId,
           projectId: params.projectId,
           queryEmbedding: params.queryEmbedding,
+          fileAssetIds: params.fileAssetIds,
           limit: limit * 2,
         })
       : Promise.resolve([]),
@@ -389,6 +516,7 @@ export async function hybridSearch(params: {
       userId: params.userId,
       projectId: params.projectId,
       query: params.query,
+      fileAssetIds: params.fileAssetIds,
       limit: limit * 2,
     }),
   ]);
@@ -466,14 +594,24 @@ function parserNotice(file: {
 export async function retrieveProjectContext(
   params: RetrieveProjectContextParams
 ): Promise<RetrievedProjectContext> {
-  const sections: Array<{
-    key: string;
-    fileAssetId: string;
-    markdown: string;
-  }> = [];
+  const sections: ContextSection[] = [];
   const seen = new Set<string>();
-  let summaryOnlyMatches: ProjectIndexMatch[] = [];
-  let contextFileIds = [...new Set(params.selectedFileIds)];
+  const selectedFileIds = [...new Set(params.selectedFileIds)];
+  let contextFileIds = selectedFileIds;
+  let scopeSource: ContextRetrievalDebug["scopeSource"] =
+    selectedFileIds.length > 0 ? "selected_files" : "project";
+  let candidateFiles: ContextFile[] = [];
+
+  if (!shouldUseProjectContext(params.query, selectedFileIds)) {
+    const debug = debugPayload({ strategy: "no_context" });
+    return {
+      context: "",
+      notice: "未找到可用于回答的项目资料。",
+      usedFileIds: [],
+      truncated: false,
+      debug,
+    };
+  }
 
   if (contextFileIds.length === 0) {
     try {
@@ -481,13 +619,14 @@ export async function retrieveProjectContext(
         userId: params.userId,
         projectId: params.projectId,
         query: params.query,
-        limit: 12,
+        limit: AGENTIC_FILE_SCOPE_LIMIT,
       });
       contextFileIds = selection.fileIds;
-      summaryOnlyMatches = [];
+      if (contextFileIds.length > 0) {
+        scopeSource = "agentic_file_scope";
+      }
     } catch {
       contextFileIds = [];
-      summaryOnlyMatches = [];
     }
   }
 
@@ -511,54 +650,144 @@ export async function retrieveProjectContext(
       },
     });
 
-    for (const file of files.sort(
+    candidateFiles = files.sort(
       (a, b) => (fileOrder.get(a.id) ?? 0) - (fileOrder.get(b.id) ?? 0)
-    )) {
-      const content =
-        file.enhancementStatus === "enhanced" && file.enhancedContent
-          ? file.enhancedContent
-          : file.textContent;
-      if (!content || !["parsed", "partial"].includes(file.status)) continue;
-      const key = `${file.id}:enhanced-or-full`;
+    );
+  }
+
+  const parsedCandidateFiles = candidateFiles.filter((file) => {
+    const content = file.enhancementStatus === "enhanced" && file.enhancedContent
+      ? file.enhancedContent
+      : file.textContent;
+    return Boolean(content) && ["parsed", "partial"].includes(file.status);
+  });
+  const candidateFileIds = parsedCandidateFiles.map((file) => file.id);
+  const hasFileScope = contextFileIds.length > 0;
+  const scopedFileIds = hasFileScope ? candidateFileIds : undefined;
+  const candidateFileCount = contextFileIds.length > 0
+    ? candidateFileIds.length
+    : 0;
+  const selectedFullDocumentChars = parsedCandidateFiles.reduce(
+    (total, file) => {
+      const content = file.enhancementStatus === "enhanced" && file.enhancedContent
+        ? file.enhancedContent
+        : file.textContent;
+      return total + (content?.length ?? 0);
+    },
+    0
+  );
+  const canLoadFullDocument =
+    selectedFileIds.length > 0 &&
+    isWholeDocumentTask(params.query) &&
+    !shouldUseHybridSearch(params.query, candidateFileIds.length) &&
+    selectedFullDocumentChars > 0 &&
+    selectedFullDocumentChars <= FULL_DOCUMENT_CHAR_LIMIT;
+
+  let strategy: ContextRetrievalStrategy = "keyword_search";
+  if (canLoadFullDocument) {
+    strategy = "full_document";
+  } else if (
+    !isExplicitKeywordQuery(params.query) &&
+    shouldUseHybridSearch(params.query, candidateFileIds.length || 1)
+  ) {
+    strategy = "hybrid_search";
+  }
+
+  let generatedQueryEmbedding = false;
+  let matchedChunkCount = 0;
+  let fullDocumentChars = 0;
+
+  const chunkCount = strategy === "full_document" ||
+    (hasFileScope && candidateFileIds.length === 0)
+    ? 0
+    : await prisma.documentChunk.count({
+        where: {
+          userId: params.userId,
+          projectId: params.projectId,
+          ...(scopedFileIds?.length ? { fileAssetId: { in: scopedFileIds } } : {}),
+        },
+      });
+
+  if (strategy !== "full_document" && chunkCount > 0) {
+    let chunks: KeywordChunkResult[] = [];
+    if (strategy === "hybrid_search") {
+      const queryEmbedding = await params.loadQueryEmbedding?.();
+      generatedQueryEmbedding = Boolean(queryEmbedding?.length);
+      chunks = await hybridSearch({
+        userId: params.userId,
+        projectId: params.projectId,
+        query: params.query,
+        queryEmbedding,
+        fileAssetIds: scopedFileIds,
+        limit: DEFAULT_RETRIEVAL_LIMIT,
+      });
+    } else {
+      chunks = await searchChunksByKeyword({
+        userId: params.userId,
+        projectId: params.projectId,
+        query: params.query,
+        fileAssetIds: scopedFileIds,
+        limit: DEFAULT_RETRIEVAL_LIMIT,
+      });
+    }
+
+    matchedChunkCount = chunks.length;
+    for (const chunk of chunks) {
+      const key = `${chunk.fileAssetId || "none"}:${chunk.chunkIndex}`;
+      if (seen.has(key)) continue;
       seen.add(key);
       sections.push({
         key,
-        fileAssetId: file.id,
-        markdown: `## 来源：${file.originalName}\n\n> ${parserNotice(file)}\n\n${content}`,
+        kind: "chunk",
+        fileAssetId: chunk.fileAssetId || "",
+        markdown: `## 来源：${chunk.originalName || chunk.title || "项目资料"}（chunk ${chunk.chunkIndex + 1}）\n\n> 以下资料来自用户选中文件或项目资料检索。\n\n${chunk.content}`,
       });
     }
   }
 
-  if (summaryOnlyMatches.length > 0) {
-    sections.push({
-      key: "project-index-summary-only",
-      fileAssetId: "",
-      markdown: [
-        "## INDEX.md 相关文件摘要",
-        "",
-        "> 以下文件与当前问题相关，但超过 Top-5 全文加载上限，仅提供摘要。",
-        "",
-        ...summaryOnlyMatches.map(
-          (match) =>
-            `- ${match.originalName}（${match.category || "未分类"}）：${match.summary}`
-        ),
-      ].join("\n"),
-    });
+  if (strategy === "full_document" || sections.length === 0) {
+    const allowSmallFullFallback =
+      strategy === "full_document" ||
+      (selectedFileIds.length > 0 &&
+        selectedFullDocumentChars > 0 &&
+        selectedFullDocumentChars <= FULL_DOCUMENT_CHAR_LIMIT);
+
+    if (allowSmallFullFallback) {
+      for (const file of parsedCandidateFiles) {
+        const content =
+          file.enhancementStatus === "enhanced" && file.enhancedContent
+            ? file.enhancedContent
+            : file.textContent;
+        if (!content) continue;
+        const key = `${file.id}:enhanced-or-full`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        fullDocumentChars += content.length;
+        sections.push({
+          key,
+          kind: "full",
+          fileAssetId: file.id,
+          markdown: `## 来源：${file.originalName}\n\n> ${parserNotice(file)}\n\n${content}`,
+        });
+      }
+    }
   }
 
-  const currentChars = sections.reduce(
-    (total, section) => total + section.markdown.length,
-    0
-  );
+  if (strategy === "full_document") {
+    fullDocumentChars = selectedFullDocumentChars;
+  }
+
   if (
-    contextFileIds.length === 0 ||
-    currentChars < Math.min(params.maxChars, 12000)
+    sections.length === 0 &&
+    strategy === "hybrid_search" &&
+    generatedQueryEmbedding
   ) {
-    const keywordChunks = await hybridSearch({
+    const keywordChunks = await searchChunksByKeyword({
       userId: params.userId,
       projectId: params.projectId,
       query: params.query,
-      queryEmbedding: params.queryEmbedding,
+      fileAssetIds: scopedFileIds,
+      limit: DEFAULT_RETRIEVAL_LIMIT,
     });
 
     for (const chunk of keywordChunks) {
@@ -567,18 +796,28 @@ export async function retrieveProjectContext(
       seen.add(key);
       sections.push({
         key,
+        kind: "chunk",
         fileAssetId: chunk.fileAssetId || "",
-        markdown: `## 来源：${chunk.originalName || chunk.title || "项目资料"}（chunk ${chunk.chunkIndex + 1}）\n\n> 以下资料来自用户选中文件或关键词检索。\n\n${chunk.content}`,
+        markdown: `## 来源：${chunk.originalName || chunk.title || "项目资料"}（chunk ${chunk.chunkIndex + 1}）\n\n> 以下资料来自用户选中文件或项目资料检索。\n\n${chunk.content}`,
       });
     }
+    matchedChunkCount = keywordChunks.length;
   }
 
   if (sections.length === 0) {
+    const debug = debugPayload({
+      strategy,
+      scopeSource,
+      candidateFileCount,
+      matchedChunkCount,
+      generatedQueryEmbedding,
+    });
     return {
       context: "",
       notice: "未找到可用于回答的项目资料。",
       usedFileIds: [],
       truncated: false,
+      debug,
     };
   }
 
@@ -604,6 +843,16 @@ export async function retrieveProjectContext(
     notice: null,
     usedFileIds: [...new Set(sections.map((section) => section.fileAssetId).filter(Boolean))],
     truncated,
+    debug: debugPayload({
+      strategy,
+      scopeSource,
+      candidateFileCount,
+      matchedChunkCount,
+      generatedQueryEmbedding,
+      fullDocumentChars,
+      finalContextChars: context.length,
+      truncated,
+    }),
   };
 }
 

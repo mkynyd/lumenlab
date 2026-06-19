@@ -12,7 +12,10 @@ import {
 } from "@/lib/chat/router";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { GLOBAL_SYSTEM_PROMPT, getModePrompt } from "@/lib/ai/prompts";
-import { retrieveProjectContext } from "@/lib/rag/vector-store";
+import {
+  retrieveProjectContext,
+  shouldUseProjectContext,
+} from "@/lib/rag/vector-store";
 import { embedQuery } from "@/lib/rag/embedding";
 import { cacheExperiments } from "@/lib/cache/experiment-config";
 import { reorderMessagesForCache } from "@/lib/cache/prompt-reorder";
@@ -199,25 +202,29 @@ export async function POST(request: NextRequest) {
       systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
     }
 
-    let queryEmbedding: number[] | undefined;
-    try {
-      const bailianKey = await getProviderApiKey(userId, "bailian");
-      queryEmbedding = await embedQuery(effectivePrompt, bailianKey);
-    } catch {
-      queryEmbedding = undefined;
+    if (shouldUseProjectContext(effectivePrompt, uniqueFileIds)) {
+      const retrieval = await retrieveProjectContext({
+        userId,
+        projectId: project.id,
+        selectedFileIds: uniqueFileIds,
+        query: effectivePrompt,
+        maxChars: 60000,
+        loadQueryEmbedding: async () => {
+          try {
+            const bailianKey = await getProviderApiKey(userId, "bailian");
+            return await embedQuery(effectivePrompt, bailianKey);
+          } catch {
+            return undefined;
+          }
+        },
+      });
+      retrievedContext = retrieval.context;
+      contextNotice = retrieval.notice;
+      retrievalUsedFileIds = retrieval.usedFileIds;
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[project-context]", retrieval.debug);
+      }
     }
-
-    const retrieval = await retrieveProjectContext({
-      userId,
-      projectId: project.id,
-      selectedFileIds: uniqueFileIds,
-      query: effectivePrompt,
-      maxChars: 60000,
-      queryEmbedding,
-    });
-    retrievedContext = retrieval.context;
-    contextNotice = retrieval.notice;
-    retrievalUsedFileIds = retrieval.usedFileIds;
   }
 
   const contextFileIds = [...new Set([...uniqueFileIds, ...retrievalUsedFileIds])];

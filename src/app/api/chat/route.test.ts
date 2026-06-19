@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   conversationCreate: vi.fn(),
   getProviderApiKey: vi.fn(),
   retrieveProjectContext: vi.fn(),
+  shouldUseProjectContext: vi.fn(),
   embedQuery: vi.fn(),
 }));
 
@@ -33,6 +34,7 @@ vi.mock("@/lib/data/provider-access", () => ({
 
 vi.mock("@/lib/rag/vector-store", () => ({
   retrieveProjectContext: mocks.retrieveProjectContext,
+  shouldUseProjectContext: mocks.shouldUseProjectContext,
 }));
 
 vi.mock("@/lib/rag/embedding", () => ({
@@ -73,7 +75,21 @@ describe("POST /api/chat", () => {
       notice: "未找到可用于回答的项目资料。",
       usedFileIds: [],
       truncated: false,
+      debug: {
+        strategy: "keyword_search",
+        path: "keyword_search",
+        scopeSource: "project",
+        candidateFileCount: 0,
+        matchedChunkCount: 0,
+        generatedQueryEmbedding: false,
+        fullDocumentChars: 0,
+        finalContextChars: 0,
+        truncated: false,
+      },
     });
+    mocks.shouldUseProjectContext.mockImplementation((query: string) =>
+      query.includes("报告")
+    );
     mocks.embedQuery.mockResolvedValue(undefined);
     mocks.conversationCreate.mockResolvedValue({
       id: "conversation-1",
@@ -103,6 +119,29 @@ describe("POST /api/chat", () => {
     await expect(response.json()).resolves.toEqual({
       error: "服务密钥暂时不可用",
     });
+    expect(mocks.conversationCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not retrieve project context or embed query for ordinary project chat", async () => {
+    const request = new NextRequest("http://localhost/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "你好，帮我解释一下动态规划是什么",
+        model: "deepseek-v4-pro",
+        thinkingEnabled: false,
+        reasoningEffort: "high",
+        projectId: "project-1",
+        selectedFileIds: [],
+        mode: "general",
+      }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(403);
+    expect(mocks.retrieveProjectContext).not.toHaveBeenCalled();
+    expect(mocks.embedQuery).not.toHaveBeenCalled();
     expect(mocks.conversationCreate).not.toHaveBeenCalled();
   });
 });
