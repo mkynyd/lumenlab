@@ -172,6 +172,7 @@ model Message {
   content          String
   reasoningContent String? // thinking mode reasoning_content
   tokenCount       Int?
+  provider         String? // actual provider that produced this assistant response
   cacheHitTokens   Int?
   cacheMissTokens  Int?
   createdAt        DateTime @default(now())

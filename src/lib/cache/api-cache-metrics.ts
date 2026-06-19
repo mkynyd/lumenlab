@@ -20,6 +20,23 @@ export interface DailyCacheMetric extends CacheMetricSummary {
   date: string;
 }
 
+export interface TokenUsageRow {
+  createdAt: Date;
+  tokenCount: number | null;
+  provider: string | null;
+}
+
+export interface TokenUsageSummary {
+  totalTokens: number;
+  todayTokens: number;
+  requestCount: number;
+  unattributedTokens: number;
+  providers: Record<
+    "deepseek" | "minimax",
+    { totalTokens: number; requestCount: number }
+  >;
+}
+
 function emptySummary(): CacheMetricSummary {
   return {
     totalHitTokens: 0,
@@ -81,6 +98,39 @@ export function aggregateCacheRows(rows: CacheMetricRow[]) {
   };
 }
 
+export function aggregateTokenUsageRows(
+  rows: TokenUsageRow[],
+  todayDate = new Date().toISOString().slice(0, 10)
+): TokenUsageSummary {
+  const summary: TokenUsageSummary = {
+    totalTokens: 0,
+    todayTokens: 0,
+    requestCount: 0,
+    unattributedTokens: 0,
+    providers: {
+      deepseek: { totalTokens: 0, requestCount: 0 },
+      minimax: { totalTokens: 0, requestCount: 0 },
+    },
+  };
+
+  for (const row of rows) {
+    if (row.tokenCount === null) continue;
+    summary.totalTokens += row.tokenCount;
+    summary.requestCount += 1;
+    if (row.createdAt.toISOString().slice(0, 10) === todayDate) {
+      summary.todayTokens += row.tokenCount;
+    }
+    if (row.provider === "deepseek" || row.provider === "minimax") {
+      summary.providers[row.provider].totalTokens += row.tokenCount;
+      summary.providers[row.provider].requestCount += 1;
+    } else {
+      summary.unattributedTokens += row.tokenCount;
+    }
+  }
+
+  return summary;
+}
+
 async function getRows(userId: string, days?: number) {
   const createdAt = days
     ? { gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) }
@@ -114,6 +164,26 @@ async function getRows(userId: string, days?: number) {
 
 export async function getCacheMetrics(userId: string, days = 7) {
   return aggregateCacheRows(await getRows(userId, days));
+}
+
+export async function getTokenUsageMetrics(userId: string, days = 7) {
+  const createdAt = {
+    gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000),
+  };
+  const rows = await prisma.message.findMany({
+    where: {
+      role: "assistant",
+      tokenCount: { not: null },
+      conversation: { userId },
+      createdAt,
+    },
+    select: {
+      createdAt: true,
+      tokenCount: true,
+      provider: true,
+    },
+  });
+  return aggregateTokenUsageRows(rows);
 }
 
 export async function getCacheMetricsByProvider(userId: string) {

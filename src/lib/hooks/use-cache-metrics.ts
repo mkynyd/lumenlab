@@ -5,6 +5,7 @@ import { fetchJson } from "@/lib/api/client";
 import type {
   CacheMetricSummary,
   DailyCacheMetric,
+  TokenUsageSummary,
 } from "@/lib/cache/api-cache-metrics";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -13,6 +14,7 @@ export interface CacheMetricsResponse {
   overall: CacheMetricSummary;
   daily: DailyCacheMetric[];
   providers: Record<"deepseek" | "minimax", CacheMetricSummary>;
+  tokenUsage: TokenUsageSummary;
   exports: Record<
     "markdown" | "docx" | "pdf",
     { hits: number; misses: number; hitRate: number }

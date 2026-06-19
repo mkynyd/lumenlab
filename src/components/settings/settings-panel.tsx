@@ -15,6 +15,12 @@ interface SettingsPanelProps {
   compact?: boolean;
 }
 
+function formatTokenCount(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(value);
+}
+
 export function SettingsPanel({ compact = false }: SettingsPanelProps) {
   const { data: session } = useSession();
   const cacheMetrics = useCacheMetrics(7);
@@ -127,7 +133,7 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <Database size={16} className="text-[var(--color-text-tertiary)]" />
-          <h2 className="text-sm font-medium">Cache</h2>
+          <h2 className="text-sm font-medium">Token 使用情况</h2>
         </div>
         {cacheMetrics.isPending ? (
           <Skeleton className="h-32 rounded-[var(--radius-md)]" />
@@ -135,25 +141,32 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-3">
               <p className="text-[11px] text-[var(--color-text-tertiary)]">
-                近 7 天 Token 命中率
+                近 7 天总量
               </p>
               <p className="mt-1 text-2xl font-semibold">
-                {(cacheMetrics.data.overall.hitRate * 100).toFixed(1)}%
+                {formatTokenCount(cacheMetrics.data.tokenUsage.totalTokens)}
+              </p>
+              <p className="mt-2 text-[11px] text-[var(--color-text-tertiary)]">
+                今日 {formatTokenCount(cacheMetrics.data.tokenUsage.todayTokens)}
               </p>
             </div>
             <div className="rounded-[var(--radius-md)] bg-[var(--color-surface)] p-3 text-xs">
               {(["deepseek", "minimax"] as const).map((provider) => (
                 <div key={provider} className="flex justify-between py-1">
-                  <span className="capitalize">{provider}</span>
+                  <span>{provider === "deepseek" ? "DeepSeek" : "MiniMax"}</span>
                   <span className="font-mono">
-                    {(cacheMetrics.data.providers[provider].hitRate * 100).toFixed(1)}%
+                    {cacheMetrics.data.tokenUsage.providers[provider].requestCount > 0
+                      ? formatTokenCount(
+                          cacheMetrics.data.tokenUsage.providers[provider].totalTokens
+                        )
+                      : "--"}
                   </span>
                 </div>
               ))}
             </div>
           </div>
         ) : (
-          <p className="text-xs text-[var(--color-error)]">缓存指标加载失败</p>
+          <p className="text-xs text-[var(--color-error)]">Token 指标加载失败</p>
         )}
       </section>
 

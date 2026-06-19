@@ -226,11 +226,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const contextFileIds = [...new Set([...uniqueFileIds, ...retrievalUsedFileIds])];
-  const contextFilesWithMetadata = contextFileIds.length > 0
+  // 仅检查用户显式选中的文件是否需要视觉模型。
+  // RAG 检索返回的是纯文本 chunk，永远不包含图片数据，
+  // 其来源文档的图片元数据与当前请求无关，不应触发 MiniMax 锁定。
+  const visionCheckIds = [...new Set(uniqueFileIds)];
+  const contextFilesWithMetadata = visionCheckIds.length > 0
     ? await prisma.fileAsset.findMany({
         where: {
-          id: { in: contextFileIds },
+          id: { in: visionCheckIds },
           userId,
           ...(projectId ? { projectId } : {}),
         },
@@ -448,6 +451,7 @@ export async function POST(request: NextRequest) {
     serverStream,
     conversation.id,
     assistantMessage.id,
+    modelRoute.provider,
     streamResult.getUsage
   ).catch((err) => {
     logger.error("保存助手消息失败", { error: String(err) });
@@ -476,10 +480,11 @@ export async function POST(request: NextRequest) {
   });
 }
 
-async function accumulateAndSave(
+export async function accumulateAndSave(
   stream: ReadableStream<Uint8Array>,
   conversationId: string,
   messageId: string,
+  provider: "deepseek" | "minimax",
   getUsage: () => {
     prompt_tokens: number;
     completion_tokens: number;
@@ -532,6 +537,7 @@ async function accumulateAndSave(
         content: fullContent,
         reasoningContent: fullReasoning || null,
         tokenCount: usage?.total_tokens ?? null,
+        provider,
         cacheHitTokens: usage?.prompt_cache_hit_tokens ?? null,
         cacheMissTokens: usage?.prompt_cache_miss_tokens ?? null,
       },

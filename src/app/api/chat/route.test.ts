@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   fileFindMany: vi.fn(),
   conversationFindFirst: vi.fn(),
   conversationCreate: vi.fn(),
+  conversationUpdate: vi.fn(),
+  messageUpdate: vi.fn(),
+  messageDelete: vi.fn(),
   getProviderApiKey: vi.fn(),
   retrieveProjectContext: vi.fn(),
   shouldUseProjectContext: vi.fn(),
@@ -24,6 +27,11 @@ vi.mock("@/lib/db", () => ({
     conversation: {
       findFirst: mocks.conversationFindFirst,
       create: mocks.conversationCreate,
+      update: mocks.conversationUpdate,
+    },
+    message: {
+      update: mocks.messageUpdate,
+      delete: mocks.messageDelete,
     },
   },
 }));
@@ -53,7 +61,7 @@ vi.mock("@/lib/deepseek", () => ({
   streamChat: vi.fn(),
 }));
 
-import { POST } from "@/app/api/chat/route";
+import { accumulateAndSave, POST } from "@/app/api/chat/route";
 
 describe("POST /api/chat", () => {
   beforeEach(() => {
@@ -91,6 +99,9 @@ describe("POST /api/chat", () => {
       query.includes("报告")
     );
     mocks.embedQuery.mockResolvedValue(undefined);
+    mocks.conversationUpdate.mockResolvedValue({});
+    mocks.messageUpdate.mockResolvedValue({});
+    mocks.messageDelete.mockResolvedValue({});
     mocks.conversationCreate.mockResolvedValue({
       id: "conversation-1",
       userId: "user-1",
@@ -143,5 +154,41 @@ describe("POST /api/chat", () => {
     expect(mocks.retrieveProjectContext).not.toHaveBeenCalled();
     expect(mocks.embedQuery).not.toHaveBeenCalled();
     expect(mocks.conversationCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("accumulateAndSave", () => {
+  it("persists the provider that actually produced the response", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { content: "完成" } }] })}\n\n`
+          )
+        );
+        controller.close();
+      },
+    });
+
+    await accumulateAndSave(
+      stream,
+      "conversation-1",
+      "message-1",
+      "minimax",
+      () => ({
+        prompt_tokens: 10,
+        completion_tokens: 2,
+        total_tokens: 12,
+      })
+    );
+
+    expect(mocks.messageUpdate).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: expect.objectContaining({
+        content: "完成",
+        provider: "minimax",
+        tokenCount: 12,
+      }),
+    });
   });
 });
