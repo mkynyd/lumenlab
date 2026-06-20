@@ -50,6 +50,12 @@
 - 上传文件（图片/PDF/文本），自动 OCR 解析和知识增强
 - 选择项目文件作为对话上下文，AI 回答基于真实资料
 
+### PDF 文档工具
+- 使用 MinerU 将 PDF 转为包含公式、表格和图片的 Markdown
+- 转换结果与对话区共用完整 Markdown 渲染器和样式
+- 下载包含 Markdown、`pics/`、浏览器样式 PDF 和内嵌图片 DOCX 的 ZIP
+- 图片保存到私有对象存储，历史预览和保存到项目后仍可访问
+
 ### 降级 RAG 检索
 三级检索策略：用户选中文件 → 关键词搜索（PostgreSQL ILIKE）→ 向量检索（pgvector，待接入 embedding）。无需外部 embedding 服务即可工作。
 
@@ -77,8 +83,8 @@
 | **认证** | NextAuth.js v5 (JWT, Credentials Provider) |
 | **样式** | Tailwind CSS 4 |
 | **虚拟化** | TanStack Virtual |
-| **文件处理** | PDF.js + @napi-rs/canvas + fonteditor-core |
-| **文档导出** | docx (DOCX) + pdfkit (PDF) + unified/remark (Markdown AST) |
+| **文件处理** | MinerU Precision + PDF.js + @napi-rs/canvas |
+| **文档导出** | docx + sharp + Playwright/Chromium + pdfkit + unified/remark |
 | **加密** | AES-256-GCM (Node.js crypto) |
 | **验证** | Zod 4 |
 | **测试** | Vitest + Testing Library |
@@ -187,8 +193,9 @@ src/
 │   └── api/                      # REST API
 │       ├── chat/route.ts         # SSE 流式聊天（核心路由）
 │       ├── internal/registration-sync/ # 管理工具内部发布端点
-│       ├── files/[id]/parse/     # 文件解析（PDF.js + MiniMax OCR）
-│       ├── files/[id]/enhance/   # 文件知识增强
+│       ├── files/[id]/parse/     # 文件解析（MinerU / 本地文本）
+│       ├── files/[id]/resources/ # 项目 Markdown 图片资源
+│       ├── tools/                # PDF 转换、图片与完整 ZIP 导出
 │       └── artifacts/[id]/export/ # 成果导出（MD/DOCX/PDF）
 │
 ├── lib/
@@ -199,7 +206,7 @@ src/
 │   ├── vision/minimax.ts         # MiniMax M3 视觉 OCR
 │   ├── rag/vector-store.ts       # 降级 RAG（分块 + 关键词 + 向量）
 │   ├── files/pdf-parser.ts       # PDF 双模解析引擎
-│   ├── export/                   # Markdown → DOCX/PDF AST 级导出
+│   ├── export/                   # Markdown → DOCX、浏览器 PDF 与完整 ZIP
 │   ├── cache/                    # 缓存模块（实验配置/导出缓存/指标）
 │   ├── hooks/                    # TanStack Query Hooks
 │   └── data/                     # 服务端数据访问层（React cache()）
@@ -211,7 +218,7 @@ src/
 │   └── layout/                   # 布局组件（导航栏/侧边栏）
 │
 └── prisma/
-    └── schema.prisma             # 数据模型定义（14 个模型）
+    └── schema.prisma             # 数据模型定义（19 个模型）
 ```
 
 > 完整文件树见 [`REPOSITORY_INDEX.md`](REPOSITORY_INDEX.md)
@@ -281,6 +288,14 @@ src/
 2. 选择成果类型（实验报告/数据计算/课件总结/代码解释……）
 3. 成果库中可随时导出为 Markdown、DOCX 或 PDF
 
+### 转换 PDF 文档
+
+1. 点击主侧边栏「文档」，上传单个 PDF
+2. 等待 MinerU 完成上传、排队和逐页解析
+3. 在完整 Markdown 预览中检查公式、表格和图片
+4. 点击「下载完整包」获取 Markdown、`pics/`、PDF 和 DOCX
+5. 可选择「保存到项目」，图片会复制为项目独立资源
+
 ### 查看缓存指标
 
 在「设置」页面的缓存指标区域可以查看：
@@ -305,6 +320,8 @@ npm run build
 docker compose up -d
 npm run start
 ```
+
+Docker 镜像会安装 Chromium，用于按对话区 Markdown CSS 打印 PDF。非 Docker 部署需安装 Chrome/Chromium，必要时通过 `CHROMIUM_EXECUTABLE_PATH` 指定可执行文件。
 
 ### 安全注意事项
 
