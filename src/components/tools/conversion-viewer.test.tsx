@@ -57,8 +57,8 @@ describe("ConversionViewer", () => {
           title: "电路原理",
           originalName: "电路原理.pdf",
           status: "completed",
-          markdownContent: "# 打印内容",
-          assets: [],
+          markdownContent: "# 打印内容\n\n![电路](pics/circuit.png)",
+          assets: [{ id: "asset-1", relativePath: "pics/circuit.png" }],
           fileSize: 1024,
           pageCount: 10,
           metadata: null,
@@ -69,6 +69,10 @@ describe("ConversionViewer", () => {
     );
 
     expect(screen.getByRole("heading", { name: "打印内容" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "电路" })).toHaveAttribute(
+      "loading",
+      "eager"
+    );
     expect(screen.queryByLabelText("返回文档转换")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /下载完整包/ })).not.toBeInTheDocument();
   });

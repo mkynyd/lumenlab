@@ -77,6 +77,7 @@ export function ConversionViewer({
         <MarkdownContent
           content={conversion.markdownContent}
           resolveImageUrl={resolveImageUrl}
+          imageLoading="eager"
         />
         <ExportReadyMarker />
       </main>

@@ -446,6 +446,13 @@ pre code {
   background: var(--color-border-light);
 }
 
+.markdown-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1em auto;
+}
+
 .workbench-ambient {
   position: absolute;
   inset: 0;

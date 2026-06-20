@@ -24,18 +24,19 @@ export async function GET(_request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "转换记录不存在" }, { status: 404 });
   }
 
-  const {
-    exportStorageProvider: _exportStorageProvider,
-    exportStoragePath: _exportStoragePath,
-    exportSize: _exportSize,
-    exportGeneratedAt: _exportGeneratedAt,
-    assets,
-    ...publicConversion
-  } = conversion;
   return NextResponse.json({
     conversion: {
-      ...publicConversion,
-      assets: assets.map((asset) => ({
+      id: conversion.id,
+      title: conversion.title,
+      originalName: conversion.originalName,
+      status: conversion.status,
+      markdownContent: conversion.markdownContent,
+      fileSize: conversion.fileSize,
+      pageCount: conversion.pageCount,
+      metadata: conversion.metadata,
+      createdAt: conversion.createdAt,
+      updatedAt: conversion.updatedAt,
+      assets: conversion.assets.map((asset) => ({
         id: asset.id,
         relativePath: asset.relativePath,
       })),

@@ -13,6 +13,7 @@ interface MarkdownContentProps {
   content: string;
   isStreaming?: boolean;
   resolveImageUrl?: (src: string) => string;
+  imageLoading?: "eager" | "lazy";
   className?: string;
 }
 
@@ -20,6 +21,7 @@ export function MarkdownContent({
   content,
   isStreaming = false,
   resolveImageUrl = (src) => src,
+  imageLoading = "lazy",
   className,
 }: MarkdownContentProps) {
   return (
@@ -47,10 +49,17 @@ export function MarkdownContent({
             );
           },
           img({ src = "", alt = "", ...props }: ComponentProps<"img">) {
+            const resolvedSrc =
+              typeof src === "string" ? resolveImageUrl(src) : src;
             return (
               // Markdown content can reference authenticated conversion assets.
               // eslint-disable-next-line @next/next/no-img-element
-              <img {...props} src={resolveImageUrl(src)} alt={alt} loading="lazy" />
+              <img
+                {...props}
+                src={resolvedSrc}
+                alt={alt}
+                loading={imageLoading}
+              />
             );
           },
         }}

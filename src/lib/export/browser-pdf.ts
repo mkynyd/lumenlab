@@ -42,11 +42,33 @@ export async function renderMarkdownPdf(input: {
       waitUntil: "networkidle",
       timeout: 60_000,
     });
-    await page.waitForFunction(
-      () => document.documentElement.dataset.exportReady === "true",
-      undefined,
-      { timeout: 60_000 }
-    );
+    try {
+      await page.waitForFunction(
+        () => document.documentElement.dataset.exportReady === "true",
+        undefined,
+        { timeout: 60_000 }
+      );
+    } catch (error) {
+      const diagnostic = await page.evaluate(() => ({
+        url: window.location.href,
+        title: document.title,
+        ready: document.documentElement.dataset.exportReady || null,
+        images: document.images.length,
+        completedImages: Array.from(document.images).filter(
+          (image) => image.complete
+        ).length,
+        pendingMermaid: document.querySelectorAll(
+          '[data-render-state="pending"]'
+        ).length,
+        hasPrintSurface: Boolean(
+          document.querySelector("[data-conversion-print]")
+        ),
+      }));
+      throw new Error(
+        `打印页未就绪：${JSON.stringify(diagnostic)}`,
+        { cause: error }
+      );
+    }
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,

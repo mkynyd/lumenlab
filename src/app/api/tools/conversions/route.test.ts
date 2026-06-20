@@ -4,7 +4,8 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   findMany: vi.fn(),
   findFirst: vi.fn(),
-  deleteMany: vi.fn(),
+  delete: vi.fn(),
+  deleteStoredObjects: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -13,9 +14,12 @@ vi.mock("@/lib/db", () => ({
     documentConversion: {
       findMany: mocks.findMany,
       findFirst: mocks.findFirst,
-      deleteMany: mocks.deleteMany,
+      delete: mocks.delete,
     },
   },
+}));
+vi.mock("@/lib/conversions/assets", () => ({
+  deleteStoredObjects: mocks.deleteStoredObjects,
 }));
 
 import { GET as listConversions } from "@/app/api/tools/conversions/route";
@@ -67,6 +71,7 @@ describe("document conversion record routes", () => {
       id: "conversion-1",
       userId: "user-1",
       markdownContent: "# 讲义",
+      assets: [],
     });
 
     const response = await getConversion(new Request("http://localhost"), {
@@ -76,19 +81,30 @@ describe("document conversion record routes", () => {
     expect(response.status).toBe(200);
     expect(mocks.findFirst).toHaveBeenCalledWith({
       where: { id: "conversion-1", userId: "user-1" },
+      include: {
+        assets: { select: { id: true, relativePath: true } },
+      },
     });
   });
 
   it("returns 404 when deleting a record outside the current user's scope", async () => {
-    mocks.deleteMany.mockResolvedValue({ count: 0 });
+    mocks.findFirst.mockResolvedValue(null);
 
     const response = await deleteConversion(new Request("http://localhost"), {
       params: Promise.resolve({ id: "conversion-2" }),
     });
 
     expect(response.status).toBe(404);
-    expect(mocks.deleteMany).toHaveBeenCalledWith({
+    expect(mocks.findFirst).toHaveBeenCalledWith({
       where: { id: "conversion-2", userId: "user-1" },
+      select: {
+        id: true,
+        exportStorageProvider: true,
+        exportStoragePath: true,
+        assets: {
+          select: { storageProvider: true, storagePath: true },
+        },
+      },
     });
   });
 });
