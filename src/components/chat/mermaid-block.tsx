@@ -188,7 +188,7 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
 
   if (isStreaming) {
     return (
-      <pre className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
+      <pre data-render-state="pending" className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
         <code className="language-mermaid">{code}</code>
       </pre>
     );
@@ -196,7 +196,10 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
 
   if (failed || !svg) {
     return (
-      <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+      <div
+        data-render-state={failed ? "failed" : "pending"}
+        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+      >
         <pre className="overflow-x-auto text-xs">
           <code className="language-mermaid">{code}</code>
         </pre>
@@ -210,7 +213,7 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
   }
 
   return (
-    <div className="group relative">
+    <div className="group relative" data-render-state="ready">
       <div
         ref={containerRef}
         className="mermaid overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3"

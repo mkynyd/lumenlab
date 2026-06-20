@@ -8,13 +8,16 @@ import { prisma } from "@/lib/db";
 
 export default async function ConversionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ print?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const { id } = await params;
+  const printMode = (await searchParams).print === "1";
   const conversion = await prisma.documentConversion.findFirst({
     where: { id, userId: session.user.id },
     include: {
@@ -53,6 +56,7 @@ export default async function ConversionDetailPage({
 
   return (
     <ConversionViewer
+      printMode={printMode}
       conversion={{
         id: conversion.id,
         title: conversion.title,

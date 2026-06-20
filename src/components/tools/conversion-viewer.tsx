@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Download, Folder, NavArrowLeft } from "iconoir-react";
 import { MarkdownContent } from "@/components/markdown/markdown-content";
+import { ExportReadyMarker } from "@/components/tools/export-ready-marker";
 import { SaveToProjectDialog } from "@/components/tools/save-to-project-dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
 
 interface ConversionViewerProps {
   conversion: ConversionDetail;
+  printMode?: boolean;
 }
 
 function formatBytes(bytes: number | null) {
@@ -22,7 +24,10 @@ function formatBytes(bytes: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function ConversionViewer({ conversion }: ConversionViewerProps) {
+export function ConversionViewer({
+  conversion,
+  printMode = false,
+}: ConversionViewerProps) {
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [feedback, setFeedback] = useState<{
     message: string;
@@ -61,6 +66,21 @@ export function ConversionViewer({ conversion }: ConversionViewerProps) {
     return assetId
       ? `/api/tools/conversions/${conversion.id}/assets/${assetId}`
       : src;
+  }
+
+  if (printMode) {
+    return (
+      <main
+        data-conversion-print
+        className="mx-auto w-full max-w-4xl bg-white px-2 py-1 text-black"
+      >
+        <MarkdownContent
+          content={conversion.markdownContent}
+          resolveImageUrl={resolveImageUrl}
+        />
+        <ExportReadyMarker />
+      </main>
+    );
   }
 
   return (

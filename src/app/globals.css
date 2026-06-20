@@ -522,6 +522,40 @@ pre code {
   background: oklch(0.22 0.02 255);
 }
 
+@media print {
+  body:has([data-conversion-print]) {
+    background: #ffffff !important;
+  }
+
+  body:has([data-conversion-print]) header,
+  body:has([data-conversion-print]) aside {
+    display: none !important;
+  }
+
+  body:has([data-conversion-print]) .h-screen,
+  body:has([data-conversion-print]) .flex-1,
+  body:has([data-conversion-print]) main {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  [data-conversion-print] {
+    --color-text-primary: #111827;
+    --color-text-secondary: #374151;
+    --color-border: #d1d5db;
+    --color-border-light: #e5e7eb;
+    --color-panel-muted: #f3f4f6;
+    max-width: none !important;
+    color: #111827 !important;
+  }
+
+  [data-conversion-print] .workbench-readable {
+    max-width: none;
+  }
+}
+
 .workbench-animated-list > * {
   animation: workbench-list-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
