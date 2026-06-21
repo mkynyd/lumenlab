@@ -39,8 +39,8 @@
   --color-project-action-hover: oklch(0.46 0.21 257.85);
   --color-project-action-contrast: oklch(0.995 0.002 255);
   --color-project-surface: oklch(0.937 0 0);
-  --color-project-surface-hover: oklch(0.15 0 0 / 0.1);
-  --color-project-surface-active: oklch(0.15 0 0 / 0.15);
+  --color-project-surface-hover: oklch(0.15 0 0 / 0.13);
+  --color-project-surface-active: oklch(0.15 0 0 / 0.18);
   --color-project-control: oklch(0.15 0 0 / 0.06);
 
   /* Semantic */
@@ -142,8 +142,8 @@
   --color-project-action-hover: oklch(0.72 0.14 181.95);
   --color-project-action-contrast: oklch(0.13 0.02 181.95);
   --color-project-surface: oklch(0.125 0 0);
-  --color-project-surface-hover: oklch(0.92 0 0 / 0.13);
-  --color-project-surface-active: oklch(0.92 0 0 / 0.18);
+  --color-project-surface-hover: oklch(0.92 0 0 / 0.17);
+  --color-project-surface-active: oklch(0.92 0 0 / 0.22);
   --color-project-control: oklch(0.92 0 0 / 0.08);
 
   /* Semantic */

@@ -75,19 +75,19 @@ describe("project workspace color contract", () => {
       "--color-project-control: oklch(0.15 0 0 / 0.06);"
     );
     expect(light).toContain(
-      "--color-project-surface-hover: oklch(0.15 0 0 / 0.1);"
+      "--color-project-surface-hover: oklch(0.15 0 0 / 0.13);"
     );
     expect(light).toContain(
-      "--color-project-surface-active: oklch(0.15 0 0 / 0.15);"
+      "--color-project-surface-active: oklch(0.15 0 0 / 0.18);"
     );
     expect(dark).toContain(
       "--color-project-control: oklch(0.92 0 0 / 0.08);"
     );
     expect(dark).toContain(
-      "--color-project-surface-hover: oklch(0.92 0 0 / 0.13);"
+      "--color-project-surface-hover: oklch(0.92 0 0 / 0.17);"
     );
     expect(dark).toContain(
-      "--color-project-surface-active: oklch(0.92 0 0 / 0.18);"
+      "--color-project-surface-active: oklch(0.92 0 0 / 0.22);"
     );
   });
 
