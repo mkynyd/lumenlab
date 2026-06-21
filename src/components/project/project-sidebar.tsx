@@ -387,7 +387,6 @@ export function ProjectSidebar({
               selectedIds={selectedFileIds}
               onToggle={onFileToggle}
               onFileAction={(action, file) => onFileAction(action, file.id)}
-              defaultGroupsCollapsed
               searchQuery={fileSearch}
               className="w-full overflow-hidden"
             />
