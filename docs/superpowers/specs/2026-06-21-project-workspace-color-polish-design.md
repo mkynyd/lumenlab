@@ -4,9 +4,10 @@
 
 Polish the complete project workspace in light and dark themes. Project actions must use a coherent hierarchy, and project-list Spotlight Cards must use the same neutral base color as their page background.
 
-The selected direction is **restrained single-primary-color**:
+The selected direction is **restrained theme-adaptive primary color**:
 
-- blue is reserved for primary actions;
+- light mode reserves blue for primary actions;
+- dark mode reserves Teal for primary actions;
 - secondary, hover, focus, selected, and passive status surfaces use neutral grays;
 - destructive actions keep the existing semantic red treatment;
 - the previous amber project-hover cue is removed from the project workspace;
@@ -30,9 +31,9 @@ The standalone `/chat`, conversion workspace, authentication pages, and global s
 
 `src/app/globals.css` remains the source of truth. The project workspace will use a small semantic token set in both themes:
 
-- `--color-project-action`: primary blue;
-- `--color-project-action-hover`: accessible darker/lighter blue by theme;
-- `--color-project-action-contrast`: text/icon color on the primary blue;
+- `--color-project-action`: primary blue in light mode and primary Teal in dark mode;
+- `--color-project-action-hover`: an accessible state shift within the active theme's primary hue;
+- `--color-project-action-contrast`: text/icon color on the theme-specific primary fill;
 - `--color-project-surface`: equal to the project page background;
 - `--color-project-surface-hover`: a small neutral luminance shift;
 - `--color-project-surface-active`: a stronger neutral luminance shift;
@@ -53,10 +54,10 @@ The existing amber `--color-project-hover` role will be removed or remapped to a
 
 ### Buttons
 
-- Primary: new project, create project, create first project, new project conversation, and the principal submit action use project blue.
+- Primary: new project, create project, create first project, new project conversation, and the principal submit action use blue in light mode and Teal in dark mode.
 - Secondary: artifact access, upload, reclassify, overflow, navigation, and non-destructive toolbar actions use neutral control fills.
 - Ghost: low-priority inline controls use transparent or page-neutral resting states with a neutral hover fill.
-- Destructive: delete actions retain semantic red and are never recolored blue or gray.
+- Destructive: delete actions retain semantic red and are never recolored as a primary or neutral action.
 - Focus, active, disabled, loading, and `aria-expanded` states remain distinguishable in both themes.
 
 ### Rows and Selected States
@@ -90,7 +91,7 @@ No application data flow, API contract, routing, mutation, or persistence behavi
 ## Acceptance Criteria
 
 - Spotlight Cards are visibly integrated with the project-page background in both themes.
-- Project buttons present one unambiguous blue primary hierarchy and neutral secondary hierarchy.
+- Project buttons present one unambiguous primary hierarchy per theme: blue in light mode, Teal in dark mode, with a neutral secondary hierarchy in both.
 - No amber project hover remains.
 - No project button or card gains a visible border, outline, ring, or decorative shadow.
 - Dark mode does not turn inactive controls into heavy near-black blocks.
