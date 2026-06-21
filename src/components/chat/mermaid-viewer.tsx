@@ -130,7 +130,9 @@ function getSvgExportSource(svgText: string, container: HTMLDivElement | null) {
 
 export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) {
   const rawId = useId();
-  const viewerId = `mermaid-viewer-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const [viewerId, setViewerId] = useState(
+    `mermaid-viewer-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}-0`
+  );
   const [svg, setSvg] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -138,10 +140,15 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
   const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const svgWrapperRef = useRef<HTMLDivElement>(null);
+  const svgSizeRef = useRef({ width: 800, height: 600 });
+  const renderCountRef = useRef(0);
 
-  // Render mermaid SVG on open
+  // Render mermaid SVG on open with unique id to prevent stale DOM conflicts
   useEffect(() => {
     if (!open || !code.trim()) return;
+    renderCountRef.current += 1;
+    const id = `mermaid-viewer-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}-${renderCountRef.current}`;
+    setViewerId(id);
     let cancelled = false;
     void (async () => {
       try {
@@ -152,7 +159,7 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
           suppressErrorRendering: true,
           ...resolveMermaidTheme(),
         });
-        const { svg: renderedSvg } = await mermaid.render(viewerId, code);
+        const { svg: renderedSvg } = await mermaid.render(id, code);
         if (!cancelled) {
           setSvg(renderedSvg);
         }
@@ -167,15 +174,41 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
     return () => {
       cancelled = true;
     };
-  }, [code, viewerId, open]);
+  }, [code, rawId, open]);
 
-  // Reset zoom and position when dialog opens/closes
+  // Reset zoom and position when dialog opens; clear SVG on close
   useEffect(() => {
     if (open) {
       setScale(1);
       setPosition({ x: 0, y: 0 });
+    } else {
+      setSvg(null);
     }
   }, [open]);
+
+  // Measure SVG natural size after render for boundary clamping
+  useEffect(() => {
+    if (!svg || !open) return;
+    // Small delay to let DOM settle
+    const timer = window.setTimeout(() => {
+      const svgEl = containerRef.current?.querySelector("svg");
+      if (!svgEl) return;
+      const viewBox = svgEl.getAttribute("viewBox");
+      if (viewBox) {
+        const [, , w, h] = viewBox.split(/[\s,]+/).map(Number);
+        if (w > 0 && h > 0) {
+          svgSizeRef.current = { width: w, height: h };
+          return;
+        }
+      }
+      // Fallback to bounding rect
+      const rect = svgEl.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        svgSizeRef.current = { width: rect.width, height: rect.height };
+      }
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [svg, open]);
 
   const handleScaleChange = useCallback((value: number) => {
     const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
@@ -214,12 +247,21 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
       if (!dragging) return;
       const dx = e.clientX - dragStart.current.x;
       const dy = e.clientY - dragStart.current.y;
+      const rawX = dragStart.current.posX + dx;
+      const rawY = dragStart.current.posY + dy;
+
+      // Clamp position so the image center stays within its own bounds.
+      // This prevents the image from being dragged completely off-screen.
+      const { width, height } = svgSizeRef.current;
+      const maxX = (width * scale) / 2;
+      const maxY = (height * scale) / 2;
+      const margin = 60; // keep at least 60px of the image visible at edges
       setPosition({
-        x: dragStart.current.posX + dx,
-        y: dragStart.current.posY + dy,
+        x: Math.max(-maxX + margin, Math.min(maxX - margin, rawX)),
+        y: Math.max(-maxY + margin, Math.min(maxY - margin, rawY)),
       });
     },
-    [dragging]
+    [dragging, scale]
   );
 
   const handlePointerUp = useCallback(() => {
@@ -297,14 +339,13 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
       <DialogContent
         className="max-w-[92vw] sm:max-w-[90vw] h-[90vh] flex flex-col p-0 gap-0"
         aria-describedby={undefined}
-        showCloseButton={false}
       >
         <DialogTitle className="sr-only">
           Mermaid 图表查看器
         </DialogTitle>
 
-        {/* 工具栏 */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border-light)] px-4 py-2.5">
+        {/* 工具栏 — pr-12 为右上角关闭按钮留出空间 */}
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border-light)] px-4 py-2.5 pr-14">
           <div className="flex items-center gap-1">
             <Button
               type="button"
