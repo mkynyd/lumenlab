@@ -128,10 +128,10 @@ export function FileList({
         }
         className={cn(
           "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left",
-          "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-project-hover)] focus-visible:text-[var(--color-text-primary)]",
+          "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]",
           selected
-            ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
+            ? "bg-[var(--color-project-surface-active)] text-[var(--color-text-primary)] font-semibold"
+            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]"
         )}
       >
         {parsing ? (
@@ -203,7 +203,7 @@ export function FileList({
               <CollapsibleTrigger asChild>
                 <button
                   type="button"
-                  className="flex h-7 w-full items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] focus-visible:outline-none focus-visible:bg-[var(--color-interaction-hover)]"
+                  className="flex h-7 w-full items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]"
                   aria-expanded={open}
                 >
                   <span className="inline-flex items-center gap-1">

@@ -34,11 +34,14 @@
   --color-accent-soft: oklch(0.946 0.029 249.8);
   --color-accent-contrast: oklch(0.995 0.002 255);
 
-  /* Project workbench: Geist blue actions + restrained amber interaction */
+  /* Project workbench: blue actions with neutral interaction states */
   --color-project-action: oklch(0.5151 0.2399 257.85);
   --color-project-action-hover: oklch(0.46 0.21 257.85);
   --color-project-action-contrast: oklch(0.995 0.002 255);
-  --color-project-hover: oklch(0.9748 0.0331 85.79 / 0.58);
+  --color-project-surface: oklch(0.937 0 0);
+  --color-project-surface-hover: oklch(0.15 0 0 / 0.1);
+  --color-project-surface-active: oklch(0.15 0 0 / 0.15);
+  --color-project-control: oklch(0.15 0 0 / 0.06);
 
   /* Semantic */
   --color-success: oklch(0.575 0.145 160);
@@ -128,17 +131,20 @@
   --color-text-tertiary: oklch(0.68 0 0);
 
   /* Accent */
-  --color-accent: oklch(0.5151 0.2399 257.85);
-  --color-accent-hover: oklch(0.5761 0.2508 258.23);
-  --color-accent-muted: oklch(0.35 0.09 255);
-  --color-accent-soft: oklch(0.285 0.065 255);
+  --color-accent: oklch(64.92% .1572 181.95);
+  --color-accent-hover: oklch(32.11% .0788 179.82);
+  --color-accent-muted: oklch(32.11% .0788 179.82);
+  --color-accent-soft: oklch(54.817% 0.09601 178.06 / 0.728);
   --color-accent-contrast: oklch(0.995 0 0);
 
-  /* Project workbench keeps the requested Geist blue and light amber cues. */
-  --color-project-action: oklch(0.5151 0.2399 257.85);
-  --color-project-action-hover: oklch(0.5761 0.2508 258.23);
-  --color-project-action-contrast: oklch(0.995 0 0);
-  --color-project-hover: oklch(0.9748 0.0331 85.79 / 0.16);
+  /* Project workbench: Teal actions with neutral interaction states */
+  --color-project-action: oklch(0.6492 0.1572 181.95);
+  --color-project-action-hover: oklch(0.72 0.14 181.95);
+  --color-project-action-contrast: oklch(0.13 0.02 181.95);
+  --color-project-surface: oklch(0.125 0 0);
+  --color-project-surface-hover: oklch(0.92 0 0 / 0.13);
+  --color-project-surface-active: oklch(0.92 0 0 / 0.18);
+  --color-project-control: oklch(0.92 0 0 / 0.08);
 
   /* Semantic */
   --color-success: oklch(0.72 0.14 150);
@@ -206,6 +212,11 @@
   --sidebar-accent-foreground: var(--color-text-primary);
   --sidebar-border: var(--color-border-light);
   --sidebar-ring: var(--color-accent-muted);
+}
+
+.project-workbench {
+  --primary: var(--color-project-action);
+  --primary-foreground: var(--color-project-action-contrast);
 }
 
 /* ---- Tailwind v4 Theme Integration ---- */
@@ -351,6 +362,19 @@ html {
   to {
     opacity: 1;
     translate: 0 0;
+  }
+}
+
+/* Shared transition for collapsible items. Use inline `transition-delay` for stagger. */
+.collapsible-item {
+  transition-property: opacity;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease-out-expo);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapsible-item {
+    transition: none;
   }
 }
 
@@ -585,7 +609,7 @@ pre code {
   background:
     radial-gradient(
       420px circle at var(--spotlight-x, 50%) var(--spotlight-y, 0%),
-      var(--color-accent-muted),
+      var(--color-project-surface-active),
       transparent 45%
     );
   opacity: 0;
@@ -595,6 +619,12 @@ pre code {
 .workbench-spotlight:hover::before,
 .workbench-spotlight:focus-within::before {
   opacity: 0.95;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench-spotlight::before {
+    transition: none;
+  }
 }
 
 .workbench-readable {
