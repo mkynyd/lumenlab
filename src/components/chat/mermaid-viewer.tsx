@@ -180,10 +180,6 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
   const handleScaleChange = useCallback((value: number) => {
     const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
     setScale(clamped);
-    // Clamp position when zooming out below 1
-    if (clamped <= 1) {
-      setPosition({ x: 0, y: 0 });
-    }
   }, []);
 
   const handleSliderChange = useCallback((values: number[]) => {
@@ -201,7 +197,6 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
   // Pan handlers
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if (scale <= 1) return;
       setDragging(true);
       dragStart.current = {
         x: e.clientX,
@@ -211,12 +206,12 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
       };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     },
-    [scale, position]
+    [position]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!dragging || scale <= 1) return;
+      if (!dragging) return;
       const dx = e.clientX - dragStart.current.x;
       const dy = e.clientY - dragStart.current.y;
       setPosition({
@@ -224,7 +219,7 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
         y: dragStart.current.posY + dy,
       });
     },
-    [dragging, scale]
+    [dragging]
   );
 
   const handlePointerUp = useCallback(() => {
@@ -295,7 +290,6 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
     URL.revokeObjectURL(url);
   }
 
-  const isZoomed = scale > 1;
   const sliderPercent = ((scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE)) * 100;
 
   return (
@@ -303,6 +297,7 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
       <DialogContent
         className="max-w-[92vw] sm:max-w-[90vw] h-[90vh] flex flex-col p-0 gap-0"
         aria-describedby={undefined}
+        showCloseButton={false}
       >
         <DialogTitle className="sr-only">
           Mermaid 图表查看器
@@ -355,10 +350,10 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
             type="button"
             variant="ghost"
             size="icon-sm"
-            onClick={() => handleScaleChange(1)}
-            disabled={scale === 1}
+            onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }); }}
+            disabled={scale === 1 && position.x === 0 && position.y === 0}
             className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            aria-label="重置缩放"
+            aria-label="重置缩放和位置"
           >
             <Maximize size={14} strokeWidth={2} />
           </Button>
@@ -391,7 +386,7 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
         <div
           ref={svgWrapperRef}
           className="flex-1 min-h-0 overflow-hidden"
-          style={{ cursor: isZoomed ? (dragging ? "grabbing" : "grab") : "default" }}
+          style={{ cursor: dragging ? "grabbing" : "grab" }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
