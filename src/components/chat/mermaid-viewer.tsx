@@ -1,0 +1,422 @@
+"use client";
+
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Download, Maximize, Minus, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
+import { logger } from "@/lib/logger";
+
+interface MermaidViewerProps {
+  code: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 3;
+const SCALE_STEP = 0.25;
+
+function resolveMermaidTheme() {
+  if (typeof document === "undefined") {
+    return {
+      theme: "base" as const,
+      themeVariables: {
+        primaryColor: "#FFFFFF",
+        primaryBorderColor: "#3B82F6",
+        primaryTextColor: "#1E293B",
+        lineColor: "#64748B",
+        secondaryColor: "#F8FAFC",
+        tertiaryColor: "#FFFFFF",
+        noteBkgColor: "#FFFFFF",
+        noteBorderColor: "#F59E0B",
+        noteTextColor: "#1E293B",
+      },
+    };
+  }
+
+  const isDark = document.documentElement.classList.contains("dark");
+
+  if (isDark) {
+    return {
+      theme: "base" as const,
+      themeVariables: {
+        primaryColor: "#1E293B",
+        primaryBorderColor: "#60A5FA",
+        primaryTextColor: "#E2E8F0",
+        lineColor: "#94A3B8",
+        secondaryColor: "#1E293B",
+        tertiaryColor: "#0F172A",
+        noteBkgColor: "#1E293B",
+        noteBorderColor: "#FBBF24",
+        noteTextColor: "#E2E8F0",
+      },
+    };
+  }
+
+  return {
+    theme: "base" as const,
+    themeVariables: {
+      primaryColor: "#FFFFFF",
+      primaryBorderColor: "#3B82F6",
+      primaryTextColor: "#1E293B",
+      lineColor: "#64748B",
+      secondaryColor: "#F8FAFC",
+      tertiaryColor: "#FFFFFF",
+      noteBkgColor: "#FFFFFF",
+      noteBorderColor: "#F59E0B",
+      noteTextColor: "#1E293B",
+    },
+  };
+}
+
+function getViewBoxSize(svgElement: SVGSVGElement) {
+  const viewBox = svgElement.getAttribute("viewBox");
+  if (!viewBox) return null;
+  const [, , width, height] = viewBox
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  return { width, height };
+}
+
+function parseSvgLength(value: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!/^\d+(\.\d+)?(px)?$/.test(trimmed)) return null;
+  return Number.parseFloat(trimmed);
+}
+
+function getSvgExportSource(svgText: string, container: HTMLDivElement | null) {
+  const renderedSvg = container?.querySelector("svg");
+  if (!renderedSvg) {
+    return { source: svgText, width: 800, height: 600 };
+  }
+
+  const clone = renderedSvg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+  const viewBoxSize = getViewBoxSize(clone);
+  const rect = renderedSvg.getBoundingClientRect();
+  const width =
+    parseSvgLength(clone.getAttribute("width")) ||
+    Math.ceil(rect.width) ||
+    viewBoxSize?.width ||
+    800;
+  const height =
+    parseSvgLength(clone.getAttribute("height")) ||
+    Math.ceil(rect.height) ||
+    viewBoxSize?.height ||
+    600;
+
+  if (!clone.getAttribute("viewBox")) {
+    clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  }
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  clone.setAttribute("style", "background: #ffffff;");
+
+  return {
+    source: new XMLSerializer().serializeToString(clone),
+    width,
+    height,
+  };
+}
+
+export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) {
+  const rawId = useId();
+  const viewerId = `mermaid-viewer-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const [svg, setSvg] = useState<string | null>(null);
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const svgWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Render mermaid SVG on open
+  useEffect(() => {
+    if (!open || !code.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const mermaid = (await import("mermaid")).default;
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "loose",
+          suppressErrorRendering: true,
+          ...resolveMermaidTheme(),
+        });
+        const { svg: renderedSvg } = await mermaid.render(viewerId, code);
+        if (!cancelled) {
+          setSvg(renderedSvg);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          logger.error("Mermaid 查看器渲染失败", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, viewerId, open]);
+
+  // Reset zoom and position when dialog opens/closes
+  useEffect(() => {
+    if (open) {
+      setScale(1);
+      setPosition({ x: 0, y: 0 });
+    }
+  }, [open]);
+
+  const handleScaleChange = useCallback((value: number) => {
+    const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+    setScale(clamped);
+    // Clamp position when zooming out below 1
+    if (clamped <= 1) {
+      setPosition({ x: 0, y: 0 });
+    }
+  }, []);
+
+  const handleSliderChange = useCallback((values: number[]) => {
+    handleScaleChange(values[0] ?? 1);
+  }, [handleScaleChange]);
+
+  const handleZoomIn = useCallback(() => {
+    handleScaleChange(scale + SCALE_STEP);
+  }, [scale, handleScaleChange]);
+
+  const handleZoomOut = useCallback(() => {
+    handleScaleChange(scale - SCALE_STEP);
+  }, [scale, handleScaleChange]);
+
+  // Pan handlers
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (scale <= 1) return;
+      setDragging(true);
+      dragStart.current = {
+        x: e.clientX,
+        y: e.clientY,
+        posX: position.x,
+        posY: position.y,
+      };
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [scale, position]
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragging || scale <= 1) return;
+      const dx = e.clientX - dragStart.current.x;
+      const dy = e.clientY - dragStart.current.y;
+      setPosition({
+        x: dragStart.current.posX + dx,
+        y: dragStart.current.posY + dy,
+      });
+    },
+    [dragging, scale]
+  );
+
+  const handlePointerUp = useCallback(() => {
+    setDragging(false);
+  }, []);
+
+  function downloadPNG() {
+    if (!svg) return;
+    const exportSvg = getSvgExportSource(svg, containerRef.current);
+    const blob = new Blob([exportSvg.source], {
+      type: "image/svg+xml;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+
+    img.onload = () => {
+      const exportScale = Math.max(2, Math.min(window.devicePixelRatio || 2, 3));
+      const w = img.naturalWidth || exportSvg.width;
+      const h = img.naturalHeight || exportSvg.height;
+      const canvas = document.createElement("canvas");
+      canvas.width = w * exportScale;
+      canvas.height = h * exportScale;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(exportScale, exportScale);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+
+      canvas.toBlob((pngBlob) => {
+        if (!pngBlob) return;
+        const downloadUrl = URL.createObjectURL(pngBlob);
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = `mermaid-${viewerId}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(downloadUrl);
+      }, "image/png");
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      logger.error("SVG 加载失败", { context: "Mermaid Viewer PNG export" });
+    };
+
+    img.src = url;
+  }
+
+  function downloadSVG() {
+    if (!svg) return;
+    const exportSvg = getSvgExportSource(svg, containerRef.current);
+    const blob = new Blob([exportSvg.source], {
+      type: "image/svg+xml;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mermaid-${viewerId}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const isZoomed = scale > 1;
+  const sliderPercent = ((scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE)) * 100;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-[92vw] sm:max-w-[90vw] h-[90vh] flex flex-col p-0 gap-0"
+        aria-describedby={undefined}
+      >
+        <DialogTitle className="sr-only">
+          Mermaid 图表查看器
+        </DialogTitle>
+
+        {/* 工具栏 */}
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border-light)] px-4 py-2.5">
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleZoomOut}
+              disabled={scale <= MIN_SCALE}
+              className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              aria-label="缩小"
+            >
+              <Minus size={14} strokeWidth={2} />
+            </Button>
+
+            <div className="flex w-32 items-center gap-2 px-1">
+              <Slider
+                value={[scale]}
+                min={MIN_SCALE}
+                max={MAX_SCALE}
+                step={SCALE_STEP}
+                onValueChange={handleSliderChange}
+                aria-label="缩放比例"
+              />
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleZoomIn}
+              disabled={scale >= MAX_SCALE}
+              className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              aria-label="放大"
+            >
+              <Plus size={14} strokeWidth={2} />
+            </Button>
+
+            <span className="ml-1 min-w-[3.5ch] text-xs tabular-nums text-[var(--color-text-tertiary)]">
+              {Math.round(scale * 100)}%
+            </span>
+          </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => handleScaleChange(1)}
+            disabled={scale === 1}
+            className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            aria-label="重置缩放"
+          >
+            <Maximize size={14} strokeWidth={2} />
+          </Button>
+
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              type="button"
+              onClick={downloadPNG}
+              variant="ghost"
+              size="sm"
+              className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            >
+              <Download size={14} strokeWidth={2} className="mr-1.5" />
+              PNG
+            </Button>
+            <Button
+              type="button"
+              onClick={downloadSVG}
+              variant="ghost"
+              size="sm"
+              className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            >
+              <Download size={14} strokeWidth={2} className="mr-1.5" />
+              SVG
+            </Button>
+          </div>
+        </div>
+
+        {/* 图表区域 */}
+        <div
+          ref={svgWrapperRef}
+          className="flex-1 min-h-0 overflow-hidden"
+          style={{ cursor: isZoomed ? (dragging ? "grabbing" : "grab") : "default" }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
+          {svg ? (
+            <div
+              ref={containerRef}
+              className="flex h-full w-full items-center justify-center p-4"
+              style={{
+                transform: `scale(${scale}) translate(${position.x / scale}px, ${position.y / scale}px)`,
+                transformOrigin: "center center",
+                transition: dragging ? "none" : "transform 150ms ease-out",
+              }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <span className="text-sm text-[var(--color-text-tertiary)]">
+                渲染中...
+              </span>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

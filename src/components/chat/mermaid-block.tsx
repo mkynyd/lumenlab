@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MermaidViewer } from "@/components/chat/mermaid-viewer";
 import { logger } from "@/lib/logger";
 
 interface MermaidBlockProps {
@@ -126,6 +127,7 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
   const [svg, setSvg] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [viewerOpen, setViewerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -254,10 +256,30 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
     <div className="group relative" data-render-state="ready">
       <div
         ref={containerRef}
-        className="mermaid overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+        className="mermaid overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 cursor-zoom-in"
         dangerouslySetInnerHTML={{ __html: svg }}
+        onClick={() => setViewerOpen(true)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setViewerOpen(true);
+          }
+        }}
+        aria-label="点击放大查看 Mermaid 图表"
       />
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <Button
+          type="button"
+          onClick={() => setViewerOpen(true)}
+          variant="ghost"
+          size="xs"
+          className="bg-[var(--color-surface)]"
+          title="放大查看"
+        >
+          <Maximize size={12} strokeWidth={2} />
+        </Button>
         <Button
           type="button"
           onClick={downloadPNG}
@@ -281,6 +303,11 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
           SVG
         </Button>
       </div>
+      <MermaidViewer
+        code={code}
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
+      />
     </div>
   );
 }
