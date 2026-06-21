@@ -58,7 +58,9 @@ import {
   NavArrowRight,
   Plus,
   RefreshDouble,
+  Search,
   Trash,
+  Xmark,
   ChatLines,
   MoreHoriz,
 } from "iconoir-react";
@@ -124,8 +126,8 @@ function ToolbarButton({
           size="icon-sm"
           className={cn(
             "h-8 w-full rounded-[var(--radius-sm)] border-0",
-            "bg-[var(--color-surface)] text-[var(--color-text-secondary)]",
-            "hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]",
+            "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
+            "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]",
             className
           )}
           aria-label={label}
@@ -166,6 +168,8 @@ export function ProjectSidebar({
   ).length;
   const selectedCount = selectedFileIds.size;
   const allSelected = files.length > 0 && selectedCount === files.length;
+  const [fileSearch, setFileSearch] = useState("");
+  const [sidebarTab, setSidebarTab] = useState<"files" | "conversations">("files");
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [conversationsOpen, setConversationsOpen] = useState(true);
   const [conversationDeleteTarget, setConversationDeleteTarget] = useState<{
@@ -179,16 +183,21 @@ export function ProjectSidebar({
       <SidebarHeader className="grid shrink-0 grid-cols-2 gap-2 p-3">
         <Button
           asChild
-          variant="outline"
+          variant="secondary"
           size="md"
-          className="w-full hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
+          className="w-full border-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
         >
           <Link href="/projects" className="min-w-0">
             <NavArrowLeft data-icon="inline-start" strokeWidth={2} />
             <span className="truncate">项目空间</span>
           </Link>
         </Button>
-        <Button asChild variant="primary" size="md" className="w-full">
+        <Button
+          asChild
+          variant="primary"
+          size="md"
+          className="w-full bg-[var(--color-project-action)] text-[var(--color-project-action-contrast)] hover:bg-[var(--color-project-action-hover)] focus-visible:bg-[var(--color-project-action-hover)]"
+        >
           <Link href="/projects/new" className="min-w-0">
             <Plus data-icon="inline-start" strokeWidth={2} />
             <span className="truncate">新建项目</span>
@@ -204,7 +213,7 @@ export function ProjectSidebar({
             {project.name}
           </h2>
         </div>
-        <p className="text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wider">
+        <p className="text-[11px] text-[var(--color-text-tertiary)]">
           {TYPE_LABELS[project.type] || project.type}
         </p>
         {project.description && (
@@ -214,11 +223,40 @@ export function ProjectSidebar({
         )}
       </SidebarGroup>
 
-      {/* 文件区域 */}
+      {/* Tab switcher */}
+      <div className="flex shrink-0 gap-1 px-3 pb-0.5">
+        <button
+          type="button"
+          onClick={() => setSidebarTab("files")}
+          className={cn(
+            "flex-1 rounded-[var(--radius-sm)] py-1.5 text-xs font-medium transition-colors duration-150",
+            sidebarTab === "files"
+              ? "bg-[var(--color-project-surface-active)] text-[var(--color-text-primary)]"
+              : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]"
+          )}
+        >
+          资料 ({files.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setSidebarTab("conversations")}
+          className={cn(
+            "flex-1 rounded-[var(--radius-sm)] py-1.5 text-xs font-medium transition-colors duration-150",
+            sidebarTab === "conversations"
+              ? "bg-[var(--color-project-surface-active)] text-[var(--color-text-primary)]"
+              : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]"
+          )}
+        >
+          对话 ({project.conversations?.length || 0})
+        </button>
+      </div>
+
+      {/* Tab: Files */}
+      {sidebarTab === "files" && (
       <SidebarContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3">
         <SidebarGroup className="flex min-h-0 shrink-0 flex-col px-0 py-1">
           <TooltipProvider delayDuration={500}>
-            <ButtonGroup className="mb-2 grid w-full grid-cols-4 gap-1 [&>*]:rounded-[var(--radius-sm)]! [&>*]:border-0!">
+            <ButtonGroup className="mb-2 grid w-full grid-cols-3 gap-1 [&>*]:rounded-[var(--radius-sm)]! [&>*]:border-0!">
               <ToolbarButton
                 label={allSelected ? "取消全选" : "全选"}
                 onClick={allSelected ? onClearFileSelection : onSelectAllFiles}
@@ -226,7 +264,7 @@ export function ProjectSidebar({
                 variant="secondary"
                 className={cn(
                   allSelected &&
-                    "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)] hover:bg-[var(--color-interaction-active)]"
+                    "bg-[var(--color-project-surface-active)] text-[var(--color-text-primary)] hover:bg-[var(--color-project-surface-active)]"
                 )}
               >
                 {allSelected ? (
@@ -238,15 +276,8 @@ export function ProjectSidebar({
               <FileUpload
                 projectId={project.id}
                 onUploaded={onFileUploaded}
-                triggerClassName="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
+                triggerClassName="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
               />
-              <ToolbarButton
-                label="重新分类"
-                onClick={onBatchAutoCategorize}
-                disabled={categorizableCount === 0}
-              >
-                <MagicWand strokeWidth={2} />
-              </ToolbarButton>
               <DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -255,7 +286,7 @@ export function ProjectSidebar({
                         type="button"
                         variant="secondary"
                         size="icon-sm"
-                        className="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
+                        className="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
                         aria-label="更多资料操作"
                       >
                         <MoreHoriz strokeWidth={2} />
@@ -265,6 +296,13 @@ export function ProjectSidebar({
                   <TooltipContent side="bottom">更多</TooltipContent>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    disabled={categorizableCount === 0}
+                    onSelect={() => onBatchAutoCategorize()}
+                  >
+                    <MagicWand strokeWidth={2} />
+                    重新分类
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={failedCount === 0}
                     onSelect={() => onBatchReparseFailed()}
@@ -322,17 +360,45 @@ export function ProjectSidebar({
             </AlertDialogContent>
           </AlertDialog>
           <ScrollArea className="max-h-[44vh] min-h-0 w-full overflow-x-hidden">
+            <div className="mb-2 px-0.5">
+              <div className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--color-project-control)] px-2 h-7">
+                <Search width={12} height={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
+                <input
+                  type="text"
+                  value={fileSearch}
+                  onChange={(e) => setFileSearch(e.target.value)}
+                  placeholder="搜索文件..."
+                  className="flex-1 min-w-0 bg-transparent text-xs text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none"
+                />
+                {fileSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setFileSearch("")}
+                    className="shrink-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
+                    aria-label="清除搜索"
+                  >
+                    <Xmark width={12} height={12} />
+                  </button>
+                )}
+              </div>
+            </div>
             <FileList
               files={files}
               selectedIds={selectedFileIds}
               onToggle={onFileToggle}
               onFileAction={(action, file) => onFileAction(action, file.id)}
               defaultGroupsCollapsed
+              searchQuery={fileSearch}
               className="w-full overflow-hidden"
             />
           </ScrollArea>
         </SidebarGroup>
+      </SidebarContent>
+      )}
 
+      {/* Tab: Conversations */}
+      {sidebarTab === "conversations" && (
+      <SidebarContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3">
         {/* 对话列表 */}
         <SidebarGroup
           className={cn(
@@ -349,7 +415,7 @@ export function ProjectSidebar({
             <CollapsibleTrigger asChild>
             <button
               type="button"
-              className="flex h-7 min-w-0 flex-1 items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:bg-[var(--color-project-hover)] focus-visible:text-[var(--color-text-primary)]"
+              className="flex h-7 min-w-0 flex-1 items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]"
               aria-expanded={conversationsOpen}
             >
               <span className="inline-flex min-w-0 items-center gap-1">
@@ -357,7 +423,7 @@ export function ProjectSidebar({
                   width={12}
                   height={12}
                   className={cn(
-                    "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    "transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
                     conversationsOpen && "rotate-90"
                   )}
                 />
@@ -382,18 +448,22 @@ export function ProjectSidebar({
                 <ScrollArea className="h-full min-h-0 w-full overflow-x-hidden">
                 {project.conversations && project.conversations.length > 0 ? (
                   <div className="flex w-full flex-col gap-1 overflow-hidden">
-                    {project.conversations.map((conv) => {
+                    {project.conversations.map((conv, i) => {
                       const active = activeConversationId === conv.id;
+                      const convCount = project.conversations?.length || 0;
+                      const delay = conversationsOpen
+                        ? `${i * 35}ms`
+                        : `${(convCount - 1 - i) * 30}ms`;
                       const row = (
                         <button
                           type="button"
                           onClick={() => onConversationSelect(conv.id)}
                           className={cn(
                             "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-xs",
-                            "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-project-hover)] focus-visible:text-[var(--color-text-primary)]",
+                            "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]",
                             active
-                              ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
+                              ? "bg-[var(--color-project-surface-active)] text-[var(--color-text-primary)] font-semibold"
+                              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]"
                           )}
                         >
                           <ChatLines width={14} height={14} strokeWidth={2} className="shrink-0 opacity-70" />
@@ -401,7 +471,15 @@ export function ProjectSidebar({
                         </button>
                       );
                       return (
-                        <ContextMenu key={conv.id}>
+                        <div
+                          key={conv.id}
+                          style={{ transitionDelay: delay }}
+                          className={cn(
+                            "collapsible-item",
+                            conversationsOpen ? "opacity-100" : "opacity-0"
+                          )}
+                        >
+                        <ContextMenu>
                           <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
                           <ContextMenuContent className="min-w-36">
                             <ContextMenuItem onSelect={() => onConversationSelect(conv.id)}>
@@ -417,6 +495,7 @@ export function ProjectSidebar({
                             </ContextMenuItem>
                           </ContextMenuContent>
                         </ContextMenu>
+                        </div>
                       );
                     })}
                   </div>
@@ -463,6 +542,7 @@ export function ProjectSidebar({
           </AlertDialog>
         </SidebarGroup>
       </SidebarContent>
+      )}
     </div>
     </SidebarProvider>
   );

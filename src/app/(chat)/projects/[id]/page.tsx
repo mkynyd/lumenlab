@@ -481,7 +481,7 @@ export default function ProjectDetailPage() {
       <button
         type="button"
         className={cn(
-          "absolute inset-0 z-20 bg-slate-950/20 transition-opacity duration-300 ease-out md:hidden motion-reduce:transition-none",
+          "absolute inset-0 z-20 bg-[var(--color-overlay)] transition-opacity duration-300 ease-out md:hidden motion-reduce:transition-none",
           mobileProjectSidebarOpen
             ? "pointer-events-auto opacity-100"
             : "pointer-events-none opacity-0"
@@ -548,8 +548,8 @@ export default function ProjectDetailPage() {
               onClick={toggleProjectSidebar}
               className={cn(
 	                "inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)]",
-	                "bg-[var(--color-surface)]",
-	                "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]",
+	                "bg-[var(--color-project-control)]",
+	                "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]",
                 "transition-colors duration-150"
               )}
               aria-label="切换项目侧边栏"
@@ -574,7 +574,7 @@ export default function ProjectDetailPage() {
                 <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
                   {project.name}
                 </span>
-                <span className="hidden rounded-[var(--radius-md)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-text-tertiary)] sm:inline">
+                <span className="hidden rounded-[var(--radius-md)] bg-[var(--color-project-control)] px-1.5 py-0.5 text-[11px] text-[var(--color-text-tertiary)] sm:inline">
                   {projectModeLabel}
                 </span>
               </div>
@@ -588,7 +588,7 @@ export default function ProjectDetailPage() {
               variant="secondary"
               size="sm"
               onClick={() => setShowArtifacts(true)}
-              className="shrink-0 hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
+              className="shrink-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
             >
               成果库
             </Button>
@@ -662,7 +662,7 @@ export default function ProjectDetailPage() {
             <span>{fileMessage}</span>
             <button
               onClick={() => setFileMessage(null)}
-              className="rounded-[var(--radius-sm)] px-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+              className="rounded-[var(--radius-sm)] px-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
             >
               关闭
             </button>

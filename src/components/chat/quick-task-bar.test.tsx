@@ -21,22 +21,26 @@ describe("QuickTaskBar", () => {
     });
   });
 
-  it("includes the report code explanation task for coding projects", () => {
+  it("includes the report code explanation task for coding projects", async () => {
+    const user = userEvent.setup();
     render(<QuickTaskBar projectType="coding" onSend={vi.fn()} />);
+
+    // The quick task bar collapses system actions to 2 by default; expand first
+    await user.click(screen.getByRole("button", { name: /更多/ }));
 
     expect(
       screen.getByRole("button", { name: "整理实验报告代码说明" })
     ).toBeInTheDocument();
   });
 
-  it("keeps quick tasks neutral and reserves amber for hover", () => {
+  it("uses neutral project controls and hover states", () => {
     render(<QuickTaskBar projectType="review" onSend={vi.fn()} />);
 
     const action = screen.getByRole("button", { name: "提取知识点" });
     expect(action).toHaveClass(
-      "bg-[var(--color-surface)]",
+      "bg-[var(--color-project-control)]",
       "text-[var(--color-text-secondary)]",
-      "hover:bg-[var(--color-project-hover)]",
+      "hover:bg-[var(--color-project-surface-hover)]",
       "hover:text-[var(--color-text-primary)]"
     );
   });

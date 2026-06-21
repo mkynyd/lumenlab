@@ -103,6 +103,7 @@ export function ChatInput({
     <TooltipProvider>
       <form
         onSubmit={handleSubmit}
+        autoComplete="off"
         className={cn(
           "workbench-input-dock bg-[var(--color-panel)] p-3 backdrop-blur-[var(--glass-blur)]"
         )}
@@ -164,6 +165,7 @@ export function ChatInput({
           placeholder="输入问题，或让 AI 基于当前资料生成实验报告、复习提纲、代码说明"
           rows={1}
           disabled={disabled}
+          autoComplete="off"
           className={cn(
             "max-h-32 min-h-9 resize-none overflow-y-hidden border-0 bg-transparent px-2 py-2 text-sm shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0",
             "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",

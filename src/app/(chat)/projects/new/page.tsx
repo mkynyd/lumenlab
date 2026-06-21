@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,42 @@ import { Spinner } from "@/components/ui/spinner";
 import { FolderOpen } from "lucide-react";
 import { useCreateProject } from "@/lib/hooks/use-projects";
 
+const DRAFT_KEY = "new-project-draft";
+
+interface ProjectDraft {
+  name: string;
+  description: string;
+  type: string;
+  quickActionDescription: string;
+  customQuickActions: Array<{ title: string; prompt: string }>;
+}
+
+function loadDraft(): ProjectDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as ProjectDraft;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(draft: ProjectDraft) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // localStorage full or unavailable — silently skip
+  }
+}
+
+function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 const PROJECT_TYPES = [
   { value: "experiment" as const, label: "实验工作台", desc: "处理实验数据、生成报告、绘图和计算" },
   { value: "review" as const, label: "资料复习", desc: "课件总结、考点分析、速记和思维导图" },
@@ -17,19 +53,43 @@ const PROJECT_TYPES = [
   { value: "general" as const, label: "通用项目", desc: "通用问答和学习辅助" },
 ];
 
+function initialDraft(): ProjectDraft {
+  const saved = loadDraft();
+  return saved ?? { name: "", description: "", type: "experiment", quickActionDescription: "", customQuickActions: [] };
+}
+
 export default function NewProjectPage() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [type, setType] = useState<string>("experiment");
-  const [quickActionDescription, setQuickActionDescription] = useState("");
-  const [customQuickActions, setCustomQuickActions] = useState<Array<{ title: string; prompt: string }>>([]);
+  const [draft, setDraft] = useState<ProjectDraft>(initialDraft);
   const [error, setError] = useState<string | null>(null);
   const createProject = useCreateProject();
 
+  // Persist draft to localStorage on every change
+  useEffect(() => {
+    saveDraft(draft);
+  }, [draft]);
+
+  // Warn before leaving with unsaved content
+  useEffect(() => {
+    function beforeUnload(event: BeforeUnloadEvent) {
+      if (draft.name.trim() || draft.description.trim() || draft.customQuickActions.length > 0) {
+        event.preventDefault();
+      }
+    }
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [draft]);
+
+  // Helpers for ergonomic state updates
+  function setName(value: string) { setDraft((prev) => ({ ...prev, name: value })); }
+  function setDescription(value: string) { setDraft((prev) => ({ ...prev, description: value })); }
+  function setType(value: string) { setDraft((prev) => ({ ...prev, type: value })); }
+  function setQuickActionDescription(value: string) { setDraft((prev) => ({ ...prev, quickActionDescription: value })); }
+  function setCustomQuickActions(value: Array<{ title: string; prompt: string }>) { setDraft((prev) => ({ ...prev, customQuickActions: value })); }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) {
+    if (!draft.name.trim()) {
       setError("请输入项目名称");
       return;
     }
@@ -38,11 +98,12 @@ export default function NewProjectPage() {
 
     try {
       const data = await createProject.mutateAsync({
-        name: name.trim(),
-        description: description.trim() || undefined,
-        type: type as "experiment" | "review" | "coding" | "general",
-        quickActions: customQuickActions,
+        name: draft.name.trim(),
+        description: draft.description.trim() || undefined,
+        type: draft.type as "experiment" | "review" | "coding" | "general",
+        quickActions: draft.customQuickActions,
       });
+      clearDraft();
       router.push(`/projects/${data.project.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建项目失败，请重试");
@@ -50,10 +111,10 @@ export default function NewProjectPage() {
   }
 
   function addCustomQuickAction() {
-    const prompt = quickActionDescription.trim();
+    const prompt = draft.quickActionDescription.trim();
     if (!prompt) return;
-    setCustomQuickActions((current) => [
-      ...current,
+    setCustomQuickActions([
+      ...draft.customQuickActions,
       {
         title: prompt.replace(/\s+/g, "").slice(0, 6) || "快捷操作",
         prompt,
@@ -63,11 +124,11 @@ export default function NewProjectPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="project-workbench h-full overflow-y-auto">
       <div className="max-w-lg mx-auto px-4 py-8">
         {/* 页头 */}
         <div className="flex items-center gap-3 mb-8">
-          <div className="flex items-center justify-center w-10 h-10 rounded-[var(--radius-md)] bg-[var(--color-surface)]">
+          <div className="flex items-center justify-center w-10 h-10 rounded-[var(--radius-md)] bg-[var(--color-project-control)]">
             <FolderOpen size={20} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
           </div>
           <div>
@@ -91,7 +152,7 @@ export default function NewProjectPage() {
               id="project-name"
               required
               maxLength={120}
-              value={name}
+              value={draft.name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例如：密码学复习"
             />
@@ -105,7 +166,7 @@ export default function NewProjectPage() {
             <Textarea
               id="project-description"
               maxLength={1000}
-              value={description}
+              value={draft.description}
               onChange={(e) => setDescription(e.target.value)}
               className="h-20 resize-none bg-[var(--color-bg)]"
               placeholder="简要描述这个项目的目标或内容"
@@ -123,21 +184,19 @@ export default function NewProjectPage() {
                   key={pt.value}
                   type="button"
                   role="radio"
-                  aria-checked={type === pt.value}
+                  aria-checked={draft.type === pt.value}
                   onClick={() => setType(pt.value)}
                   className={cn(
-                    "min-h-11 text-left p-3 rounded-[var(--radius-md)] transition-colors duration-150",
-                    type === pt.value
-                      ? "bg-[var(--color-interaction-active)]"
-                      : "bg-[var(--color-surface)] hover:bg-[var(--color-interaction-hover)]"
+                    "min-h-11 text-left p-3 rounded-[var(--radius-md)] transition-colors duration-150 focus-visible:bg-[var(--color-project-surface-hover)]",
+                    draft.type === pt.value
+                      ? "bg-[var(--color-project-surface-active)]"
+                      : "bg-[var(--color-project-control)] hover:bg-[var(--color-project-surface-hover)]"
                   )}
                 >
                   <span
                     className={cn(
-                      "text-xs font-medium",
-                      type === pt.value
-                        ? "text-[var(--color-accent)]"
-                        : "text-[var(--color-text-primary)]"
+                      "text-xs text-[var(--color-text-primary)]",
+                      draft.type === pt.value ? "font-semibold" : "font-medium"
                     )}
                   >
                     {pt.label}
@@ -158,27 +217,32 @@ export default function NewProjectPage() {
               <Input
                 id="quick-action-description"
                 maxLength={500}
-                value={quickActionDescription}
+                value={draft.quickActionDescription}
                 onChange={(e) => setQuickActionDescription(e.target.value)}
                 placeholder="例如：把选中课件整理成考前速记表"
               />
-              <Button type="button" onClick={addCustomQuickAction}>
+              <Button
+                type="button"
+                variant="secondary"
+                className="bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
+                onClick={addCustomQuickAction}
+              >
                 添加操作
               </Button>
             </div>
-            {customQuickActions.length > 0 && (
+            {draft.customQuickActions.length > 0 && (
               <div className="mt-2 space-y-1">
-                {customQuickActions.map((action, index) => (
+                {draft.customQuickActions.map((action, index) => (
                   <div
                     key={`${action.title}-${index}`}
-                    className="grid gap-1 rounded-[var(--radius-md)] bg-[var(--color-surface)] px-2 py-1.5 text-xs"
+                    className="grid gap-1 rounded-[var(--radius-md)] bg-[var(--color-project-control)] px-2 py-1.5 text-xs"
                   >
                     <div className="flex items-center gap-2">
                       <input
                         value={action.title}
                         onChange={(event) =>
-                          setCustomQuickActions((current) =>
-                            current.map((item, itemIndex) =>
+                          setCustomQuickActions(
+                            draft.customQuickActions.map((item, itemIndex) =>
                               itemIndex === index
                                 ? { ...item, title: event.target.value.slice(0, 6) }
                                 : item
@@ -191,8 +255,8 @@ export default function NewProjectPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          setCustomQuickActions((current) =>
-                            current.filter((_, itemIndex) => itemIndex !== index)
+                          setCustomQuickActions(
+                            draft.customQuickActions.filter((_, itemIndex) => itemIndex !== index)
                           )
                         }
                         className="ml-auto text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
@@ -204,8 +268,8 @@ export default function NewProjectPage() {
                     <textarea
                       value={action.prompt}
                       onChange={(event) =>
-                        setCustomQuickActions((current) =>
-                          current.map((item, itemIndex) =>
+                        setCustomQuickActions(
+                          draft.customQuickActions.map((item, itemIndex) =>
                             itemIndex === index
                               ? { ...item, prompt: event.target.value }
                               : item
@@ -232,6 +296,7 @@ export default function NewProjectPage() {
               type="submit"
               variant="primary"
               size="lg"
+              className="bg-[var(--color-project-action)] text-[var(--color-project-action-contrast)] hover:bg-[var(--color-project-action-hover)] focus-visible:bg-[var(--color-project-action-hover)]"
               disabled={createProject.isPending}
             >
               {createProject.isPending && <Spinner data-icon="inline-start" />}
@@ -239,9 +304,10 @@ export default function NewProjectPage() {
             </Button>
             <Button
               type="button"
-              variant="ghost"
+              variant="secondary"
               size="lg"
-              onClick={() => router.back()}
+              className="text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
+              onClick={() => { clearDraft(); router.back(); }}
             >
               取消创建
             </Button>

@@ -122,7 +122,7 @@ export default function ProjectsPage() {
 	                      <h2 className="truncate text-base font-semibold text-[var(--color-text-primary)]">
 	                        {project.name}
 	                      </h2>
-	                      <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-tertiary)]">
+	                      <span className="text-[11px] text-[var(--color-text-tertiary)]">
 	                        {TYPE_LABELS[project.type] || project.type}
 	                      </span>
 	                    </Link>

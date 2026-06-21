@@ -84,16 +84,19 @@ export function QuickTaskBar({
   className,
 }: QuickTaskBarProps) {
   const [customOpen, setCustomOpen] = useState(false);
+  const [systemExpanded, setSystemExpanded] = useState(false);
   const resolvedActions: QuickTaskAction[] =
     actions && actions.length > 0
       ? sortActions(actions)
       : getDefaultQuickActions(projectType).map((action) => ({ ...action }));
   const systemActions = resolvedActions.filter((action) => action.isSystem !== false);
   const customActions = resolvedActions.filter((action) => action.isSystem === false);
+  const visibleSystemActions = systemExpanded ? systemActions : systemActions.slice(0, 2);
+  const hiddenSystemCount = systemActions.length - 2;
 
   return (
     <div className={cn("workbench-animated-list flex flex-wrap items-center gap-1.5", className)}>
-      {systemActions.map((action) => (
+      {visibleSystemActions.map((action) => (
         <ActionButton
           key={action.id || action.title}
           action={action}
@@ -101,6 +104,22 @@ export function QuickTaskBar({
           disabled={disabled}
         />
       ))}
+      {hiddenSystemCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setSystemExpanded(!systemExpanded)}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-2 text-xs",
+            "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
+            "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
+            "focus-visible:bg-[var(--color-project-surface-hover)]",
+            "transition-[background-color,color] duration-150 whitespace-nowrap"
+          )}
+        >
+          {systemExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          更多 ({hiddenSystemCount})
+        </button>
+      )}
       {customActions.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <button

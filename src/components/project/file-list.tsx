@@ -60,6 +60,7 @@ interface FileListProps {
   onToggle: (id: string, intent: FileSelectionIntent) => void;
   onFileAction?: (action: "delete" | "reparse" | "download" | "preview", file: ProjectFile) => void;
   defaultGroupsCollapsed?: boolean;
+  searchQuery?: string;
   className?: string;
 }
 
@@ -86,10 +87,17 @@ export function FileList({
   onToggle,
   onFileAction,
   defaultGroupsCollapsed = false,
+  searchQuery = "",
   className,
 }: FileListProps) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<ProjectFile | null>(null);
+
+  const filteredFiles = searchQuery.trim()
+    ? files.filter((file) =>
+        file.originalName.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : files;
 
   if (files.length === 0) {
     return null;
@@ -191,8 +199,9 @@ export function FileList({
   return (
     <>
       <div className={cn("workbench-animated-list flex flex-col gap-1", className)}>
-        {groupedFiles(files).map((group) => {
+        {groupedFiles(filteredFiles).map((group) => {
           const open = isGroupOpen(group.category);
+          const fileCount = group.files.length;
           return (
             <Collapsible
               key={group.category}
@@ -211,7 +220,7 @@ export function FileList({
                       width={12}
                       height={12}
                       className={cn(
-                        "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                        "transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
                         open && "rotate-90"
                       )}
                     />
@@ -220,10 +229,26 @@ export function FileList({
                   <span className="font-mono">{group.files.length}</span>
                 </button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="grid overflow-hidden transition-[grid-template-rows,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-[state=closed]:grid-rows-[0fr] data-[state=closed]:-translate-y-1 data-[state=closed]:opacity-0 data-[state=open]:grid-rows-[1fr] data-[state=open]:translate-y-0 data-[state=open]:opacity-100 motion-reduce:transition-none">
-                <div className="min-h-0 overflow-hidden">
-                  <div className="flex flex-col gap-1 pt-1">
-                    {group.files.map((file) => renderFile(file, files.indexOf(file)))}
+              <CollapsibleContent>
+                <div className="min-h-0 overflow-hidden pt-1">
+                  <div className="flex flex-col gap-1">
+                    {group.files.map((file, i) => {
+                      const delay = open
+                        ? `${i * 35}ms`
+                        : `${(fileCount - 1 - i) * 30}ms`;
+                      return (
+                        <div
+                          key={file.id}
+                          style={{ transitionDelay: delay }}
+                          className={cn(
+                            "collapsible-item",
+                            open ? "opacity-100" : "opacity-0"
+                          )}
+                        >
+                          {renderFile(file, files.indexOf(file))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </CollapsibleContent>

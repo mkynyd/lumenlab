@@ -87,7 +87,7 @@ describe("FileList", () => {
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
-  it("keeps sidebar selection neutral and uses amber for discoverable hover", () => {
+  it("uses neutral project states for selection and discoverable hover", () => {
     render(
       <FileList
         files={files}
@@ -97,11 +97,11 @@ describe("FileList", () => {
     );
 
     expect(screen.getByRole("checkbox", { name: "选择文件 实验数据.txt" })).toHaveClass(
-      "bg-[var(--color-interaction-active)]",
+      "bg-[var(--color-project-surface-active)]",
       "text-[var(--color-text-primary)]"
     );
     expect(screen.getByRole("checkbox", { name: "选择文件 实验讲义.pdf" })).toHaveClass(
-      "hover:bg-[var(--color-project-hover)]",
+      "hover:bg-[var(--color-project-surface-hover)]",
       "hover:text-[var(--color-text-primary)]"
     );
   });

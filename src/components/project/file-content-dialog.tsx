@@ -65,7 +65,7 @@ export function FileContentDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] p-4">
       <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-[var(--radius-lg)] bg-[var(--color-surface)] shadow-xl">
         <div className="flex items-center justify-between px-4 py-3">
           <div>
@@ -74,11 +74,22 @@ export function FileContentDialog({
               OCR 原文可编辑，修改后会更新检索分块
             </p>
           </div>
-          <button onClick={onClose} aria-label="关闭"><X size={16} /></button>
+          <button
+            onClick={onClose}
+            className="flex size-11 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)] sm:size-8"
+            aria-label="关闭"
+          >
+            <X size={16} />
+          </button>
         </div>
         <div className="flex gap-2 bg-[var(--color-panel-muted)] px-4 py-2">
           {detail?.textContent && (
-            <Button variant="ghost" size="sm" onClick={() => setEditing((value) => !value)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
+              onClick={() => setEditing((value) => !value)}
+            >
               {editing ? "取消编辑" : "编辑原文"}
             </Button>
           )}
@@ -90,7 +101,7 @@ export function FileContentDialog({
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              className="min-h-[50vh] w-full resize-y rounded-[var(--radius-md)] bg-[var(--color-panel)] p-3 font-mono text-xs outline-none focus:bg-[var(--color-interaction-hover)]"
+              className="min-h-[50vh] w-full resize-y rounded-[var(--radius-md)] bg-[var(--color-panel)] p-3 font-mono text-xs outline-none focus:bg-[var(--color-project-surface-hover)]"
             />
           ) : (
             detail.textContent ? (
@@ -107,7 +118,17 @@ export function FileContentDialog({
         </div>
         <div className="flex items-center justify-between bg-[var(--color-panel-muted)] px-4 py-3">
           <span className="text-xs text-[var(--color-text-secondary)]">{message}</span>
-          {editing && <Button variant="primary" size="sm" onClick={save} disabled={!draft.trim()}>保存 OCR 原文</Button>}
+          {editing && (
+            <Button
+              variant="primary"
+              size="sm"
+              className="bg-[var(--color-project-action)] text-[var(--color-project-action-contrast)] hover:bg-[var(--color-project-action-hover)] focus-visible:bg-[var(--color-project-action-hover)]"
+              onClick={save}
+              disabled={!draft.trim()}
+            >
+              保存 OCR 原文
+            </Button>
+          )}
         </div>
       </div>
     </div>

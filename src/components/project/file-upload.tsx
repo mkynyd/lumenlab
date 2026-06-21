@@ -115,7 +115,10 @@ export function FileUpload({
                 type="button"
                 variant="secondary"
                 size="icon-sm"
-                className={cn("shrink-0", triggerClassName)}
+                className={cn(
+                  "shrink-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]",
+                  triggerClassName
+                )}
                 aria-label="上传资料"
               >
                 <CloudUpload strokeWidth={2} />
@@ -143,8 +146,8 @@ export function FileUpload({
             "flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-[var(--radius-lg)] px-4 py-6 text-center",
             "transition-[background-color] duration-150",
             dragging
-              ? "bg-[var(--color-interaction-active)]"
-              : "bg-[var(--color-surface)] hover:bg-[var(--color-interaction-hover)]"
+              ? "bg-[var(--color-project-surface-active)]"
+              : "bg-[var(--color-project-control)] hover:bg-[var(--color-project-surface-hover)]"
           )}
           onClick={() => inputRef.current?.click()}
         >

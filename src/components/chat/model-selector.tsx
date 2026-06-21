@@ -34,8 +34,8 @@ interface ModelSelectorProps {
 }
 
 const STRENGTHS: Array<{ value: Strength; label: string; effort: ReasoningEffort }> = [
-  { value: "fast", label: "快速", effort: "high" },
-  { value: "advanced", label: "高级", effort: "max" },
+  { value: "fast", label: "标准推理", effort: "high" },
+  { value: "advanced", label: "深度推理", effort: "max" },
 ];
 
 const PROVIDERS: Array<{ value: Provider; label: string }> = [
@@ -113,7 +113,7 @@ export function ModelSelector({
         className="w-56 rounded-[var(--radius-xl)] p-2"
       >
         <DropdownMenuLabel className="px-3 py-2 text-sm font-normal text-[var(--color-text-tertiary)]">
-          智能
+          推理深度
         </DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={strength}
