@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SessionProvider } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
@@ -13,24 +13,13 @@ export default function ChatLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isProjectDetail = /^\/projects\/[^/]+$/.test(pathname);
   const section = pathname.startsWith("/projects")
     ? "projects"
     : pathname.startsWith("/tools")
       ? "tools"
       : "chat";
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(isProjectDetail);
-
-  useEffect(() => {
-    if (!isProjectDetail) return;
-
-    const timeoutId = window.setTimeout(() => {
-      setSidebarCollapsed(true);
-      setMobileSidebarOpen(false);
-    }, 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [isProjectDetail, pathname]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   function toggleSidebar() {
     if (window.matchMedia("(min-width: 1024px)").matches) {
