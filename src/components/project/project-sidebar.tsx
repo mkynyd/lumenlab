@@ -23,6 +23,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -50,7 +55,6 @@ import {
   Folder,
   MagicWand,
   NavArrowLeft,
-  NavArrowDown,
   NavArrowRight,
   Plus,
   RefreshDouble,
@@ -336,23 +340,32 @@ export function ProjectSidebar({
             conversationsOpen ? "flex flex-1 flex-col" : "shrink-0"
           )}
         >
+          <Collapsible
+            open={conversationsOpen}
+            onOpenChange={setConversationsOpen}
+            className="contents"
+          >
           <div className="mb-1 flex items-center justify-between gap-2">
+            <CollapsibleTrigger asChild>
             <button
               type="button"
-              onClick={() => setConversationsOpen((value) => !value)}
               className="flex h-7 min-w-0 flex-1 items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:bg-[var(--color-project-hover)] focus-visible:text-[var(--color-text-primary)]"
               aria-expanded={conversationsOpen}
             >
               <span className="inline-flex min-w-0 items-center gap-1">
-                {conversationsOpen ? (
-                  <NavArrowDown width={12} height={12} />
-                ) : (
-                  <NavArrowRight width={12} height={12} />
-                )}
+                <NavArrowRight
+                  width={12}
+                  height={12}
+                  className={cn(
+                    "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                    conversationsOpen && "rotate-90"
+                  )}
+                />
                 <span className="truncate">项目对话</span>
               </span>
               <span className="font-mono">{project.conversations?.length || 0}</span>
             </button>
+            </CollapsibleTrigger>
             <button
               type="button"
               onClick={onNewConversation}
@@ -365,8 +378,8 @@ export function ProjectSidebar({
           <SidebarGroupContent
             className={cn("min-h-0", conversationsOpen && "flex-1")}
           >
-            {conversationsOpen && (
-              <ScrollArea className="h-full min-h-0 w-full overflow-x-hidden">
+            <CollapsibleContent>
+                <ScrollArea className="h-full min-h-0 w-full overflow-x-hidden">
                 {project.conversations && project.conversations.length > 0 ? (
                   <div className="flex w-full flex-col gap-1 overflow-hidden">
                     {project.conversations.map((conv) => {
@@ -413,8 +426,9 @@ export function ProjectSidebar({
                   </p>
                 )}
               </ScrollArea>
-            )}
+              </CollapsibleContent>
           </SidebarGroupContent>
+          </Collapsible>
           <AlertDialog
             open={conversationDeleteTarget !== null}
             onOpenChange={(open) => {

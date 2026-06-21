@@ -14,6 +14,11 @@ export default function ChatLayout({
 }) {
   const pathname = usePathname();
   const isProjectDetail = /^\/projects\/[^/]+$/.test(pathname);
+  const section = pathname.startsWith("/projects")
+    ? "projects"
+    : pathname.startsWith("/tools")
+      ? "tools"
+      : "chat";
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(isProjectDetail);
 
@@ -52,7 +57,7 @@ export default function ChatLayout({
               onClose={() => setMobileSidebarOpen(false)}
               onExpand={() => setSidebarCollapsed(false)}
             />
-            <main className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg)]">
+            <main key={section} className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg)] workbench-view-enter">
               {children}
             </main>
           </div>

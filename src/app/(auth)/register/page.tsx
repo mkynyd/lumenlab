@@ -69,7 +69,7 @@ export default function RegisterPage() {
       </div>
 
       {/* 注册卡片 */}
-      <div className="rounded-[var(--radius-lg)] bg-[var(--color-surface)] p-6">
+      <div className="motion-safe:animate-slide-up-fade rounded-[var(--radius-lg)] bg-[var(--color-surface)] p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label

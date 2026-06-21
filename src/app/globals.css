@@ -321,6 +321,49 @@ html {
   background: var(--color-text-secondary);
 }
 
+/* ---- Motion Tokens ---- */
+:root {
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-micro: 150ms;
+  --duration-state: 200ms;
+  --duration-layout: 300ms;
+  --duration-entrance: 400ms;
+}
+
+/* ---- View & Modal Keyframes ---- */
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.workbench-view-enter {
+  animation: view-enter var(--duration-layout) var(--ease-out-expo) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench-view-enter {
+    animation: none;
+  }
+}
+
 /* ---- Accessible focus states ---- */
 :where(a, button, [role="button"]):focus-visible {
   color: var(--color-text-primary);
@@ -650,7 +693,9 @@ pre code {
   .workbench-ambient,
   .workbench-animated-list > *,
   .loading-indicator-spinner,
-  .typing-cursor::after {
+  .typing-cursor::after,
+  .view-enter,
+  .motion-safe\:animate-slide-up-fade {
     animation: none !important;
     transition: none !important;
   }
