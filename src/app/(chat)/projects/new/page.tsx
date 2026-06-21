@@ -125,24 +125,27 @@ export default function NewProjectPage() {
 
   return (
     <div className="project-workbench h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-8 md:py-12">
+      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-8 md:py-14">
         {/* 页头 */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="flex items-center justify-center w-11 h-11 rounded-[var(--radius-md)] bg-[var(--color-project-control)]">
-            <FolderOpen size={22} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
+        <div className="mb-10">
+          <div className="flex items-center gap-4 mb-5">
+            <div className="flex items-center justify-center w-12 h-12 rounded-[var(--radius-md)] bg-[var(--color-accent)]">
+              <FolderOpen size={24} strokeWidth={1.75} className="text-[var(--color-accent-contrast)]" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-[var(--color-text-primary)]">
+                新建项目
+              </h1>
+              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                创建一个新的学习/实验项目空间
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
-              新建项目
-            </h1>
-            <p className="text-sm text-[var(--color-text-secondary)]">
-              创建一个新的学习/实验项目空间
-            </p>
-          </div>
+          <div className="h-px bg-[var(--color-accent-muted)]" />
         </div>
 
         {/* 表单 */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-7">
           {/* 项目名称 */}
           <div>
             <label htmlFor="project-name" className="block text-sm font-medium text-[var(--color-text-primary)] mb-1.5">
@@ -178,7 +181,7 @@ export default function NewProjectPage() {
             <span id="project-type-label" className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
               项目类型
             </span>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-labelledby="project-type-label">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-labelledby="project-type-label">
               {PROJECT_TYPES.map((pt) => (
                 <button
                   key={pt.value}
@@ -187,16 +190,18 @@ export default function NewProjectPage() {
                   aria-checked={draft.type === pt.value}
                   onClick={() => setType(pt.value)}
                   className={cn(
-                    "min-h-11 text-left p-3 rounded-[var(--radius-md)] transition-colors duration-150 focus-visible:bg-[var(--color-project-surface-hover)]",
+                    "min-h-12 text-left p-3.5 rounded-[var(--radius-md)] transition-colors duration-150 focus-visible:bg-[var(--color-project-surface-hover)]",
                     draft.type === pt.value
-                      ? "bg-[var(--color-project-surface-active)]"
+                      ? "bg-[var(--color-accent-muted)]"
                       : "bg-[var(--color-project-control)] hover:bg-[var(--color-project-surface-hover)]"
                   )}
                 >
                   <span
                     className={cn(
-                      "text-sm text-[var(--color-text-primary)]",
-                      draft.type === pt.value ? "font-semibold" : "font-medium"
+                      "text-sm",
+                      draft.type === pt.value
+                        ? "font-semibold text-[var(--color-accent)]"
+                        : "font-medium text-[var(--color-text-primary)]"
                     )}
                   >
                     {pt.label}
