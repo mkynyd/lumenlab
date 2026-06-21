@@ -86,4 +86,23 @@ describe("FileList", () => {
     expect(screen.getByRole("checkbox", { name: "选择文件 实验讲义.pdf" })).toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
+
+  it("keeps sidebar selection neutral and uses amber for discoverable hover", () => {
+    render(
+      <FileList
+        files={files}
+        selectedIds={new Set(["file-1"])}
+        onToggle={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("checkbox", { name: "选择文件 实验数据.txt" })).toHaveClass(
+      "bg-[var(--color-interaction-active)]",
+      "text-[var(--color-text-primary)]"
+    );
+    expect(screen.getByRole("checkbox", { name: "选择文件 实验讲义.pdf" })).toHaveClass(
+      "hover:bg-[var(--color-project-hover)]",
+      "hover:text-[var(--color-text-primary)]"
+    );
+  });
 });

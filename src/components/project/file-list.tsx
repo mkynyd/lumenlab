@@ -128,10 +128,10 @@ export function FileList({
         }
         className={cn(
           "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left",
-          "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-interaction-hover)]",
+          "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-project-hover)] focus-visible:text-[var(--color-text-primary)]",
           selected
             ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
         )}
       >
         {parsing ? (

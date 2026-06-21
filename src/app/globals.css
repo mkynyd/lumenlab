@@ -13,26 +13,32 @@
 
 /* ---- Light Theme (default) ---- */
 :root {
-  --color-bg: oklch(0.975 0.008 255);
-  --color-surface: oklch(0.995 0.003 255);
-  --color-surface-hover: oklch(0.965 0.018 255);
-  --color-surface-active: oklch(0.945 0.03 255);
-  --color-panel: oklch(0.952 0.018 255);
-  --color-panel-muted: oklch(0.935 0.025 255);
-  --color-control: oklch(0.995 0.003 255);
-  --color-control-menu: oklch(0.985 0.012 255);
-  --color-interaction-hover: oklch(0.955 0.025 255);
-  --color-interaction-active: oklch(0.925 0.045 255);
+  --color-bg: oklch(0.972 0 0);
+  --color-surface: oklch(0.995 0 0);
+  --color-surface-hover: oklch(0.965 0 0);
+  --color-surface-active: oklch(0.945 0 0);
+  --color-panel: oklch(0.985 0 0);
+  --color-panel-muted: oklch(0.94 0 0);
+  --color-control: oklch(0.995 0 0);
+  --color-control-menu: oklch(0.995 0 0);
+  --color-interaction-hover: oklch(0.96 0 0);
+  --color-interaction-active: oklch(0.93 0 0);
 
-  --color-text-primary: oklch(0.24 0.014 255);
-  --color-text-secondary: oklch(0.42 0.012 255);
-  --color-text-tertiary: oklch(0.5 0.01 255);
+  --color-text-primary: oklch(0.24 0 0);
+  --color-text-secondary: oklch(0.42 0 0);
+  --color-text-tertiary: oklch(0.5 0 0);
 
-  --color-accent: oklch(0.576 0.251 258.2);
-  --color-accent-hover: oklch(0.515 0.24 257.9);
+  --color-accent: oklch(0.5151 0.2399 257.85);
+  --color-accent-hover: oklch(0.46 0.21 257.85);
   --color-accent-muted: oklch(0.916 0.047 245.1);
   --color-accent-soft: oklch(0.946 0.029 249.8);
   --color-accent-contrast: oklch(0.995 0.002 255);
+
+  /* Project workbench: Geist blue actions + restrained amber interaction */
+  --color-project-action: oklch(0.5151 0.2399 257.85);
+  --color-project-action-hover: oklch(0.46 0.21 257.85);
+  --color-project-action-contrast: oklch(0.995 0.002 255);
+  --color-project-hover: oklch(0.9748 0.0331 85.79 / 0.58);
 
   /* Semantic */
   --color-success: oklch(0.575 0.145 160);
@@ -45,8 +51,8 @@
   --color-info-muted: oklch(0.93 0.025 215);
 
   /* Borders */
-  --color-border: oklch(0.835 0.007 255 / 0.76);
-  --color-border-light: oklch(0.9 0.005 255 / 0.62);
+  --color-border: oklch(0.835 0 0 / 0.76);
+  --color-border-light: oklch(0.9 0 0 / 0.72);
 
   /* Progress / Ring */
   --color-ring-track: oklch(0.9 0.004 255);
@@ -64,11 +70,11 @@
   --radius-lg: 16px;
   --radius-xl: 16px;
   --shadow-none: none;
-  --shadow-panel: 0 16px 42px oklch(0.25 0.012 255 / 0.07);
-  --shadow-float: 0 18px 48px oklch(0.25 0.012 255 / 0.10);
+  --shadow-panel: 0 16px 42px oklch(0.25 0 0 / 0.07);
+  --shadow-float: 0 18px 48px oklch(0.25 0 0 / 0.10);
   --glass-blur: 0px;
-  --dot-grid-base: oklch(0.66 0.018 255 / 0.18);
-  --dot-grid-active: oklch(0.42 0.018 255 / 0.72);
+  --dot-grid-base: oklch(0.66 0 0 / 0.18);
+  --dot-grid-active: oklch(0.42 0 0 / 0.72);
   --background: var(--color-bg);
   --foreground: var(--color-text-primary);
   --card: var(--color-panel);
@@ -93,40 +99,46 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.94 0.026 255);
+  --sidebar: oklch(0.96 0 0);
   --sidebar-foreground: var(--color-text-primary);
   --sidebar-primary: var(--color-accent);
   --sidebar-primary-foreground: var(--color-accent-contrast);
-  --sidebar-accent: var(--color-accent-soft);
-  --sidebar-accent-foreground: var(--color-accent);
+  --sidebar-accent: var(--color-surface-active);
+  --sidebar-accent-foreground: var(--color-text-primary);
   --sidebar-border: var(--color-border-light);
   --sidebar-ring: var(--color-accent-muted);
 }
 
 /* ---- Dark Theme ---- */
 .dark {
-  --color-bg: oklch(0.165 0.015 255);
-  --color-surface: oklch(0.235 0.018 255);
-  --color-surface-hover: oklch(0.29 0.028 255);
-  --color-surface-active: oklch(0.33 0.045 255);
-  --color-panel: oklch(0.215 0.025 255);
-  --color-panel-muted: oklch(0.275 0.032 255);
-  --color-control: oklch(0.245 0.025 255);
-  --color-control-menu: oklch(0.285 0.03 255);
-  --color-interaction-hover: oklch(0.3 0.038 255);
-  --color-interaction-active: oklch(0.35 0.06 255);
+  --color-bg: oklch(0.16 0 0);
+  --color-surface: oklch(0.235 0 0);
+  --color-surface-hover: oklch(0.29 0 0);
+  --color-surface-active: oklch(0.33 0 0);
+  --color-panel: oklch(0.205 0 0);
+  --color-panel-muted: oklch(0.275 0 0);
+  --color-control: oklch(0.245 0 0);
+  --color-control-menu: oklch(0.285 0 0);
+  --color-interaction-hover: oklch(0.3 0 0);
+  --color-interaction-active: oklch(0.35 0 0);
 
   /* Text */
-  --color-text-primary: oklch(0.925 0.006 255);
-  --color-text-secondary: oklch(0.76 0.008 255);
-  --color-text-tertiary: oklch(0.68 0.008 255);
+  --color-text-primary: oklch(0.925 0 0);
+  --color-text-secondary: oklch(0.76 0 0);
+  --color-text-tertiary: oklch(0.68 0 0);
 
   /* Accent */
-  --color-accent: oklch(0.731 0.158 248.1);
-  --color-accent-hover: oklch(0.827 0.098 248.5);
+  --color-accent: oklch(0.5151 0.2399 257.85);
+  --color-accent-hover: oklch(0.5761 0.2508 258.23);
   --color-accent-muted: oklch(0.35 0.09 255);
   --color-accent-soft: oklch(0.285 0.065 255);
-  --color-accent-contrast: oklch(0.17 0.025 255);
+  --color-accent-contrast: oklch(0.995 0 0);
+
+  /* Project workbench keeps the requested Geist blue and light amber cues. */
+  --color-project-action: oklch(0.5151 0.2399 257.85);
+  --color-project-action-hover: oklch(0.5761 0.2508 258.23);
+  --color-project-action-contrast: oklch(0.995 0 0);
+  --color-project-hover: oklch(0.9748 0.0331 85.79 / 0.16);
 
   /* Semantic */
   --color-success: oklch(0.72 0.14 150);
@@ -139,8 +151,8 @@
   --color-info-muted: oklch(0.29 0.022 215);
 
   /* Borders */
-  --color-border: oklch(0.42 0.008 255 / 0.72);
-  --color-border-light: oklch(0.35 0.007 255 / 0.58);
+  --color-border: oklch(0.42 0 0 / 0.72);
+  --color-border-light: oklch(0.35 0 0 / 0.68);
 
   /* Progress / Ring */
   --color-ring-track: oklch(0.31 0.006 255);
@@ -158,11 +170,11 @@
   --radius-lg: 16px;
   --radius-xl: 16px;
   --shadow-none: none;
-  --shadow-panel: 0 22px 42px oklch(0.05 0.006 255 / 0.30);
-  --shadow-float: 0 22px 54px oklch(0.05 0.006 255 / 0.38);
+  --shadow-panel: 0 22px 42px oklch(0.05 0 0 / 0.30);
+  --shadow-float: 0 22px 54px oklch(0.05 0 0 / 0.38);
   --glass-blur: 0px;
-  --dot-grid-base: oklch(0.68 0.018 255 / 0.16);
-  --dot-grid-active: oklch(0.82 0.012 255 / 0.8);
+  --dot-grid-base: oklch(0.68 0 0 / 0.16);
+  --dot-grid-active: oklch(0.82 0 0 / 0.8);
   --background: var(--color-bg);
   --foreground: var(--color-text-primary);
   --card: var(--color-panel);
@@ -186,12 +198,12 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0.032 255);
+  --sidebar: oklch(0.19 0 0);
   --sidebar-foreground: var(--color-text-primary);
   --sidebar-primary: var(--color-accent);
   --sidebar-primary-foreground: var(--color-accent-contrast);
-  --sidebar-accent: var(--color-accent-soft);
-  --sidebar-accent-foreground: var(--color-accent);
+  --sidebar-accent: var(--color-surface-active);
+  --sidebar-accent-foreground: var(--color-text-primary);
   --sidebar-border: var(--color-border-light);
   --sidebar-ring: var(--color-accent-muted);
 }

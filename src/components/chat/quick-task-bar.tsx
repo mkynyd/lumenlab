@@ -65,7 +65,8 @@ function ActionButton({
         "rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
         "bg-[var(--color-surface)]",
         "text-[var(--color-text-secondary)]",
-        "hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]",
+        "hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]",
+        "focus-visible:bg-[var(--color-project-hover)] focus-visible:text-[var(--color-text-primary)]",
         "transition-[background-color,color] duration-150 whitespace-nowrap",
         "disabled:opacity-40 disabled:cursor-not-allowed"
       )}
@@ -108,7 +109,7 @@ export function QuickTaskBar({
             className={cn(
 	              "inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
 	              "bg-[var(--color-surface)] text-[var(--color-text-secondary)]",
-              "hover:bg-[var(--color-surface-hover)] transition-colors duration-150"
+	              "hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)] transition-colors duration-150"
             )}
             aria-expanded={customOpen}
           >

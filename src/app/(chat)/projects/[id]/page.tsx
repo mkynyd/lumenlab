@@ -477,7 +477,7 @@ export default function ProjectDetailPage() {
         ? "项目资料按问题自动匹配"
         : "等待上传资料后构建项目上下文";
   return (
-    <div className="relative flex h-full overflow-hidden">
+    <div className="project-workbench relative flex h-full overflow-hidden">
       <button
         type="button"
         className={cn(
@@ -549,7 +549,7 @@ export default function ProjectDetailPage() {
               className={cn(
 	                "inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)]",
 	                "bg-[var(--color-surface)]",
-                "text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
+	                "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]",
                 "transition-colors duration-150"
               )}
               aria-label="切换项目侧边栏"
@@ -585,10 +585,10 @@ export default function ProjectDetailPage() {
           </div>
           <div className="flex min-w-0 shrink-0 items-center gap-2 overflow-x-auto">
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               onClick={() => setShowArtifacts(true)}
-              className="shrink-0"
+              className="shrink-0 hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
             >
               成果库
             </Button>

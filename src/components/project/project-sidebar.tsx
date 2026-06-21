@@ -118,7 +118,12 @@ function ToolbarButton({
           type="button"
           variant="secondary"
           size="icon-sm"
-          className={cn("h-8 w-full rounded-[var(--radius-sm)] border-0", className)}
+          className={cn(
+            "h-8 w-full rounded-[var(--radius-sm)] border-0",
+            "bg-[var(--color-surface)] text-[var(--color-text-secondary)]",
+            "hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]",
+            className
+          )}
           aria-label={label}
           {...props}
         >
@@ -168,7 +173,12 @@ export function ProjectSidebar({
     <SidebarProvider defaultOpen className="h-full min-h-0 w-full overflow-hidden">
     <div className={cn("flex h-full w-full min-w-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground backdrop-blur-[var(--glass-blur)]", className)}>
       <SidebarHeader className="grid shrink-0 grid-cols-2 gap-2 p-3">
-        <Button asChild variant="outline" size="md" className="w-full">
+        <Button
+          asChild
+          variant="outline"
+          size="md"
+          className="w-full hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
+        >
           <Link href="/projects" className="min-w-0">
             <NavArrowLeft data-icon="inline-start" strokeWidth={2} />
             <span className="truncate">项目空间</span>
@@ -224,7 +234,7 @@ export function ProjectSidebar({
               <FileUpload
                 projectId={project.id}
                 onUploaded={onFileUploaded}
-                triggerClassName="h-8 w-full rounded-[var(--radius-sm)] border-0"
+                triggerClassName="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
               />
               <ToolbarButton
                 label="重新分类"
@@ -241,7 +251,7 @@ export function ProjectSidebar({
                         type="button"
                         variant="secondary"
                         size="icon-sm"
-                        className="h-8 w-full rounded-[var(--radius-sm)] border-0"
+                        className="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
                         aria-label="更多资料操作"
                       >
                         <MoreHoriz strokeWidth={2} />
@@ -330,7 +340,7 @@ export function ProjectSidebar({
             <button
               type="button"
               onClick={() => setConversationsOpen((value) => !value)}
-              className="flex h-7 min-w-0 flex-1 items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] focus-visible:outline-none focus-visible:bg-[var(--color-interaction-hover)]"
+              className="flex h-7 min-w-0 flex-1 items-center justify-between rounded-[var(--radius-sm)] px-2 text-[11px] font-medium text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:bg-[var(--color-project-hover)] focus-visible:text-[var(--color-text-primary)]"
               aria-expanded={conversationsOpen}
             >
               <span className="inline-flex min-w-0 items-center gap-1">
@@ -346,7 +356,7 @@ export function ProjectSidebar({
             <button
               type="button"
               onClick={onNewConversation}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:bg-[var(--color-interaction-hover)]"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-project-action)] text-[var(--color-project-action-contrast)] hover:bg-[var(--color-project-action-hover)] focus-visible:outline-none focus-visible:bg-[var(--color-project-action-hover)]"
               aria-label="新建项目对话"
             >
               <Plus width={14} height={14} strokeWidth={2} />
@@ -367,10 +377,10 @@ export function ProjectSidebar({
                           onClick={() => onConversationSelect(conv.id)}
                           className={cn(
                             "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-xs",
-                            "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-interaction-hover)]",
+                            "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-project-hover)] focus-visible:text-[var(--color-text-primary)]",
                             active
                               ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+                              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-project-hover)] hover:text-[var(--color-text-primary)]"
                           )}
                         >
                           <ChatLines width={14} height={14} strokeWidth={2} className="shrink-0 opacity-70" />

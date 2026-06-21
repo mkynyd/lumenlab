@@ -28,4 +28,16 @@ describe("QuickTaskBar", () => {
       screen.getByRole("button", { name: "整理实验报告代码说明" })
     ).toBeInTheDocument();
   });
+
+  it("keeps quick tasks neutral and reserves amber for hover", () => {
+    render(<QuickTaskBar projectType="review" onSend={vi.fn()} />);
+
+    const action = screen.getByRole("button", { name: "提取知识点" });
+    expect(action).toHaveClass(
+      "bg-[var(--color-surface)]",
+      "text-[var(--color-text-secondary)]",
+      "hover:bg-[var(--color-project-hover)]",
+      "hover:text-[var(--color-text-primary)]"
+    );
+  });
 });

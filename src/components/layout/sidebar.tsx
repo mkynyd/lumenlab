@@ -503,7 +503,7 @@ export function Sidebar({
                 )}
                 aria-label="打开账户菜单"
               >
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent-soft)] text-xs font-semibold text-[var(--color-accent)]">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] text-xs font-semibold text-[var(--color-text-primary)]">
                   {accountInitial}
                 </span>
                 <span
