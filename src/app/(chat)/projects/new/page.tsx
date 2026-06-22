@@ -467,22 +467,26 @@ export default function NewProjectPage() {
         <Stepper
           steps={stepperSteps}
           currentStep={stepperStep}
-          onStepChange={setStepperStep}
-          onComplete={() => {
-            if (stepperStep === 2) {
-              // At quick action step → save personalization
-              savePersonalization();
-            } else if (stepperStep === 0) {
-              // At identity step → run classification
+          onStepChange={(next) => {
+            // Step 0 → click next: run classification before moving forward
+            if (stepperStep === 0 && next === 1) {
               runClassification();
+              return; // runClassification 自己控制步进
             }
+            // Step 2 → click next: save personalization then navigate
+            if (stepperStep === 2 && next === 3) {
+              savePersonalization();
+              return; // savePersonalization 内部导航
+            }
+            setStepperStep(next);
           }}
+          onComplete={savePersonalization}
           onSkip={skipStepper}
           isCompleting={isClassifying}
           completingText="正在分析你的项目需求..."
           skipLabel="跳过个性化设置"
           nextLabel={stepperStep === 0 ? "开始分析" : "下一步"}
-          completeLabel={stepperStep === 2 ? "保存并进入项目" : "进入项目"}
+          completeLabel="保存并进入项目"
         />
       </div>
     </div>

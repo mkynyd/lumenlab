@@ -1,8 +1,7 @@
 /**
  * POST /api/classification
  *
- * 调用 DeepSeek 进行用户身份分类，输出受 JSON Schema 严格约束的结果。
- * roleKey 必须是数据库中已启用的 UserRole.key 之一或 null。
+ * 调用 DeepSeek 进行用户身份分类。使用纯文本 JSON 响应用于最大兼容性。
  */
 
 import { NextResponse } from "next/server";
@@ -19,134 +18,90 @@ const requestSchema = z.object({
   mode: z.enum(["experiment", "review", "coding", "general"]).default("general"),
 });
 
+function errorResponse(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
+
 export async function POST(request: Request) {
+  // Auth
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
+    return errorResponse("未登录", 401);
   }
 
+  // Parse body
   let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "请求格式无效" }, { status: 400 });
+  try { body = await request.json(); } catch {
+    return errorResponse("请求格式无效", 400);
   }
-
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "参数无效", details: parsed.error.flatten() },
-      { status: 400 }
-    );
+    return errorResponse("参数无效", 400);
   }
-
   const { userInput, mode } = parsed.data;
 
-  // 1. Build dynamic classification prompt
+  // Build classification prompt
   const { systemPrompt, jsonSchema, roleKeys } = await buildClassificationPrompt(mode);
-
-  // No roles available — return empty result immediately
   if (roleKeys.length === 0) {
     return NextResponse.json({
-      classification: {
-        roleKey: null,
-        mode,
-        domain: "通用",
-        confidence: 0,
-        reason: "no_roles_available",
-      },
+      classification: { roleKey: null, mode, domain: "通用", confidence: 0, reason: "no_roles" },
       quickActions: [],
     });
   }
 
-  // 2. Get provider API key
-  const { getProviderApiKey } = await import("@/lib/data/provider-access");
+  // Get API key
   let apiKey: string;
   try {
-    apiKey = await getProviderApiKey(session.user.id, "deepseek");
+    const mod = await import("@/lib/data/provider-access");
+    apiKey = await mod.getProviderApiKey(session.user.id, "deepseek");
   } catch {
-    return NextResponse.json(
-      { error: "DeepSeek API Key 未配置" },
-      { status: 503 }
-    );
+    return errorResponse("DeepSeek API Key 未配置", 503);
   }
 
-  // 3. Call DeepSeek — use simple text output with JSON, more reliable than tool_choice
+  // Call DeepSeek
+  const schemaStr = JSON.stringify(jsonSchema);
+  let text: string;
   try {
-    const client = new Anthropic({
-      baseURL: DEEPSEEK_BASE_URL,
-      apiKey,
-      timeout: 30_000,
-      maxRetries: 0,
-    });
-
-    const schemaStr = JSON.stringify(jsonSchema, null, 2);
-
+    const client = new Anthropic({ baseURL: DEEPSEEK_BASE_URL, apiKey, timeout: 30_000, maxRetries: 0 });
     const response = await client.messages.create({
       model: mapDeepSeekModel("deepseek-v4-flash"),
       max_tokens: 256,
       temperature: 0.1,
       system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `用户输入：${userInput}\n\n请根据以上信息判断用户的身份角色和工作模式。\n\n必须严格按照以下 JSON Schema 输出，不要输出任何额外内容：\n${schemaStr}`,
-        },
-      ],
+      messages: [{ role: "user", content: `用户输入：${userInput}\n\n输出严格符合以下 JSON Schema 的 JSON 对象，不要输出其他内容：\n${schemaStr}` }],
     });
-
-    // Extract text content
-    const textBlock = response.content.find((block) => block.type === "text");
+    const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock || !("text" in textBlock)) {
-      return NextResponse.json(
-        { error: "分类器未返回有效结果" },
-        { status: 500 }
-      );
+      return errorResponse("分类器返回为空", 500);
     }
-
-    // Parse JSON from response text
-    let classification: {
-      roleKey: string | null;
-      mode: string;
-      domain: string;
-      confidence: number;
-      reason: string;
-    };
-    try {
-      // Extract JSON from possible markdown code blocks
-      const jsonStr = textBlock.text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
-      classification = JSON.parse(jsonStr);
-    } catch {
-      return NextResponse.json(
-        { error: "分类器返回格式异常" },
-        { status: 500 }
-      );
-    }
-
-    // 4. Validate roleKey against available roles
-    if (classification.roleKey && !roleKeys.includes(classification.roleKey)) {
-      classification.roleKey = null;
-      classification.confidence = 0;
-    }
-
-    // 5. Validate mode
-    const validModes = ["experiment", "review", "coding", "general"];
-    if (!validModes.includes(classification.mode)) {
-      classification.mode = mode;
-    }
-
-    // 6. Get recommended quick actions
-    const quickActions = await getRecommendedQuickActions(classification.roleKey);
-
-    return NextResponse.json({
-      classification,
-      quickActions,
-    });
-  } catch (error) {
-    console.error("Classification error:", error);
-    return NextResponse.json(
-      { error: "分类服务暂时不可用，请稍后重试或跳过此步骤" },
-      { status: 500 }
-    );
+    text = textBlock.text;
+  } catch (err) {
+    console.error("DeepSeek classification call failed:", err instanceof Error ? err.message : String(err));
+    return errorResponse("分类服务暂不可用", 500);
   }
+
+  // Parse JSON response
+  let classification: { roleKey: string | null; mode: string; domain: string; confidence: number; reason: string };
+  try {
+    const cleaned = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+    classification = JSON.parse(cleaned);
+  } catch {
+    console.error("Classification JSON parse failed, raw text:", text.slice(0, 200));
+    return errorResponse("分类器返回格式异常", 500);
+  }
+
+  // Validate
+  if (classification.roleKey && !roleKeys.includes(classification.roleKey)) {
+    classification.roleKey = null;
+  }
+  if (!["experiment", "review", "coding", "general"].includes(classification.mode)) {
+    classification.mode = mode;
+  }
+  if (typeof classification.domain !== "string") classification.domain = "通用";
+  if (typeof classification.confidence !== "number") classification.confidence = 0;
+
+  // Recommend quick actions
+  const quickActions = await getRecommendedQuickActions(classification.roleKey);
+
+  return NextResponse.json({ classification, quickActions });
 }
