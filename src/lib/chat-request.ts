@@ -10,6 +10,7 @@ export interface ChatRequestInput {
   projectId?: string;
   selectedFileIds?: string[];
   mode?: ProjectType;
+  webSearchActive?: boolean;
 }
 
 export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput {
@@ -31,6 +32,10 @@ export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput 
     if (input.mode) {
       body.mode = input.mode;
     }
+  }
+
+  if (input.webSearchActive) {
+    body.webSearchActive = input.webSearchActive;
   }
 
   return body;

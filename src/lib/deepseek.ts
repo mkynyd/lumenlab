@@ -14,6 +14,7 @@ export interface DeepSeekRequest {
   thinking?: { type: "enabled" | "disabled" };
   reasoning_effort?: "high" | "max";
   max_tokens?: number;
+  tools?: Array<{ type: string; [key: string]: unknown }>;
 }
 
 export interface DeepSeekUsage {
@@ -24,9 +25,16 @@ export interface DeepSeekUsage {
   prompt_cache_miss_tokens?: number;
 }
 
+export interface ToolUseBlock {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
 interface StreamResult {
   stream: ReadableStream<Uint8Array>;
   getUsage: () => DeepSeekUsage | null;
+  getToolCalls: () => ToolUseBlock[];
 }
 
 export const DEEPSEEK_ERROR_MAP: Record<number, string> = {
@@ -134,13 +142,18 @@ export async function streamChat(
       ...(params.thinking?.type === "enabled"
         ? { thinking: { type: "adaptive" as const } }
         : {}),
+      ...(params.tools?.length ? { tools: params.tools as Array<{ type: string }> } : {}),
     });
   } catch (error) {
     throw toDeepSeekError(error);
   }
 
   let usage: DeepSeekUsage | null = null;
+  const toolCalls: ToolUseBlock[] = [];
   const encoder = new TextEncoder();
+
+  // Track current tool_use block being built
+  let currentToolUse: { id: string; name: string; inputJson: string } | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -149,6 +162,36 @@ export async function streamChat(
       let cacheHitTokens = 0;
       let cacheMissTokens = 0;
 
+      function flushToolUse() {
+        if (!currentToolUse) return;
+        try {
+          const input = currentToolUse.inputJson
+            ? JSON.parse(currentToolUse.inputJson)
+            : {};
+          toolCalls.push({
+            id: currentToolUse.id,
+            name: currentToolUse.name,
+            input,
+          });
+
+          // Emit tool call event to frontend
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                tool_call: {
+                  id: currentToolUse.id,
+                  name: currentToolUse.name,
+                  input,
+                },
+              })}\n\n`
+            )
+          );
+        } catch {
+          // Invalid JSON — skip this tool call
+        }
+        currentToolUse = null;
+      }
+
       try {
         for await (const event of anthropicStream) {
           if (event.type === "message_start") {
@@ -156,31 +199,66 @@ export async function streamChat(
             promptTokens = rawUsage.input_tokens || 0;
             cacheHitTokens = rawUsage.prompt_cache_hit_tokens || rawUsage.cache_read_input_tokens || 0;
             cacheMissTokens = rawUsage.prompt_cache_miss_tokens || rawUsage.cache_creation_input_tokens || 0;
+          } else if (event.type === "content_block_start") {
+            const block = event.content_block as unknown as {
+              type: string;
+              id?: string;
+              name?: string;
+              text?: string;
+            };
+
+            // Flush previous tool_use if switching to a new block
+            if (currentToolUse && block.type !== "tool_use") {
+              flushToolUse();
+            }
+
+            if (block.type === "tool_use" && block.id) {
+              currentToolUse = {
+                id: block.id,
+                name: block.name || "unknown",
+                inputJson: "",
+              };
+            }
           } else if (event.type === "content_block_delta") {
             const delta = event.delta as unknown as {
               type: string;
               text?: string;
               thinking?: string;
+              partial_json?: string;
             };
-            const payload =
-              delta.type === "text_delta"
-                ? { content: delta.text || "" }
-                : delta.type === "thinking_delta"
-                  ? { reasoning_content: delta.thinking || "" }
-                  : null;
 
-            if (payload) {
+            if (delta.type === "input_json_delta" && delta.partial_json && currentToolUse) {
+              currentToolUse.inputJson += delta.partial_json;
+            } else if (delta.type === "text_delta") {
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
-                    choices: [{ delta: payload }],
+                    choices: [{ delta: { content: delta.text || "" } }],
+                  })}\n\n`
+                )
+              );
+            } else if (delta.type === "thinking_delta") {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    choices: [{ delta: { reasoning_content: delta.thinking || "" } }],
                   })}\n\n`
                 )
               );
             }
+          } else if (event.type === "content_block_stop") {
+            // Flush any pending tool_use when block stops
+            if (currentToolUse) {
+              flushToolUse();
+            }
           } else if (event.type === "message_delta") {
             completionTokens = event.usage.output_tokens || 0;
           }
+        }
+
+        // Flush any remaining tool_use at end of stream
+        if (currentToolUse) {
+          flushToolUse();
         }
 
         usage = {
@@ -193,6 +271,16 @@ export async function streamChat(
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ usage })}\n\n`)
         );
+
+        // Emit tool calls summary
+        if (toolCalls.length > 0) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ tool_calls: toolCalls.map(tc => ({ id: tc.id, name: tc.name })) })}\n\n`
+            )
+          );
+        }
+
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       } catch (error) {
@@ -201,5 +289,5 @@ export async function streamChat(
     },
   });
 
-  return { stream, getUsage: () => usage };
+  return { stream, getUsage: () => usage, getToolCalls: () => toolCalls };
 }

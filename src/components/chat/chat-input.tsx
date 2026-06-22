@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileText, Paperclip, Send, StopCircle, X } from "lucide-react";
+import { FileText, Globe, Paperclip, Send, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,8 @@ interface ChatInputProps {
   onModelChange?: (model: string) => void;
   reasoningEffort?: "high" | "max";
   onReasoningEffortChange?: (effort: "high" | "max") => void;
+  webSearchActive?: boolean;
+  onWebSearchToggle?: () => void;
 }
 
 export function ChatInput({
@@ -45,6 +47,8 @@ export function ChatInput({
   onModelChange,
   reasoningEffort,
   onReasoningEffortChange,
+  webSearchActive = false,
+  onWebSearchToggle,
 }: ChatInputProps) {
   const [internalValue, setInternalValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -201,6 +205,30 @@ export function ChatInput({
                 disabled={isStreaming || disabled}
                 compact
               />
+            )}
+            {onWebSearchToggle && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={onWebSearchToggle}
+                    disabled={isStreaming || disabled}
+                    className={cn(
+                      "shrink-0 rounded-full",
+                      webSearchActive && "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
+                    )}
+                    aria-label={webSearchActive ? "关闭联网搜索" : "打开联网搜索"}
+                    aria-pressed={webSearchActive}
+                  >
+                    <Globe size={17} strokeWidth={webSearchActive ? 2.5 : 2} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {webSearchActive ? "关闭联网搜索" : "联网搜索"}
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
           {isStreaming ? (

@@ -33,6 +33,7 @@ model User {
   documentConversions DocumentConversion[]
   credentialProfile   CredentialProfile?      @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption          RegistrationRedemption?
+  profileRoles        UserProfileRole[]
 
   @@index([email])
   @@index([credentialProfileId])
@@ -161,6 +162,7 @@ model Conversation {
   project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
   messages  Message[]
   artifacts Artifact[]
+  intent    ConversationIntent?
 
   @@index([userId])
   @@index([projectId])
@@ -207,6 +209,7 @@ model Project {
   artifacts     Artifact[]
   projectIndex  ProjectIndex?
   quickActions  QuickAction[]
+  projectRoles  ProjectRole[]
 
   @@index([userId])
 }
@@ -377,4 +380,79 @@ model DocumentChunk {
   @@index([projectId])
   @@index([fileAssetId])
   @@index([contentHash])
+}
+
+// ============================================================
+// User Identity & Role Classification (UserRole system)
+// ============================================================
+
+model UserRole {
+  id                     String   @id @default(cuid())
+  key                    String   @unique
+  label                  String
+  description            String?
+  applicableModes        String[] // ["review", "experiment", "coding", "general"]
+  classifierHints        Json     // { keywords, positiveExamples, negativeExamples, priorityBoost }
+  systemPromptAddition   String   // Identity injection text
+  recommendedQuickActions Json?    // [{ title, prompt }]
+  priority               Int      @default(0)
+  isActive               Boolean  @default(true)
+  version                Int      @default(1)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  profileRoles UserProfileRole[]
+  projectRoles ProjectRole[]
+  intentRoles  ConversationIntent[]
+
+  @@index([isActive, priority])
+}
+
+model UserProfileRole {
+  id          String   @id @default(cuid())
+  userId      String
+  roleId      String
+  isPrimary   Boolean  @default(false)
+  source      String   @default("manual") // "manual" | "stepper" | "conversation"
+  confidence  Float?
+  confirmedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role UserRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+}
+
+model ProjectRole {
+  id             String   @id @default(cuid())
+  projectId      String
+  roleId         String
+  mode           String   // "review" | "experiment" | "coding" | "general"
+  classification Json     // Full DeepSeek classification result
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role    UserRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@index([projectId])
+}
+
+model ConversationIntent {
+  id              String    @id @default(cuid())
+  conversationId  String    @unique
+  roleId          String?
+  mode            String?
+  classification  Json?     // Intent classification result
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role         UserRole?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
 }

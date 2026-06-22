@@ -11,7 +11,10 @@ import {
   type ServerFileAttachment,
 } from "@/lib/chat/router";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
-import { GLOBAL_SYSTEM_PROMPT, getModePrompt } from "@/lib/ai/prompts";
+import { assembleSystemPrompt } from "@/lib/classification";
+import { executeSkill } from "@/lib/skills/executor";
+import { getSkillSet, buildToolsPayload } from "@/lib/skills/registry";
+import type { SkillDefinition } from "@/lib/skills/registry";
 import {
   retrieveProjectContext,
   shouldUseProjectContext,
@@ -190,17 +193,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let systemPrompt = GLOBAL_SYSTEM_PROMPT;
+  const webSearchActive = body.webSearchActive === true;
+  const projectMode = mode || project?.type || "general";
+
+  let systemPrompt = await assembleSystemPrompt({
+    webSearchActive,
+    projectId: project?.id,
+    userId,
+    mode: projectMode,
+  });
+
+  if (project && hiddenPrompt) {
+    systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
+  }
+
   let retrievedContext = "";
   let contextNotice: string | null = null;
 
   if (project) {
-    const projectMode = mode || project.type || "general";
-    const modePrompt = getModePrompt(projectMode);
-    systemPrompt = `${systemPrompt}\n\n【模式指令】\n${modePrompt}`;
-    if (hiddenPrompt) {
-      systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
-    }
 
     if (shouldUseProjectContext(effectivePrompt, uniqueFileIds)) {
       const retrieval = await retrieveProjectContext({
@@ -404,6 +414,23 @@ export async function POST(request: NextRequest) {
         thinking: thinkingEnabled,
       });
     } else {
+      // Build skills: always include project file skills in project mode,
+      // plus web_search if the user has it enabled.
+      const skillSet = getSkillSet(projectMode);
+      const activeSkills: SkillDefinition[] = [];
+
+      if (webSearchActive) {
+        // web_search is in the skill set by default
+        activeSkills.push(...skillSet);
+      } else {
+        // Exclude web_search, keep client-side skills
+        activeSkills.push(...skillSet.filter((s) => s.type === "client"));
+      }
+
+      const toolsPayload = activeSkills.length > 0
+        ? buildToolsPayload(activeSkills)
+        : undefined;
+
       streamResult = await streamChat(apiKey, {
         model,
         messages,
@@ -411,6 +438,7 @@ export async function POST(request: NextRequest) {
           ? { type: "enabled" }
           : { type: "disabled" },
         reasoning_effort: reasoningEffort,
+        ...(toolsPayload ? { tools: toolsPayload } : {}),
       });
     }
   } catch (err) {
@@ -430,6 +458,63 @@ export async function POST(request: NextRequest) {
       { error: "无法连接模型服务，请稍后重试" },
       { status: 502 }
     );
+  }
+
+  // 11.5 Tool call execution loop (max 2 rounds)
+  const MAX_TOOL_ROUNDS = 2;
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const toolCalls = streamResult.getToolCalls();
+    const clientToolCalls = toolCalls.filter((tc) => {
+      const skill = activeSkills?.find((s) => s.name === tc.name);
+      return skill && skill.type === "client";
+    });
+
+    if (clientToolCalls.length === 0) break;
+
+    // Execute client-side tools
+    const toolResults: Array<{ toolUseId: string; content: string }> = [];
+    for (const tc of clientToolCalls) {
+      const result = await executeSkill(tc.name, tc.input, {
+        userId,
+        projectId: project?.id,
+        conversationId: conversation.id,
+      });
+      toolResults.push({ toolUseId: tc.id, content: result });
+    }
+
+    // Build follow-up messages with tool results
+    const assistantContent = clientToolCalls.map((tc) => ({
+      type: "tool_use" as const,
+      id: tc.id,
+      name: tc.name,
+      input: tc.input,
+    }));
+
+    const userContent = toolResults.map((tr) => ({
+      type: "tool_result" as const,
+      tool_use_id: tr.toolUseId,
+      content: tr.content,
+    }));
+
+    const followUpMessages: DeepSeekMessage[] = [
+      ...messages,
+      { role: "assistant", content: JSON.stringify(assistantContent) },
+      { role: "user", content: JSON.stringify(userContent) },
+    ];
+
+    try {
+      streamResult = await streamChat(apiKey, {
+        model,
+        messages: followUpMessages,
+        thinking: thinkingEnabled
+          ? { type: "enabled" }
+          : { type: "disabled" },
+        reasoning_effort: reasoningEffort,
+      });
+    } catch (err) {
+      logger.error("Tool execution follow-up failed", { error: String(err) });
+      break;
+    }
   }
 
   const assistantMessage = await prisma.message.create({

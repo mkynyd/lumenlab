@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useChat } from "@/lib/hooks/use-chat";
+import { useWebSearch } from "@/lib/hooks/use-web-search";
 import type { FileAttachment } from "@/lib/chat/router";
 import { ChatInput } from "@/components/chat/chat-input";
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
@@ -49,6 +50,7 @@ export function ChatArea({
     })),
   });
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const { webSearchActive, toggle: toggleWebSearch } = useWebSearch();
 
   // 计算 Token 总数
   const totalTokens = messages.reduce(
@@ -145,7 +147,9 @@ export function ChatArea({
 
       {/* 输入框 */}
       <ChatInput
-        onSend={(content, files) => void sendMessage({ content, attachments: files })}
+        onSend={(content, files) =>
+          void sendMessage({ content, attachments: files, webSearchActive })
+        }
         onStop={abort}
         isStreaming={isStreaming}
         attachments={attachments}
@@ -154,6 +158,8 @@ export function ChatArea({
         onModelChange={setModel}
         reasoningEffort={reasoningEffort}
         onReasoningEffortChange={setReasoningEffort}
+        webSearchActive={webSearchActive}
+        onWebSearchToggle={toggleWebSearch}
       />
     </div>
   );

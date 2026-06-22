@@ -1,0 +1,185 @@
+[
+  {
+    "key": "high_school_student",
+    "label": "中学生",
+    "description": "初高中在读学生，需要整理各科学习资料、分析试卷、复习备考",
+    "applicableModes": ["review", "general"],
+    "classifierHints": {
+      "keywords": ["高中", "初中", "高考", "中考", "高一", "高二", "高三", "初一", "初二", "初三", "会考", "文科", "理科"],
+      "positiveExamples": ["我是高三学生", "我在准备中考", "帮我分析这张物理试卷"],
+      "negativeExamples": ["我是高中老师", "我在备课", "我要给学生出题"],
+      "priorityBoost": 0.2
+    },
+    "systemPromptAddition": "用户是一名中学生，你需要用中学生能够理解的语言和深度进行解释。对于数理化题目，给出完整的解题步骤。对于文科题目，帮助梳理记忆要点和答题模板。",
+    "recommendedQuickActions": [
+      {"title": "逐题解析", "prompt": "请对以下题目进行逐题解析，给出解题思路和标准答案"},
+      {"title": "试卷分析", "prompt": "请分析这份试卷的题型分布、分值结构和考点覆盖"},
+      {"title": "错题解析", "prompt": "请分析以下错题的错误原因并给出正确解法"},
+      {"title": "背诵提纲", "prompt": "请提炼核心知识点，生成便于背诵的提纲"}
+    ],
+    "priority": 10,
+    "isActive": true
+  },
+  {
+    "key": "high_school_teacher",
+    "label": "中学教师",
+    "description": "初高中教师，需要备课、教学设计、试卷命题分析、教学资料整理",
+    "applicableModes": ["review", "general"],
+    "classifierHints": {
+      "keywords": ["教师", "老师", "备课", "教案", "教学", "课时", "板书", "出题", "命题", "教研", "班主任", "班级"],
+      "positiveExamples": ["我是高中化学老师", "帮我设计一份教案", "整理这学期的教学计划"],
+      "negativeExamples": ["我是高中生", "帮我复习"],
+      "priorityBoost": 0.2
+    },
+    "systemPromptAddition": "用户是一名教师，你需要用专业、结构化的方式组织内容。对于教学设计类任务，提供完整的教案框架（教学目标、重难点、教学过程、板书设计）。对于试卷分析类任务，关注考点覆盖度和难度梯度。",
+    "recommendedQuickActions": [
+      {"title": "教学设计", "prompt": "请根据以下内容设计一份完整的教案，包含教学目标、重难点、教学过程和板书设计"},
+      {"title": "试卷分析", "prompt": "请分析这份试卷的题型分布、分值结构、考点覆盖度和难度梯度"},
+      {"title": "资料总结", "prompt": "请提炼以下教学资料的核心知识点，按章节组织"}
+    ],
+    "priority": 10,
+    "isActive": true
+  },
+  {
+    "key": "cs_undergraduate",
+    "label": "计算机专业本科生",
+    "description": "计算机及相关专业大学生，需要实验报告、代码调试、算法分析、课程复习",
+    "applicableModes": ["experiment", "review", "coding", "general"],
+    "classifierHints": {
+      "keywords": ["计算机", "编程", "代码", "算法", "数据结构", "操作系统", "网络", "软件", "AI", "机器学习", "Python", "Java", "C语言", "前端", "后端", "信息安全"],
+      "positiveExamples": ["我是计算机专业大三学生", "帮我调试这段代码", "分析这个算法的时间复杂度"],
+      "negativeExamples": ["我不懂编程", "帮我写作文"],
+      "priorityBoost": 0.3
+    },
+    "systemPromptAddition": "用户是一名计算机相关专业的学生。对于代码类问题，给出完整可运行的代码和详细注释。对于理论问题，从底层原理出发解释。对于实验报告，遵循工科实验报告的规范结构。",
+    "recommendedQuickActions": [
+      {"title": "代码调试", "prompt": "请分析以下代码的错误并给出修复方案"},
+      {"title": "实验报告", "prompt": "请根据以下实验数据和记录，生成完整的实验报告"},
+      {"title": "代码解释", "prompt": "请逐段解释以下代码的逻辑和关键函数"},
+      {"title": "算法分析", "prompt": "请分析以下算法的时间复杂度和空间复杂度"}
+    ],
+    "priority": 20,
+    "isActive": true
+  },
+  {
+    "key": "engineering_undergraduate",
+    "label": "工科本科生",
+    "description": "非计算机的工科专业大学生（自动化、电气、机械、土木等），需要实验报告、数据处理、课程复习",
+    "applicableModes": ["experiment", "review", "coding", "general"],
+    "classifierHints": {
+      "keywords": ["自动化", "电气", "机械", "土木", "电子", "通信", "测控", "材料", "化工", "能动", "工程"],
+      "positiveExamples": ["我是自动化专业大二学生", "帮我处理这组实验数据", "写一份电路实验报告"],
+      "negativeExamples": ["我是计算机专业的", "我是医学生"],
+      "priorityBoost": 0.3
+    },
+    "systemPromptAddition": "用户是一名工科专业的学生。对于实验报告，遵循工科实验报告的规范结构（目的、原理、步骤、数据、计算、误差分析、结论）。对于工程计算，保留完整的推导过程和单位。",
+    "recommendedQuickActions": [
+      {"title": "实验报告", "prompt": "请根据以下实验数据生成完整的实验报告"},
+      {"title": "数据处理", "prompt": "请对以下数据进行计算处理，保留完整推导过程"},
+      {"title": "图表绘制", "prompt": "请根据数据生成 Python matplotlib 绘图代码"}
+    ],
+    "priority": 15,
+    "isActive": true
+  },
+  {
+    "key": "medical_undergraduate",
+    "label": "医学专业本科生",
+    "description": "医学及相关专业大学生，需要名词解释、病例分析、解剖学复习、药理整理",
+    "applicableModes": ["review", "experiment", "general"],
+    "classifierHints": {
+      "keywords": ["医学", "临床", "解剖", "生理", "病理", "药理", "诊断", "内科", "外科", "护理", "药学", "中医", "病例", "患者"],
+      "positiveExamples": ["我是临床医学大三学生", "帮我解释这个病理机制", "整理药理学的分类表格"],
+      "negativeExamples": ["我是生物专业", "我对医学感兴趣"],
+      "priorityBoost": 0.3
+    },
+    "systemPromptAddition": "用户是一名医学相关专业的学生。对于医学概念，给出准确的定义和临床意义。对于病例分析，按照临床表现、辅助检查、诊断依据、鉴别诊断、治疗原则的结构组织。对于解剖/生理内容，注重结构和功能的关联解释。",
+    "recommendedQuickActions": [
+      {"title": "名词解释", "prompt": "请对以下医学术语给出准确的定义和临床意义"},
+      {"title": "病例分析", "prompt": "请根据以下病例信息进行诊断分析和鉴别诊断"},
+      {"title": "知识表格", "prompt": "请将以下知识点整理为对比表格"},
+      {"title": "背诵提纲", "prompt": "请提炼核心考点，生成便于记忆的提纲"}
+    ],
+    "priority": 15,
+    "isActive": true
+  },
+  {
+    "key": "liberal_arts_undergraduate",
+    "label": "文科本科生",
+    "description": "文科专业大学生（法学、文学、历史、哲学、社会学、教育学等），需要论述分析、资料整理、论文辅助",
+    "applicableModes": ["review", "general"],
+    "classifierHints": {
+      "keywords": ["法学", "法律", "文学", "历史", "哲学", "社会学", "教育", "新闻", "传播", "政治学", "行政管理", "外语", "翻译", "艺术"],
+      "positiveExamples": ["我是法学专业大二学生", "帮我分析这个案例的法律适用", "整理西方哲学史的知识框架"],
+      "negativeExamples": ["我是计算机专业", "帮我写代码"],
+      "priorityBoost": 0.2
+    },
+    "systemPromptAddition": "用户是一名文科专业的学生。对于论述类问题，提供多角度的分析框架和论证逻辑。对于资料整理，按论点-论据-结论结构组织。对于法律案例，关注法律适用、法条引用和判决逻辑。",
+    "recommendedQuickActions": [
+      {"title": "名词解释", "prompt": "请对以下概念给出准确的定义和学术背景"},
+      {"title": "论述分析", "prompt": "请从多角度对以下议题进行分析论述"},
+      {"title": "知识点框架", "prompt": "请生成层次化的知识结构图"},
+      {"title": "论文大纲", "prompt": "请根据主题生成一份论文大纲"}
+    ],
+    "priority": 10,
+    "isActive": true
+  },
+  {
+    "key": "art_student",
+    "label": "艺术专业学生",
+    "description": "艺术设计类专业学生，需要创意灵感、作品分析、艺术理论学习",
+    "applicableModes": ["general"],
+    "classifierHints": {
+      "keywords": ["艺术", "设计", "绘画", "音乐", "美术", "雕塑", "摄影", "动画", "建筑", "景观", "服装", "视觉传达"],
+      "positiveExamples": ["我是视觉传达专业学生", "帮我分析这个设计作品的风格", "给我一些配色方案的建议"],
+      "negativeExamples": ["我是工科生", "帮我写代码"],
+      "priorityBoost": 0.1
+    },
+    "systemPromptAddition": "用户是一名艺术设计类专业的学生。对于作品分析，从构图、色彩、风格、表现手法等维度展开。对于创意类问题，提供多元化的参考方向。保持专业但不过度技术化的语言。",
+    "recommendedQuickActions": [
+      {"title": "作品分析", "prompt": "请从构图、色彩、风格等维度分析以下作品"},
+      {"title": "创意头脑风暴", "prompt": "请为以下主题提供多个创意方向"}
+    ],
+    "priority": 5,
+    "isActive": true
+  },
+  {
+    "key": "postgraduate_exam",
+    "label": "考研学生",
+    "description": "正在准备全国硕士研究生入学考试的学生，需要公共课和专业课复习",
+    "applicableModes": ["review", "general"],
+    "classifierHints": {
+      "keywords": ["考研", "研究生", "上岸", "政治", "英语一", "英语二", "数一", "数二", "数三", "408", "肖秀荣", "徐涛", "张宇", "李永乐", "唐迟", "腿姐"],
+      "positiveExamples": ["我在准备考研", "帮我分析考研英语阅读的出题规律", "整理考研政治的时政要点"],
+      "negativeExamples": ["我在期末考试", "我是高考生"],
+      "priorityBoost": 0.4
+    },
+    "systemPromptAddition": "用户是一名考研备考学生。对于政治类问题，可以引用肖秀荣、徐涛等主流考研资料的知识框架。对于英语类问题，注重阅读理解技巧和写作模板。对于数学类问题，给出考研真题风格的完整解答。",
+    "recommendedQuickActions": [
+      {"title": "逐题解析", "prompt": "请对以下考研真题进行逐题解析"},
+      {"title": "考点总结", "prompt": "请总结以下章节的核心考点和常考题型"},
+      {"title": "背诵提纲", "prompt": "请生成适合考前冲刺背诵的知识提纲"},
+      {"title": "作文模板", "prompt": "请提供考研英语作文的框架和模板"}
+    ],
+    "priority": 20,
+    "isActive": true
+  },
+  {
+    "key": "general_learner",
+    "label": "通用学习者",
+    "description": "没有明确学科背景的通用学习者，适用于各种知识获取和资料整理场景",
+    "applicableModes": ["review", "general", "experiment"],
+    "classifierHints": {
+      "keywords": ["学习", "了解", "想知道", "帮我", "整理", "总结"],
+      "positiveExamples": ["我想了解机器学习的基础知识", "帮我整理这篇文档的要点"],
+      "negativeExamples": [],
+      "priorityBoost": 0.0
+    },
+    "systemPromptAddition": "",
+    "recommendedQuickActions": [
+      {"title": "资料总结", "prompt": "请提炼以下资料的核心要点"},
+      {"title": "知识点梳理", "prompt": "请梳理以下内容的知识框架"}
+    ],
+    "priority": 0,
+    "isActive": true
+  }
+]

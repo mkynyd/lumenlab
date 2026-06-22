@@ -2,7 +2,7 @@
 
 import { signOut, useSession } from "next-auth/react";
 import { useState } from "react";
-import { Database, KeyRound, RefreshCw, ShieldCheck } from "lucide-react";
+import { Database, KeyRound, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useCacheMetrics } from "@/lib/hooks/use-cache-metrics";
 import { cn } from "@/lib/utils";
+import { AboutYouSection } from "@/components/settings/about-you-section";
 
 interface SettingsPanelProps {
   compact?: boolean;
@@ -184,6 +185,19 @@ export function SettingsPanel({ compact = false }: SettingsPanelProps) {
           <span className="text-sm text-[var(--color-text-secondary)]">主题</span>
           <ThemeToggle />
         </div>
+      </section>
+
+      <Separator />
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <UserRound size={16} className="text-[var(--color-text-tertiary)]" />
+          <h2 className="text-sm font-medium">关于你</h2>
+        </div>
+        <p className="text-xs text-[var(--color-text-secondary)]">
+          设置你的身份和专业背景，帮助 AI 更好地理解你的使用场景。此设置为全局可选，也可以在创建项目时单独设置。
+        </p>
+        <AboutYouSection />
       </section>
 
       <Separator />
