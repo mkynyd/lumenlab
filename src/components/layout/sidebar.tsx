@@ -28,8 +28,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
@@ -647,16 +645,9 @@ export function Sidebar({
           </AlertDialogContent>
         </AlertDialog>
         <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <DialogContent className="max-w-[min(920px,calc(100vw-2rem))] p-0 sm:max-w-[920px]">
-            <DialogHeader className="border-b border-[var(--color-border-light)] px-5 py-4">
-              <DialogTitle>设置</DialogTitle>
-              <DialogDescription>
-                管理服务访问、缓存、外观和账户。
-              </DialogDescription>
-            </DialogHeader>
-            <div className="px-5 py-4">
-              <SettingsPanel compact />
-            </div>
+          <DialogContent className="max-w-[720px] p-0 gap-0 overflow-hidden">
+            <DialogTitle className="sr-only">设置</DialogTitle>
+            <SettingsPanel />
           </DialogContent>
         </Dialog>
       </aside>

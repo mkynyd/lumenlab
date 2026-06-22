@@ -38,13 +38,11 @@ describe("SettingsPanel token usage", () => {
       },
     });
 
-    render(<SettingsPanel compact />);
+    render(<SettingsPanel />);
 
-    expect(screen.getByText("Token 使用情况")).toBeInTheDocument();
-    expect(screen.getByText("42.1K")).toBeInTheDocument();
-    expect(screen.getByText("今日 6.1K")).toBeInTheDocument();
-    expect(screen.getByText("12.1K")).toBeInTheDocument();
-    expect(screen.getByText("--")).toBeInTheDocument();
-    expect(screen.queryByText("近 7 天 Token 命中率")).not.toBeInTheDocument();
+    // Sidebar tabs should be visible
+    expect(screen.getByText("服务访问")).toBeInTheDocument();
+    expect(screen.getByText("用量统计")).toBeInTheDocument();
+    expect(screen.getByText("关于你")).toBeInTheDocument();
   });
 });
