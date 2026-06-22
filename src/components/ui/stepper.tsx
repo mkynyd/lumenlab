@@ -120,7 +120,7 @@ export function Stepper({
       </nav>
 
       {/* Animated step content */}
-      <div className="relative overflow-hidden min-h-[200px]">
+      <div className="relative min-h-[200px] px-0.5">
         <div
           className={cn(
             "transition-all duration-300 ease-out",

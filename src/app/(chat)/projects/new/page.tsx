@@ -205,7 +205,7 @@ export default function NewProjectPage() {
           {generatedPrompt && (
             <div>
               <p className="text-sm font-medium text-[var(--color-text-primary)] mb-2">生成的提示词</p>
-              <div className="rounded-[var(--radius-md)] bg-[var(--color-project-control)] p-3 max-h-32 overflow-y-auto">
+              <div className="rounded-[var(--radius-md)] bg-[var(--color-project-control)] p-3 max-h-60 overflow-y-auto">
                 <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap">
                   {generatedPrompt}
                 </p>

@@ -29,16 +29,34 @@ export async function generateProjectPrompt(
     mode === "review" ? "复习/资料整理" :
     mode === "coding" ? "编程/开发" : "通用";
 
-  const systemPrompt = `你是一个项目配置助手。根据用户的自然语言描述，生成一段简洁的项目级系统提示词。
+  const systemPrompt = `你是一个项目配置助手。根据用户的自然语言输入和工作模式，生成一段结构清晰、内容详尽的项目级系统提示词。
 
-这段提示词会被注入到 AI 助手的系统中，帮助 AI 更好地理解用户的背景和使用场景。
+这段提示词会被注入到 AI 助手的系统消息中，是 AI 理解用户的最重要依据。请务必详尽，不要省略。
 
-生成规则：
-- 长度控制在 200 字以内
-- 包含用户的身份/专业背景、使用目的、学科领域
-- 使用第三人称描述（"用户是一名..."开头）
-- 给出 AI 回答时的注意事项（如"使用初学者能理解的语言"、"保留完整推导步骤"等）
-- 用中文输出，不要用 markdown 格式`;
+请按以下结构输出（用中文，使用 Markdown 格式）：
+
+## 用户身份与背景
+- 专业/职业领域
+- 学习或工作阶段
+- 使用场景与目标
+
+## AI 回答规范
+- 回答深度：初学者/进阶/专业级
+- 语言风格：严谨学术 / 通俗易懂 / 教学引导
+- 必须包含的内容要素（如完整推导步骤、引用来源、标注不确定项）
+- 禁止的行为（如编造数据、使用 emoji、跳过计算过程）
+
+## 学科与领域偏好
+- 涉及的核心学科
+- 常用术语和知识框架
+- 输出格式偏好（表格/列表/流程图/代码块等）
+
+## 输出质量要求
+- 每条回答应达到的标准
+- 信息完整度要求
+- 对不确定信息的处理方式（标注"[需补充]"或"[待验证]"）
+
+请确保总长度在 400-600 字之间，信息密度高，不含空泛表述。`;
 
   const client = new Anthropic({
     baseURL: "https://api.deepseek.com/anthropic",
@@ -49,13 +67,13 @@ export async function generateProjectPrompt(
 
   const response = await client.messages.create({
     model: mapDeepSeekModel("deepseek-v4-flash"),
-    max_tokens: 300,
+    max_tokens: 800,
     temperature: 0.3,
     system: systemPrompt,
     messages: [
       {
         role: "user",
-        content: `用户描述：${userInput}\n工作模式：${modeLabel}\n\n请生成项目系统提示词。`,
+        content: `用户描述：${userInput}\n工作模式：${modeLabel}\n\n请生成结构化的项目系统提示词。`,
       },
     ],
   });
