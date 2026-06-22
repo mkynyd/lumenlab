@@ -39,7 +39,7 @@ export function ProjectDetailModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl h-[70vh] p-0 gap-0 overflow-hidden flex flex-col">
+      <DialogContent className="max-w-[min(920px,calc(100vw-2rem))] sm:max-w-[920px] h-[70vh] p-0 gap-0 overflow-hidden flex flex-col">
         <div className="flex flex-1 min-h-0">
           {/* Left sidebar */}
           <nav className="w-40 shrink-0 border-r border-[var(--color-panel-muted)] bg-[var(--color-panel)] py-4 flex flex-col">

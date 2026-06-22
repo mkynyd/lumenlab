@@ -71,7 +71,7 @@ export function SaveToProjectDialog({
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent>
+      <DialogContent className="max-w-[min(920px,calc(100vw-2rem))] sm:max-w-[920px]">
         <DialogHeader>
           <DialogTitle>保存到项目</DialogTitle>
           <DialogDescription>
