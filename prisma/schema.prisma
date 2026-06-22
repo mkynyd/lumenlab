@@ -1,4 +1,4 @@
-// course-ai-lab — Database Schema
+// LumenLab — Database Schema
 // PostgreSQL + pgvector for AI experiment workbench & review system
 
 generator client {

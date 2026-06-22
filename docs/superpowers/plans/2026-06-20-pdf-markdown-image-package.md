@@ -545,8 +545,8 @@ git commit -m "fix: keep workspace navigation vertical"
 **Files:**
 - Modify: `README.md` if the document tool export behavior is documented there
 - Modify: `REPOSITORY_INDEX.md` locally only; do not stage
-- Modify: `/Users/yinjunhang/Documents/course-ai-lab/PROJECT_SUMMARY.md` if current feature status is listed
-- Modify: `/Users/yinjunhang/Documents/course-ai-lab/log.md`
+- Modify: `/Users/yinjunhang/Documents/LumenLab/PROJECT_SUMMARY.md` if current feature status is listed
+- Modify: `/Users/yinjunhang/Documents/LumenLab/log.md`
 
 - [ ] **Step 1: Run migration and complete automated verification**
 

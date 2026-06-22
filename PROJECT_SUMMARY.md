@@ -1,10 +1,10 @@
-# course-ai-lab
+# LumenLab
 
 > 更新时间：2026-06-22
 >
 > 总结范围：当前仓库、Git 提交记录、生产部署状态
 >
-> 本地目录仍为 `light-ai-chat`，产品与 GitHub 项目名称已统一为 `course-ai-lab`
+> 本地目录仍为 `light-ai-chat`，产品与 GitHub 项目名称已统一为 `LumenLab`
 
 ## 项目架构梳理与现状审查
 
@@ -53,10 +53,10 @@
 
 ## 项目与 GitHub 重命名
 
-项目品牌从 `Light AI Chat` / `light-ai-chat` 统一为 `course-ai-lab`：
+项目品牌从 `Light AI Chat` / `light-ai-chat` 统一为 `LumenLab`：
 
 - npm 包名、页面标题、登录注册页、导航文案和文档完成改名。
-- GitHub 仓库从 `mkynyd/course-lab` 改名为 `mkynyd/course-ai-lab`。
+- GitHub 仓库从 `mkynyd/course-lab` 改名为 `mkynyd/LumenLab`。
 - 本地文件夹名仍保留为 `light-ai-chat`。
 
 ## 四层缓存架构
@@ -73,7 +73,7 @@
 
 为小规模 Alpha 测试设计并实现了注册码与集中密钥体系，同时涉及主业务和独立管理端。
 
-主业务 `course-ai-lab` 完成：
+主业务 `LumenLab` 完成：
 
 - 注册改为"邮箱 + 密码 + 必填注册码"。
 - 注册码只保存 HMAC 摘要，不保存可兑换明文。
@@ -104,11 +104,11 @@
 
 ```
 用户 → Nginx (HTTPS, 宝塔管理)
-     → 127.0.0.1:3000 (course-ai-lab, systemd)
+     → 127.0.0.1:3000 (LumenLab, systemd)
      → 127.0.0.1:3001 (course-ai-regadmin, systemd)
      → PostgreSQL 16 + pgvector 0.8 (本地环回)
      → Redis 7 (本地环回)
-     → 七牛云 Kodo (文件存储, bucket: course-ai-lab)
+     → 七牛云 Kodo (文件存储, bucket: LumenLab)
 ```
 
 **关键配置**：
@@ -136,7 +136,7 @@
 
 ### 产品定位
 
-`course-ai-lab` 是面向大学计算机课程的 AI 实验工作台与资料整理系统。核心目标是让学生上传实验数据、代码、课件、试卷和笔记后，通过快捷任务直接生成可复制、可编辑、可保存的 Markdown 成果。
+`LumenLab` 是面向大学计算机课程的 AI 实验工作台与资料整理系统。核心目标是让学生上传实验数据、代码、课件、试卷和笔记后，通过快捷任务直接生成可复制、可编辑、可保存的 Markdown 成果。
 
 ### 技术栈
 
@@ -194,7 +194,7 @@
 - 安全 Markdown 渲染 (react-markdown)。
 - 统一可收起侧边栏和移动端项目抽屉。
 - 四层缓存、Redis 降级、缓存指标和长消息虚拟化。
-- 项目和 GitHub 仓库统一命名为 `course-ai-lab`。
+- 项目和 GitHub 仓库统一命名为 `LumenLab`。
 - Alpha 注册码注册与集中密钥管理。
 - 主业务与管理端加密同步。
 - 单管理员 TOTP 双因素管理端。

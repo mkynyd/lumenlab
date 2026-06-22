@@ -3,7 +3,7 @@
 ## Summary
 
 Alpha access is controlled by registration codes created in a separate
-`course-ai-regadmin` application. The admin application and `course-ai-lab`
+`course-ai-regadmin` application. The admin application and `LumenLab`
 run as separate containers, use separate PostgreSQL databases, and expose
 different subdomains:
 

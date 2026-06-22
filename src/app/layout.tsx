@@ -8,17 +8,17 @@ import { cn } from "@/lib/utils";
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  applicationName: "course-ai-lab",
+  applicationName: "LumenLab",
   title: {
-    default: "course-ai-lab",
-    template: "%s · course-ai-lab",
+    default: "LumenLab",
+    template: "%s · LumenLab",
   },
   description: "面向大学计算机课程的 AI 实验工作台、资料整理与成果导出工具。",
   openGraph: {
     type: "website",
     locale: "zh_CN",
-    siteName: "course-ai-lab",
-    title: "course-ai-lab",
+    siteName: "LumenLab",
+    title: "LumenLab",
     description: "AI 对话、项目资料管理、文档解析与学习成果导出工作台。",
   },
   robots: {

@@ -2,7 +2,7 @@
 
 ## 背景
 
-我们的应用 `course-ai-lab` 是一个基于 Next.js 16 (App Router) + PostgreSQL/pgvector 的 AI 课程助手平台，面向大学 CS 学生。当前应用已实现核心功能（聊天、项目管理、文件 OCR、RAG、Artifact 导出），但**缓存设计严重不足**——除了 DeepSeek/MiniMax API 层面的自动 KV Cache 外，应用层**零缓存**。
+我们的应用 `LumenLab` 是一个基于 Next.js 16 (App Router) + PostgreSQL/pgvector 的 AI 课程助手平台，面向大学 CS 学生。当前应用已实现核心功能（聊天、项目管理、文件 OCR、RAG、Artifact 导出），但**缓存设计严重不足**——除了 DeepSeek/MiniMax API 层面的自动 KV Cache 外，应用层**零缓存**。
 
 ## 当前架构现状
 

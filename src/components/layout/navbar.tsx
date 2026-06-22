@@ -67,7 +67,7 @@ export function Navbar({
           href="/chat"
           className="inline-flex min-h-11 items-center truncate rounded-[var(--radius-sm)] px-1 text-sm font-semibold tracking-tight text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)]"
         >
-          course-ai-lab
+          LumenLab
         </Link>
       </div>
 
