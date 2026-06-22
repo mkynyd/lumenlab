@@ -52,3 +52,5 @@ dev.db
 REPOSITORY_INDEX.md
 .codegraph
 .playwright-mcp/
+.impeccable/
+.superpowers/
