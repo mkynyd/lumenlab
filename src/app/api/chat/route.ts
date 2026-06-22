@@ -196,12 +196,24 @@ export async function POST(request: NextRequest) {
   const webSearchActive = body.webSearchActive === true;
   const projectMode = mode || project?.type || "general";
 
-  let systemPrompt = await assembleSystemPrompt({
-    webSearchActive,
-    projectId: project?.id,
-    userId,
-    mode: projectMode,
-  });
+  let systemPrompt: string;
+  try {
+    systemPrompt = await assembleSystemPrompt({
+      webSearchActive,
+      projectId: project?.id,
+      userId,
+      mode: projectMode,
+    });
+  } catch (err) {
+    // Graceful fallback: if UserRole tables aren't migrated yet or any
+    // classification infra fails, use the old prompt system.
+    logger.error("assembleSystemPrompt failed, falling back", { error: String(err) });
+    const { getGlobalPrompt, getModePrompt } = await import("@/lib/ai/prompts");
+    systemPrompt = getGlobalPrompt(webSearchActive);
+    if (project) {
+      systemPrompt = `${systemPrompt}\n\n${getModePrompt(projectMode)}`;
+    }
+  }
 
   if (project && hiddenPrompt) {
     systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
