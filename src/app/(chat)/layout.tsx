@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SessionProvider } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
@@ -20,6 +20,14 @@ export default function ChatLayout({
       : "chat";
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // 进入具体项目页(/projects/[id])时默认收起主侧拉栏，给工作区让出更多空间
+  useEffect(() => {
+    const isInsideProject = /^\/projects\/[^/]+/.test(pathname || "");
+    if (isInsideProject) {
+      setSidebarCollapsed(true);
+    }
+  }, [pathname]);
 
   function toggleSidebar() {
     if (window.matchMedia("(min-width: 1024px)").matches) {

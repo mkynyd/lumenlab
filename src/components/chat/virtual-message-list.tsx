@@ -136,6 +136,16 @@ export function VirtualMessageList({
 
   return (
     <div ref={parentRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)]">
+      {messages.length === 0 ? (
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+          <p className="text-sm font-medium text-[var(--color-text-primary)]">
+            开始一段对话
+          </p>
+          <p className="max-w-sm text-xs leading-5 text-[var(--color-text-tertiary)]">
+            在下方输入你的问题或任务，AI 会结合当前项目资料给出回答。附件、快捷任务和上下文都从这里发起。
+          </p>
+        </div>
+      ) : null}
       <div
         className="relative w-full"
         style={{ height: `${virtualizer.getTotalSize()}px` }}

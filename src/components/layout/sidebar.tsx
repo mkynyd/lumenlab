@@ -645,7 +645,7 @@ export function Sidebar({
           </AlertDialogContent>
         </AlertDialog>
         <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <DialogContent className="max-w-[min(920px,calc(100vw-2rem))] p-0 gap-0 overflow-hidden sm:max-w-[920px]">
+          <DialogContent className="max-w-[min(960px,calc(100vw-2rem))] p-0 gap-0 overflow-hidden sm:max-w-[960px] rounded-3xl">
             <DialogTitle className="sr-only">设置</DialogTitle>
             <SettingsPanel />
           </DialogContent>

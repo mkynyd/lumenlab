@@ -62,7 +62,7 @@ function ActionButton({
       }
       disabled={disabled}
       className={cn(
-        "rounded-[var(--radius-md)] px-3 py-2 text-xs",
+        "rounded-xl px-3 py-2 text-xs",
         "bg-[var(--color-project-control)]",
         "text-[var(--color-text-secondary)]",
         "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
@@ -111,7 +111,7 @@ export function QuickTaskBar({
           type="button"
           onClick={() => setSystemExpanded(true)}
           className={cn(
-            "inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-2 text-xs",
+            "inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs",
             "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
             "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
             "focus-visible:bg-[var(--color-project-surface-hover)]",
@@ -127,7 +127,7 @@ export function QuickTaskBar({
           type="button"
           onClick={() => setSystemExpanded(false)}
           className={cn(
-            "inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-2 text-xs",
+            "inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs",
             "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
             "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
             "focus-visible:bg-[var(--color-project-surface-hover)]",
@@ -144,7 +144,7 @@ export function QuickTaskBar({
             type="button"
             onClick={() => setCustomOpen((current) => !current)}
             className={cn(
-	              "inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
+	              "inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs",
 	              "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
 	              "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)] aria-expanded:bg-[var(--color-project-surface-active)] transition-colors duration-150"
             )}

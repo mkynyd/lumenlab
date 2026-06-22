@@ -68,6 +68,7 @@ import {
 } from "iconoir-react";
 import { ProjectDetailModal } from "@/components/project/project-detail-modal";
 import { useProjectFiles } from "@/lib/hooks/use-project-files";
+import { useProjectArtifacts } from "@/lib/hooks/use-artifacts";
 import {
   Tooltip,
   TooltipContent,
@@ -183,6 +184,11 @@ export function ProjectSidebar({
     id: string;
     title: string;
   } | null>(null);
+
+  const artifactsQuery = useProjectArtifacts(project.id);
+  const artifactCount = artifactsQuery.data?.length ?? 0;
+  const conversationCount = project.conversations?.length ?? 0;
+  const fileCount = files.length;
 
   return (
     <SidebarProvider defaultOpen className="h-full min-h-0 w-full overflow-hidden">
@@ -580,7 +586,9 @@ export function ProjectSidebar({
       onOpenChange={setDetailOpen}
       projectName={project.name}
       projectType={project.type}
-      systemPrompt={project.systemPrompt}
+      fileCount={fileCount}
+      conversationCount={conversationCount}
+      artifactCount={artifactCount}
     />
     </SidebarProvider>
   );

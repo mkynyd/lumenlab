@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Spinner } from "@/components/ui/spinner";
 import { Stepper } from "@/components/ui/stepper";
 import { RotatingText } from "@/components/ui/rotating-text";
 import { FolderOpen, Sparkles } from "lucide-react";
@@ -95,7 +94,8 @@ export default function NewProjectPage() {
   function toggleAction(index: number) {
     setSelectedActions((prev) => {
       const next = new Set(prev);
-      next.has(index) ? next.delete(index) : next.add(index);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
       return next;
     });
   }
@@ -194,7 +194,7 @@ export default function NewProjectPage() {
                   "烧烤", "进食", "品尝", "翻箱倒柜", "品鉴",
                   "构建", "深蹲", "卧推",
                 ]}
-                interval={2000}
+                interval={2200}
                 prefix="正在"
                 suffix="..."
                 className="text-sm text-[var(--color-text-secondary)] font-medium"

@@ -539,8 +539,7 @@ export default function ProjectDetailPage() {
         {/* 顶部信息栏 */}
         <div
           className={cn(
-            "flex min-h-14 items-center justify-between gap-3 px-4 py-2",
-            "border-b border-[var(--color-border-light)]",
+            "flex min-h-14 items-center justify-between gap-3 px-5 py-2.5",
             "bg-[var(--color-panel)] shrink-0 backdrop-blur-[var(--glass-blur)]"
           )}
         >
@@ -548,7 +547,7 @@ export default function ProjectDetailPage() {
             <button
               onClick={toggleProjectSidebar}
               className={cn(
-	                "inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)]",
+	                "inline-flex h-9 w-9 items-center justify-center rounded-xl",
 	                "bg-[var(--color-project-control)]",
 	                "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]",
                 "transition-colors duration-150"
@@ -575,7 +574,7 @@ export default function ProjectDetailPage() {
                 <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
                   {project.name}
                 </span>
-                <span className="hidden rounded-[var(--radius-md)] bg-[var(--color-project-control)] px-1.5 py-0.5 text-[11px] text-[var(--color-text-tertiary)] sm:inline">
+                <span className="hidden rounded-xl bg-[var(--color-project-control)] px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)] sm:inline">
                   {projectModeLabel}
                 </span>
               </div>
@@ -592,7 +591,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* 快捷任务按钮 */}
-	        <div className="border-b border-[var(--color-border-light)] bg-[var(--color-panel)] px-4 py-2 shrink-0 backdrop-blur-[var(--glass-blur)]">
+	        <div className="bg-[var(--color-panel)] px-5 py-2.5 shrink-0 backdrop-blur-[var(--glass-blur)]">
           <QuickTaskBar
             projectType={projectType}
             actions={project.quickActions}
@@ -608,11 +607,11 @@ export default function ProjectDetailPage() {
             <div className="relative flex h-full flex-col items-center justify-center px-4 text-center">
               <div
                 className={cn(
-	                  "mb-4 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)]",
+	                  "mb-4 flex h-14 w-14 items-center justify-center rounded-2xl",
 	                  "bg-[var(--color-panel)]"
 	                )}
               >
-	                <Hashtag width={24} height={24} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
+	                <Hashtag width={26} height={26} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
               </div>
               <h2 className="text-base font-medium text-[var(--color-text-primary)] mb-1">
                 {project.name}
@@ -635,7 +634,7 @@ export default function ProjectDetailPage() {
         {error && (
           <div
             className={cn(
-              "flex items-center gap-2 px-4 py-2 mx-4 mb-2 rounded-[var(--radius-md)]",
+              "flex items-center gap-2 px-4 py-2.5 mx-4 mb-2 rounded-2xl",
               "bg-[var(--color-error-muted)]",
               "text-sm text-[var(--color-error)]"
             )}
@@ -651,11 +650,11 @@ export default function ProjectDetailPage() {
           </div>
         )}
         {fileMessage && (
-          <div className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] bg-[var(--color-panel)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+          <div className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-2xl bg-[var(--color-panel)] px-4 py-2.5 text-xs text-[var(--color-text-secondary)]">
             <span>{fileMessage}</span>
             <button
               onClick={() => setFileMessage(null)}
-              className="rounded-[var(--radius-sm)] px-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
+              className="rounded-md px-1.5 py-0.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
             >
               关闭
             </button>

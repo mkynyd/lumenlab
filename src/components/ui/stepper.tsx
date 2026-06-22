@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 
 export interface Step {
   id: string;
@@ -18,8 +18,9 @@ interface StepperProps {
   onStepChange: (next: number) => void;
   onComplete?: () => void;
   onSkip?: () => void;
+  /** 锁定上一步/下一步按钮,不改写 step.content;
+   * 加载动画由 step 自己的 content 负责(例如 RotatingText) */
   isCompleting?: boolean;
-  completingText?: string;
   skipLabel?: string;
   nextLabel?: string;
   completeLabel?: string;
@@ -33,7 +34,6 @@ export function Stepper({
   onComplete,
   onSkip,
   isCompleting = false,
-  completingText = "Processing...",
   skipLabel = "Skip",
   nextLabel = "Next",
   completeLabel = "Finish",
@@ -128,14 +128,7 @@ export function Stepper({
             animating && direction === "backward" && "animate-in slide-in-from-left-4 fade-in"
           )}
         >
-          {isCompleting ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-4">
-              <Loader2 size={32} strokeWidth={1.5} className="animate-spin text-[var(--color-accent)]" />
-              <p className="text-sm text-[var(--color-text-secondary)]">{completingText}</p>
-            </div>
-          ) : (
-            steps[currentStep]?.content
-          )}
+          {steps[currentStep]?.content}
         </div>
       </div>
 
