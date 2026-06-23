@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -6,6 +7,17 @@ import "@fontsource/noto-sans-sc/400.css";
 import "@fontsource/noto-sans-sc/500.css";
 import "@fontsource/noto-sans-sc/700.css";
 import { cn } from "@/lib/utils";
+
+const figtree = localFont({
+  src: [
+    { path: "../../fonts/Figtree/static/Figtree-Regular.ttf", weight: "400", style: "normal" },
+    { path: "../../fonts/Figtree/static/Figtree-Medium.ttf", weight: "500", style: "normal" },
+    { path: "../../fonts/Figtree/static/Figtree-SemiBold.ttf", weight: "600", style: "normal" },
+    { path: "../../fonts/Figtree/static/Figtree-Bold.ttf", weight: "700", style: "normal" },
+  ],
+  variable: "--font-figtree",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   applicationName: "LumenLab",
@@ -35,7 +47,7 @@ export default async function RootLayout({
   return (
     <html
       lang="zh-CN"
-      className={cn("h-full", "antialiased", "font-sans")}
+      className={cn("h-full", "antialiased", "font-sans", figtree.variable)}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-[var(--color-bg)] text-[var(--color-text-primary)]">
