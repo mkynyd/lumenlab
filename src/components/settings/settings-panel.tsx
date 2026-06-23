@@ -1,14 +1,16 @@
 "use client";
 
 import { signOut, useSession } from "next-auth/react";
+import Link from "next/link";
 import { useState } from "react";
 import {
+  ArrowUpRight,
   Database,
   KeyRound,
   LogOut,
   Palette,
-  RefreshCw,
   ShieldCheck,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -43,22 +45,38 @@ export function SettingsPanel() {
     <div className="flex h-[560px]">
       {/* Left sidebar — neutral surface, no border, breathing room */}
       <nav className="w-52 shrink-0 bg-[var(--color-panel)] py-5 px-3 flex flex-col gap-0.5">
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setTab(item.id)}
-            className={cn(
-              "flex items-center gap-2.5 px-3 py-2 text-sm rounded-xl text-left w-full",
-              "transition-colors duration-150",
-              tab === item.id
-                ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)] font-medium"
-                : "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
-            )}
-          >
-            <item.icon size={16} strokeWidth={1.5} />
-            {item.label}
-          </button>
-        ))}
+        <div className="flex flex-col gap-0.5">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setTab(item.id)}
+              className={cn(
+                "flex items-center gap-2.5 px-3 py-2 text-sm rounded-xl text-left w-full",
+                "transition-colors duration-150",
+                tab === item.id
+                  ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)] font-medium"
+                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+              )}
+            >
+              <item.icon size={16} strokeWidth={1.5} />
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <Link
+          href="/"
+          className={cn(
+            "mt-auto flex items-center gap-2.5 px-3 py-2 text-sm rounded-xl text-left w-full",
+            "border-t border-[var(--color-border-light)] pt-3",
+            "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]",
+            "transition-colors duration-150"
+          )}
+        >
+          <Sparkles size={16} strokeWidth={1.5} />
+          <span className="flex-1">网站介绍</span>
+          <ArrowUpRight size={12} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
+        </Link>
       </nav>
 
       {/* Right content — soft surface, generous spacing */}
