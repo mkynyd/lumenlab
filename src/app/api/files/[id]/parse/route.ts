@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { parseFileAsset } from "@/lib/files/parse-job";
-import { categorizeFiles } from "@/lib/files/categorize";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -28,13 +27,6 @@ export async function POST(
 
   try {
     const result = await parseFileAsset({ userId, fileId: file.id });
-    if (file.projectId) {
-      await categorizeFiles({
-        userId,
-        projectId: file.projectId,
-        fileIds: [file.id],
-      }).catch(() => {});
-    }
     return NextResponse.json({
       file: {
         id: file.id,

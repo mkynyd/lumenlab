@@ -257,7 +257,7 @@ export default function ProjectDetailPage() {
   }
 
   async function runBatchAction(
-    action: "delete" | "reparse" | "categorize" | "download",
+    action: "delete" | "reparse" | "download",
     explicitFileIds?: string[]
   ) {
     const fileIds = explicitFileIds || Array.from(selectedFileIds);
@@ -294,13 +294,6 @@ export default function ProjectDetailPage() {
       .filter((file) => file.status === "failed")
       .map((file) => file.id);
     await runBatchAction("reparse", fileIds);
-  }
-
-  async function handleBatchAutoCategorize() {
-    const fileIds = (project?.files || [])
-      .filter((file) => ["parsed", "partial"].includes(file.status))
-      .map((file) => file.id);
-    await runBatchAction("categorize", fileIds);
   }
 
   async function handleFileAction(
@@ -521,7 +514,6 @@ export default function ProjectDetailPage() {
             onFileUploaded={() => void projectQuery.refetch()}
             onBatchDelete={() => void runBatchAction("delete")}
             onBatchReparse={() => void runBatchAction("reparse")}
-            onBatchAutoCategorize={() => void handleBatchAutoCategorize()}
             onBatchReparseFailed={() => void handleBatchReparseFailed()}
             onBatchDownload={() => void runBatchAction("download")}
             onFileAction={(action, fileId) => void handleFileAction(action, fileId)}

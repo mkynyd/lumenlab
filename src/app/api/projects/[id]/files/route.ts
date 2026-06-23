@@ -5,6 +5,7 @@ import path from "path";
 import crypto from "crypto";
 import { startFileParseBatch } from "@/lib/files/parse-job";
 import { uploadFileBuffer } from "@/lib/storage/object-storage";
+import { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import { logger } from "@/lib/logger";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 
@@ -27,20 +28,10 @@ const CODE_EXTENSIONS: Record<string, string> = {
   "css": "text/css",
 };
 
+// 项目内文件解析走 MiniMax M3,仅支持 PDF / 图片 / 文本/代码。
+// Office / WPS / iWork 暂不支持,需要先到文档工具转 PDF 后再上传。
 const DOCUMENT_EXTENSIONS: Record<string, string> = {
   pdf: "application/pdf",
-  doc: "application/msword",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xls: "application/vnd.ms-excel",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ppt: "application/vnd.ms-powerpoint",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  wps: "application/vnd.ms-works",
-  et: "application/vnd.ms-excel",
-  dps: "application/vnd.ms-powerpoint",
-  pages: "application/vnd.apple.pages",
-  numbers: "application/vnd.apple.numbers",
-  key: "application/vnd.apple.keynote",
 };
 
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -51,7 +42,14 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
 };
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-const MAX_FILES_PER_REQUEST = 20;
+const MAX_FILES_PER_REQUEST = 50;
+
+function isFileCategory(value: unknown): value is FileCategory {
+  return (
+    typeof value === "string" &&
+    (FILE_CATEGORIES as readonly string[]).includes(value)
+  );
+}
 
 function isUploadFile(value: unknown): value is File {
   return Boolean(
@@ -157,6 +155,18 @@ export async function POST(
       );
     }
 
+    // 模态窗口 step1 选定的文件分类,会写入每条 FileAsset。
+    const categoryField = formData.get("category");
+    const pendingCategory: FileCategory | null = isFileCategory(categoryField)
+      ? categoryField
+      : null;
+    if (!pendingCategory) {
+      return NextResponse.json(
+        { error: "请先选择文件分类后再上传" },
+        { status: 400 }
+      );
+    }
+
     const results: Array<{
       success: boolean;
       file?: Record<string, unknown>;
@@ -224,6 +234,8 @@ export async function POST(
             storagePath: stored.key,
             textContent: null,
             status: "parsing",
+            category: pendingCategory,
+            categoryConfidence: 1,
             processingMetadata: {
               parsingStage: "converting",
               parsingStageLabel: "转换格式中",

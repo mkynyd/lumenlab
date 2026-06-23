@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchJson } from "@/lib/api/client";
 import type { ProjectFile } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query-keys";
+import type { FileCategory } from "@/lib/file-categories";
 
 export function useProjectFiles(
   projectId: string | undefined,
@@ -54,11 +55,12 @@ export function useUploadFile(projectId: string) {
 export function useUploadFiles(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (files: File[]) => {
+    mutationFn: async (input: { files: File[]; category: FileCategory }) => {
       const formData = new FormData();
-      for (const file of files) {
+      for (const file of input.files) {
         formData.append("files", file);
       }
+      formData.append("category", input.category);
       const result = await fetchJson<{
         files: ProjectFile[];
         errors: Array<{ name: string; error: string }>;

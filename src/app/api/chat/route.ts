@@ -453,15 +453,19 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     if (err instanceof DeepSeekError) {
+      // 4xx (400/401/402/422/429) 是请求侧错误,直接透传给前端,便于定位;
+      // 5xx 或 0 (网络层) 才包成 502 表示上游不可用。
+      const status = err.status >= 400 && err.status < 500 ? err.status : 502;
       return NextResponse.json(
         { error: err.message, deepseekStatus: err.status },
-        { status: err.status > 0 ? 502 : 500 }
+        { status }
       );
     }
     if (err instanceof MiniMaxChatError) {
+      const status = err.status >= 400 && err.status < 500 ? err.status : 502;
       return NextResponse.json(
         { error: err.message, minimaxStatus: err.status },
-        { status: err.status > 0 ? 502 : 500 }
+        { status }
       );
     }
     return NextResponse.json(

@@ -53,7 +53,6 @@ import {
   CubeScan,
   Download,
   Folder,
-  MagicWand,
   NavArrowLeft,
   NavArrowRight,
   Plus,
@@ -96,7 +95,6 @@ interface ProjectSidebarProps {
   onFileUploaded: () => void;
   onBatchDelete: () => void;
   onBatchReparse: () => void;
-  onBatchAutoCategorize: () => void;
   onBatchReparseFailed: () => void;
   onBatchDownload: () => void;
   onFileAction: (action: "delete" | "reparse" | "download" | "preview", fileId: string) => void;
@@ -156,7 +154,6 @@ export function ProjectSidebar({
   onFileUploaded,
   onBatchDelete,
   onBatchReparse,
-  onBatchAutoCategorize,
   onBatchReparseFailed,
   onBatchDownload,
   onFileAction,
@@ -170,9 +167,6 @@ export function ProjectSidebar({
   const filesQuery = useProjectFiles(project.id, project.files || []);
   const files = filesQuery.data || project.files || [];
   const failedCount = files.filter((file) => file.status === "failed").length;
-  const categorizableCount = files.filter((file) =>
-    ["parsed", "partial"].includes(file.status)
-  ).length;
   const selectedCount = selectedFileIds.size;
   const allSelected = files.length > 0 && selectedCount === files.length;
   const [fileSearch, setFileSearch] = useState("");
@@ -334,13 +328,6 @@ export function ProjectSidebar({
                   <TooltipContent side="bottom">更多</TooltipContent>
                 </Tooltip>
                 <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem
-                    disabled={categorizableCount === 0}
-                    onSelect={() => onBatchAutoCategorize()}
-                  >
-                    <MagicWand strokeWidth={2} />
-                    重新分类
-                  </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={failedCount === 0}
                     onSelect={() => onBatchReparseFailed()}

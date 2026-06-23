@@ -6,13 +6,12 @@ import { deleteChunksByFileAsset } from "@/lib/rag/vector-store";
 import { FILE_CATEGORIES } from "@/lib/file-categories";
 import { refreshProjectIndex } from "@/lib/rag/project-index";
 import { startFileParseBatch } from "@/lib/files/parse-job";
-import { categorizeFiles } from "@/lib/files/categorize";
 import { deleteStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
 import { logger } from "@/lib/logger";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 
 const batchFileSchema = z.object({
-  action: z.enum(["delete", "reparse", "categorize", "download"]),
+  action: z.enum(["delete", "reparse", "download"]),
   fileIds: z.array(z.string().min(1)).min(1).max(100),
   category: z.enum(FILE_CATEGORIES).optional(),
 });
@@ -159,10 +158,8 @@ export async function POST(
     return NextResponse.json({ updated: fileIds.length });
   }
 
-  const classifications = await categorizeFiles({
-    userId: session.user.id,
-    projectId,
-    fileIds,
-  });
-  return NextResponse.json({ classifications });
+  return NextResponse.json(
+    { error: "未提供可执行的批量操作" },
+    { status: 400 }
+  );
 }

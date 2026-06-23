@@ -7,9 +7,11 @@ import {
   generateFileIndexMetadata,
   refreshProjectIndex,
 } from "@/lib/rag/project-index";
-import { categorizeFiles } from "@/lib/files/categorize";
 import { logger } from "@/lib/logger";
-import { parseFileWithMinerU } from "@/lib/parse/mineru";
+import {
+  parseImageWithMiniMax,
+  parseDocumentWithMiniMax,
+} from "@/lib/vision/minimax";
 import { embedChunksForFile } from "@/lib/rag/embedding";
 import { readStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
 
@@ -41,16 +43,15 @@ const TEXT_EXTENSIONS = new Set([
   "css",
 ]);
 
-const OFFICE_EXTENSIONS = new Set([
+const PDF_EXTENSIONS = new Set(["pdf"]);
+
+const UNSUPPORTED_OFFICE_EXTENSIONS = new Set([
+  "ppt",
+  "pptx",
   "doc",
   "docx",
   "xls",
   "xlsx",
-  "ppt",
-  "pptx",
-]);
-
-const UNSUPPORTED_OFFICE_EXTENSIONS = new Set([
   "wps",
   "et",
   "dps",
@@ -93,9 +94,9 @@ async function updateStage(
   });
 }
 
-async function getMineruToken(userId: string) {
+async function getMiniMaxKey(userId: string) {
   try {
-    return await getProviderApiKey(userId, "mineru");
+    return await getProviderApiKey(userId, "minimax");
   } catch {
     return undefined;
   }
@@ -107,6 +108,15 @@ async function getBailianKey(userId: string) {
   } catch {
     return undefined;
   }
+}
+
+type MiniMaxImageMedia = "image/png" | "image/jpeg" | "image/webp";
+
+function imageMediaType(mimeType: string): MiniMaxImageMedia | null {
+  if ((IMAGE_MEDIA_TYPES as Set<string>).has(mimeType)) {
+    return mimeType as MiniMaxImageMedia;
+  }
+  return null;
 }
 
 async function parseFileContent(options: {
@@ -138,49 +148,57 @@ async function parseFileContent(options: {
   }
 
   if (UNSUPPORTED_OFFICE_EXTENSIONS.has(ext)) {
-    throw new Error("暂不支持此格式，请先转换为 docx/pptx/xlsx 后再上传");
+    throw new Error("暂不支持 Office 格式直接解析，请先转换为 PDF 后再上传");
   }
 
-  const canUseMinerU =
-    ext === "pdf" ||
-    options.file.mimeType === "application/pdf" ||
-    OFFICE_EXTENSIONS.has(ext) ||
-    IMAGE_MEDIA_TYPES.has(options.file.mimeType);
-  if (!canUseMinerU) {
-    throw new Error(`不支持的文件类型: .${ext || options.file.mimeType}`);
+  if (!PDF_EXTENSIONS.has(ext) && options.file.mimeType !== "application/pdf") {
+    const imageType = imageMediaType(options.file.mimeType);
+    if (!imageType) {
+      throw new Error(`不支持的文件类型: .${ext || options.file.mimeType}`);
+    }
+
+    const apiKey = await getMiniMaxKey(options.userId);
+    if (!apiKey) {
+      throw new Error("尚未配置 MiniMax API Key，请先在设置中添加");
+    }
+
+    await updateStage(options.file, "model", { parser: "minimax-m3-image" });
+    const content = await parseImageWithMiniMax({
+      apiKey,
+      data,
+      mediaType: imageType,
+    });
+    return {
+      content,
+      status: "parsed" as const,
+      metadata: {
+        parser: "minimax-m3-image",
+        parsedAt: new Date().toISOString(),
+        requiresVisionModel: true,
+      },
+    };
   }
 
-  const mineruToken = await getMineruToken(options.userId);
-  if (!mineruToken) {
-    throw new Error("尚未配置 MinerU Token，请先在设置中添加");
+  const apiKey = await getMiniMaxKey(options.userId);
+  if (!apiKey) {
+    throw new Error("尚未配置 MiniMax API Key，请先在设置中添加");
   }
 
-  const parsed = await parseFileWithMinerU({
-    token: mineruToken,
-    fileBuffer: data,
+  await updateStage(options.file, "model", { parser: "minimax-m3-pdf" });
+  const content = await parseDocumentWithMiniMax({
+    apiKey,
+    data,
     filename: options.file.originalName,
-    onProgress: (stage, progress) => {
-      const knownStage = stage in PARSING_STAGES
-        ? stage as keyof typeof PARSING_STAGES
-        : "model";
-      void updateStage(options.file, knownStage, {
-        parser: "mineru-pipeline",
-        ...(progress
-          ? {
-              progress: {
-                extractedPages: progress.current,
-                totalPages: progress.total,
-              },
-            }
-          : {}),
-      });
-    },
+    mediaType: "application/pdf",
   });
-
   return {
-    content: parsed.content,
+    content,
     status: "parsed" as const,
-    metadata: parsed.metadata,
+    metadata: {
+      parser: "minimax-m3-pdf",
+      parsedAt: new Date().toISOString(),
+      requiresVisionModel: true,
+    },
   };
 }
 
@@ -307,33 +325,14 @@ export async function parseFileBatch(input: {
   userId: string;
   fileIds: string[];
 }) {
-  const parsedByProject = new Map<string, string[]>();
   for (const fileId of [...new Set(input.fileIds)]) {
     try {
-      const result = await parseFileAsset({ userId: input.userId, fileId });
-      if (result.projectId && ["parsed", "partial"].includes(result.status)) {
-        parsedByProject.set(result.projectId, [
-          ...(parsedByProject.get(result.projectId) || []),
-          result.fileId,
-        ]);
-      }
+      await parseFileAsset({ userId: input.userId, fileId });
     } catch (error) {
       logger.error("文件解析任务失败", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }
-
-  for (const [projectId, fileIds] of parsedByProject) {
-    await categorizeFiles({
-      userId: input.userId,
-      projectId,
-      fileIds,
-    }).catch((error) => {
-      logger.error("文件分类失败", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
   }
 }
 

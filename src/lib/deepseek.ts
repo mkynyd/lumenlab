@@ -38,7 +38,7 @@ interface StreamResult {
 }
 
 export const DEEPSEEK_ERROR_MAP: Record<number, string> = {
-  400: "请求无效，请检查消息格式",
+  400: "DeepSeek 拒绝了当前消息（格式或长度不符合要求）。请尝试关闭深度推理后再发送，或换用 MiniMax 模型。",
   401: "DeepSeek API Key 无效，请在设置中更新",
   402: "DeepSeek 账户余额不足，请前往平台充值",
   422: "参数错误，请检查模型设置",
@@ -88,7 +88,18 @@ function splitMessages(messages: DeepSeekMessage[]) {
 
 function toDeepSeekError(error: unknown): DeepSeekError {
   if (error instanceof Anthropic.APIError) {
-    return new DeepSeekError(error.status, DEEPSEEK_ERROR_MAP[error.status]);
+    // 把上游真实错误信息保留下来(通常是 message 字段),这样前端能拿到可操作的提示,
+    // 而不是被 DEEPSEEK_ERROR_MAP 的通用文案覆盖。
+    const upstreamMessage =
+      (typeof (error as { message?: unknown }).message === "string" &&
+        (error as { message: string }).message) ||
+      "";
+    const fallback = DEEPSEEK_ERROR_MAP[error.status] || `DeepSeek API 错误 (${error.status})`;
+    const combined =
+      upstreamMessage && !fallback.includes(upstreamMessage)
+        ? `${fallback}（${upstreamMessage}）`
+        : fallback;
+    return new DeepSeekError(error.status, combined);
   }
   if (error instanceof Error && error.name === "AbortError") {
     return new DeepSeekError(0, "请求超时，请重试");
@@ -139,8 +150,13 @@ export async function streamChat(
       system,
       messages: history,
       stream: true,
+      // DeepSeek 的 anthropic 兼容层只识别 type: "enabled" | "disabled",
+      // 不支持原生 Anthropic 的 "adaptive"。传 "adaptive" 会被上游直接 400。
+      // Anthropic SDK 的 ThinkingConfigEnabled 要求 budget_tokens,
+      // 而 DeepSeek 上游并不消费这个字段,所以用 as any 跳过类型校验。
       ...(params.thinking?.type === "enabled"
-        ? { thinking: { type: "adaptive" as const } }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? { thinking: { type: "enabled" } as any }
         : {}),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(params.tools?.length ? { tools: params.tools as any } : {}),
