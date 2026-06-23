@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Stepper } from "@/components/ui/stepper";
 import { RotatingText } from "@/components/ui/rotating-text";
-import { FolderOpen, Sparkles } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { useCreateProject } from "@/lib/hooks/use-projects";
 
 const PROJECT_TYPES = [
@@ -177,32 +177,31 @@ export default function NewProjectPage() {
       title: "生成中",
       description: "AI 分析",
       content: (
-        <div className="flex flex-col items-center justify-center py-12 gap-3">
+        <div className="flex flex-col items-center justify-center py-16">
           {error ? (
             <>
               <p className="text-sm text-[var(--color-error)]">{error}</p>
-              <Button variant="secondary" size="sm" onClick={() => setStep(1)}>
+              <Button variant="secondary" size="sm" onClick={() => setStep(1)} className="mt-4">
                 返回修改
               </Button>
             </>
           ) : (
-            <div className="flex flex-col items-center gap-5">
-              <Sparkles size={28} strokeWidth={1.5} className="text-[var(--color-accent)] animate-pulse" />
-              <RotatingText
-                words={[
-                  "思考", "探索", "生成", "个性化", "定制",
-                  "烧烤", "进食", "品尝", "翻箱倒柜", "品鉴",
-                  "构建", "深蹲", "卧推",
-                ]}
-                interval={2200}
-                prefix="正在"
-                suffix="..."
-                className="text-sm text-[var(--color-text-secondary)] font-medium"
-              />
-              <p className="text-xs text-[var(--color-text-tertiary)]">
-                正在分析你的场景，生成专属配置
-              </p>
-            </div>
+            <RotatingText
+              words={[
+                "Thinking", "Exploring", "Generating", "Personalizing", "Customizing",
+                "Grilling", "Eating", "Tasting", "Rummaging", "Savoring",
+                "Building", "Squatting", "Benching",
+              ]}
+              interval={2200}
+              prefix="Lumen"
+              className="items-center gap-3 text-4xl font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-5xl"
+              wordClassName={cn(
+                "rounded-xl px-4 py-2 text-[var(--color-accent-contrast)]",
+                "bg-[var(--color-accent)]",
+                "shadow-[0_10px_28px_color-mix(in_oklab,var(--color-accent)_28%,transparent)]",
+                "dark:bg-[oklch(0.45_0.13_181.95)]",
+              )}
+            />
           )}
         </div>
       ),
