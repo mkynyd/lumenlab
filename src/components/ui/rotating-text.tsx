@@ -67,6 +67,9 @@ export interface RotatingTextRef {
 
 const DEFAULT_TRANSITION: Transition = { type: "spring", damping: 28, stiffness: 320, mass: 0.6 };
 
+// 卡片宽度过渡使用 tween，避免 spring overshoot 让 prefix 和卡片相对位置抖动
+const LAYOUT_TRANSITION: Transition = { type: "tween", duration: 0.5, ease: [0.16, 1, 0.3, 1] };
+
 const DEFAULT_INITIAL: TargetAndTransition = { y: "100%", opacity: 0 };
 const DEFAULT_ANIMATE: TargetAndTransition = { y: 0, opacity: 1 };
 const DEFAULT_EXIT: TargetAndTransition = { y: "-120%", opacity: 0 };
@@ -178,11 +181,14 @@ export const RotatingText = forwardRef<RotatingTextRef, RotatingTextProps>(
     }
 
     return (
-      <span className={cn("inline-flex items-baseline", mainClassName)} aria-live="polite">
+      <motion.span
+        layout
+        transition={LAYOUT_TRANSITION}
+        className={cn("inline-flex items-baseline", mainClassName)}
+        aria-live="polite"
+      >
         {prefix && <span className={prefixClassName}>{prefix}&nbsp;</span>}
-        <motion.span
-          layout
-          transition={transition}
+        <span
           className={cn(
             "relative inline-block overflow-hidden",
             rotatingWrapperClassName
@@ -192,7 +198,6 @@ export const RotatingText = forwardRef<RotatingTextRef, RotatingTextProps>(
             <motion.span
               key={currentIndex}
               className="inline-flex flex-wrap whitespace-pre-wrap relative"
-              layout
               aria-hidden="true"
             >
               {elements.map((word, wordIndex, array) => {
@@ -227,8 +232,8 @@ export const RotatingText = forwardRef<RotatingTextRef, RotatingTextProps>(
               })}
             </motion.span>
           </AnimatePresence>
-        </motion.span>
-      </span>
+        </span>
+      </motion.span>
     );
   }
 );

@@ -200,7 +200,6 @@ export default function NewProjectPage() {
               rotatingWrapperClassName={cn(
                 "rounded-xl px-4 py-2 text-[var(--color-accent-contrast)]",
                 "bg-[var(--color-accent)]",
-                "shadow-[0_10px_28px_color-mix(in_oklab,var(--color-accent)_28%,transparent)]",
                 "dark:bg-[oklch(0.45_0.13_181.95)]",
               )}
             />
