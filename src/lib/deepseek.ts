@@ -38,7 +38,7 @@ interface StreamResult {
 }
 
 export const DEEPSEEK_ERROR_MAP: Record<number, string> = {
-  400: "DeepSeek 拒绝了当前消息（格式或长度不符合要求）。请尝试关闭深度推理后再发送，或换用 MiniMax 模型。",
+  400: "DeepSeek 拒绝了当前消息（格式或长度不符合要求）。请尝试关闭深度后再发送，或换用 MiniMax 模型。",
   401: "DeepSeek API Key 无效，请在设置中更新",
   402: "DeepSeek 账户余额不足，请前往平台充值",
   422: "参数错误，请检查模型设置",

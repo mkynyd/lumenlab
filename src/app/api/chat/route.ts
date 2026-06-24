@@ -12,8 +12,7 @@ import {
 } from "@/lib/chat/router";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { assembleSystemPrompt } from "@/lib/classification";
-import { executeSkill } from "@/lib/skills/executor";
-import { getSkillSet, buildToolsPayload } from "@/lib/skills/registry";
+import { getSkillSet, buildToolsPayloadForProvider } from "@/lib/skills/registry";
 import type { SkillDefinition } from "@/lib/skills/registry";
 import {
   retrieveProjectContext,
@@ -25,6 +24,7 @@ import { reorderMessagesForCache } from "@/lib/cache/prompt-reorder";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import { ProviderAccessError } from "@/lib/provider-access";
 import { logger } from "@/lib/logger";
+import { _internalForTesting as agentLoopInternal } from "@/lib/agent/conversation-loop";
 
 async function parseRequest(request: NextRequest): Promise<{
   body: SendMessageInput;
@@ -437,9 +437,10 @@ export async function POST(request: NextRequest) {
         activeSkills.push(...skillSet.filter((s) => s.type === "client"));
       }
 
-      const toolsPayload = activeSkills.length > 0
-        ? buildToolsPayload(activeSkills)
-        : undefined;
+      const toolsPayload = buildToolsPayloadForProvider(
+        activeSkills,
+        modelRoute.provider
+      );
 
       streamResult = await streamChat(apiKey, {
         model,
@@ -475,6 +476,8 @@ export async function POST(request: NextRequest) {
   }
 
   // 11.5 Tool call execution loop (max 2 rounds, DeepSeek only)
+  const agentEvents: string[] = [];
+  const agentDecoder = new TextDecoder();
   if (modelRoute.provider === "deepseek" && "getToolCalls" in streamResult) {
     const MAX_TOOL_ROUNDS = 2;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -486,15 +489,44 @@ export async function POST(request: NextRequest) {
 
       if (clientToolCalls.length === 0) break;
 
+      const agentTap = new agentLoopInternal.EventTap((chunk) => {
+        agentEvents.push(agentDecoder.decode(chunk, { stream: false }));
+      });
+
       // Execute client-side tools
       const toolResults: Array<{ toolUseId: string; content: string }> = [];
       for (const tc of clientToolCalls) {
-        const result = await executeSkill(tc.name, tc.input, {
-          userId,
-          projectId: project?.id,
-          conversationId: conversation.id,
-        });
-        toolResults.push({ toolUseId: tc.id, content: result });
+        const autoRun = await agentLoopInternal.runAutoTool(
+          {
+            userId,
+            conversationId: conversation.id,
+            projectId: project?.id,
+            skillId: undefined,
+            apiKey,
+            model,
+            thinkingEnabled,
+            reasoningEffort,
+            activeTools: [],
+            initialMessages: messages,
+            signal: new AbortController().signal,
+          },
+          { id: tc.id, name: tc.name, input: tc.input },
+          agentTap
+        );
+        if (autoRun.status === "succeeded" && autoRun.summary) {
+          toolResults.push({ toolUseId: tc.id, content: JSON.stringify(autoRun.summary) });
+        } else if (autoRun.error && autoRun.error !== "approval_pending") {
+          toolResults.push({
+            toolUseId: tc.id,
+            content: `工具执行失败: ${autoRun.error}`,
+          });
+        } else {
+          // 等待审批：MVP 暂不阻塞流；用占位字符串让模型继续
+          toolResults.push({
+            toolUseId: tc.id,
+            content: "等待用户审批中；当前跳过此步。",
+          });
+        }
       }
 
       // Build follow-up messages with tool results
@@ -566,8 +598,35 @@ export async function POST(request: NextRequest) {
       .catch(() => {});
   }
 
-  // 15. 返回 SSE 流
-  return new Response(clientStream as unknown as BodyInit, {
+  // 15. 把 agent events 拼到 SSE 头部，前端用 `event: agent` 解析
+  let responseStream: ReadableStream<Uint8Array> = clientStream;
+  if (agentEvents.length > 0) {
+    const encoder = new TextEncoder();
+    const prefix = encoder.encode(agentEvents.join(""));
+    responseStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(prefix);
+        const reader = clientStream.getReader();
+        const pump = () => {
+          reader.read().then(({ done, value }) => {
+            if (done) {
+              controller.close();
+              return;
+            }
+            if (value) controller.enqueue(value);
+            pump();
+          }).catch((err) => {
+            logger.error("SSE pump error", { error: String(err) });
+            controller.close();
+          });
+        };
+        pump();
+      },
+    });
+  }
+
+  // 16. 返回 SSE 流
+  return new Response(responseStream as unknown as BodyInit, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",

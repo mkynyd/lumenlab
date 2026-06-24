@@ -34,8 +34,8 @@ interface ModelSelectorProps {
 }
 
 const STRENGTHS: Array<{ value: Strength; label: string; effort: ReasoningEffort }> = [
-  { value: "fast", label: "标准推理", effort: "high" },
-  { value: "advanced", label: "深度推理", effort: "max" },
+  { value: "fast", label: "快速", effort: "high" },
+  { value: "advanced", label: "深度", effort: "max" },
 ];
 
 const PROVIDERS: Array<{ value: Provider; label: string }> = [

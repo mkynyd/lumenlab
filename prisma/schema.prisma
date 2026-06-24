@@ -285,6 +285,7 @@ model Artifact {
   project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  references   ReferenceListItem[]
 
   @@index([userId])
   @@index([projectId])
@@ -378,6 +379,183 @@ model DocumentChunk {
   @@index([projectId])
   @@index([fileAssetId])
   @@index([contentHash])
+}
+
+// ============================================================
+// Agent mode — Tool / Skill registries, executions, approvals, audit
+// ============================================================
+
+model SkillPackage {
+  id                    String   @id @default(cuid())
+  skillId               String
+  version               String
+  description           String
+  instructionsRef       String
+  allowedTools          String[]
+  allowedRiskLevel      String[]
+  requiredScopes        String[]
+  defaultApprovalPolicy String
+  inputContract         Json
+  outputContract        Json
+  dataHandlingPolicy    Json
+  isSystem              Boolean  @default(false)
+  installedByUserId     String?
+  createdAt             DateTime @default(now())
+
+  @@unique([skillId, version])
+  @@index([isSystem, skillId])
+}
+
+model ConversationSkill {
+  id             String    @id @default(cuid())
+  conversationId String
+  skillId        String
+  version        String
+  activatedAt    DateTime  @default(now())
+  deactivatedAt  DateTime?
+
+  @@index([conversationId, activatedAt])
+  @@index([skillId, version])
+}
+
+model ToolDefinition {
+  id                    String   @id @default(cuid())
+  toolId                String   @unique
+  name                  String
+  description           String
+  inputSchema           Json
+  outputSchema          Json
+  riskLevel             String
+  isReadOnly            Boolean
+  hasExternalSideEffect Boolean
+  isReversible          Boolean
+  containsSensitiveData Boolean
+  requiresNetwork       Boolean
+  estimatedCost         String?
+  defaultApprovalMode   String
+  allowedSkillIds       String[]
+  auditLevel            String
+  isSystem              Boolean  @default(false)
+  installedByUserId     String?
+  createdAt             DateTime @default(now())
+}
+
+model ToolExecution {
+  id                  String    @id @default(cuid())
+  conversationId      String
+  userId              String
+  skillId             String?
+  skillVersion        String?
+  toolId              String
+  normalizedArguments Json
+  argumentsHash       String
+  riskLevel           String
+  status              String
+  approvalSnapshot    Json?
+  approvalTokenHash   String?
+  approvalScope       String?
+  createdAt           DateTime  @default(now())
+  expiresAt           DateTime?
+  approvedAt          DateTime?
+  executedAt          DateTime?
+  completedAt         DateTime?
+  resultSummary       Json?
+  errorSummary        Json?
+  auditMetadata       Json?
+
+  @@index([conversationId, createdAt])
+  @@index([userId, status])
+  @@index([status, expiresAt])
+}
+
+model ApprovalToken {
+  id             String    @id @default(cuid())
+  tokenHash      String    @unique
+  userId         String
+  conversationId String
+  toolId         String
+  argumentsHash  String
+  requestId      String
+  createdAt      DateTime  @default(now())
+  expiresAt      DateTime
+  consumedAt     DateTime?
+
+  @@index([tokenHash])
+  @@index([userId, expiresAt])
+}
+
+model AgentAuditLog {
+  id              String   @id @default(cuid())
+  userId          String
+  conversationId  String?
+  toolExecutionId String?
+  skillId         String?
+  toolId          String?
+  eventType       String
+  severity        String
+  payload         Json
+  ip              String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([toolExecutionId])
+}
+
+model UserToolPreference {
+  id           String   @id @default(cuid())
+  userId       String
+  toolId       String
+  approvalMode String
+  scope        String
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, toolId])
+}
+
+// ============================================================
+// Citation Manager — Reference store
+// ============================================================
+
+model Reference {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String?
+  doi       String?
+  arxivId   String?
+  title     String
+  authors   String[]
+  year      Int?
+  venue     String?
+  url       String?
+  rawMeta   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  listItems ReferenceListItem[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([arxivId])
+  @@index([doi])
+}
+
+model ReferenceListItem {
+  id           String   @id @default(cuid())
+  artifactId   String
+  referenceId  String
+  orderIndex   Int
+  format       String   @default("apa")
+  inlineMarker String?
+  createdAt    DateTime @default(now())
+
+  artifact  Artifact  @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  reference Reference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  @@unique([artifactId, referenceId])
+  @@index([artifactId])
+  @@index([referenceId])
 }
 
 

@@ -24,17 +24,26 @@ export interface SSEParseResult {
   conversationId?: string;
 }
 
+import type { AgentEvent } from "@/lib/agent/types";
+
+export interface SSEAgentCallbacks {
+  onAgentEvent?: (event: AgentEvent) => void;
+}
+
 /**
  * Read an entire SSE stream and return the accumulated result.
  * @param reader from fetch response.body.getReader()
  * @param onChunk callback for each incremental chunk (for real-time UI updates)
+ * @param options optional AgentEvent callback for `event: agent` lines
  */
 export async function readSSEStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  onChunk: (chunk: SSEChunk) => void
+  onChunk: (chunk: SSEChunk) => void,
+  options: SSEAgentCallbacks = {}
 ): Promise<SSEParseResult> {
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  let pendingEventName: string | null = null;
   let usage: UsageInfo | null = null;
 
   try {
@@ -46,11 +55,27 @@ export async function readSSEStream(
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+      for (const rawLine of lines) {
+        const line = rawLine.replace(/\r$/, "");
+        if (line.startsWith("event: ")) {
+          pendingEventName = line.slice(7).trim();
+          continue;
+        }
+        if (!line || !line.startsWith("data: ")) continue;
 
-        const data = trimmed.slice(6);
+        const data = line.slice(6);
+        if (pendingEventName === "agent") {
+          pendingEventName = null;
+          try {
+            const parsed = JSON.parse(data) as AgentEvent;
+            options.onAgentEvent?.(parsed);
+          } catch {
+            // ignore malformed agent events
+          }
+          continue;
+        }
+        pendingEventName = null;
+
         if (data === "[DONE]") {
           onChunk({ content: "", reasoningContent: "", done: true });
           return { content: "", reasoningContent: "", usage };
