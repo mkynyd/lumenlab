@@ -66,7 +66,7 @@ export function DocsSidebar({
       <nav className="px-3 pb-8" aria-label="文档目录">
         {DOCS_NAV.map((section) => (
           <div key={section.title} className="mb-5">
-            <h3 className="px-3 py-1.5 text-[12px] font-medium text-[var(--color-text-tertiary)]">
+            <h3 className="px-3 py-1.5 text-[11px] font-bold tracking-wide text-[var(--color-text-secondary)]">
               {section.title}
             </h3>
             <ul className="flex flex-col gap-0.5">
