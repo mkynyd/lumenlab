@@ -10,6 +10,8 @@ export const queryKeys = {
       ["projects", projectId, "files"] as const,
     artifacts: (projectId: string) =>
       ["projects", projectId, "artifacts"] as const,
+    vectorLibrary: (projectId: string) =>
+      ["projects", projectId, "vector-library"] as const,
   },
   files: {
     detail: (id: string) => ["files", id] as const,

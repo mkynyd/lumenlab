@@ -64,6 +64,7 @@ import {
   MoreHoriz,
   InfoCircle,
   Box3dCenter,
+  Network,
 } from "iconoir-react";
 import { ProjectDetailModal } from "@/components/project/project-detail-modal";
 import { useProjectFiles } from "@/lib/hooks/use-project-files";
@@ -88,6 +89,7 @@ interface ProjectData {
 interface ProjectSidebarProps {
   project: ProjectData;
   onShowArtifacts?: () => void;
+  onShowVectorLibrary?: () => void;
   selectedFileIds: Set<string>;
   onFileToggle: (id: string, intent: FileSelectionIntent) => void;
   onSelectAllFiles: () => void;
@@ -162,6 +164,7 @@ export function ProjectSidebar({
   onConversationDelete,
   activeConversationId,
   onShowArtifacts,
+  onShowVectorLibrary,
   className,
 }: ProjectSidebarProps) {
   const filesQuery = useProjectFiles(project.id, project.files || []);
@@ -271,7 +274,7 @@ export function ProjectSidebar({
       <SidebarContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3">
         <SidebarGroup className="flex min-h-0 shrink-0 flex-col px-0 py-1">
           <TooltipProvider delayDuration={500}>
-            <ButtonGroup className="mb-2 grid w-full grid-cols-4 gap-1 [&>*]:rounded-[var(--radius-sm)]! [&>*]:border-0!">
+            <ButtonGroup className="mb-2 grid w-full grid-cols-5 gap-1 [&>*]:rounded-[var(--radius-sm)]! [&>*]:border-0!">
               <ToolbarButton
                 label={allSelected ? "取消全选" : "全选"}
                 onClick={allSelected ? onClearFileSelection : onSelectAllFiles}
@@ -308,6 +311,23 @@ export function ProjectSidebar({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">成果库</TooltipContent>
+                </Tooltip>
+              )}
+              {onShowVectorLibrary && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon-sm"
+                      onClick={onShowVectorLibrary}
+                      className="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
+                      aria-label="资料图谱"
+                    >
+                      <Network strokeWidth={2} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">资料图谱</TooltipContent>
                 </Tooltip>
               )}
               <DropdownMenu>

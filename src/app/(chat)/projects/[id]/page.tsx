@@ -30,6 +30,7 @@ import type {
 import { FileContentDialog } from "@/components/project/file-content-dialog";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { ArtifactLibrary } from "@/components/artifact/artifact-library";
+import { VectorLibraryView } from "@/components/vector-library/vector-library-view";
 import { useProject } from "@/lib/hooks/use-projects";
 import {
   conversationQueryOptions,
@@ -88,6 +89,7 @@ export default function ProjectDetailPage() {
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<ProjectFile | null>(null);
   const [showArtifacts, setShowArtifacts] = useState(false);
+  const [showVectorLibrary, setShowVectorLibrary] = useState(false);
   const [artifactRefreshKey, setArtifactRefreshKey] = useState(0);
   const selectedFileIdList = useMemo(
     () => Array.from(selectedFileIds),
@@ -552,6 +554,7 @@ export default function ProjectDetailPage() {
             onConversationDelete={(id) => void handleConversationDelete(id)}
             activeConversationId={conversationId}
             onShowArtifacts={() => setShowArtifacts(true)}
+            onShowVectorLibrary={() => setShowVectorLibrary(true)}
           />
         </div>
       </div>
@@ -729,6 +732,14 @@ export default function ProjectDetailPage() {
           projectId={projectId}
           refreshKey={artifactRefreshKey}
           onClose={() => setShowArtifacts(false)}
+        />
+      )}
+      {showVectorLibrary && (
+        <VectorLibraryView
+          projectId={projectId}
+          projectName={project?.name ?? ""}
+          onClose={() => setShowVectorLibrary(false)}
+          onReparseFile={(fileId) => void handleFileAction("reparse", fileId)}
         />
       )}
       {previewFile && (

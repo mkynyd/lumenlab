@@ -34,7 +34,50 @@ export interface ProjectFile {
   categoryConfidence?: number | null;
   enhancementStatus?: string;
   processingMetadata?: Record<string, unknown> | null;
+  processingError?: string | null;
   createdAt: string;
+}
+
+export type VectorNodeType = "topic" | "file" | "chunk";
+
+export interface VectorLibraryNode {
+  id: string;
+  type: VectorNodeType;
+  label: string;
+  radius: number;
+  /** fileId for file nodes; parent file id for chunk nodes */
+  fileId?: string;
+  chunkIndex?: number;
+  status?: string;
+  /** present on topic/file nodes and chunk nodes */
+  keywords?: string[];
+  /** present on chunk nodes */
+  content?: string;
+  /** present on file nodes */
+  processingError?: string | null;
+  /** D3 simulation mutable state */
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+  index?: number;
+}
+
+export interface VectorLibraryLink {
+  source: string;
+  target: string;
+  strength: number;
+}
+
+export interface VectorLibraryGraph {
+  nodes: VectorLibraryNode[];
+  links: VectorLibraryLink[];
+  topics: string[];
+  stats: {
+    fileCount: number;
+    chunkCount: number;
+    topicCount: number;
+  };
 }
 
 export interface QuickActionSummary {
