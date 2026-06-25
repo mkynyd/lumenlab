@@ -1,10 +1,12 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
+import { USER_API_KEYS_ENABLED } from "@/lib/config";
 import {
   resolveProviderApiKey,
   type ProviderAccessRepository,
   type ProviderName,
+  type UserApiKeyRepository,
 } from "@/lib/provider-access";
 
 const repository: ProviderAccessRepository = {
@@ -30,6 +32,15 @@ const repository: ProviderAccessRepository = {
   },
 };
 
+const userApiKeyRepository: UserApiKeyRepository = {
+  findUserApiKey(userId, provider) {
+    return prisma.apiKey.findUnique({
+      where: { userId_provider: { userId, provider } },
+      select: { encryptedKey: true },
+    });
+  },
+};
+
 export function getProviderApiKey(
   userId: string,
   provider: ProviderName
@@ -37,6 +48,9 @@ export function getProviderApiKey(
   return resolveProviderApiKey(userId, provider, {
     repository,
     decryptKey: decrypt,
+    userApiKeyRepository: USER_API_KEYS_ENABLED
+      ? userApiKeyRepository
+      : undefined,
   });
 }
 

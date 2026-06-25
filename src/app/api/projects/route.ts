@@ -46,6 +46,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
 
+  // Verify the session user still exists in the database (e.g. after DB reset or seed refresh)
+  const dbUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true },
+  });
+  if (!dbUser) {
+    return NextResponse.json(
+      { error: "登录已失效，请重新登录", code: "SESSION_INVALID" },
+      { status: 401 }
+    );
+  }
+
   let body: z.infer<typeof createProjectSchema>;
   try {
     const raw = await request.json();

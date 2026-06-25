@@ -1,3 +1,5 @@
+import { USER_API_KEYS_ENABLED } from "@/lib/config";
+
 export type ProviderName = "deepseek" | "minimax" | "mineru" | "bailian";
 
 type ProviderAccessRecord = {
@@ -14,6 +16,13 @@ type ProviderAccessRecord = {
 
 export interface ProviderAccessRepository {
   findAccess(userId: string): Promise<ProviderAccessRecord | null>;
+}
+
+export interface UserApiKeyRepository {
+  findUserApiKey(
+    userId: string,
+    provider: ProviderName
+  ): Promise<{ encryptedKey: string } | null>;
 }
 
 export type ProviderAccessErrorCode =
@@ -39,8 +48,24 @@ export async function resolveProviderApiKey(
   options: {
     repository: ProviderAccessRepository;
     decryptKey: (encryptedKey: string) => string;
+    userApiKeyRepository?: UserApiKeyRepository;
   }
 ): Promise<string> {
+  // Self-hosting mode: prefer user-supplied API keys.
+  if (USER_API_KEYS_ENABLED && options.userApiKeyRepository) {
+    const userKey = await options.userApiKeyRepository.findUserApiKey(
+      userId,
+      provider
+    );
+    if (userKey) {
+      try {
+        return await options.decryptKey(userKey.encryptedKey);
+      } catch {
+        // Fall through to central credentials if the user key is corrupted.
+      }
+    }
+  }
+
   const access = await options.repository.findAccess(userId);
   if (!access?.credentialProfile) {
     throw new ProviderAccessError(

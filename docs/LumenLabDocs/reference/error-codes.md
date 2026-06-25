@@ -1,148 +1,54 @@
-# 错误码
+# 常见错误与处理
 
-> 本章说明 LumenLab 当前的错误返回形式。当前代码尚未统一使用 `error.code` 字段，API 大多返回明文消息或字段级校验对象；Agent 事件内部使用 `reasonCode` / `errorCode`。
+使用 LumenLab 时可能会遇到一些常见错误，这里给出最可能的原因和处理建议。
 
 ## 本章内容
 
-- [错误响应格式](#错误响应格式)
-- [认证与权限](#认证与权限)
-- [注册码](#注册码)
-- [请求与参数](#请求与参数)
-- [资源与归属](#资源与归属)
-- [Provider 与模型](#provider-与模型)
-- [Agent 策略与审批](#agent-策略与审批)
-- [限流](#限流)
-- [存储与导出](#存储与导出)
+- [注册码无效或已用完](#注册码无效或已用完)
+- [邮箱已被注册](#邮箱已被注册)
+- [上传失败或文件过大](#上传失败或文件过大)
+- [文件未进入上下文](#文件未进入上下文)
+- [导出失败](#导出失败)
+- [Agent 工具被阻止](#agent-工具被阻止)
 
-## 错误响应格式
+## 注册码无效或已用完
 
-当前 HTTP 接口主要返回以下两种形式之一：
+- 可能原因：输入的注册码不存在、已被禁用，或可用次数已用完。
+- 处理建议：检查注册码是否输入正确；如果确认用完，请联系管理员获取新的注册码。
 
-### 普通错误
+## 邮箱已被注册
 
-```json
-{ "error": "请先登录" }
-```
+- 可能原因：该邮箱已经注册过账号。
+- 处理建议：直接登录已有账号；如果忘记密码，请联系管理员处理。
 
-### 字段级校验错误
+## 上传失败或文件过大
 
-```json
-{
-  "error": {
-    "email": ["邮箱格式不正确"],
-    "password": ["密码至少 8 位"]
-  }
-}
-```
+- 可能原因：网络中断、文件格式不受支持，或单文件超过大小限制。
+- 处理建议：
+  - 检查文件大小，建议单文件不超过 20MB。
+  - 确认文件格式属于支持的类型（图片、PDF、Markdown、TXT、CSV、代码文件）。
+  - Office / WPS / iWork 文档请先前往「/tools」转换为 PDF 后再上传。
+  - 切换网络后重试。
 
-> 目前没有统一的 `{ error: { code, message, details } }` 信封；如需前端按错误码处理，建议同时匹配 HTTP 状态码与 `error` 字符串。
+## 文件未进入上下文
 
-## 认证与权限
+- 可能原因：文件还在解析中、解析失败，或未被选为上下文。
+- 处理建议：
+  - 在文件列表确认文件状态为「解析完成」。
+  - 在对话中显式勾选需要引用的文件。
+  - 如果依赖向量检索，请在设置中确认已添加百炼 API Key。
 
-| 场景 | HTTP | 实际返回示例 |
-|------|------|--------------|
-| 未登录 | 401 | `{ "error": "请先登录" }` |
-| 凭据错误 | 401 | NextAuth Credentials provider 返回 `null`，前端显示默认凭据错误 |
-| Provider 访问被撤销 | 403 | `{ "error": "该账号服务访问已被撤销" }` 等（`ProviderAccessError` 消息） |
-| Provider 密钥组不可用 | 403 | `{ "error": "服务访问暂不可用" }` |
+## 导出失败
 
-## 注册码
+- 可能原因：内容过大、包含特殊格式，或转换服务暂时不可用。
+- 处理建议：
+  - 稍后重试。
+  - 如果多次失败，请联系管理员查看服务端日志。
 
-注册流程内部使用 `RegistrationErrorCode`，但注册 API 不会把这些 code 透传给前端，而是映射为字段级错误：
+## Agent 工具被阻止
 
-| 内部 code | 触发条件 | 前端返回 |
-|-----------|----------|----------|
-| `email_exists` | 邮箱已注册 | `{ "error": { "email": ["邮箱已被注册"] } }`，HTTP 409 |
-| `invalid_code` | 注册码无效 | `{ "error": { "registrationCode": ["注册码无效"] } }`，HTTP 400 |
-| `code_exhausted` | 注册码次数已用完 | `{ "error": { "registrationCode": ["注册码使用次数已达上限"] } }`，HTTP 400 |
-| `profile_unavailable` | 对应密钥组不可用 | `{ "error": { "registrationCode": ["该注册码对应的服务配置暂不可用"] } }`，HTTP 400 |
-
-## 请求与参数
-
-| 场景 | HTTP | 实际返回示例 |
-|------|------|--------------|
-| JSON 解析失败 | 400 | `{ "error": "无效的请求体" }` 或具体字段错误 |
-| 参数校验失败 | 400 | `{ "error": { "<field>": ["..."] } }` |
-| 请求太频繁 | 429 | `{ "error": "请求太频繁，请稍后重试" }`（聊天） / `{ "error": "上传请求太频繁，请稍后重试" }`（文件上传） |
-
-## 资源与归属
-
-| 场景 | HTTP | 实际返回示例 |
-|------|------|--------------|
-| 项目不存在 | 404 | `{ "error": "项目不存在" }` |
-| 文件不存在 | 404 | `{ "error": "文件不存在" }` |
-| 对话不存在 | 404 | `{ "error": "对话不存在" }` |
-| 选择文件时未提供项目 ID | 400 | `{ "error": "选择文件时必须提供项目 ID" }` |
-| 部分文件不属于当前项目 | 400 | `{ "error": "部分文件不存在或不属于当前项目" }` |
-
-## Provider 与模型
-
-| 场景 | HTTP / SSE | 说明 |
-|------|------------|------|
-| Provider Key 不可用 | 403 | 在聊天请求处理前返回 JSON 错误 |
-| 模型服务不可达 | 502 | `{ "error": "无法连接模型服务，请稍后重试" }` |
-| DeepSeek / MiniMax 上游错误 | 4xx/5xx | `{ "error": "<上游消息>", "deepseekStatus": 4xx }` 或 `minimaxStatus` |
-
-> Provider 错误**不返回** API Key、环境变量或内部堆栈。
-
-## Agent 策略与审批
-
-Policy Engine 决策通过 SSE `event: agent` 事件返回，字段包括 `type`、`reasonCode` 等。
-
-### Tool 被 blocked 时的 reasonCode
-
-| reasonCode | 来源 | 说明 |
-|------------|------|------|
-| `TOOL_NOT_REGISTERED` | Policy Engine | Tool 未注册 |
-| `SCOPE_NOT_GRANTED` | Policy Engine | 用户缺少该 Tool 所需 scope |
-| `WORKSPACE_BLOCKED` | Policy Engine | Workspace 策略禁用该 Tool/Skill |
-| `TOOL_NOT_IN_SKILL_ALLOWLIST` | Policy Engine | Tool 不在当前 Skill 白名单 |
-| `TOOL_RISK_EXCEEDS_SKILL_CEILING` | Policy Engine | Tool 风险等级超出 Skill 上限 |
-| `CROSS_TENANT_ACCESS` | Policy Engine | 资源归属校验失败（当前 Policy Engine 内为占位实现） |
-| `INVALID_ARGUMENTS` | Policy Engine | 参数未通过 inputSchema 子集校验 |
-
-### 审批令牌兑换失败 reason
-
-| reason | 说明 |
-|--------|------|
-| `MALFORMED` | 令牌格式错误，缺少 `<tokenId>.<raw>` |
-| `NOT_FOUND` | 令牌不存在或 ID 不匹配 |
-| `ALREADY_CONSUMED` | 令牌已被消费 |
-| `EXPIRED` | 令牌超时 |
-| `ARGUMENTS_CHANGED` | 审批期间参数被替换，拒绝执行 |
-
-### Tool 执行失败
-
-SSE `event: agent` 类型 `tool_failed` 携带：
-
-```json
-{
-  "type": "tool_failed",
-  "executionId": "...",
-  "errorCode": "HANDLER_ERROR",
-  "error": "工具执行失败"
-}
-```
-
-- `NO_HANDLER`：无对应 handler
-- `HANDLER_ERROR`：handler 抛异常
-
-## 限流
-
-限流模块 `src/lib/rate-limit.ts` 返回内部结构：
-
-```ts
-{ allowed: boolean; remaining: number; resetTime: number }
-```
-
-HTTP 层只返回中文提示与 429 状态码，不返回 `resetTime`。
-
-## 存储与导出
-
-| 场景 | 来源 | 实际表现 |
-|------|------|----------|
-| 上传失败 | 对象存储 / 本地 | 抛出中文错误，如 `七牛上传失败：${statusCode}` |
-| 解析失败 | `parse-job.ts` | 错误写入 `FileAsset.processingMetadata.parseError` |
-| 导出失败 | PDFKit / DOCX / 转换包 | 抛出异常，服务端记录日志；无统一错误码 |
-
-> 文档转换的 Chromium PDF / ZIP 打包失败通常与 `CHROMIUM_EXECUTABLE_PATH`、Playwright 依赖或对象存储配置有关，需查看服务端日志排查。
+- 可能原因：该操作不在当前能力范围内、风险等级过高，或参数校验未通过。
+- 处理建议：
+  - 检查审批卡片上的提示，确认是否允许该操作。
+  - 如果是不必要的操作，点击「拒绝」让 AI 继续后续步骤。
+  - 如果是合理请求但被阻止，可尝试用更明确的描述重新发起对话。

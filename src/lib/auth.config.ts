@@ -15,13 +15,15 @@ export const authConfig: NextAuthConfig = {
         nextUrl.pathname.startsWith("/register");
       const isApiAuth = nextUrl.pathname.startsWith("/api/auth");
       const isApi = nextUrl.pathname.startsWith("/api/");
-      const isLanding = nextUrl.pathname === "/home";
+      const isPublicPage =
+        nextUrl.pathname === "/home" ||
+        nextUrl.pathname.startsWith("/docs");
 
       // NextAuth API 永远放行
       if (isApiAuth) return true;
 
-      // 公开 landing 永远放行
-      if (isLanding) return true;
+      // 公开页面（landing、文档）在未登录/已登录下均放行
+      if (isPublicPage) return true;
 
       // 其他 API 路由：未登录返回 401 JSON，不做 HTML 重定向
       if (isApi) {

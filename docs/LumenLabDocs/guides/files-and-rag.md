@@ -1,96 +1,76 @@
 # 资料与 RAG
 
-> LumenLab 把上传资料视作 AI 回答的事实基础。本章说明资料的解析流水线、检索策略与降级路径。
+LumenLab 把上传资料视作 AI 回答的事实基础。本章说明资料从上传到被引用的完整流程、解析方式与检索策略。
 
 ## 本章内容
 
 - [资料生命周期](#资料生命周期)
 - [支持的资料类型](#支持的资料类型)
-- [解析流水线](#解析流水线)
 - [OCR 与 PDF 解析](#ocr-与-pdf-解析)
 - [知识增强](#知识增强)
 - [检索策略](#检索策略)
-- [文本切块与 DocumentChunk](#文本切块与-documentchunk)
 - [向量检索](#向量检索)
 - [常见问题](#常见问题)
 
 ## 资料生命周期
 
-```
-上传 → 写入存储 → 创建 FileAsset(status = parsing)
-  → 解析完成 → status = parsed
-  → 解析失败 → status = failed
-```
+上传资料后会进入解析流程：
 
-增强状态独立管理:`enhancementStatus` = `none` / `enhancing` / `enhanced` / `stale` / `failed`。
+1. 写入存储并创建资料记录，状态为「解析中」。
+2. 解析成功后状态变为「解析完成」，可被对话引用。
+3. 解析失败则状态为「解析失败」，可重试或换一份文件上传。
+
+知识增强有独立的状态：未增强 / 增强中 / 已增强 / 过期 / 失败。
 
 ## 支持的资料类型
 
-| 类型 | 解析器 | 备注 |
-|------|--------|------|
-| PNG / JPG / WebP | MiniMax M3 OCR | 自动调用视觉模型 |
-| PDF | MiniMax M3 原生文档解析 | 不区分文本型/扫描型 |
-| `.md` / `.txt` / `.csv` / 代码文件 | 文本提取 | 直接读入 |
+| 类型 | 说明 |
+|------|------|
+| PNG / JPG / WebP | 自动调用 MiniMax M3 OCR 识别图片中的文字 |
+| PDF | 自动调用 MiniMax M3 原生文档解析，不区分文本型还是扫描型 |
+| Markdown / TXT / CSV / 代码文件 | 直接提取文本内容 |
 
-> Office/WPS/iWork 格式(PPT/DOC/XLS/Pages/Numbers/Keynote 等)直接拒绝,需先去 `/tools` 转换为 PDF。
-
-## 解析流水线
-
-`src/lib/files/parse-job.ts` 负责统一调度:
-
-1. 从对象存储读取文件。
-2. 选择对应解析器。
-3. 输出 `textContent`。
-4. 创建 `DocumentChunk`(若失败则记录警告)。
-5. 若配置了 Bailian Key,生成 chunk embedding。
-6. 刷新 `ProjectIndex`。
+> Office / WPS / iWork 格式（PPT、DOC、XLS、Pages、Numbers、Keynote 等）暂不支持直接上传，请先去「/tools」转换为 PDF 后再上传。
 
 ## OCR 与 PDF 解析
 
-- **图片**:直接调用 MiniMax M3 OCR,得到结构化文本。
-- **PDF**:统一调用 MiniMax M3 原生文档解析,不经过 PDF.js。
-- 解析结果保存为 `textContent`,可在文件详情页查看;编辑的是 `textContent`,不是独立的 OCR 结果。
+- 图片资料会直接调用 MiniMax M3 OCR，得到结构化文本。
+- PDF 资料统一调用 MiniMax M3 原生文档解析，不需要你手动处理。
+- 解析结果可以在文件详情页查看和简单编辑。
 
 ## 知识增强
 
-- 通过 `POST /api/files/:id/enhance` 手动触发。
-- 同步调用 DeepSeek 生成 `enhancedContent`。
-- 增强不会重建 `DocumentChunk`;
-- 全文检索时若 `enhancementStatus === "enhanced"` 会优先使用 `enhancedContent`。
+- 在文件详情页点击「知识增强」按钮手动触发。
+- 系统会调用 AI 为文件生成增强内容，便于后续检索。
+- 全文检索时，如果文件已完成增强，会优先使用增强后的内容。
 
 ## 检索策略
 
-`src/lib/rag/vector-store.ts` 定义了 4 种 `ContextRetrievalStrategy`:
+系统会根据当前问题自动选择最合适的检索方式：
 
 | 策略 | 触发场景 |
 |------|----------|
-| `no_context` | 普通闲聊,不需要资料 |
-| `full_document` | 用户明确整份文件任务且文件较小(≤8000 字符) |
-| `keyword_search` | 无 embedding 或策略选择关键词检索 |
-| `hybrid_search` | 关键词 + 向量 RRF 融合 |
+| 不使用资料 | 普通闲聊，不需要引用项目资料 |
+| 全文加载 | 用户明确针对某份小文件提问，且文件内容不超过约 8000 字符 |
+| 关键词检索 | 未开启向量检索，或策略选择关键词检索 |
+| 混合检索 | 关键词检索与向量检索结果融合 |
 
-流程:
+检索流程大致如下：
 
-1. 若用户选中文件,可能直接全文加载(小文件)或作为候选范围。
-2. 否则通过 `selectFilesWithDeepSeek` 做 Agentic 文件范围选择。
-3. 在候选范围内做关键词或混合检索。
-4. 全项目语料任务(如提取知识点)会绕过 Agentic narrowing,直接取所有 parsed/partial 文件。
-
-## 文本切块与 DocumentChunk
-
-- 切块大小:1500 字符,重叠 150 字符(硬编码于 `src/lib/rag/vector-store.ts`)。
-- 每个 chunk 关联 `fileAssetId` 与 `projectId`。
-- 字段:`chunkIndex`、`content`、`contentHash`、`title`、`metadata`、`tokenCount`。
+1. 如果你勾选了具体文件，小文件会直接全文加载，大文件则作为候选范围。
+2. 如果没有明确勾选，AI 会先判断哪些资料可能与问题相关。
+3. 在候选资料范围内做关键词或混合检索。
+4. 针对全项目语料的任务（如提取知识点）会直接使用所有已解析的资料。
 
 ## 向量检索
 
-- 已接入阿里云百炼 `text-embedding-v4`,向量维度 1024。
-- 用户在设置中添加 Bailian API Key 后,解析文件会自动生成 chunk embedding。
-- 混合检索使用 pgvector 余弦距离 + 关键词 RRF 融合。
-- 设置页目前没有"向量命中率"指标。
+- LumenLab 支持使用阿里云百炼 text-embedding-v4 生成向量。
+- 在设置中添加百炼 API Key 后，解析文件时会自动生成向量。
+- 混合检索会结合向量相似度和关键词匹配，返回更相关的内容。
+- 设置页目前没有「向量命中率」指标。
 
 ## 常见问题
 
-- **解析失败**:检查文件格式与大小(单文件 ≤20MB),查看 `FileAsset.processingMetadata.parseError`。
-- **检索为空**:检查文件状态是否为 `parsed`,或显式勾选文件作为上下文。
-- **向量检索未生效**:确认已添加 Bailian API Key。
+- 解析失败：检查文件格式与大小（单文件建议不超过 20MB），查看文件详情页的错误提示。
+- 检索为空：确认文件状态为「解析完成」，或在对话中显式勾选文件作为上下文。
+- 向量检索未生效：确认已在设置中添加百炼 API Key。

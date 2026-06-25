@@ -68,6 +68,14 @@ export function HeroSection() {
             >
               <Link href="#features">了解功能</Link>
             </Button>
+            <Button
+              asChild
+              variant="ghost"
+              size="lg"
+              className="h-12 rounded-[var(--radius-lg)] px-4 text-[15px] font-medium"
+            >
+              <Link href="/docs">阅读文档</Link>
+            </Button>
           </div>
           <p data-dot-avoid className="mt-3 text-[13px] text-[var(--color-text-tertiary)]">
             Alpha 阶段免费 · 注册码现场签发

@@ -10,6 +10,8 @@ import { Stepper } from "@/components/ui/stepper";
 import { FolderOpen } from "lucide-react";
 import { RotatingText } from "@/components/ui/rotating-text";
 import { useCreateProject } from "@/lib/hooks/use-projects";
+import { signOut } from "next-auth/react";
+import { ApiError } from "@/lib/api/client";
 
 const PROJECT_TYPES = [
   { value: "general" as const, label: "通用项目", desc: "通用问答、创作辅助和知识管理" },
@@ -77,6 +79,10 @@ export default function NewProjectPage() {
       setQuickActions(result.quickActions || []);
       setStep(3);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        await signOut({ callbackUrl: "/login" });
+        return;
+      }
       setError(err instanceof Error ? err.message : "操作失败");
       setStep(2); // stay on analyzing step to show error
     } finally {
@@ -88,6 +94,30 @@ export default function NewProjectPage() {
     if (newProjectId) router.push(`/projects/${newProjectId}`);
     else router.push("/chat");
   }
+
+  // Skip personalization: create project without AI generation and go straight to it
+  const handleSkip = useCallback(async () => {
+    if (!projectName.trim()) {
+      setError("请输入项目名称");
+      return;
+    }
+    setError(null);
+
+    try {
+      const data = await createProject.mutateAsync({
+        name: projectName.trim(),
+        type: projectType as "experiment" | "review" | "coding" | "general",
+        quickActions: [],
+      });
+      router.push(`/projects/${data.project.id}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        await signOut({ callbackUrl: "/login" });
+        return;
+      }
+      setError(err instanceof Error ? err.message : "操作失败");
+    }
+  }, [projectName, projectType, createProject, router]);
 
   function toggleAction(index: number) {
     setSelectedActions((prev) => {
@@ -297,7 +327,7 @@ export default function NewProjectPage() {
             setStep(next);
           }}
           onComplete={goToProject}
-          onSkip={goToProject}
+          onSkip={step === 1 ? handleSkip : undefined}
           isCompleting={isGenerating}
           skipLabel="跳过"
           nextLabel={step === 1 ? "生成配置" : "下一步"}
