@@ -18,7 +18,7 @@ import {
 // Configuration
 // ============================================================
 
-/** Embedding dimensions — Aliyun Bailian text-embedding-v4 default */
+/** Embedding dimensions — qwen3-vl-embedding 1024-dim fusion mode */
 export const EMBEDDING_DIM = 1024;
 
 /** Default chunk size in characters */
@@ -127,6 +127,82 @@ interface ContextFile {
   processingMetadata: unknown;
 }
 
+interface MediaUrlMatch {
+  url: string;
+  index: number;
+}
+
+function extractRemoteMediaUrls(text: string): MediaUrlMatch[] {
+  const matches: MediaUrlMatch[] = [];
+  const seen = new Set<string>();
+
+  const addMatch = (url: string, index: number) => {
+    // Only track the first occurrence for assignment; repeated references to the same URL
+    // are intentionally assigned to their first appearance to keep embeddings stable.
+    if (seen.has(url)) return;
+    seen.add(url);
+    matches.push({ url, index });
+  };
+
+  // Markdown image syntax: ![alt](url)
+  const markdownImageRegex = /!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = markdownImageRegex.exec(text)) !== null) {
+    addMatch(match[1], match.index);
+  }
+
+  // HTML img tag: <img src="url" ...>
+  const htmlImgRegex = /<img[^>]+src=["'](https?:\/\/[^"']+)["'][^>]*>/gi;
+  while ((match = htmlImgRegex.exec(text)) !== null) {
+    addMatch(match[1], match.index);
+  }
+
+  // HTML video tag: <video src="url" ...>
+  const htmlVideoRegex = /<video[^>]+src=["'](https?:\/\/[^"']+)["'][^>]*>/gi;
+  while ((match = htmlVideoRegex.exec(text)) !== null) {
+    addMatch(match[1], match.index);
+  }
+
+  return matches;
+}
+
+interface TextChunk {
+  content: string;
+  start: number;
+  end: number;
+}
+
+function assignMediaUrlsToChunks(text: string, chunks: TextChunk[]): string[][] {
+  const matches = extractRemoteMediaUrls(text);
+  if (matches.length === 0) return chunks.map(() => []);
+
+  const chunkMediaUrls: string[][] = chunks.map(() => []);
+  for (const { url, index } of matches) {
+    let bestChunk = -1;
+    let bestDistance = Infinity;
+    for (let i = 0; i < chunks.length; i++) {
+      const { start, end } = chunks[i];
+      if (index >= start && index < end) {
+        bestChunk = i;
+        break;
+      }
+      const distance = Math.min(
+        Math.abs(index - start),
+        Math.abs(index - end)
+      );
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestChunk = i;
+      }
+    }
+    if (bestChunk >= 0) {
+      chunkMediaUrls[bestChunk].push(url);
+    }
+  }
+
+  return chunkMediaUrls;
+}
+
 function debugPayload(
   overrides: Partial<ContextRetrievalDebug>
 ): ContextRetrievalDebug {
@@ -217,17 +293,19 @@ function isExplicitKeywordQuery(query: string) {
 /**
  * Split text into overlapping chunks by character count.
  * Tries to break at paragraph boundaries within the limit.
+ * Returns each chunk along with its original [start, end) range in the source text.
  */
-function splitTextIntoChunks(text: string, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP): string[] {
+function splitTextIntoChunks(text: string, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP): TextChunk[] {
   if (!text || text.trim().length === 0) return [];
+  if (overlap >= size) throw new Error("overlap must be less than size");
 
-  const chunks: string[] = [];
+  const chunks: TextChunk[] = [];
   let start = 0;
 
   while (start < text.length) {
     let end = start + size;
     if (end >= text.length) {
-      chunks.push(text.slice(start).trim());
+      chunks.push({ content: text.slice(start).trim(), start, end: text.length });
       break;
     }
 
@@ -244,12 +322,12 @@ function splitTextIntoChunks(text: string, size = CHUNK_SIZE, overlap = CHUNK_OV
       end = breakPoint;
     }
 
-    chunks.push(text.slice(start, end).trim());
+    chunks.push({ content: text.slice(start, end).trim(), start, end });
     start = end - overlap;
     if (start < 0) start = 0;
   }
 
-  return chunks.filter((c) => c.length > 0);
+  return chunks.filter((c) => c.content.length > 0);
 }
 
 // ============================================================
@@ -269,14 +347,18 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
     where: { fileAssetId, userId },
   });
 
-  const texts = splitTextIntoChunks(textContent);
-  if (texts.length === 0) return 0;
+  const rawChunks = splitTextIntoChunks(textContent);
+  if (rawChunks.length === 0) return 0;
+
+  const texts = rawChunks.map((chunk) => chunk.content);
 
   const contentHash = crypto
     .createHash("sha256")
     .update(textContent)
     .digest("hex")
     .slice(0, 32);
+
+  const chunkMediaUrls = assignMediaUrlsToChunks(textContent, rawChunks);
 
   // Batch insert
   const data = texts.map((content, i) => ({
@@ -288,6 +370,7 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
     contentHash,
     chunkIndex: i,
     tokenCount: Math.ceil(content.length / 2), // rough estimate: ~2 chars per token
+    mediaUrls: chunkMediaUrls[i] ?? [],
   }));
 
   await prisma.documentChunk.createMany({ data });
