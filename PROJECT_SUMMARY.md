@@ -10,7 +10,9 @@
 
 最初对仓库进行了完整架构核对，确认项目采用 Next.js 16.2 App Router、React 19、TypeScript、Auth.js v5、Prisma 7、PostgreSQL 与 pgvector。
 
-当时的结论是：普通聊天已经可以运行，但项目工作台仍有明显断点。项目页虽然保存了 `projectId`、`selectedFileIds` 和任务模式，前端聊天请求却没有把这些字段传给 `/api/chat`；快捷任务也没有真正填入输入框。RAG 仅有文本切块和向量字段骨架，尚无 embedding 生成。
+当时的结论是：普通聊天已经可以运行，但项目工作台仍有明显断点。项目页虽然保存了 `projectId`、`selectedFileIds` 和任务模式，前端聊天请求却没有把这些字段传给 `/api/chat`；快捷任务也没有真正填入输入框。RAG 仅有文本切块和向量字段骨架，embedding 生成尚未接入。
+
+后续已接入 qwen3-vl-embedding 融合模式，DocumentChunk 支持文本与图片/视频融合嵌入。
 
 审查还发现了消息 Markdown 渲染的 XSS 风险、React Hooks/Lint 问题、旧 `middleware.ts` 约定的弃用提示，以及本地文件存储不适合多实例部署等问题。
 
@@ -188,7 +190,7 @@
 - DeepSeek SSE 聊天与消息持久化。
 - 项目、文件、项目对话和快捷任务闭环。
 - 项目资料上下文传递与归属校验。
-- 文本切块、关键词降级检索和 pgvector 向量字段。
+- 文本切块、关键词降级检索、pgvector 向量字段以及 qwen3-vl-embedding 1024 维融合向量生成与检索。
 - MiniMax 图片 OCR 与 PDF 双模解析。
 - Artifact 成果库及 Markdown、DOCX、PDF 导出。
 - 安全 Markdown 渲染 (react-markdown)。
@@ -204,6 +206,5 @@
 
 ### 尚未完成
 
-- pgvector embedding 生成与真实语义向量检索（百炼 text-embedding-v4 已配置但未接入真实 embedding 生成）。
 - 缓存实验开关默认关闭，需要收集真实基线后再启用。
 - PDF 字体路径可能在无桌面环境的服务器上需要额外配置。

@@ -98,7 +98,7 @@ describe("POST /api/chat", () => {
     mocks.shouldUseProjectContext.mockImplementation((query: string) =>
       query.includes("报告")
     );
-    mocks.embedQuery.mockResolvedValue(undefined);
+    mocks.embedQuery.mockResolvedValue(Array.from({ length: 1024 }, (_, i) => i / 1024));
     mocks.conversationUpdate.mockResolvedValue({});
     mocks.messageUpdate.mockResolvedValue({});
     mocks.messageDelete.mockResolvedValue({});
