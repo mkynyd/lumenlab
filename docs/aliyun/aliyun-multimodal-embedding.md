@@ -154,4 +154,4 @@ if resp.status_code == HTTPStatus.OK:
 | **用途** | 纯文本向量化 | 图文视频混合向量化 |
 | **本项目的用途** | 课件内容 chunk 向量化 | 未来：课件中图片/图表的语义检索 |
 
-> 本项目 Phase 5 使用**文本 Embedding**（text-embedding-v4），多模态 Embedding 留待后续扩展。
+> 本项目已使用 qwen3-vl-embedding 1024 维融合模式，支持文本、图片与视频联合 Embedding。

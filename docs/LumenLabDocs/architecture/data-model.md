@@ -4,7 +4,7 @@
 
 ## 数据库
 
-PostgreSQL + pgvector 扩展。向量字段使用 1024 维（`vector(1024)`），对应阿里云百炼 text-embedding-v4。
+PostgreSQL + pgvector 扩展。向量字段使用 1024 维（`vector(1024)`），对应阿里云百炼 qwen3-vl-embedding 融合模式。
 
 ORM 使用 Prisma 7，客户端生成到 `src/generated/prisma/client`。
 

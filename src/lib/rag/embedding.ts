@@ -5,6 +5,7 @@ export const EMBEDDING_MODEL = "qwen3-vl-embedding";
 export const EMBEDDING_DIM = 1024;
 const BATCH_SIZE = 10;
 const CHUNK_EMBED_CONCURRENCY = 5;
+const MAX_MEDIA_PER_FUSION = 5; // qwen3-vl-embedding limit per fusion request
 
 function getApi(apiKey: string) {
   return new DashscopeApi(new Configuration({ apiKey }));
@@ -112,10 +113,11 @@ export async function embedChunksForFile(options: {
     const batch = chunks.slice(i, i + CHUNK_EMBED_CONCURRENCY);
     await Promise.all(
       batch.map(async (chunk) => {
+        const mediaUrls = (chunk.mediaUrls ?? []).slice(0, MAX_MEDIA_PER_FUSION);
         const input: { text?: string; image?: string; video?: string }[] = [
           { text: chunk.content },
         ];
-        for (const url of chunk.mediaUrls ?? []) {
+        for (const url of mediaUrls) {
           if (/\.(mp4|mov|avi|webm|mkv|flv|mpeg|mpg)(\?.*)?$/i.test(url)) {
             input.push({ video: url });
           } else {
