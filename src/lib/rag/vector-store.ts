@@ -18,6 +18,10 @@ import {
   setSearchCache,
   invalidateSearchCache,
 } from "@/lib/cache/rag-search-cache";
+import {
+  getFileSelectCache,
+  setFileSelectCache,
+} from "@/lib/cache/rag-file-select-cache";
 
 // ============================================================
 // Configuration
@@ -480,6 +484,10 @@ export async function selectFilesWithDeepSeek(params: {
   limit?: number;
 }): Promise<{ fileIds: string[]; source: "agentic-retrieval" | "index-fallback" }> {
   const limit = params.limit ?? 12;
+
+  const cached = await getFileSelectCache(params.projectId, params.query);
+  if (cached) return cached;
+
   const fallback = async () => {
     const result = await matchProjectIndex({
       userId: params.userId,
@@ -497,7 +505,9 @@ export async function selectFilesWithDeepSeek(params: {
   try {
     apiKey = await getProviderApiKey(params.userId, "deepseek");
   } catch {
-    return fallback();
+    const result = await fallback();
+    await setFileSelectCache(params.projectId, params.query, result);
+    return result;
   }
 
   let projectIndex = await prisma.projectIndex.findUnique({
@@ -544,10 +554,18 @@ export async function selectFilesWithDeepSeek(params: {
     const fileIds = [...new Set(extractJsonFileIds(output))]
       .filter((id) => validIds.has(id))
       .slice(0, limit);
-    if (fileIds.length === 0) return fallback();
-    return { fileIds, source: "agentic-retrieval" };
+    if (fileIds.length === 0) {
+      const result = await fallback();
+      await setFileSelectCache(params.projectId, params.query, result);
+      return result;
+    }
+    const result = { fileIds, source: "agentic-retrieval" as const };
+    await setFileSelectCache(params.projectId, params.query, result);
+    return result;
   } catch {
-    return fallback();
+    const result = await fallback();
+    await setFileSelectCache(params.projectId, params.query, result);
+    return result;
   }
 }
 

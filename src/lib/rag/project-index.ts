@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { createTextMessage } from "@/lib/deepseek";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 export { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
+import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
 
 interface IndexFile {
   id: string;
@@ -191,6 +192,8 @@ export async function refreshProjectIndex(input: RefreshProjectIndexInput) {
     create: { projectId: input.projectId, content },
     update: { content },
   });
+
+  await invalidateFileSelectCache(input.projectId);
 
   return content;
 }

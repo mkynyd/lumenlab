@@ -10,6 +10,7 @@ import { deleteStoredObject, type StorageProvider } from "@/lib/storage/object-s
 import { logger } from "@/lib/logger";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { invalidateSearchCache } from "@/lib/cache/rag-search-cache";
+import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
 
 const batchFileSchema = z.object({
   action: z.enum(["delete", "reparse", "download"]),
@@ -119,6 +120,7 @@ export async function POST(
       where: { id: { in: fileIds }, userId: session.user.id, projectId },
     });
     await invalidateSearchCache(projectId);
+    await invalidateFileSelectCache(projectId);
     await refreshProjectIndex({
       userId: session.user.id,
       projectId,
