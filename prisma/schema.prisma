@@ -382,6 +382,39 @@ model DocumentChunk {
   @@index([contentHash])
 }
 
+model QueryEmbeddingCache {
+  id         String   @id @default(cuid())
+  userId     String
+  namespace  String
+  promptHash String
+  promptText String
+  embedding  Unsupported("vector(1024)")
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  @@unique([namespace, promptHash])
+  @@index([userId])
+  @@index([namespace])
+  @@index([expiresAt])
+}
+
+model SemanticResponseCache {
+  id           String   @id @default(cuid())
+  userId       String
+  namespace    String
+  promptHash   String
+  responseType String
+  responseJson String
+  embedding    Unsupported("vector(1024)")
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([userId])
+  @@index([namespace])
+  @@index([responseType])
+  @@index([expiresAt])
+}
+
 // ============================================================
 // Agent mode — Tool / Skill registries, executions, approvals, audit
 // ============================================================
