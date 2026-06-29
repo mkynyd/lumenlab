@@ -11,6 +11,8 @@ export interface ChatRequestInput {
   selectedFileIds?: string[];
   mode?: ProjectType;
   webSearchActive?: boolean;
+  manualSkillId?: string;
+  skillOff?: boolean;
 }
 
 export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput {
@@ -36,6 +38,14 @@ export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput 
 
   if (input.webSearchActive) {
     body.webSearchActive = input.webSearchActive;
+  }
+
+  if (input.manualSkillId) {
+    body.manualSkillId = input.manualSkillId;
+  }
+
+  if (input.skillOff) {
+    body.skillOff = input.skillOff;
   }
 
   return body;

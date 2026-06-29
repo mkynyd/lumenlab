@@ -15,6 +15,8 @@ type SaveArtifact = (input: {
   content: string;
 }) => Promise<void>;
 
+type SkillFollowUp = (skillId: string) => void;
+
 export function splitStreamingMessage(messages: ChatMessage[]) {
   const last = messages.at(-1);
   if (last?.isStreaming) {
@@ -29,9 +31,11 @@ export function splitStreamingMessage(messages: ChatMessage[]) {
 function Bubble({
   message,
   onSaveArtifact,
+  onSkillFollowUp,
 }: {
   message: ChatMessage;
   onSaveArtifact?: SaveArtifact;
+  onSkillFollowUp?: SkillFollowUp;
 }) {
   return (
     <MessageBubble
@@ -44,6 +48,9 @@ function Bubble({
       isStreaming={message.isStreaming}
       onSaveArtifact={
         message.role === "assistant" ? onSaveArtifact : undefined
+      }
+      onSkillFollowUp={
+        message.role === "assistant" ? onSkillFollowUp : undefined
       }
     />
   );
@@ -58,9 +65,11 @@ const CODE_FONT_SIZE = 13;
 export function VirtualMessageList({
   messages,
   onSaveArtifact,
+  onSkillFollowUp,
 }: {
   messages: ChatMessage[];
   onSaveArtifact?: SaveArtifact;
+  onSkillFollowUp?: SkillFollowUp;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { completed, streaming } = splitStreamingMessage(messages);
@@ -227,13 +236,13 @@ export function VirtualMessageList({
               className="absolute left-0 top-0 w-full"
               style={{ transform: `translateY(${item.start}px)` }}
             >
-              <Bubble message={message} onSaveArtifact={onSaveArtifact} />
+              <Bubble message={message} onSaveArtifact={onSaveArtifact} onSkillFollowUp={onSkillFollowUp} />
             </div>
           );
         })}
       </div>
       {streaming ? (
-        <Bubble message={streaming} onSaveArtifact={onSaveArtifact} />
+        <Bubble message={streaming} onSaveArtifact={onSaveArtifact} onSkillFollowUp={onSkillFollowUp} />
       ) : null}
       {pinned && (
         <button

@@ -23,6 +23,8 @@ export interface SkillRouteInput {
   selectedFileIds?: string[];
   selectedFiles?: RoutingFileSignal[];
   webSearchActive?: boolean;
+  skillOff?: boolean;
+  skillDisabled?: boolean;
 }
 
 export interface SkillRouteResult {
@@ -247,6 +249,20 @@ export function routeSkill(input: SkillRouteInput): SkillRouteResult {
       suggestions: defaultSuggestions(input, input.manualSkillId),
       profile: inferProfile(input, input.manualSkillId),
       webAccessRecommended: input.manualSkillId === "paper-reader",
+    };
+  }
+
+  if (input.skillOff || input.skillDisabled) {
+    return {
+      activeSkillId: null,
+      status: "none",
+      source: "manual",
+      confidence: 1,
+      reason: input.skillOff ? "User turned skill off for this message" : "Skill disabled for this conversation",
+      missingInfo: [],
+      suggestions: defaultSuggestions(input, null),
+      profile: inferProfile(input, null),
+      webAccessRecommended: input.webSearchActive === true,
     };
   }
 

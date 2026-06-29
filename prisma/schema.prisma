@@ -159,6 +159,7 @@ model Conversation {
   activeSkillVersion String?
   activeSkillSource  String?
   activeSkillStatus  String?
+  skillDisabled      Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

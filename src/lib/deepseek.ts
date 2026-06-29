@@ -136,6 +136,60 @@ export async function createTextMessage(
   }
 }
 
+/**
+ * Non-streaming chat completion with full message history.
+ * Used by the Agent Orchestrator continuation loop to consume tool decisions
+ * server-side before streaming the final answer to the client.
+ */
+export async function completeChat(
+  apiKey: string,
+  params: DeepSeekRequest
+): Promise<{ content: string; reasoningContent?: string; usage: DeepSeekUsage | null }> {
+  const { system, history } = splitMessages(params.messages);
+  try {
+    const response = await createClient(apiKey).messages.create({
+      model: mapDeepSeekModel(params.model),
+      max_tokens: params.max_tokens || 4096,
+      system,
+      messages: history,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(params.thinking?.type === "enabled" ? { thinking: { type: "enabled" } as any } : {}),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(params.tools?.length ? { tools: params.tools as any } : {}),
+    });
+
+    const content = response.content
+      .filter((block) => block.type === "text")
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .join("")
+      .trim();
+
+    const reasoningContent = response.content
+      .filter((block) => block.type === "thinking")
+      .map((block) => (block.type === "thinking" ? block.thinking : ""))
+      .join("")
+      .trim();
+
+    const usage = response.usage
+      ? {
+          prompt_tokens: response.usage.input_tokens,
+          completion_tokens: response.usage.output_tokens,
+          total_tokens: response.usage.input_tokens + response.usage.output_tokens,
+          prompt_cache_hit_tokens: response.usage.cache_creation_input_tokens ?? undefined,
+          prompt_cache_miss_tokens: response.usage.cache_read_input_tokens ?? undefined,
+        }
+      : null;
+
+    return {
+      content,
+      ...(reasoningContent ? { reasoningContent } : {}),
+      usage,
+    };
+  } catch (error) {
+    throw toDeepSeekError(error);
+  }
+}
+
 export async function streamChat(
   apiKey: string,
   params: DeepSeekRequest

@@ -45,6 +45,8 @@ LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目
 
 ### 受控 Agent 模式
 
+入口处的 Skill Router 先识别用户意图，自动从 6 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续由 Provider Adapter（DeepSeek / MiniMax）流式输出，DeepSeek 在模型未返回 native tool call 时可通过 JSON action fallback 继续多轮工具调用。
+
 服务端 Policy Engine 拦截所有 `tool_use`，按 L0–L4 风险等级决定执行、预批准或逐次确认。
 
 - L1 自动执行：`project_files.list`、`project_files.read`、`artifact.list`、`project_rag.search`、`web.search`、`web.fetch`。
@@ -58,9 +60,12 @@ LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目
 
 | Skill | 允许的 Tool | 风险上限 |
 |-------|------------|---------|
-| paper-writer | project_files, artifacts, web | L3 |
-| exam-coach | project_files, artifacts, web | L3 |
-| code-reader | project_files, web | L2 |
+| paper-reader | project_files, arxiv, reference, artifact, web | L3 |
+| paper-writer | project_files, artifact, web | L2 |
+| exam-extract | project_files, artifact | L2 |
+| exam-coach | project_files, artifact | L2 |
+| code-reader | web, artifact | L2 |
+| socratic-tutor | project_files, artifact | L2 |
 
 每个 Skill 包含 `manifest.ts`（SkillMetadata、工具白名单、风险上限、必需 scopes、输入输出契约、数据处理策略）和 TS 常量指令。
 
@@ -75,9 +80,11 @@ LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目
 | artifact.list | artifacts | L1 |
 | web.search | web | L1 |
 | web.fetch | web | L1 |
+| arxiv.read | web | L1 |
+| reference.list | reference | L1 |
 | project_rag.search | knowledge | L1 |
 
-`web.search` 与 `web.fetch` 走 host 白名单，8 秒超时，1.5MB body 上限。所有 Tool 在执行前都要做跨租户预检和参数校验。
+`web.search` 与 `web.fetch` 走 host 白名单与 SSRF 校验，8 秒超时，1.5MB body 上限。所有 Tool 在执行前都要做跨租户预检和参数校验。
 
 ### SSE Agent 事件流
 
@@ -85,13 +92,17 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 事件类型：
 
-- `tool_proposed` — 模型发出 tool_use，进入策略检查。
-- `tool_blocked` — 策略拒绝执行。
+- `skill_activated` / `skill_suggested` / `skill_deactivated` — Skill 状态变化。
+- `web_access_enabled` — 当前请求启用联网。
+- `model_adapter_selected` — 当前使用的 Provider Adapter（DeepSeek / MiniMax）。
 - `approval_required` — 等待用户授权。
-- `approval_granted` / `approval_denied` / `approval_expired` — 用户授权结果。
-- `tool_started` / `tool_progress` / `tool_completed` / `tool_failed` — 工具执行生命周期。
+- `tool_started` / `tool_completed` / `tool_failed` — 工具执行生命周期。
+
+调试事件（`router_candidates`、`router_confidence`、`profile_changed`、`tool_loop_stop_reason` 等）仅在 `AGENT_DEBUG_EVENTS=1` 时发送，不默认入库。
 
 前端 `AgentTimeline` 把事件流折叠成时间线，`ApprovalCard` 展示受影响资源、可逆性与样本，提供 **仅本次允许**、**本会话同类允许**（仅 L1/L2）、**拒绝** 三个动作。
+
+来源统一在助手消息底部 UI 展示，模型正文不插引用。Agent Orchestrator 路径的 `web.fetch`、`project_files.read`、`project_rag.search`、`web.search`、`arxiv.read` 等结果，以及旧版 RAG 路径检索到的项目资料，都会聚合为 `Message.sources` 持久化并去重显示。
 
 ### 多模型流式对话
 
@@ -384,7 +395,7 @@ npm run dev
 
 ### 使用 Agent 模式
 
-1. 在支持 Skill 的项目类型下，模型会自动激活 paper-writer / exam-coach / code-reader 等 Skill。
+1. 在支持 Skill 的项目类型下，Skill Router 会自动激活 6 个内置 Skill 之一；用户也可手动切换或关闭 Skill。
 2. 模型需要调用 Tool 时，Agent 事件流会把工具调用以时间线方式展示在对话中。
 3. L3 Tool（如 `project_files.delete`）会在执行前弹出审批卡片，展示受影响资源、可逆性与样本。
 4. 选择「仅本次允许」会立即兑换一次性审批令牌；选择「本会话同类允许」会预批准该 Skill 的同类 L1/L2 Tool。

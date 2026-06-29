@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useChat } from "@/lib/hooks/use-chat";
 import { useWebSearch } from "@/lib/hooks/use-web-search";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -15,6 +15,7 @@ import { AmbientField } from "@/components/workbench/ambient-field";
 import { AlertCircle, Cpu, Globe2, Hash } from "lucide-react";
 import type { AgentEvent } from "@/lib/agent/types";
 import type { AgentSource } from "@/lib/agent/sources";
+import type { SkillSelectorValue } from "@/components/chat/skill-selector";
 import { cn } from "@/lib/utils";
 
 interface ChatAreaProps {
@@ -71,7 +72,43 @@ export function ChatArea({
     })),
   });
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [userSkillValue, setUserSkillValue] = useState<SkillSelectorValue>("auto");
   const { webSearchActive, toggle: toggleWebSearch } = useWebSearch();
+
+  // The selector reflects the user's manual choice when they picked one;
+  // otherwise it tracks the skill the server reported as active.
+  const skillValue: SkillSelectorValue = useMemo(() => {
+    if (userSkillValue !== "auto") return userSkillValue;
+    if (agentSession.activeSkill) return agentSession.activeSkill.skillId as SkillSelectorValue;
+    return "auto";
+  }, [userSkillValue, agentSession.activeSkill]);
+
+  const handleSkillChange = (value: SkillSelectorValue) => {
+    setUserSkillValue(value);
+  };
+
+  const handleSend = (content: string, files: FileAttachment[]) => {
+    const input: Parameters<typeof sendMessage>[0] = {
+      content,
+      attachments: files,
+      webSearchActive,
+    };
+    if (skillValue === "off") {
+      input.skillOff = true;
+    } else if (skillValue !== "auto") {
+      input.manualSkillId = skillValue;
+    }
+    void sendMessage(input);
+  };
+
+  const handleSkillFollowUp = (skillId: string) => {
+    setUserSkillValue(skillId as SkillSelectorValue);
+    void sendMessage({
+      content: "继续",
+      manualSkillId: skillId,
+      webSearchActive,
+    });
+  };
 
   // Render the most recent awaiting/executing entry as a visible approval card.
   // Completed/failed entries briefly remain visible, then are replaced by the next.
@@ -202,7 +239,7 @@ export function ChatArea({
           </div>
         </div>
       ) : (
-        <VirtualMessageList messages={messages} />
+        <VirtualMessageList messages={messages} onSkillFollowUp={handleSkillFollowUp} />
       )}
 
       {/* Token 用量条（移动端底部显示） */}
@@ -322,9 +359,7 @@ export function ChatArea({
 
       {/* 输入框 */}
       <ChatInput
-        onSend={(content, files) =>
-          void sendMessage({ content, attachments: files, webSearchActive })
-        }
+        onSend={handleSend}
         onStop={abort}
         isStreaming={isStreaming}
         attachments={attachments}
@@ -335,6 +370,8 @@ export function ChatArea({
         onReasoningEffortChange={setReasoningEffort}
         webSearchActive={webSearchActive}
         onWebSearchToggle={toggleWebSearch}
+        skillValue={skillValue}
+        onSkillChange={handleSkillChange}
       />
     </div>
   );

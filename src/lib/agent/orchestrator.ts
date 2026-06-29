@@ -19,9 +19,27 @@ export interface ToolLoopRecord {
   producedNewContent: boolean;
 }
 
+export type ToolId =
+  | "project_files.list"
+  | "project_files.read"
+  | "project_files.delete"
+  | "project_rag.search"
+  | "web.search"
+  | "web.fetch"
+  | "arxiv.search"
+  | "arxiv.read"
+  | "arxiv.fetch"
+  | "reference.add"
+  | "reference.list"
+  | "reference.attach"
+  | "reference.format"
+  | "artifact.save"
+  | "artifact.list"
+  | "artifact.export_docx";
+
 export interface PlannedToolCall {
   id: string;
-  name: "project_files.list" | "project_files.read" | "project_rag.search" | "web.fetch" | "artifact.save";
+  name: ToolId;
   input: Record<string, unknown>;
 }
 
@@ -72,6 +90,10 @@ export function getToolRoundLimit(profile: TaskProfile): number {
   return TOOL_ROUND_LIMITS[profile];
 }
 
+function normalize(text: string) {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 function extractPublicUrls(text: string) {
   const matches = text.match(/https?:\/\/[^\s<>"')\]}，。；、]+/g) ?? [];
   return [...new Set(matches.map((url) => url.replace(/[),.;!?]+$/, "")))]
@@ -79,9 +101,39 @@ function extractPublicUrls(text: string) {
     .slice(0, 3);
 }
 
+function extractArxivIds(text: string): string[] {
+  const normalized = normalize(text);
+  const idMatches = normalized.match(/arxiv[:\s]+(\d{4}\.\d{4,5}(?:v\d+)?)/g) ?? [];
+  const urlMatches = normalized.match(/arxiv\.org\/abs\/(\d{4}\.\d{4,5}(?:v\d+)?)/g) ?? [];
+  const ids = [...idMatches, ...urlMatches]
+    .map((match) => match.replace(/arxiv[:\s]+/, "").replace(/arxiv\.org\/abs\//, ""))
+    .filter(Boolean);
+  return [...new Set(ids)].slice(0, 2);
+}
+
+function hasKeyword(text: string, keywords: Array<string | RegExp>) {
+  const n = normalize(text);
+  return keywords.some((keyword) =>
+    typeof keyword === "string" ? n.includes(keyword) : keyword.test(n)
+  );
+}
+
 export function buildPlannedToolCalls(input: ToolPlanningInput): PlannedToolCall[] {
   const calls: PlannedToolCall[] = [];
-  const urls = extractPublicUrls(input.prompt);
+  const prompt = input.prompt;
+
+  // 1. arXiv papers -> arxiv.read (takes precedence over web.fetch for arxiv URLs)
+  const arxivIds = extractArxivIds(prompt);
+  arxivIds.forEach((arxivId, index) => {
+    calls.push({
+      id: `planned-arxiv-read-${index + 1}`,
+      name: "arxiv.read",
+      input: { arxivId },
+    });
+  });
+
+  // 2. Explicit public URLs -> web.fetch (skip arxiv URLs already handled above)
+  const urls = extractPublicUrls(prompt).filter((url) => !url.includes("arxiv.org"));
   urls.forEach((url, index) => {
     calls.push({
       id: `planned-web-fetch-${index + 1}`,
@@ -90,6 +142,44 @@ export function buildPlannedToolCalls(input: ToolPlanningInput): PlannedToolCall
     });
   });
 
+  // 3. Explicit web search request -> web.search
+  if (
+    !urls.length &&
+    !arxivIds.length &&
+    hasKeyword(prompt, [/搜索.*网络/, /联网.*搜索/, /网上.*搜索/, /web search/, /search the web/])
+  ) {
+    calls.push({
+      id: "planned-web-search-1",
+      name: "web.search",
+      input: { query: prompt, maxResults: 5 },
+    });
+  }
+
+  // 4. Project file listing intent -> project_files.list
+  if (
+    input.projectId &&
+    hasKeyword(prompt, [/列出.*资料/, /列出.*文件/, /有哪些.*文件/, /文件.*列表/])
+  ) {
+    calls.push({
+      id: "planned-project-files-list-1",
+      name: "project_files.list",
+      input: { projectId: input.projectId },
+    });
+  }
+
+  // 5. Reference listing intent -> reference.list
+  if (
+    input.projectId &&
+    hasKeyword(prompt, [/列出.*引用/, /参考.*文献/, /references/])
+  ) {
+    calls.push({
+      id: "planned-reference-list-1",
+      name: "reference.list",
+      input: { projectId: input.projectId },
+    });
+  }
+
+  // 6. Selected project files -> project_files.read
   if (input.projectId && input.selectedFileIds?.length) {
     [...new Set(input.selectedFileIds)].slice(0, 5).forEach((fileId, index) => {
       calls.push({
@@ -105,13 +195,14 @@ export function buildPlannedToolCalls(input: ToolPlanningInput): PlannedToolCall
     return calls;
   }
 
+  // 8. Project material task without selected files -> project_rag.search
   if (input.projectId && input.profile !== "simple") {
     calls.push({
       id: "planned-project-rag-search-1",
       name: "project_rag.search",
       input: {
         projectId: input.projectId,
-        query: input.prompt,
+        query: prompt,
         maxResults: 5,
       },
     });

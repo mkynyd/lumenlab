@@ -61,6 +61,8 @@ export interface SendMessageInput {
   hiddenPrompt?: string;
   attachments?: FileAttachment[];
   webSearchActive?: boolean;
+  manualSkillId?: string;
+  skillOff?: boolean;
 }
 
 interface UseChatOptions {
@@ -182,6 +184,8 @@ export function useChat(options: UseChatOptions = {}) {
             selectedFileIds: options.selectedFileIds,
             mode: options.mode,
             webSearchActive: input.webSearchActive,
+            manualSkillId: input.manualSkillId,
+            skillOff: input.skillOff,
         });
         const fetchOptions: RequestInit = {
           method: "POST",

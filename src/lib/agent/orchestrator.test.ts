@@ -171,4 +171,55 @@ describe("agent orchestrator loop controls", () => {
       })
     ).toEqual({ stop: true, reason: "no_progress" });
   });
+
+  it("plans arxiv.read for arXiv IDs", () => {
+    expect(
+      buildPlannedToolCalls({
+        prompt: "帮我读一下 arxiv:2401.00001",
+        profile: "research",
+      })
+    ).toEqual([
+      {
+        id: "planned-arxiv-read-1",
+        name: "arxiv.read",
+        input: { arxivId: "2401.00001" },
+      },
+    ]);
+  });
+
+  it("plans web.search for explicit web search intent", () => {
+    expect(
+      buildPlannedToolCalls({
+        prompt: "联网搜索最新的 deepseek 消息",
+        profile: "research",
+      })
+    ).toEqual([
+      {
+        id: "planned-web-search-1",
+        name: "web.search",
+        input: { query: "联网搜索最新的 deepseek 消息", maxResults: 5 },
+      },
+    ]);
+  });
+
+  it("plans project_files.list for listing intent", () => {
+    expect(
+      buildPlannedToolCalls({
+        prompt: "列出项目资料",
+        profile: "rag",
+        projectId: "project-1",
+      })
+    ).toEqual([
+      {
+        id: "planned-project-files-list-1",
+        name: "project_files.list",
+        input: { projectId: "project-1" },
+      },
+      {
+        id: "planned-project-rag-search-1",
+        name: "project_rag.search",
+        input: { projectId: "project-1", query: "列出项目资料", maxResults: 5 },
+      },
+    ]);
+  });
 });

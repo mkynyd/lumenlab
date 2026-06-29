@@ -25,15 +25,21 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 
 ```
 src/
-├── app/api/           # Next.js API Routes（聊天、Agent、上传、导出、用户设置）
-├── components/chat/   # 聊天界面、消息卡片、附件、工具审批 UI
-├── components/project/# 项目详情、文件列表、快捷任务、成果库
-├── lib/chat/          # 模型路由、DeepSeek/MiniMax 适配、历史压缩
-├── lib/rag/           # 向量检索、全文检索、关键词检索、embedding
-├── lib/agent/         # Policy Engine、Tool 注册与执行、审批 token、事件流
-├── lib/cache/         # 应用级缓存、导出缓存、实验开关、缓存指标
-├── lib/export/        # Markdown / DOCX / PDF 导出与格式转换
-└── lib/storage/       # 本地存储与七牛云对象存储抽象
+├── app/api/                  # Next.js API Routes（聊天、Agent、上传、导出、用户设置）
+├── components/chat/          # 聊天界面、消息卡片、附件、工具审批 UI
+├── components/project/       # 项目详情、文件列表、快捷任务、成果库
+├── lib/chat/                 # 模型路由、历史压缩
+├── lib/rag/                  # 向量检索、全文检索、关键词检索、embedding
+├── lib/agent/                # Policy Engine、Tool 注册与执行、审批 token、事件流
+│   ├── adapters/             # DeepSeekAdapter / MiniMaxAdapter  Provider 适配器
+│   ├── continuation.ts       # 模型驱动的 Agent Orchestrator 续跑循环
+│   ├── orchestrator.ts       # 确定性预取工具规划与执行
+│   ├── provider-adapter.ts   # ProviderAdapter 接口与统一流式结果类型
+│   ├── skill-router.ts       # Skill 意图路由与任务画像推断
+│   └── sources.ts            # AgentSource 聚合与持久化
+├── lib/cache/                # 应用级缓存、导出缓存、实验开关、缓存指标
+├── lib/export/               # Markdown / DOCX / PDF 导出与格式转换
+└── lib/storage/              # 本地存储与七牛云对象存储抽象
 ```
 
 ## 典型请求流
@@ -49,16 +55,26 @@ src/app/api/chat/route.ts
   ├─ checkRateLimit() 用户级速率限制
   ├─ parseRequest() 解析消息与附件
   ├─ 项目 / 文件权限校验
+  ├─ routeSkill() Skill Router 选择 Skill、推断任务画像
   ├─ assembleSystemPrompt() 组装系统提示词
   ├─ retrieveProjectContext() RAG / 全文 / 关键词检索项目资料
+  │        └─ 旧版 RAG sources 同步转换为 AgentSource 备用
   ├─ routeModel() 选择 DeepSeek 或 MiniMax
   ├─ getProviderApiKey() 获取 API Key（中央凭证或用户自托管 Key）
-  ├─ streamChat / streamMiniMaxChat 发起 SSE 流
+  ├─ Agent Orchestrator 预取与续跑
+  │        ├─ buildPlannedToolCalls() 根据画像生成确定性工具计划
+  │        ├─ executePlannedToolCalls() 执行并聚合 AgentSource
+  │        └─ runContinuationLoop() 模型驱动的多轮工具调用循环
+  ├─ createProviderAdapter() 创建 DeepSeekAdapter / MiniMaxAdapter
+  ├─ adapter.stream() 发起 SSE 流
   │        ├─ 模型返回流式 token
   │        ├─ tool_use 触发 Agent 审批 / 执行（仅 DeepSeek 路径）
   │        └─ token 使用、缓存命中信息回传
-  └─ 异步保存 Message 行到 PostgreSQL
+  ├─ 创建 assistant Message 行，sources 写入 Message.sources
+  └─ accumulateAndSave() 异步保存内容与来源到 PostgreSQL
 ```
+
+来源持久化由 `src/lib/agent/sources.ts` 统一处理。Agent Orchestrator 执行工具和续跑循环产生的 `AgentSource` 会聚合去重；当 Agent Orchestrator 关闭时，旧版 RAG 检索结果也会转换为 `AgentSource` 并写入同一条 `Message.sources` JSON 字段，保证前端来源展示接口一致。
 
 ## 部署模式与 API Key
 

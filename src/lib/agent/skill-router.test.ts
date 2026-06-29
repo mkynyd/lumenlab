@@ -67,4 +67,43 @@ describe("skill router", () => {
     expect(routeSkill({ message: "用苏格拉底式提问引导我理解这个概念" }).activeSkillId)
       .toBe("socratic-tutor");
   });
+
+  it("forces no skill when the user turns skill off for this message", () => {
+    const route = routeSkill({
+      message: "帮我抓考试重点",
+      projectId: "project-1",
+      selectedFileIds: ["file-1"],
+      skillOff: true,
+    });
+
+    expect(route.activeSkillId).toBeNull();
+    expect(route.status).toBe("none");
+    expect(route.source).toBe("manual");
+    expect(route.reason).toContain("turned skill off");
+  });
+
+  it("forces no skill when the conversation has skillDisabled set", () => {
+    const route = routeSkill({
+      message: "帮我抓考试重点",
+      projectId: "project-1",
+      selectedFileIds: ["file-1"],
+      skillDisabled: true,
+    });
+
+    expect(route.activeSkillId).toBeNull();
+    expect(route.status).toBe("none");
+    expect(route.source).toBe("manual");
+    expect(route.reason).toContain("disabled");
+  });
+
+  it("keeps manual skill selection ahead of skillOff", () => {
+    const route = routeSkill({
+      message: "随便聊聊",
+      manualSkillId: "socratic-tutor",
+      skillOff: true,
+    });
+
+    expect(route.activeSkillId).toBe("socratic-tutor");
+    expect(route.source).toBe("manual");
+  });
 });

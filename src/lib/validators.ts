@@ -12,6 +12,18 @@ export const sendMessageSchema = z.object({
   selectedFileIds: z.array(z.string().min(1).max(100)).max(50).optional(),
   mode: z.enum(["experiment", "review", "coding", "general"]).optional(),
   webSearchActive: z.boolean().default(false),
+  // Agent Orchestrator manual controls
+  manualSkillId: z
+    .enum([
+      "paper-reader",
+      "paper-writer",
+      "exam-extract",
+      "exam-coach",
+      "code-reader",
+      "socratic-tutor",
+    ])
+    .optional(),
+  skillOff: z.boolean().default(false),
 });
 
 export const loginSchema = z.object({

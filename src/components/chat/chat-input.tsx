@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ModelSelector } from "@/components/chat/model-selector";
+import { SkillSelector, type SkillSelectorValue } from "@/components/chat/skill-selector";
 import { useMeasuredTextareaHeight } from "@/lib/hooks/use-measured-textarea-height";
 import {
   Tooltip,
@@ -32,6 +33,8 @@ interface ChatInputProps {
   onReasoningEffortChange?: (effort: "high" | "max") => void;
   webSearchActive?: boolean;
   onWebSearchToggle?: () => void;
+  skillValue?: SkillSelectorValue;
+  onSkillChange?: (value: SkillSelectorValue) => void;
 }
 
 export function ChatInput({
@@ -50,6 +53,8 @@ export function ChatInput({
   onReasoningEffortChange,
   webSearchActive = false,
   onWebSearchToggle,
+  skillValue = "auto",
+  onSkillChange,
 }: ChatInputProps) {
   const [internalValue, setInternalValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -204,6 +209,14 @@ export function ChatInput({
                 onChange={onModelChange}
                 reasoningEffort={reasoningEffort}
                 onReasoningEffortChange={onReasoningEffortChange}
+                disabled={isStreaming || disabled}
+                compact
+              />
+            )}
+            {onSkillChange && (
+              <SkillSelector
+                value={skillValue}
+                onChange={onSkillChange}
                 disabled={isStreaming || disabled}
                 compact
               />

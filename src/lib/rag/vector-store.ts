@@ -116,6 +116,11 @@ export interface RetrievedProjectContext {
   usedFileIds: string[];
   truncated: boolean;
   debug: ContextRetrievalDebug;
+  sources: Array<{
+    fileAssetId: string;
+    title: string;
+    snippet?: string;
+  }>;
 }
 
 interface ContextSection {
@@ -785,6 +790,7 @@ export async function retrieveProjectContext(
       usedFileIds: [],
       truncated: false,
       debug,
+      sources: [],
     };
   }
 
@@ -1037,6 +1043,7 @@ export async function retrieveProjectContext(
       usedFileIds: [],
       truncated: false,
       debug,
+      sources: [],
     };
   }
 
@@ -1057,6 +1064,19 @@ export async function retrieveProjectContext(
     context += `${separator}${section.markdown}`;
   }
 
+  const fileNameById = new Map(candidateFiles.map((file) => [file.id, file.originalName]));
+  const snippetsByFile = new Map<string, string>();
+  for (const section of sections) {
+    if (!snippetsByFile.has(section.fileAssetId)) {
+      snippetsByFile.set(section.fileAssetId, section.markdown.slice(0, 240));
+    }
+  }
+  const sources = [...snippetsByFile.entries()].map(([fileAssetId, snippet]) => ({
+    fileAssetId,
+    title: fileNameById.get(fileAssetId) || "项目资料",
+    snippet,
+  }));
+
   return {
     context,
     notice: null,
@@ -1072,6 +1092,7 @@ export async function retrieveProjectContext(
       finalContextChars: context.length,
       truncated,
     }),
+    sources,
   };
 }
 

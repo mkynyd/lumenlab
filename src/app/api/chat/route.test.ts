@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   shouldUseProjectContext: vi.fn(),
   embedQuery: vi.fn(),
   streamChat: vi.fn(),
+  completeChat: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -70,6 +71,7 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/lib/deepseek", () => ({
   DeepSeekError: class DeepSeekError extends Error {},
   streamChat: mocks.streamChat,
+  completeChat: mocks.completeChat,
 }));
 
 import { accumulateAndSave, POST } from "@/app/api/chat/route";
@@ -94,6 +96,7 @@ describe("POST /api/chat", () => {
       notice: "未找到可用于回答的项目资料。",
       usedFileIds: [],
       truncated: false,
+      sources: [],
       debug: {
         strategy: "keyword_search",
         path: "keyword_search",
@@ -125,6 +128,7 @@ describe("POST /api/chat", () => {
       modelLock: null,
       thinkingEnabled: false,
       activeSkillId: null,
+      skillDisabled: false,
     });
   });
 
@@ -187,10 +191,15 @@ describe("POST /api/chat", () => {
       modelLock: null,
       thinkingEnabled: false,
       activeSkillId: null,
+      skillDisabled: false,
     });
     mocks.messageCreate
       .mockResolvedValueOnce({ id: "user-message-1" })
       .mockResolvedValueOnce({ id: "assistant-message-1" });
+    mocks.completeChat.mockResolvedValue({
+      content: "你好",
+      usage: null,
+    });
     mocks.streamChat.mockResolvedValue({
       stream: new ReadableStream<Uint8Array>({
         start(controller) {

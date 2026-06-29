@@ -9,7 +9,10 @@ import {
   ChevronRight,
   ExternalLink,
   FileText,
+  GraduationCap,
+  Lightbulb,
   Save,
+  Target,
   User,
 } from "lucide-react";
 import { MarkdownContent } from "@/components/markdown/markdown-content";
@@ -40,6 +43,7 @@ interface MessageBubbleProps {
     type: string;
     content: string;
   }) => Promise<void>;
+  onSkillFollowUp?: (skillId: string) => void;
 }
 
 const ARTIFACT_TYPES = [
@@ -109,6 +113,38 @@ function MessageSources({ sources }: { sources?: AgentSource[] | null }) {
   );
 }
 
+const FOLLOW_UP_ACTIONS = [
+  { skillId: "socratic-tutor", label: "引导我深入理解", icon: Lightbulb },
+  { skillId: "exam-extract", label: "抓考试重点", icon: Target },
+  { skillId: "exam-coach", label: "生成速记卡", icon: GraduationCap },
+] as const;
+
+function SkillFollowUpButtons({
+  onSkillFollowUp,
+}: {
+  onSkillFollowUp?: (skillId: string) => void;
+}) {
+  if (!onSkillFollowUp) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {FOLLOW_UP_ACTIONS.map((action) => {
+        const Icon = action.icon;
+        return (
+          <button
+            key={action.skillId}
+            type="button"
+            onClick={() => onSkillFollowUp(action.skillId)}
+            className="inline-flex h-7 items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+          >
+            <Icon size={12} />
+            {action.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function MessageBubbleComponent({
   id,
   role,
@@ -118,6 +154,7 @@ function MessageBubbleComponent({
   sources,
   isStreaming = false,
   onSaveArtifact,
+  onSkillFollowUp,
 }: MessageBubbleProps) {
   const [showReasoning, setShowReasoning] = useState(false);
   const [showSave, setShowSave] = useState(false);
@@ -225,6 +262,10 @@ function MessageBubbleComponent({
         </div>
 
         {isAssistant && !isStreaming && <MessageSources sources={sources} />}
+
+        {isAssistant && !isStreaming && content && sources && sources.length > 0 && (
+          <SkillFollowUpButtons onSkillFollowUp={onSkillFollowUp} />
+        )}
 
         {isAssistant && onSaveArtifact && id && !isStreaming && content && (
           <div className="mt-2">
