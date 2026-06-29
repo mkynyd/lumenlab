@@ -200,6 +200,51 @@ export async function getCacheMetricsByProject(
   return aggregateCacheRows(rows).overall;
 }
 
+export type RagCacheKind = "search" | "file-select" | "query-embed";
+
+export async function recordRagCacheResult(
+  kind: RagCacheKind,
+  result: "hit" | "miss"
+): Promise<void> {
+  try {
+    await getRedis().incr(`rag:${kind}:${result}`);
+  } catch {
+    // Metrics must never break retrieval.
+  }
+}
+
+export async function getRagCacheMetrics() {
+  const kinds: RagCacheKind[] = ["search", "file-select", "query-embed"];
+  try {
+    const keys = kinds.flatMap((kind) => [
+      `rag:${kind}:hit`,
+      `rag:${kind}:miss`,
+    ]);
+    const values = await getRedis().mget(...keys);
+    return Object.fromEntries(
+      kinds.map((kind, index) => {
+        const hits = Number(values[index * 2] || 0);
+        const misses = Number(values[index * 2 + 1] || 0);
+        return [
+          kind,
+          {
+            hits,
+            misses,
+            hitRate: hits + misses > 0 ? hits / (hits + misses) : 0,
+          },
+        ];
+      })
+    );
+  } catch {
+    return Object.fromEntries(
+      kinds.map((kind) => [
+        kind,
+        { hits: 0, misses: 0, hitRate: 0 },
+      ])
+    );
+  }
+}
+
 export async function getExportCacheMetrics() {
   const formats = ["markdown", "docx", "pdf"] as const;
   try {
