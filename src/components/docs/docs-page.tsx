@@ -13,7 +13,7 @@ interface DocsPageProps {
 export function DocsPage({ content, headings, prev, next }: DocsPageProps) {
   return (
     <div className="mx-auto flex max-w-7xl gap-8">
-      <article className="min-w-0 flex-1">
+      <article className="min-w-0 flex-1 lg:pl-8 xl:pl-10">
         <DocsMarkdown content={content} />
         <DocsFooterNav prev={prev} next={next} />
       </article>
