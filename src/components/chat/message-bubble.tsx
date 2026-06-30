@@ -180,25 +180,26 @@ function MessageBubbleComponent({
   }
 
   return (
-    <div
-      className={cn(
-        "flex gap-3 px-4 py-4 md:px-6",
-        isUser && "flex-row-reverse"
-      )}
-    >
+    <div className="w-full px-4 py-4 md:px-6">
       <div
         className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-lg)] mt-0.5",
-          isUser
-            ? "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
-            : "bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]"
+          "mx-auto flex w-full max-w-[56rem] gap-3",
+          isUser && "flex-row-reverse"
         )}
-        aria-hidden="true"
       >
-        {isUser ? <User size={14} /> : <Bot size={14} />}
-      </div>
+        <div
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-lg)] mt-0.5",
+            isUser
+              ? "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
+              : "bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]"
+          )}
+          aria-hidden="true"
+        >
+          {isUser ? <User size={14} /> : <Bot size={14} />}
+        </div>
 
-      <div className={cn("flex-1 min-w-0", isUser && "flex flex-col items-end")}>
+        <div className={cn("flex-1 min-w-0", isUser && "flex flex-col items-end")}>
         {shouldShowReasoning && (
           <Collapsible
             open={showReasoning}
@@ -240,10 +241,10 @@ function MessageBubbleComponent({
 
         <div
           className={cn(
-            "text-sm",
+            "chat-message-text",
             isUser
-              ? "w-fit max-w-[85%] rounded-[var(--radius-xl)] bg-[var(--color-surface-active)] px-3.5 py-2.5 leading-relaxed text-[var(--color-text-primary)]"
-              : "workbench-readable message-bubble-wide text-[var(--color-text-primary)]"
+              ? "w-fit max-w-[85%] rounded-[var(--radius-xl)] bg-[var(--color-surface-active)] px-3.5 py-2.5"
+              : "w-full"
           )}
         >
           {content ? (
@@ -318,6 +319,7 @@ function MessageBubbleComponent({
             {tokenCount.toLocaleString()} tokens
           </span>
         )}
+      </div>
       </div>
     </div>
   );

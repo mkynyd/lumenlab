@@ -80,17 +80,6 @@ export function VirtualMessageList({
   const [containerWidth, setContainerWidth] = useState(0);
   const [fontsReady, setFontsReady] = useState(false);
 
-  // Track container width for Pretext-based estimates.
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    const update = () => setContainerWidth(el.clientWidth);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
   // Wait for the fonts Pretext will measure against before trusting estimates.
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +138,21 @@ export function VirtualMessageList({
     getItemKey: (index) => completed[index].id,
     overscan: 5,
   });
+
+  // Track container width for Pretext-based estimates and force the virtualizer
+  // to remeasure items when the viewport is resized (so Mermaid / tables reflow).
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const update = () => {
+      setContainerWidth(el.clientWidth);
+      virtualizer.measure();
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [virtualizer]);
 
   // Re-measure when Pretext estimates change.
   useLayoutEffect(() => {

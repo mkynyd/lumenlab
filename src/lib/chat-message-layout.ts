@@ -9,8 +9,8 @@ import { measureText, measureTextLines } from "@/lib/text-layout";
  * better first guess than the previous fixed 120px.
  */
 
-const BODY_FONT_SIZE = 14.8; // markdown-body uses 0.925rem ≈ 14.8px at root 16px
-const BODY_LINE_HEIGHT = 25.5; // 14.8px * 1.72
+const BODY_FONT_SIZE = 16; // markdown-body uses 1rem = 16px
+const BODY_LINE_HEIGHT = 28; // 16px * 1.75
 const PARAGRAPH_MARGIN = 12.75; // 0.75em at body size
 const CODE_FONT_SIZE = 13; // pre code uses 0.88em
 const CODE_LINE_HEIGHT = 21;
