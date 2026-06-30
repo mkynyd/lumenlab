@@ -64,6 +64,7 @@ export function VectorLibraryView({
     lines: [],
   });
   const [liveMessage, setLiveMessage] = useState("");
+  const [sizeKey, setSizeKey] = useState(0);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -93,6 +94,7 @@ export function VectorLibraryView({
 
     const svg = d3.select(svgRef.current);
     const wrapper = wrapperRef.current;
+
     const width = wrapper.clientWidth;
     const height = wrapper.clientHeight;
 
@@ -105,7 +107,7 @@ export function VectorLibraryView({
 
     const zoom = d3
       .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.3, 4])
+      .scaleExtent([0.15, 6])
       .on("zoom", (event) => {
         g.attr("transform", event.transform.toString());
       });
@@ -117,6 +119,34 @@ export function VectorLibraryView({
       return true;
     });
 
+    // Adaptive node scale based on viewport area and node count.
+    // Larger viewports / fewer nodes → bigger nodes; dense graphs → smaller nodes.
+    const area = Math.max(1, width * height);
+    const nodeCount = Math.max(1, filteredNodes.length);
+    const idealAreaPerNode = area / nodeCount;
+    const nodeScale = Math.min(1.35, Math.max(0.38, Math.sqrt(idealAreaPerNode) / 42));
+
+    const BASE_RADIUS: Record<VectorLibraryNode["type"], number> = {
+      topic: 24,
+      file: 16,
+      chunk: 5,
+    };
+
+    function scaledRadius(d: VectorLibraryNode): number {
+      return Math.max(2, Math.round(BASE_RADIUS[d.type] * nodeScale));
+    }
+
+    function fontSizeFor(d: VectorLibraryNode): number {
+      if (d.type === "chunk") return 0;
+      const base = d.type === "topic" ? 13 : 12;
+      return Math.max(9, Math.round(base * Math.min(nodeScale * 1.1, 1.15)));
+    }
+
+    function labelMaxChars(d: VectorLibraryNode): number {
+      if (d.type === "topic") return Math.max(4, Math.round(8 * Math.min(nodeScale * 1.2, 1.4)));
+      return Math.max(6, Math.round(16 * Math.min(nodeScale * 1.15, 1.3)));
+    }
+
     interface SimLink extends d3.SimulationLinkDatum<VectorLibraryNode> {
       strength: number;
     }
@@ -126,6 +156,15 @@ export function VectorLibraryView({
       (l) => nodeIdSet.has(l.source as string) && nodeIdSet.has(l.target as string)
     ) as SimLink[];
 
+    // Adaptive force parameters: denser graphs need stronger repulsion and
+    // shorter links so nodes don't pile up on the right or overlap.
+    const densityFactor = Math.min(1, Math.sqrt(nodeCount / 80));
+    const chargeStrength = -120 - densityFactor * 240;
+    const linkDistance = (d: SimLink) => {
+      const base = d.strength > 0.5 ? 45 : 100;
+      return base * (1 - densityFactor * 0.35);
+    };
+
     const simulation = d3
       .forceSimulation<VectorLibraryNode>(filteredNodes)
       .force(
@@ -133,18 +172,24 @@ export function VectorLibraryView({
         d3
           .forceLink<VectorLibraryNode, SimLink>(filteredLinks)
           .id((d) => d.id)
-          .distance((d) => (d.strength > 0.5 ? 40 : 90))
-          .strength((d) => d.strength)
+          .distance(linkDistance)
+          .strength((d) => d.strength * (1 - densityFactor * 0.25))
       )
       .force(
         "charge",
-        d3.forceManyBody<VectorLibraryNode>().strength((d) => (d.type === "chunk" ? -30 : -220))
+        d3
+          .forceManyBody<VectorLibraryNode>()
+          .strength((d) => (d.type === "chunk" ? -20 * nodeScale : chargeStrength))
       )
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force(
         "collide",
-        d3.forceCollide<VectorLibraryNode>().radius((d) => d.radius + 6)
-      );
+        d3
+          .forceCollide<VectorLibraryNode>()
+          .radius((d) => scaledRadius(d) + 4 + densityFactor * 6)
+          .iterations(2)
+      )
+      .alphaDecay(0.02);
 
     const link = g
       .append("g")
@@ -190,7 +235,7 @@ export function VectorLibraryView({
         d3.select(this)
           .select(".viz-circle")
           .attr("stroke", isSelected ? "var(--color-accent)" : NODE_COLORS[d.type].stroke)
-          .attr("stroke-width", isSelected ? 3 : d.type === "chunk" ? 0 : 1.5);
+          .attr("stroke-width", isSelected ? 3 : d.type === "chunk" ? 0 : Math.max(1, 1.5 * nodeScale));
       })
       .on("click", (_event: MouseEvent, d: VectorLibraryNode) => selectNode(d))
       .on("keydown", function (event: KeyboardEvent, d: VectorLibraryNode) {
@@ -207,7 +252,7 @@ export function VectorLibraryView({
         setTooltip({
           visible: true,
           x: d.x ?? 0,
-          y: (d.y ?? 0) - d.radius - 8,
+          y: (d.y ?? 0) - scaledRadius(d) - 8,
           title: d.label,
           lines: tooltipLines(d),
         });
@@ -221,7 +266,7 @@ export function VectorLibraryView({
     node
       .append("circle")
       .attr("class", "focus-ring")
-      .attr("r", (d: VectorLibraryNode) => d.radius + 5)
+      .attr("r", (d: VectorLibraryNode) => scaledRadius(d) + 5)
       .attr("fill", "transparent")
       .attr("stroke", "transparent")
       .attr("stroke-width", 2)
@@ -232,14 +277,16 @@ export function VectorLibraryView({
     node
       .append("circle")
       .attr("class", "viz-circle")
-      .attr("r", (d: VectorLibraryNode) => d.radius)
+      .attr("r", (d: VectorLibraryNode) => scaledRadius(d))
       .attr("fill", (d: VectorLibraryNode) =>
         d.status === "failed" ? "var(--color-error-muted)" : NODE_COLORS[d.type].fill
       )
       .attr("stroke", (d: VectorLibraryNode) =>
         d.status === "failed" ? "var(--color-error)" : NODE_COLORS[d.type].stroke
       )
-      .attr("stroke-width", (d: VectorLibraryNode) => (d.type === "chunk" ? 0 : 1.5));
+      .attr("stroke-width", (d: VectorLibraryNode) =>
+        d.type === "chunk" ? 0 : Math.max(1, 1.5 * nodeScale)
+      );
 
     // Failed icon
     node
@@ -248,24 +295,26 @@ export function VectorLibraryView({
       .attr("dy", 1)
       .attr("text-anchor", "middle")
       .attr("fill", "var(--color-error)")
-      .attr("font-size", 10)
+      .attr("font-size", () => Math.max(8, Math.round(10 * nodeScale)))
       .attr("aria-hidden", "true")
       .text("!");
 
-    // Labels for topic/file
+    // Labels for topic/file with readable backing
     node
       .filter((d: VectorLibraryNode) => d.type !== "chunk")
       .append("text")
-      .attr("dy", (d: VectorLibraryNode) => d.radius + 14)
+      .attr("class", "viz-label")
+      .attr("dy", (d: VectorLibraryNode) => scaledRadius(d) + 14)
       .attr("text-anchor", "middle")
       .attr("fill", (d: VectorLibraryNode) => NODE_COLORS[d.type].text)
-      .attr("font-size", (d: VectorLibraryNode) => (d.type === "topic" ? 12 : 11))
+      .attr("font-size", (d: VectorLibraryNode) => fontSizeFor(d))
       .attr("font-weight", (d: VectorLibraryNode) => (d.type === "topic" ? 600 : 500))
       .attr("paint-order", "stroke")
       .attr("stroke", "var(--color-bg)")
       .attr("stroke-width", 3)
-      .attr("stroke-opacity", 0.8)
-      .text((d: VectorLibraryNode) => truncateLabel(d.label, d.type === "topic" ? 8 : 16));
+      .attr("stroke-opacity", 0.85)
+      .style("pointer-events", "none")
+      .text((d: VectorLibraryNode) => truncateLabel(d.label, labelMaxChars(d)));
 
     simulation.on("tick", () => {
       link
@@ -280,6 +329,10 @@ export function VectorLibraryView({
       );
     });
 
+    simulation.on("end", () => {
+      fitToView();
+    });
+
     function selectNode(d: VectorLibraryNode) {
       setSelectedId(d.id);
       setLiveMessage(
@@ -291,8 +344,37 @@ export function VectorLibraryView({
         .attr("stroke", (n) =>
           n.id === d.id ? "var(--color-accent)" : NODE_COLORS[n.type].stroke
         )
-        .attr("stroke-width", (n) =>
-          n.id === d.id ? 3 : n.type === "chunk" ? 0 : 1.5
+        .attr("stroke-width", (n) => {
+          const base = n.type === "chunk" ? 0 : Math.max(1, 1.5 * nodeScale);
+          return n.id === d.id ? 3 : base;
+        });
+    }
+
+    // Fit the graph into the viewport with padding, avoiding the empty-right-edge
+    // issue when the simulation drifts or the viewport is wide.
+    function fitToView(padding = 48) {
+      const bounds = g.node()?.getBBox();
+      if (!bounds || bounds.width === 0 || bounds.height === 0) return;
+
+      const fullWidth = width;
+      const fullHeight = height;
+      const availableWidth = fullWidth - padding * 2;
+      const availableHeight = fullHeight - padding * 2;
+      const scale = Math.min(
+        availableWidth / bounds.width,
+        availableHeight / bounds.height,
+        1.6
+      );
+      const translateX = fullWidth / 2 - scale * (bounds.x + bounds.width / 2);
+      const translateY = fullHeight / 2 - scale * (bounds.y + bounds.height / 2);
+
+      svg
+        .transition()
+        .duration(350)
+        .ease(d3.easeCubicOut)
+        .call(
+          zoom.transform as never,
+          d3.zoomIdentity.translate(translateX, translateY).scale(scale)
         );
     }
 
@@ -304,11 +386,24 @@ export function VectorLibraryView({
     };
     window.addEventListener("keydown", keyHandler);
 
+    // Re-run the graph layout when the container size changes meaningfully so
+    // the viewport is always filled and the graph stays centered.
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width: newWidth, height: newHeight } = entry.contentRect;
+      if (Math.abs(newWidth - width) > 8 || Math.abs(newHeight - height) > 8) {
+        setSizeKey((k) => k + 1);
+      }
+    });
+    resizeObserver.observe(wrapper);
+
     return () => {
       simulation.stop();
       window.removeEventListener("keydown", keyHandler);
+      resizeObserver.disconnect();
     };
-  }, [graph, showChunks, showTopics, selectedId]);
+  }, [graph, showChunks, showTopics, selectedId, sizeKey]);
 
   const selectedNode = useMemo<VectorLibraryNode | null>(
     () => graph?.nodes.find((n) => n.id === selectedId) || null,
@@ -394,7 +489,7 @@ export function VectorLibraryView({
         {/* Inspector */}
         <aside
           className={cn(
-            "w-[280px] shrink-0 border-l border-[var(--color-border-light)] bg-[var(--color-panel)]",
+            "absolute inset-y-0 right-0 z-10 w-[280px] border-l border-[var(--color-border-light)] bg-[var(--color-panel)]",
             "transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
             selectedNode ? "translate-x-0" : "translate-x-full"
           )}
