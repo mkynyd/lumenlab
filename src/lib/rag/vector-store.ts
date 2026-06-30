@@ -90,6 +90,7 @@ export interface RetrieveProjectContextParams {
   query: string;
   maxChars: number;
   loadQueryEmbedding?: () => Promise<number[] | undefined>;
+  forceProjectContext?: boolean;
 }
 
 export type ContextRetrievalStrategy =
@@ -277,8 +278,10 @@ const EXACT_QUERY_PATTERNS = [
 
 export function shouldUseProjectContext(
   query: string,
-  selectedFileIds: string[] = []
+  selectedFileIds: string[] = [],
+  forceProjectContext: boolean = false
 ) {
+  if (forceProjectContext) return true;
   if (selectedFileIds.length > 0) return true;
   return hasAnyPattern(query, PROJECT_CONTEXT_PATTERNS) || isCorpusWideTask(query);
 }
@@ -782,7 +785,7 @@ export async function retrieveProjectContext(
   const corpusWideTask = selectedFileIds.length === 0 &&
     isCorpusWideTask(params.query);
 
-  if (!shouldUseProjectContext(params.query, selectedFileIds)) {
+  if (!shouldUseProjectContext(params.query, selectedFileIds, params.forceProjectContext)) {
     const debug = debugPayload({ strategy: "no_context" });
     return {
       context: "",

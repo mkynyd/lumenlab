@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "@/components/chat/message-bubble";
@@ -28,7 +28,7 @@ export function splitStreamingMessage(messages: ChatMessage[]) {
   return { completed: messages, streaming: undefined };
 }
 
-function Bubble({
+const Bubble = memo(function Bubble({
   message,
   onSaveArtifact,
   onSkillFollowUp,
@@ -54,7 +54,7 @@ function Bubble({
       }
     />
   );
-}
+});
 
 /** Threshold in px — user is "at bottom" if within this distance from the end. */
 const AT_BOTTOM_THRESHOLD = 64;
@@ -76,6 +76,7 @@ export function VirtualMessageList({
   const userAtBottomRef = useRef(true);
   const prevMsgCountRef = useRef(messages.length);
   const [pinned, setPinned] = useState(false);
+  const pinnedRef = useRef(false);
   const [containerWidth, setContainerWidth] = useState(0);
   const [fontsReady, setFontsReady] = useState(false);
 
@@ -92,6 +93,7 @@ export function VirtualMessageList({
 
   // Wait for the fonts Pretext will measure against before trusting estimates.
   useEffect(() => {
+    let cancelled = false;
     Promise.all([
       loadFontForOptions({
         fontSize: BODY_FONT_SIZE,
@@ -102,7 +104,12 @@ export function VirtualMessageList({
         fontFamily:
           'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       }),
-    ]).then(() => setFontsReady(true));
+    ]).then(() => {
+      if (!cancelled) setFontsReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const estimates = useMemo(() => {
@@ -144,7 +151,7 @@ export function VirtualMessageList({
   });
 
   // Re-measure when Pretext estimates change.
-  useEffect(() => {
+  useLayoutEffect(() => {
     virtualizer.measure();
   }, [estimates, virtualizer]);
 
@@ -171,40 +178,56 @@ export function VirtualMessageList({
       if (!el) return;
       const atBottom = isNearBottom();
       userAtBottomRef.current = atBottom;
-      setPinned(!atBottom);
+      const nextPinned = !atBottom;
+      if (pinnedRef.current !== nextPinned) {
+        pinnedRef.current = nextPinned;
+        setPinned(nextPinned);
+      }
     };
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
   }, [isNearBottom]);
 
+  // Force re-measure when message count changes, so newly added user/assistant
+  // messages get their actual DOM height computed before we scroll.
+  useLayoutEffect(() => {
+    virtualizer.measure();
+  }, [messages.length, virtualizer]);
+
   // Auto-scroll only when user is at the bottom
-  useEffect(() => {
+  useLayoutEffect(() => {
     const msgCountChanged = messages.length !== prevMsgCountRef.current;
     prevMsgCountRef.current = messages.length;
 
     if (messages.length === 0) return;
 
-    // Always scroll to bottom for: initial load, user sent a new message
+    // New user message → scroll so the latest completed message (the user's
+    // new prompt) sits at the bottom of the viewport. Scrolling to the raw
+    // container bottom would dive into the huge streaming response below the
+    // virtual list and push the sent message out of view.
     if (msgCountChanged) {
-      // New user message → always scroll to bottom
-      scrollToBottom(false);
+      const lastIndex = completed.length - 1;
+      if (lastIndex >= 0) {
+        virtualizer.scrollToIndex(lastIndex, { align: "end" });
+      }
+      userAtBottomRef.current = true;
+      if (pinnedRef.current) {
+        pinnedRef.current = false;
+        setPinned(false);
+      }
       return;
     }
 
     // Streaming content update → only scroll if user hasn't scrolled up
     if (streaming?.content && userAtBottomRef.current) {
-      requestAnimationFrame(() => {
-        if (userAtBottomRef.current) {
-          scrollToBottom(false);
-        }
-      });
+      scrollToBottom(false);
     }
-  }, [messages.length, streaming?.content, scrollToBottom]);
+  }, [messages.length, streaming?.content, scrollToBottom, virtualizer, completed.length]);
 
   // Initial scroll to bottom on mount
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (messages.length > 0) {
-      requestAnimationFrame(() => scrollToBottom(false));
+      scrollToBottom(false);
     }
     // Only on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,6 +271,7 @@ export function VirtualMessageList({
         <button
           onClick={() => {
             scrollToBottom(true);
+            pinnedRef.current = false;
             setPinned(false);
             userAtBottomRef.current = true;
           }}

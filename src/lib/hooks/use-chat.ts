@@ -63,6 +63,7 @@ export interface SendMessageInput {
   webSearchActive?: boolean;
   manualSkillId?: string;
   skillOff?: boolean;
+  isQuickTask?: boolean;
 }
 
 interface UseChatOptions {
@@ -115,6 +116,12 @@ export function useChat(options: UseChatOptions = {}) {
   );
   const streamSessionRef = useRef(0);
 
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   const setThinkingEnabled = useCallback(() => {
     setThinkingEnabledState(true);
   }, []);
@@ -157,10 +164,18 @@ export function useChat(options: UseChatOptions = {}) {
       };
       let streamingId = `assistant-${Date.now()}`;
       const streamingStartedAt = Date.now();
-      let streamConversationId = conversationId;
 
       setMessages((prev) => [
-        ...prev,
+        ...prev.map((m) =>
+          m.isStreaming
+            ? {
+                ...m,
+                isStreaming: false,
+                streamingSource: undefined,
+                streamingStartedAt: undefined,
+              }
+            : m
+        ),
         userMessage,
         {
           id: streamingId,
@@ -180,18 +195,19 @@ export function useChat(options: UseChatOptions = {}) {
         abortRef.current = controller;
 
         const requestBody = buildChatRequestBody({
-            conversationId,
-            message: content.trim(),
-            hiddenPrompt: input.hiddenPrompt,
-            model,
-            thinkingEnabled: true,
-            reasoningEffort,
-            projectId: options.projectId,
-            selectedFileIds: options.selectedFileIds,
-            mode: options.mode,
-            webSearchActive: input.webSearchActive,
-            manualSkillId: input.manualSkillId,
-            skillOff: input.skillOff,
+          conversationId,
+          message: content.trim(),
+          hiddenPrompt: input.hiddenPrompt,
+          model,
+          thinkingEnabled: true,
+          reasoningEffort,
+          projectId: options.projectId,
+          selectedFileIds: options.selectedFileIds,
+          mode: options.mode,
+          webSearchActive: input.webSearchActive,
+          manualSkillId: input.manualSkillId,
+          skillOff: input.skillOff,
+          isQuickTask: input.isQuickTask,
         });
         const fetchOptions: RequestInit = {
           method: "POST",
@@ -220,10 +236,7 @@ export function useChat(options: UseChatOptions = {}) {
         const newConvId = response.headers.get("X-Conversation-Id");
         if (newConvId && !conversationId) {
           conversationIdRef.current = newConvId;
-          streamConversationId = newConvId;
           setConversationId(newConvId);
-        } else if (newConvId) {
-          streamConversationId = newConvId;
         }
 
         const reader = response.body?.getReader();
@@ -411,31 +424,31 @@ export function useChat(options: UseChatOptions = {}) {
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
           // User aborted the attached foreground stream.
-          if (
-            streamSessionRef.current === streamSession ||
-            conversationIdRef.current === streamConversationId
-          ) {
+          if (streamSessionRef.current === streamSession) {
             setMessages((prev) =>
-              prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+              prev.map((m) =>
+                m.isStreaming
+                  ? {
+                      ...m,
+                      isStreaming: false,
+                      streamingSource: undefined,
+                      streamingStartedAt: undefined,
+                    }
+                  : m
+              )
             );
           }
         } else {
-          if (
-            streamSessionRef.current === streamSession ||
-            conversationIdRef.current === streamConversationId
-          ) {
+          if (streamSessionRef.current === streamSession) {
             setError(
               err instanceof Error ? err.message : "An unexpected error occurred"
             );
             // Remove the streaming placeholder on foreground error.
-            setMessages((prev) => prev.filter((m) => !m.isStreaming));
+            setMessages((prev) => prev.filter((m) => m.id !== streamingId));
           }
         }
       } finally {
-        if (
-          streamSessionRef.current === streamSession ||
-          conversationIdRef.current === streamConversationId
-        ) {
+        if (streamSessionRef.current === streamSession) {
           setIsStreaming(false);
         }
         if (controller && abortRef.current === controller) {

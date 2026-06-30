@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
     mode,
     manualSkillId,
     skillOff,
+    isQuickTask,
   } = body;
   const attachmentText = await textAttachmentContext(attachments);
   const effectivePrompt = [
@@ -231,13 +232,14 @@ export async function POST(request: NextRequest) {
 
   if (project && !agentOrchestratorEnabled) {
 
-    if (shouldUseProjectContext(effectivePrompt, uniqueFileIds)) {
+    if (shouldUseProjectContext(effectivePrompt, uniqueFileIds, isQuickTask)) {
       const retrieval = await retrieveProjectContext({
         userId,
         projectId: project.id,
         selectedFileIds: uniqueFileIds,
         query: effectivePrompt,
         maxChars: 60000,
+        forceProjectContext: isQuickTask,
         loadQueryEmbedding: async () => {
           try {
             const bailianKey = await getProviderApiKey(userId, "bailian");
@@ -354,6 +356,7 @@ export async function POST(request: NextRequest) {
     manualSkillId: manualSkillId || null,
     skillOff: skillOff || false,
     skillDisabled: conversation.skillDisabled || false,
+    isQuickTask: isQuickTask || false,
   });
   webSearchActive =
     body.webSearchActive === true ||

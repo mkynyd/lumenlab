@@ -24,6 +24,8 @@ export const sendMessageSchema = z.object({
     ])
     .optional(),
   skillOff: z.boolean().default(false),
+  // Quick task flag: when true, treat as project-context quick task
+  isQuickTask: z.boolean().default(false),
 });
 
 export const loginSchema = z.object({

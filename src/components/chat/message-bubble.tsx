@@ -73,7 +73,7 @@ function MessageSources({ sources }: { sources?: AgentSource[] | null }) {
   if (visible.length === 0) return null;
 
   return (
-    <div className="mt-3 max-w-[74ch] text-xs text-[var(--color-text-tertiary)]">
+    <div className="mt-3 text-xs text-[var(--color-text-tertiary)]">
       <div className="mb-1 font-medium text-[var(--color-text-secondary)]">来源</div>
       <div className="flex flex-wrap gap-1.5">
         {visible.map((source, index) => {
@@ -203,7 +203,7 @@ function MessageBubbleComponent({
           <Collapsible
             open={showReasoning}
             onOpenChange={setShowReasoning}
-            className="mb-2 w-full max-w-[74ch]"
+            className="mb-2 w-full"
           >
             <CollapsibleTrigger asChild>
               <button
@@ -243,7 +243,7 @@ function MessageBubbleComponent({
             "text-sm",
             isUser
               ? "w-fit max-w-[85%] rounded-[var(--radius-xl)] bg-[var(--color-surface-active)] px-3.5 py-2.5 leading-relaxed text-[var(--color-text-primary)]"
-              : "workbench-readable text-[var(--color-text-primary)]"
+              : "workbench-readable message-bubble-wide text-[var(--color-text-primary)]"
           )}
         >
           {content ? (

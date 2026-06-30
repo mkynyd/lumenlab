@@ -25,6 +25,7 @@ export interface SkillRouteInput {
   webSearchActive?: boolean;
   skillOff?: boolean;
   skillDisabled?: boolean;
+  isQuickTask?: boolean;
 }
 
 export interface SkillRouteResult {
@@ -102,6 +103,7 @@ function isLikelyUniversitySlideDeck(input: SkillRouteInput) {
 }
 
 function inferProfile(input: SkillRouteInput, skillId: string | null): TaskProfile {
+  if (input.isQuickTask && input.projectId) return "rag";
   if (skillId === "paper-reader") return "research";
   if (skillId === "paper-writer") return "workflow";
   if (skillId === "exam-extract" || skillId === "exam-coach") return "rag";

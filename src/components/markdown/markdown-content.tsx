@@ -71,6 +71,13 @@ export function MarkdownContent({
               />
             );
           },
+          table(props: ComponentProps<"table">) {
+            return (
+              <div className="overflow-x-auto my-3">
+                <table {...props} />
+              </div>
+            );
+          },
         }}
       >
         {content}

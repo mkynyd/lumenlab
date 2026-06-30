@@ -13,6 +13,7 @@ export interface ChatRequestInput {
   webSearchActive?: boolean;
   manualSkillId?: string;
   skillOff?: boolean;
+  isQuickTask?: boolean;
 }
 
 export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput {
@@ -46,6 +47,10 @@ export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput 
 
   if (input.skillOff) {
     body.skillOff = input.skillOff;
+  }
+
+  if (input.isQuickTask) {
+    body.isQuickTask = true;
   }
 
   return body;

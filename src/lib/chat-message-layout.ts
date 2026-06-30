@@ -24,7 +24,6 @@ const MESSAGE_LIST_PADDING_X = 32; // px-4 * 2 (mobile) or px-6 * 2 (md)
 const USER_BUBBLE_MAX_RATIO = 0.85;
 const USER_BUBBLE_PADDING_X = 28; // px-3.5 * 2
 const USER_BUBBLE_PADDING_Y = 20; // py-2.5 * 2
-const ASSISTANT_MAX_CHARS = 74;
 
 export interface MessageHeightEstimateInput {
   content: string;
@@ -46,8 +45,7 @@ function getAssistantTextWidth(context: MessageLayoutContext): number {
     MESSAGE_LIST_PADDING_X -
     AVATAR_WIDTH -
     AVATAR_GAP;
-  const maxByCh = ASSISTANT_MAX_CHARS * BODY_FONT_SIZE;
-  return Math.max(240, Math.min(available, maxByCh));
+  return Math.max(240, available);
 }
 
 function getUserTextWidth(context: MessageLayoutContext): number {

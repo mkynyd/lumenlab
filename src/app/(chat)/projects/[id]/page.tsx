@@ -444,6 +444,7 @@ export default function ProjectDetailPage() {
       withSkillSelection({
         content: input.label,
         hiddenPrompt: input.prompt,
+        isQuickTask: true,
       })
     );
   }

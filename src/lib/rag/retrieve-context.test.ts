@@ -31,7 +31,17 @@ vi.mock("@/lib/deepseek", () => ({
   createTextMessage: mocks.createTextMessage,
 }));
 
-import { hybridSearch, retrieveProjectContext } from "@/lib/rag/vector-store";
+import { hybridSearch, retrieveProjectContext, shouldUseProjectContext } from "@/lib/rag/vector-store";
+
+describe("shouldUseProjectContext", () => {
+  it("forceProjectContext 为 true 时直接返回 true", () => {
+    expect(shouldUseProjectContext("你好", [], true)).toBe(true);
+  });
+
+  it("无 force、无选中、无关键词时返回 false", () => {
+    expect(shouldUseProjectContext("你好", [], false)).toBe(false);
+  });
+});
 
 describe("retrieveProjectContext", () => {
   beforeEach(() => {

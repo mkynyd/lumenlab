@@ -547,10 +547,9 @@ pre code {
 }
 
 .markdown-body table {
-  display: block;
+  display: table;
   width: max-content;
   max-width: 100%;
-  overflow: auto;
   border-collapse: collapse;
 }
 
@@ -662,6 +661,12 @@ html.landing-snap {
 
 .workbench-readable {
   max-width: 74ch;
+}
+
+/* In chat message bubbles, let assistant content fill the available width
+   instead of being constrained to 74ch (matches ChatGPT-like wide layout). */
+.workbench-readable.message-bubble-wide {
+  max-width: none;
 }
 
 .workbench-readable :where(p, ul, ol, blockquote) {

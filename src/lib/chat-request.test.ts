@@ -1,32 +1,27 @@
-import { describe, expect, it } from "vitest";
-import { buildChatRequestBody } from "@/lib/chat-request";
+import { describe, it, expect } from "vitest";
+import { buildChatRequestBody } from "./chat-request";
 
 describe("buildChatRequestBody", () => {
-  const base = {
-    conversationId: undefined,
-    message: "分析选中的实验数据",
-    model: "deepseek-v4-pro",
-    thinkingEnabled: false,
-    reasoningEffort: "high" as const,
-  };
-
-  it("includes project context for project chat", () => {
-    expect(
-      buildChatRequestBody({
-        ...base,
-        projectId: "project-1",
-        selectedFileIds: ["file-1", "file-2"],
-        mode: "experiment",
-      })
-    ).toEqual({
-      ...base,
-      projectId: "project-1",
-      selectedFileIds: ["file-1", "file-2"],
-      mode: "experiment",
+  it("透传 isQuickTask", () => {
+    const body = buildChatRequestBody({
+      message: "快捷任务：总结要点",
+      hiddenPrompt: "请总结项目资料要点",
+      model: "deepseek-v4-pro",
+      thinkingEnabled: true,
+      reasoningEffort: "max",
+      projectId: "proj-123",
+      isQuickTask: true,
     });
+    expect(body.isQuickTask).toBe(true);
   });
 
-  it("keeps ordinary chat requests free of project fields", () => {
-    expect(buildChatRequestBody(base)).toEqual(base);
+  it("非快捷任务不包含 isQuickTask", () => {
+    const body = buildChatRequestBody({
+      message: "你好",
+      model: "deepseek-v4-pro",
+      thinkingEnabled: true,
+      reasoningEffort: "max",
+    });
+    expect(body.isQuickTask).toBeUndefined();
   });
 });

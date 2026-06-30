@@ -107,3 +107,23 @@ describe("skill router", () => {
     expect(route.source).toBe("manual");
   });
 });
+
+describe("routeSkill quick task", () => {
+  it("项目中的快捷任务强制返回 rag profile，即使 prompt 不含资料关键词", () => {
+    const result = routeSkill({
+      message: "快捷任务：总结要点",
+      hiddenPrompt: "请总结要点",
+      projectId: "proj-123",
+      isQuickTask: true,
+    });
+    expect(result.profile).toBe("rag");
+  });
+
+  it("非快捷任务且不含资料关键词时保持 simple", () => {
+    const result = routeSkill({
+      message: "你好",
+      projectId: "proj-123",
+    });
+    expect(result.profile).toBe("simple");
+  });
+});
