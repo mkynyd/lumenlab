@@ -80,14 +80,15 @@ export function SelectMenu({
               key={option.value}
               onSelect={() => onChange(option.value)}
               className={cn(
-                "justify-start text-left",
-                option.value === value && "bg-accent text-accent-foreground"
+                "justify-start text-left text-[var(--color-text-primary)]",
+                option.value === value &&
+                  "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
               )}
             >
               {option.value === value ? (
-                <Check strokeWidth={2} />
+                <Check className="text-[var(--color-accent)]" strokeWidth={2} />
               ) : (
-                <NavArrowRight strokeWidth={2} />
+                <NavArrowRight className="text-[var(--color-text-secondary)]" strokeWidth={2} />
               )}
               {option.label}
             </DropdownMenuItem>
