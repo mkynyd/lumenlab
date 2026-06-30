@@ -238,7 +238,7 @@ export function VirtualMessageList({
   }, []);
 
   return (
-    <div ref={parentRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)]">
+    <div ref={parentRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)] pb-32">
       {messages.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
           <p className="text-sm font-medium text-[var(--color-text-primary)]">

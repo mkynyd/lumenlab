@@ -41,7 +41,6 @@ const TOOLS: ToolMetadata[] = [
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string" } },
-      required: ["projectId"],
     },
     outputSchema: { type: "object" },
     riskLevel: "L1",
@@ -67,7 +66,7 @@ const TOOLS: ToolMetadata[] = [
         fileId: { type: "string" },
         maxChars: { type: "integer" },
       },
-      required: ["projectId", "fileId"],
+      required: ["fileId"],
     },
     outputSchema: { type: "object" },
     riskLevel: "L1",
@@ -454,12 +453,15 @@ export function registerBuiltinTools(): void {
   }
 
   registerToolHandler("project_files.list", async (ctx, args) => {
-    return listProjectFiles(ctx.userId, String(args.projectId));
+    return listProjectFiles(
+      ctx.userId,
+      String(args.projectId ?? ctx.projectId ?? "")
+    );
   });
   registerToolHandler("project_files.read", async (ctx, args) => {
     return readProjectFile(
       ctx.userId,
-      String(args.projectId),
+      String(args.projectId ?? ctx.projectId ?? ""),
       String(args.fileId),
       args.maxChars ? Number(args.maxChars) : 8000
     );
