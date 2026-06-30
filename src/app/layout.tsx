@@ -43,6 +43,7 @@ export default async function RootLayout({
   return (
     <html
       lang="zh-CN"
+      data-scroll-behavior="smooth"
       className={cn("h-full", "antialiased", "font-sans", figtree.variable)}
       suppressHydrationWarning
     >
