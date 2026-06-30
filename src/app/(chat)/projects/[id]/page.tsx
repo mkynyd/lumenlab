@@ -8,6 +8,10 @@ import { logger } from "@/lib/logger";
 import { ProjectSidebar } from "@/components/project/project-sidebar";
 import { QuickTaskBar, type QuickTaskSendInput } from "@/components/chat/quick-task-bar";
 import { ChatInput } from "@/components/chat/chat-input";
+import {
+  BUILTIN_SKILL_OPTIONS,
+  type SkillSelectorValue,
+} from "@/components/chat/skill-selector";
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { ContextRing } from "@/components/chat/context-ring";
 import {
@@ -99,7 +103,11 @@ export default function ProjectDetailPage() {
   // Chat state
   const [chatInputValue, setChatInputValue] = useState("");
   const [chatAttachments, setChatAttachments] = useState<FileAttachment[]>([]);
-  const [pendingMessageQueue, setPendingMessageQueue] = useState<SendMessageInput[]>([]);
+  const [userSkillValue, setUserSkillValue] =
+    useState<SkillSelectorValue>("auto");
+  const [pendingMessageQueue, setPendingMessageQueue] = useState<
+    SendMessageInput[]
+  >([]);
   const drainingQueueRef = useRef(false);
   const lastSelectedFileIndexRef = useRef<number | null>(null);
   const {
@@ -117,6 +125,7 @@ export default function ProjectDetailPage() {
     newConversation,
     loadConversation,
     conversationId,
+    agentSession,
   } = useChat({
     initialConversationId: undefined,
     initialMessages: [],
@@ -153,6 +162,31 @@ export default function ProjectDetailPage() {
     hasBackgroundPendingMessage ||
     (Boolean(emptyForegroundPersistedMessageKey) &&
       stalledForegroundMessageKey === emptyForegroundPersistedMessageKey);
+  const skillValue: SkillSelectorValue = useMemo(() => {
+    if (userSkillValue !== "auto") return userSkillValue;
+    if (agentSession.activeSkill) {
+      return agentSession.activeSkill.skillId as SkillSelectorValue;
+    }
+    return "auto";
+  }, [userSkillValue, agentSession.activeSkill]);
+  const activeSkillLabel = useMemo(() => {
+    const activeSkillId = agentSession.activeSkill?.skillId;
+    if (!activeSkillId) return null;
+    return (
+      BUILTIN_SKILL_OPTIONS.find((option) => option.value === activeSkillId)
+        ?.label ?? activeSkillId
+    );
+  }, [agentSession.activeSkill?.skillId]);
+
+  function withSkillSelection(input: SendMessageInput): SendMessageInput {
+    if (skillValue === "off") {
+      return { ...input, skillOff: true };
+    }
+    if (skillValue !== "auto") {
+      return { ...input, manualSkillId: skillValue };
+    }
+    return input;
+  }
 
   useEffect(() => {
     fetch("/api/files/cleanup-stale", { method: "POST" })
@@ -396,15 +430,23 @@ export default function ProjectDetailPage() {
 
   async function handleSend(content: string, attachments: FileAttachment[]) {
     setChatInputValue("");
-    await sendOrQueue({ content, attachments });
+    await sendOrQueue(withSkillSelection({ content, attachments }));
   }
 
   async function handleQuickTaskSend(input: QuickTaskSendInput) {
     setChatInputValue("");
-    await sendOrQueue({
-      content: input.label,
-      hiddenPrompt: input.prompt,
-    });
+    await sendOrQueue(
+      withSkillSelection({
+        content: input.label,
+        hiddenPrompt: input.prompt,
+      })
+    );
+  }
+
+  async function handleSuggestedPromptSend(content: string) {
+    await sendOrQueue(
+      withSkillSelection({ content, attachments: chatAttachments })
+    );
   }
 
   async function handleConversationSelect(nextConversationId: string) {
@@ -602,6 +644,17 @@ export default function ProjectDetailPage() {
                 <span className="rounded-xl bg-[var(--color-project-control)] px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)]">
                   {projectModeLabel}
                 </span>
+                {activeSkillLabel && (
+                  <span
+                    className={cn(
+                      "rounded-xl bg-[var(--color-accent)]/12 px-2 py-0.5 text-[11px] font-medium text-[var(--color-accent)]",
+                      agentSession.activeSkill?.status === "awaiting_context" &&
+                        "bg-[var(--color-warning-muted)] text-[var(--color-warning)]"
+                    )}
+                  >
+                    {activeSkillLabel}
+                  </span>
+                )}
               </div>
               <p className="hidden truncate text-[11px] text-[var(--color-text-tertiary)] md:block">
                 {contextHint}
@@ -657,7 +710,7 @@ export default function ProjectDetailPage() {
                     <button
                       key={prompt}
                       type="button"
-                      onClick={() => void sendMessage({ content: prompt, attachments: chatAttachments })}
+                      onClick={() => void handleSuggestedPromptSend(prompt)}
                       className={cn(
                         "rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
                         "bg-[var(--color-surface)] text-[var(--color-text-secondary)]",
@@ -725,6 +778,8 @@ export default function ProjectDetailPage() {
           onModelChange={setModel}
           reasoningEffort={reasoningEffort}
           onReasoningEffortChange={setReasoningEffort}
+          skillValue={skillValue}
+          onSkillChange={setUserSkillValue}
         />
       </div>
       {showArtifacts && (
