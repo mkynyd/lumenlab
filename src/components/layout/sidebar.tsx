@@ -57,7 +57,7 @@ import {
   Trash,
   Xmark,
 } from "iconoir-react";
-import { ChevronDown, LogOut, Settings } from "lucide-react";
+import { BarChart3, ChevronDown, LogOut, Settings } from "lucide-react";
 import {
   useConversations,
   useDeleteConversation,
@@ -88,7 +88,9 @@ export function Sidebar({
     ? "projects"
     : pathname.startsWith("/tools")
       ? "tools"
-      : "chat";
+      : pathname.startsWith("/usage")
+        ? "usage"
+        : "chat";
   const conversationsQuery = useConversations();
   const projectsQuery = useProjects();
   const conversionsQuery = useConversions();
@@ -274,6 +276,22 @@ export function Sidebar({
                   转换
                 </span>
               </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <Link href="/usage" onClick={onClose}>
+                <SidebarMenuButton
+                  type="button"
+                  isActive={activeSection === "usage"}
+                  className={cn("h-11 lg:h-10 w-full", collapsed && "lg:justify-center lg:px-0")}
+                  aria-current={activeSection === "usage" ? "page" : undefined}
+                  title={collapsed ? "用量统计" : undefined}
+                >
+                  <BarChart3 strokeWidth={1.8} size={20} />
+                  <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
+                    用量
+                  </span>
+                </SidebarMenuButton>
+              </Link>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>

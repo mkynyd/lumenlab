@@ -28,6 +28,11 @@ import { logger } from "@/lib/logger";
 import { _internalForTesting as agentLoopInternal } from "@/lib/agent/conversation-loop";
 import { routeSkill } from "@/lib/agent/skill-router";
 import {
+  checkContextBudget,
+  recordTokenUsage,
+} from "@/lib/tokens";
+import { compressHistory, buildCompressedMessages } from "@/lib/chat/compression";
+import {
   buildPlannedToolCalls,
   executePlannedToolCalls,
   type PlannedToolCall,
@@ -600,6 +605,75 @@ export async function POST(request: NextRequest) {
       )
     : legacyMessages;
 
+  // 上下文窗口预算检查与自动压缩
+  const budgetCheck = checkContextBudget(messages);
+  if (budgetCheck.status === "warn") {
+    emitAgentEvent({
+      type: "context_budget_warning",
+      tokens: budgetCheck.tokens,
+      budget: budgetCheck.budget,
+      ratio: budgetCheck.ratio,
+    });
+  }
+
+  if (budgetCheck.status === "compress" || budgetCheck.status === "overflow") {
+    try {
+      const compressionApiKey = await getProviderApiKey(userId, "deepseek");
+      const compressionResult = await compressHistory({
+        apiKey: compressionApiKey,
+        messages,
+      });
+      if (compressionResult) {
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            role: "system",
+            content: `【此前对话压缩上下文】\n${compressionResult.summary}\n\n请在后续回答中继承这些事实与约束。`,
+            subtype: "context-summary",
+            metadata: {
+              compressedCount: compressionResult.compressedCount,
+            } as Prisma.InputJsonValue,
+          },
+        });
+        messages = buildCompressedMessages(messages, compressionResult.summary);
+        const reCheck = checkContextBudget(messages);
+        emitAgentEvent({
+          type: "context_budget_compressed",
+          tokens: reCheck.tokens,
+          budget: reCheck.budget,
+          ratio: reCheck.ratio,
+          compressedCount: compressionResult.compressedCount,
+        });
+        if (reCheck.status === "overflow") {
+          emitAgentEvent({
+            type: "context_budget_overflow",
+            tokens: reCheck.tokens,
+            budget: reCheck.budget,
+            ratio: reCheck.ratio,
+          });
+          return NextResponse.json(
+            { error: "上下文过长，请新建对话或输入 /compact 压缩历史" },
+            { status: 400 }
+          );
+        }
+      }
+    } catch (err) {
+      logger.error("上下文压缩失败", { error: String(err) });
+      if (budgetCheck.status === "overflow") {
+        emitAgentEvent({
+          type: "context_budget_overflow",
+          tokens: budgetCheck.tokens,
+          budget: budgetCheck.budget,
+          ratio: budgetCheck.ratio,
+        });
+        return NextResponse.json(
+          { error: "上下文过长，请新建对话或输入 /compact 压缩历史" },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
   // Agent Orchestrator continuation loop: let the model request additional tools
   // after the deterministic prefetch. Currently DeepSeek only.
   if (
@@ -833,6 +907,8 @@ export async function POST(request: NextRequest) {
     serverStream,
     conversation.id,
     assistantMessage.id,
+    userId,
+    model,
     modelRoute.provider,
     streamResult.getUsage,
     messageSources
@@ -895,6 +971,8 @@ export async function accumulateAndSave(
   stream: ReadableStream<Uint8Array>,
   conversationId: string,
   messageId: string,
+  userId: string,
+  model: string,
   provider: "deepseek" | "minimax",
   getUsage: () => {
     prompt_tokens: number;
@@ -943,6 +1021,11 @@ export async function accumulateAndSave(
 
   if (fullContent) {
     const usage = getUsage();
+    const promptTokens = usage?.prompt_tokens ?? 0;
+    const completionTokens = usage?.completion_tokens ?? 0;
+    const hitTokens = usage?.prompt_cache_hit_tokens ?? 0;
+    const missTokens = usage?.prompt_cache_miss_tokens ?? (promptTokens - hitTokens);
+
     await prisma.message.update({
       where: { id: messageId },
       data: {
@@ -950,10 +1033,24 @@ export async function accumulateAndSave(
         reasoningContent: fullReasoning || null,
         tokenCount: usage?.total_tokens ?? null,
         provider,
-        cacheHitTokens: usage?.prompt_cache_hit_tokens ?? null,
-        cacheMissTokens: usage?.prompt_cache_miss_tokens ?? null,
+        cacheHitTokens: hitTokens || null,
+        cacheMissTokens: missTokens || null,
         sources: sources as unknown as Prisma.InputJsonValue,
       },
+    });
+
+    await recordTokenUsage({
+      userId,
+      conversationId,
+      messageId,
+      model,
+      provider,
+      inputCacheHitTokens: hitTokens,
+      inputCacheMissTokens: missTokens,
+      outputTokens: completionTokens,
+      totalTokens: usage?.total_tokens ?? promptTokens + completionTokens,
+    }).catch((err) => {
+      logger.error("Token 用量记录失败", { error: String(err) });
     });
   } else {
     await prisma.message.delete({ where: { id: messageId } }).catch(() => {});

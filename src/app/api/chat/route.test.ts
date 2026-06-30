@@ -45,6 +45,9 @@ vi.mock("@/lib/db", () => ({
       update: mocks.messageUpdate,
       delete: mocks.messageDelete,
     },
+    user: { findUnique: vi.fn(), update: vi.fn() },
+    tokenUsage: { create: vi.fn() },
+    $transaction: vi.fn((ops: Array<Promise<unknown>>) => Promise.all(ops)),
   },
 }));
 
@@ -266,6 +269,8 @@ describe("accumulateAndSave", () => {
       stream,
       "conversation-1",
       "message-1",
+      "user-1",
+      "minimax-m3",
       "minimax",
       () => ({
         prompt_tokens: 10,

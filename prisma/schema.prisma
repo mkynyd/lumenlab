@@ -21,6 +21,10 @@ model User {
   name                String?
   accessStatus        String   @default("active")
   credentialProfileId String?
+  planTier            String   @default("premium") // free | pro | premium
+  planCredits         Int      @default(0)         // 当前周期总信用点额度；0 表示 A 测期间不限制
+  creditsUsed         Int      @default(0)         // 当前周期已用信用点
+  cycleStartedAt      DateTime @default(now())     // 当前 30 天周期开始时间
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -31,6 +35,7 @@ model User {
   chunks              DocumentChunk[]
   artifacts           Artifact[]
   documentConversions DocumentConversion[]
+  tokenUsages         TokenUsage[]
   credentialProfile   CredentialProfile?      @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption          RegistrationRedemption?
   profilePrompt       String?
@@ -168,6 +173,7 @@ model Conversation {
   messages           Message[]
   artifacts          Artifact[]
   conversationSkills ConversationSkill[]
+  tokenUsages        TokenUsage[]
 
   @@index([userId])
   @@index([projectId])
@@ -185,11 +191,37 @@ model Message {
   cacheHitTokens   Int?
   cacheMissTokens  Int?
   sources          Json?
+  subtype          String? // e.g. "context-summary"
+  metadata         Json?  // 压缩摘要的额外信息
   createdAt        DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   artifacts    Artifact[]
+  tokenUsage   TokenUsage?
 
+  @@index([conversationId])
+}
+
+model TokenUsage {
+  id                    String   @id @default(cuid())
+  userId                String
+  conversationId        String?
+  messageId             String?  @unique
+  model                 String
+  provider              String
+  inputCacheHitTokens   Int      @default(0)
+  inputCacheMissTokens  Int      @default(0)
+  outputTokens          Int      @default(0)
+  totalTokens           Int      @default(0)
+  creditsConsumed       Int      @default(0)
+  createdAt             DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([userId, createdAt])
   @@index([conversationId])
 }
 

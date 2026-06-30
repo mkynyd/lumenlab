@@ -239,4 +239,23 @@ export type AgentEvent =
       executionId: string;
       errorCode: string;
       error: string;
+    }
+  | {
+      type: "context_budget_warning";
+      tokens: number;
+      budget: number;
+      ratio: number;
+    }
+  | {
+      type: "context_budget_compressed";
+      tokens: number;
+      budget: number;
+      ratio: number;
+      compressedCount: number;
+    }
+  | {
+      type: "context_budget_overflow";
+      tokens: number;
+      budget: number;
+      ratio: number;
     };

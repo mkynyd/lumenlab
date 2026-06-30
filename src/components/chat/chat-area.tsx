@@ -11,6 +11,7 @@ import { ContextRing } from "@/components/chat/context-ring";
 import { CostDisplay } from "@/components/chat/cost-display";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
 import { SkillBadge } from "@/components/chat/skill-badge";
+import { ContextBudgetWarning } from "@/components/chat/context-budget-warning";
 import { AmbientField } from "@/components/workbench/ambient-field";
 import { AlertCircle, Cpu, Globe2, Hash } from "lucide-react";
 import type { AgentEvent } from "@/lib/agent/types";
@@ -64,6 +65,7 @@ export function ChatArea({
     agentSession,
     approveExecution,
     rejectExecution,
+    contextBudget,
   } = useChat({
     initialConversationId,
     initialMessages: initialMessages?.map((m) => ({
@@ -215,6 +217,9 @@ export function ChatArea({
           </button>
         </div>
       )}
+
+      {/* 上下文预算警告 */}
+      <ContextBudgetWarning contextBudget={contextBudget} />
 
       {/* 消息列表 */}
       {messages.length === 0 ? (

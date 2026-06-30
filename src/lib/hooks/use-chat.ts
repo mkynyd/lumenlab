@@ -93,6 +93,11 @@ export function useChat(options: UseChatOptions = {}) {
     options.initialConversationId
   );
   const [usage, setUsage] = useState<UsageInfo | null>(null);
+  const [contextBudget, setContextBudget] = useState<{
+    status: "warn" | "compress" | "overflow";
+    tokens: number;
+    ratio: number;
+  } | null>(null);
   const [model, setModel] = useState(options.model || "deepseek-v4-pro");
   const [thinkingEnabled, setThinkingEnabledState] = useState(true);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
@@ -167,6 +172,7 @@ export function useChat(options: UseChatOptions = {}) {
           streamingStartedAt,
         },
       ]);
+      setContextBudget(null);
 
       let controller: AbortController | null = null;
       try {
@@ -317,6 +323,23 @@ export function useChat(options: UseChatOptions = {}) {
                 );
                 return;
               }
+              if (
+                event.type === "context_budget_warning" ||
+                event.type === "context_budget_compressed" ||
+                event.type === "context_budget_overflow"
+              ) {
+                setContextBudget({
+                  status:
+                    event.type === "context_budget_warning"
+                      ? "warn"
+                      : event.type === "context_budget_compressed"
+                        ? "compress"
+                        : "overflow",
+                  tokens: event.tokens,
+                  ratio: event.ratio,
+                });
+                return;
+              }
               if (!("executionId" in event)) {
                 // Skill/web/model lifecycle is informational; timeline only tracks executions.
                 return;
@@ -452,6 +475,7 @@ export function useChat(options: UseChatOptions = {}) {
     setMessages([]);
     setConversationId(undefined);
     setUsage(null);
+    setContextBudget(null);
     setError(null);
     setIsStreaming(false);
     setAgentTimeline({});
@@ -472,6 +496,7 @@ export function useChat(options: UseChatOptions = {}) {
       if (settings?.model) setModel(settings.model);
       setThinkingEnabledState(true);
       setUsage(null);
+      setContextBudget(null);
       setError(null);
       setIsStreaming(hasStreamingMessage(nextMessages));
       setAgentTimeline({});
@@ -571,5 +596,6 @@ export function useChat(options: UseChatOptions = {}) {
     agentSession,
     approveExecution,
     rejectExecution,
+    contextBudget,
   };
 }
