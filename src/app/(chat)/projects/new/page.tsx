@@ -40,6 +40,7 @@ export default function NewProjectPage() {
   const [selectedActions, setSelectedActions] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [newProjectId, setNewProjectId] = useState<string | null>(null);
+  const [isSavingActions, setIsSavingActions] = useState(false);
 
   // Create project first, then trigger prompt generation
   const handleCreateAndGenerate = useCallback(async () => {
@@ -75,8 +76,10 @@ export default function NewProjectPage() {
       }
 
       const result = await res.json();
+      const actions: QuickActionItem[] = result.quickActions || [];
       setGeneratedPrompt(result.systemPrompt || "");
-      setQuickActions(result.quickActions || []);
+      setQuickActions(actions);
+      setSelectedActions(new Set(actions.map((_, index) => index)));
       setStep(3);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -90,10 +93,38 @@ export default function NewProjectPage() {
     }
   }, [projectName, projectType, userInput, createProject]);
 
-  function goToProject() {
-    if (newProjectId) router.push(`/projects/${newProjectId}`);
-    else router.push("/chat");
-  }
+  const handleComplete = useCallback(async () => {
+    if (!newProjectId) {
+      router.push("/chat");
+      return;
+    }
+
+    const selected = quickActions.filter((_, index) => selectedActions.has(index));
+    if (selected.length === 0) {
+      router.push(`/projects/${newProjectId}`);
+      return;
+    }
+
+    setIsSavingActions(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${newProjectId}/quick-actions/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actions: selected }),
+      });
+      if (!res.ok) {
+        let msg = "保存快捷任务失败";
+        try { const err = await res.json(); msg = err.error || msg; } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      router.push(`/projects/${newProjectId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存快捷任务失败");
+    } finally {
+      setIsSavingActions(false);
+    }
+  }, [newProjectId, quickActions, selectedActions, router]);
 
   // Skip personalization: create project without AI generation and go straight to it
   const handleSkip = useCallback(async () => {
@@ -292,6 +323,10 @@ export default function NewProjectPage() {
             </div>
           )}
 
+          {error && step === 3 && (
+            <p className="text-sm text-[var(--color-error)] text-center">{error}</p>
+          )}
+
           {!generatedPrompt && !error && (
             <p className="text-sm text-[var(--color-text-secondary)] text-center py-6">AI 未返回内容，你可以跳过此步骤</p>
           )}
@@ -326,9 +361,9 @@ export default function NewProjectPage() {
             }
             setStep(next);
           }}
-          onComplete={goToProject}
+          onComplete={handleComplete}
           onSkip={step === 1 ? handleSkip : undefined}
-          isCompleting={isGenerating}
+          isCompleting={isGenerating || isSavingActions}
           skipLabel="跳过"
           nextLabel={step === 1 ? "生成配置" : "下一步"}
           completeLabel="进入项目"
