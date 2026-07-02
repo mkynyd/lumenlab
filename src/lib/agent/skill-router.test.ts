@@ -119,6 +119,19 @@ describe("routeSkill quick task", () => {
     expect(result.profile).toBe("rag");
   });
 
+  it("项目快捷任务可以使用全项目资料，不要求先选择单个文件", () => {
+    const result = routeSkill({
+      message: "快捷任务：生成速记卡",
+      hiddenPrompt: "请基于项目资料生成速记卡和自测题",
+      projectId: "proj-123",
+      isQuickTask: true,
+    });
+
+    expect(result.activeSkillId).toBe("exam-coach");
+    expect(result.status).toBe("active");
+    expect(result.missingInfo).toEqual([]);
+  });
+
   it("非快捷任务且不含资料关键词时保持 simple", () => {
     const result = routeSkill({
       message: "你好",

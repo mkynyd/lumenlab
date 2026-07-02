@@ -39,6 +39,15 @@ export interface TokenUsageSummary {
   estimatedCostCny: number;
   inputTokens: number;
   outputTokens: number;
+  inputCacheHitTokens: number;
+  inputCacheMissTokens: number;
+  daily: Array<{
+    date: string;
+    totalTokens: number;
+    inputCacheHitTokens: number;
+    inputCacheMissTokens: number;
+    outputTokens: number;
+  }>;
   providers: Record<
     "deepseek" | "minimax",
     { totalTokens: number; requestCount: number; estimatedCostCny: number }
@@ -118,21 +127,35 @@ export function aggregateTokenUsageRows(
     estimatedCostCny: 0,
     inputTokens: 0,
     outputTokens: 0,
+    inputCacheHitTokens: 0,
+    inputCacheMissTokens: 0,
+    daily: [],
     providers: {
       deepseek: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
       minimax: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
     },
   };
 
+  const dailyMap = new Map<
+    string,
+    {
+      totalTokens: number;
+      inputCacheHitTokens: number;
+      inputCacheMissTokens: number;
+      outputTokens: number;
+    }
+  >();
+
   for (const row of rows) {
     if (row.tokenCount === null) continue;
-    const inputTokens =
-      (row.inputCacheHitTokens || 0) + (row.inputCacheMissTokens || 0);
+    const inputCacheHitTokens = row.inputCacheHitTokens || 0;
+    const inputCacheMissTokens = row.inputCacheMissTokens || 0;
+    const inputTokens = inputCacheHitTokens + inputCacheMissTokens;
     const outputTokens = row.outputTokens || 0;
     const weights = row.model ? getCreditWeights(row.model) : undefined;
     const estimatedCostCny = weights
-      ? ((row.inputCacheHitTokens || 0) * weights.hit +
-          (row.inputCacheMissTokens || 0) * weights.miss +
+      ? (inputCacheHitTokens * weights.hit +
+          inputCacheMissTokens * weights.miss +
           outputTokens * weights.out) /
         1_000_000
       : 0;
@@ -140,11 +163,28 @@ export function aggregateTokenUsageRows(
     summary.totalTokens += row.tokenCount;
     summary.inputTokens += inputTokens;
     summary.outputTokens += outputTokens;
+    summary.inputCacheHitTokens += inputCacheHitTokens;
+    summary.inputCacheMissTokens += inputCacheMissTokens;
     summary.estimatedCostCny += estimatedCostCny;
     summary.requestCount += 1;
-    if (row.createdAt.toISOString().slice(0, 10) === todayDate) {
+
+    const date = row.createdAt.toISOString().slice(0, 10);
+    if (date === todayDate) {
       summary.todayTokens += row.tokenCount;
     }
+
+    const daily = dailyMap.get(date) || {
+      totalTokens: 0,
+      inputCacheHitTokens: 0,
+      inputCacheMissTokens: 0,
+      outputTokens: 0,
+    };
+    daily.totalTokens += row.tokenCount;
+    daily.inputCacheHitTokens += inputCacheHitTokens;
+    daily.inputCacheMissTokens += inputCacheMissTokens;
+    daily.outputTokens += outputTokens;
+    dailyMap.set(date, daily);
+
     if (row.provider === "deepseek" || row.provider === "minimax") {
       summary.providers[row.provider].totalTokens += row.tokenCount;
       summary.providers[row.provider].requestCount += 1;
@@ -154,13 +194,29 @@ export function aggregateTokenUsageRows(
     }
   }
 
+  summary.daily = [...dailyMap.entries()]
+    .map(([date, values]) => ({ date, ...values }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+
   return summary;
 }
 
-async function getRows(userId: string, days?: number) {
-  const createdAt = days
-    ? { gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) }
-    : undefined;
+function endOfDay(date: Date) {
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+async function getRows(
+  userId: string,
+  daysOrRange?: number | { start: Date; end: Date }
+) {
+  const createdAt =
+    typeof daysOrRange === "number"
+      ? { gte: new Date(Date.now() - daysOrRange * 24 * 60 * 60 * 1000) }
+      : daysOrRange
+        ? { gte: daysOrRange.start, lte: endOfDay(daysOrRange.end) }
+        : undefined;
   const messages = await prisma.message.findMany({
     where: {
       conversation: { userId },
@@ -188,14 +244,21 @@ async function getRows(userId: string, days?: number) {
   }));
 }
 
-export async function getCacheMetrics(userId: string, days = 7) {
-  return aggregateCacheRows(await getRows(userId, days));
+export async function getCacheMetrics(
+  userId: string,
+  daysOrRange: number | { start: Date; end: Date } = 7
+) {
+  return aggregateCacheRows(await getRows(userId, daysOrRange));
 }
 
-export async function getTokenUsageMetrics(userId: string, days = 7) {
-  const createdAt = {
-    gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000),
-  };
+export async function getTokenUsageMetrics(
+  userId: string,
+  daysOrRange: number | { start: Date; end: Date } = 7
+) {
+  const createdAt =
+    typeof daysOrRange === "number"
+      ? { gte: new Date(Date.now() - daysOrRange * 24 * 60 * 60 * 1000) }
+      : { gte: daysOrRange.start, lte: endOfDay(daysOrRange.end) };
   const rows = await prisma.tokenUsage.findMany({
     where: {
       userId,
@@ -225,7 +288,9 @@ export async function getTokenUsageMetrics(userId: string, days = 7) {
 }
 
 export async function getCacheMetricsByProvider(userId: string) {
-  return (await getCacheMetrics(userId, 30)).providers;
+  const end = new Date();
+  const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  return (await getCacheMetrics(userId, { start, end })).providers;
 }
 
 export async function getCacheMetricsByProject(

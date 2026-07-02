@@ -50,6 +50,10 @@ function isAgentOrchestratorEnabled() {
   return process.env.NODE_ENV !== "production";
 }
 
+function isAgentContinuationEnabled() {
+  return process.env.AGENT_CONTINUATION_ENABLED === "1";
+}
+
 async function parseRequest(request: NextRequest): Promise<{
   body: SendMessageInput;
   attachments: ServerFileAttachment[];
@@ -122,6 +126,21 @@ function summarizeHistoryForMiniMax(
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    return await handlePost(request);
+  } catch (err) {
+    logger.error("chat route failed", {
+      error: String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "聊天请求失败" },
+      { status: 500 }
+    );
+  }
+}
+
+async function handlePost(request: NextRequest) {
   // 1. 身份验证
   const session = await auth();
   if (!session?.user?.id) {
@@ -681,60 +700,76 @@ export async function POST(request: NextRequest) {
   // after the deterministic prefetch. Currently DeepSeek only.
   if (
     agentOrchestratorEnabled &&
+    isAgentContinuationEnabled() &&
     modelRoute.provider === "deepseek"
   ) {
-    const agentTap = new agentLoopInternal.EventTap((chunk) => {
-      agentEvents.push(agentDecoder.decode(chunk, { stream: false }));
-    });
-    const continuation = await runContinuationLoop({
-      apiKey,
-      model,
-      systemPrompt,
-      messages,
-      profile: skillRoute.profile,
-      thinkingEnabled,
-      reasoningEffort,
-      runTool: async (call: PlannedToolCall) => {
-        const result = await agentLoopInternal.runAutoTool(
-          {
-            userId,
-            conversationId: conversation.id,
-            projectId: project?.id,
-            skillId: skillRoute.activeSkillId ?? undefined,
-            apiKey,
-            model,
-            thinkingEnabled,
-            reasoningEffort,
-            activeTools: [],
-            initialMessages: [],
-            signal: new AbortController().signal,
-          },
-          { id: call.id, name: call.name, input: call.input },
-          agentTap
+    try {
+      const agentTap = new agentLoopInternal.EventTap((chunk) => {
+        agentEvents.push(agentDecoder.decode(chunk, { stream: false }));
+      });
+      const continuation = await runContinuationLoop({
+        apiKey,
+        model,
+        systemPrompt,
+        messages,
+        profile: skillRoute.profile,
+        thinkingEnabled,
+        reasoningEffort,
+        runTool: async (call: PlannedToolCall) => {
+          const result = await agentLoopInternal.runAutoTool(
+            {
+              userId,
+              conversationId: conversation.id,
+              projectId: project?.id,
+              skillId: skillRoute.activeSkillId ?? undefined,
+              apiKey,
+              model,
+              thinkingEnabled,
+              reasoningEffort,
+              activeTools: [],
+              initialMessages: [],
+              signal: new AbortController().signal,
+            },
+            { id: call.id, name: call.name, input: call.input },
+            agentTap
+          );
+          if (result.status === "succeeded" && result.summary) {
+            return { status: "succeeded", summary: result.summary };
+          }
+          return {
+            status: "failed",
+            error: result.error ?? "工具执行失败",
+          };
+        },
+        emit: emitAgentEvent,
+      });
+      messages = continuation.finalMessages;
+      orchestratorSources = [...orchestratorSources, ...continuation.sources];
+      if (orchestratorSources.length > 0) {
+        emitAgentEvent({
+          type: "sources_updated",
+          sources: orchestratorSources,
+        });
+      }
+      if (continuation.stopReason && process.env.AGENT_DEBUG_EVENTS === "1") {
+        emitAgentEvent({
+          type: "tool_loop_stop_reason",
+          reason: continuation.stopReason,
+        });
+      }
+    } catch (err) {
+      logger.error("Agent continuation failed", { error: String(err) });
+      if (err instanceof DeepSeekError) {
+        const status = err.status >= 400 && err.status < 500 ? err.status : 502;
+        return NextResponse.json(
+          { error: err.message, deepseekStatus: err.status },
+          { status }
         );
-        if (result.status === "succeeded" && result.summary) {
-          return { status: "succeeded", summary: result.summary };
-        }
-        return {
-          status: "failed",
-          error: result.error ?? "工具执行失败",
-        };
-      },
-      emit: emitAgentEvent,
-    });
-    messages = continuation.finalMessages;
-    orchestratorSources = [...orchestratorSources, ...continuation.sources];
-    if (orchestratorSources.length > 0) {
-      emitAgentEvent({
-        type: "sources_updated",
-        sources: orchestratorSources,
-      });
-    }
-    if (continuation.stopReason && process.env.AGENT_DEBUG_EVENTS === "1") {
-      emitAgentEvent({
-        type: "tool_loop_stop_reason",
-        reason: continuation.stopReason,
-      });
+      }
+      return NextResponse.json(
+        { error: "Agent 工具续写失败，请稍后重试" },
+        { status: 502 }
+      );
     }
   }
 

@@ -18,7 +18,7 @@ describe("splitStreamingMessage", () => {
     });
   });
 
-  it("virtualizes all messages when the last message is complete", () => {
+  it("keeps all messages in the completed list when the last message is complete", () => {
     const messages = [
       { id: "1", role: "assistant" as const, content: "done" },
     ];

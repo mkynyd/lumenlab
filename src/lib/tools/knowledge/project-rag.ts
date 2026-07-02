@@ -6,17 +6,30 @@
 
 import { prisma } from "@/lib/db";
 
+export function extractSearchKeywords(query: string) {
+  const lower = query.toLowerCase();
+  const keywords = lower
+    .split(/[^\p{L}\p{N}_+-]+/u)
+    .map((k) => k.trim())
+    .filter((k) => k.length >= 2);
+
+  for (const match of lower.matchAll(/\p{Script=Han}{2,}/gu)) {
+    const text = match[0];
+    for (let i = 0; i < text.length - 1; i += 1) {
+      keywords.push(text.slice(i, i + 2));
+    }
+  }
+
+  return [...new Set(keywords)].slice(0, 80);
+}
+
 export async function ragSearch(
   userId: string,
   projectId: string,
   query: string,
   maxResults = 5
 ): Promise<Record<string, unknown>> {
-  const keywords = query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((k) => k.trim())
-    .filter(Boolean);
+  const keywords = extractSearchKeywords(query);
   if (keywords.length === 0) {
     return { hits: [], query };
   }

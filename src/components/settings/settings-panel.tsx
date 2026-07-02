@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { AvatarMark } from "@/components/user/avatar-mark";
 import { useCacheMetrics } from "@/lib/hooks/use-cache-metrics";
 import {
@@ -32,7 +31,7 @@ import {
 } from "@/lib/user-profile";
 import { cn } from "@/lib/utils";
 
-type TabId = "alpha" | "tokens" | "profile" | "appearance" | "account";
+type TabId = "alpha" | "tokens" | "user" | "appearance";
 
 function formatTokenCount(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -46,26 +45,30 @@ function formatCurrency(value: number) {
   return `¥${value.toFixed(6)}`;
 }
 
+function formatDay(date: string) {
+  const [, month, day] = date.split("-").map(Number);
+  return `${month}-${day}`;
+}
+
 export function SettingsPanel() {
   const [tab, setTab] = useState<TabId>("alpha");
 
   const tabs: Array<{ id: TabId; label: string; icon: typeof KeyRound }> = [
     { id: "alpha", label: "服务访问", icon: KeyRound },
     { id: "tokens", label: "用量统计", icon: Database },
-    { id: "profile", label: "关于你", icon: UserRound },
+    { id: "user", label: "用户", icon: UserRound },
     { id: "appearance", label: "外观", icon: Palette },
-    { id: "account", label: "账户", icon: LogOut },
   ];
 
   return (
-    <div className="flex h-[560px]">
+    <div className="flex h-[min(560px,calc(100vh-4rem))] min-w-0 max-w-full flex-col overflow-hidden sm:flex-row">
       {/* Left sidebar — neutral surface, no border, breathing room */}
       <nav
-        className="w-52 shrink-0 bg-[var(--color-panel)] py-5 px-3 flex flex-col gap-0.5"
+        className="flex w-full shrink-0 flex-row gap-0.5 overflow-x-auto bg-[var(--color-panel)] px-3 py-3 sm:w-52 sm:flex-col sm:overflow-visible sm:py-5"
         role="tablist"
         aria-label="设置标签页"
       >
-        <div className="flex flex-col gap-0.5">
+        <div className="flex shrink-0 flex-row gap-0.5 sm:flex-col">
           {tabs.map((item) => (
             <button
               key={item.id}
@@ -74,7 +77,7 @@ export function SettingsPanel() {
               aria-controls={`settings-panel-${item.id}`}
               onClick={() => setTab(item.id)}
               className={cn(
-                "flex items-center gap-2.5 px-3 py-2 text-sm rounded-xl text-left w-full",
+                "flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm sm:w-full",
                 "transition-colors duration-150",
                 tab === item.id
                   ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)] font-medium"
@@ -90,8 +93,8 @@ export function SettingsPanel() {
         <Link
           href="/home"
           className={cn(
-            "mt-auto flex items-center gap-2.5 px-3 py-2 text-sm rounded-xl text-left w-full",
-            "mt-3",
+            "flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm sm:mt-auto sm:w-full",
+            "sm:mt-3",
             "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]",
             "transition-colors duration-150"
           )}
@@ -103,15 +106,14 @@ export function SettingsPanel() {
       </nav>
 
       {/* Right content — soft surface, generous spacing */}
-      <ScrollArea className="flex-1 min-w-0 bg-[var(--color-bg)]">
-        <div className="px-8 py-6">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-bg)]">
+        <div className="min-w-0 px-4 py-5 sm:px-8 sm:py-6">
           {tab === "alpha" && <AlphaSection />}
           {tab === "tokens" && <TokensSection />}
-          {tab === "profile" && <ProfileSection />}
+          {tab === "user" && <UserSection />}
           {tab === "appearance" && <AppearanceSection />}
-          {tab === "account" && <AccountSection />}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
@@ -231,65 +233,228 @@ function AlphaSection() {
 }
 
 function TokensSection() {
-  const cacheMetrics = useCacheMetrics(7);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const monthStart = new Date(Date.UTC(year, month, 1));
+  const monthEnd = new Date(Date.UTC(year, month + 1, 0));
+  const cacheMetrics = useCacheMetrics({ start: monthStart, end: monthEnd });
+
+  const monthLabel = `${month + 1} 月`;
+  const daysInMonth = monthEnd.getUTCDate();
+
+  const monthDays = cacheMetrics.data
+    ? (() => {
+        const byDate = new Map(
+          cacheMetrics.data.tokenUsage.daily.map((d) => [d.date, d])
+        );
+        return Array.from({ length: daysInMonth }, (_, i) => {
+          const date = new Date(Date.UTC(year, month, i + 1))
+            .toISOString()
+            .slice(0, 10);
+          return (
+            byDate.get(date) || {
+              date,
+              totalTokens: 0,
+              inputCacheHitTokens: 0,
+              inputCacheMissTokens: 0,
+              outputTokens: 0,
+            }
+          );
+        });
+      })()
+    : [];
+
+  const maxTokens = Math.max(...monthDays.map((d) => d.totalTokens), 1);
+  const maxBarHeight = 160;
 
   return (
     <SectionShell id="settings-panel-tokens" title="用量统计">
       <p className="text-xs text-[var(--color-text-tertiary)] -mt-2">
-        近 7 天 Token 使用情况
+        {monthLabel} Token 使用情况
       </p>
 
       {cacheMetrics.isPending ? (
         <Skeleton className="h-24 rounded-2xl" />
       ) : cacheMetrics.data ? (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-[var(--color-project-control)] p-4">
-              <p className="text-xs text-[var(--color-text-tertiary)]">近 7 天总量</p>
-              <p className="mt-1 text-2xl font-semibold text-[var(--color-text-primary)] tracking-tight">
+          <div
+            className="grid min-w-0 gap-3"
+            style={{
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(min(14rem, 100%), 1fr))",
+            }}
+          >
+            <div className="min-w-0 rounded-2xl bg-[var(--color-project-control)] p-4">
+              <p className="text-xs text-[var(--color-text-tertiary)]">
+                {monthLabel}总量
+              </p>
+              <p className="mt-1 break-words text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
                 {formatTokenCount(cacheMetrics.data.tokenUsage.totalTokens)}
               </p>
               <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
                 今日 {formatTokenCount(cacheMetrics.data.tokenUsage.todayTokens)}
               </p>
             </div>
-            <div className="rounded-2xl bg-[var(--color-project-control)] p-4">
+            <div className="min-w-0 rounded-2xl bg-[var(--color-project-control)] p-4">
               <p className="text-xs text-[var(--color-text-tertiary)]">预估费用</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+              <p className="mt-1 break-words text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
                 {formatCurrency(cacheMetrics.data.tokenUsage.estimatedCostCny)}
               </p>
-              <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+              <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
                 输入 {formatTokenCount(cacheMetrics.data.tokenUsage.inputTokens)} / 输出{" "}
                 {formatTokenCount(cacheMetrics.data.tokenUsage.outputTokens)}
               </p>
             </div>
           </div>
 
-          <div className="rounded-2xl bg-[var(--color-project-control)] p-4 space-y-1">
+          <div className="min-w-0 space-y-1 rounded-2xl bg-[var(--color-project-control)] p-4">
             <p className="mb-2 text-xs text-[var(--color-text-tertiary)]">
               服务拆分
             </p>
             {(["deepseek", "minimax"] as const).map((provider) => (
-              <div key={provider} className="flex justify-between py-0.5 text-sm">
-                <span className="text-[var(--color-text-secondary)]">
+              <div
+                key={provider}
+                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-0.5 text-sm"
+              >
+                <span className="min-w-0 text-[var(--color-text-secondary)]">
                   {provider === "deepseek" ? "DeepSeek" : "MiniMax"}
                 </span>
-                <span className="text-right font-mono text-[var(--color-text-primary)]">
+                <span className="min-w-0 text-right font-mono text-[var(--color-text-primary)]">
                   {cacheMetrics.data.tokenUsage.providers[provider].requestCount > 0 ? (
-                    <>
+                    <span className="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5">
                       {formatTokenCount(cacheMetrics.data.tokenUsage.providers[provider].totalTokens)}
-                      <span className="ml-2 text-[var(--color-text-tertiary)]">
+                      <span className="text-[var(--color-text-tertiary)]">
                         {formatCurrency(
                           cacheMetrics.data.tokenUsage.providers[provider].estimatedCostCny
                         )}
                       </span>
-                    </>
+                    </span>
                   ) : (
                     "--"
                   )}
                 </span>
               </div>
             ))}
+          </div>
+
+          <div>
+            <p className="text-xs text-[var(--color-text-tertiary)] mb-2">
+              每日 Token 构成
+            </p>
+            <div className="min-w-0 space-y-4 overflow-hidden rounded-2xl bg-[var(--color-project-control)] p-4">
+              {monthDays.length > 0 ? (
+                <>
+                  <div className="h-40 overflow-x-auto overscroll-x-contain border-b border-[var(--color-border-light)]">
+                    <div className="flex h-full min-w-full w-max items-end gap-1 px-1">
+                      {monthDays.map((day, index) => {
+                        const barHeight =
+                          day.totalTokens > 0
+                            ? Math.max(
+                                2,
+                                (day.totalTokens / maxTokens) * maxBarHeight
+                              )
+                            : 0;
+                        const hitHeight =
+                          day.totalTokens > 0
+                            ? (day.inputCacheHitTokens / day.totalTokens) * 100
+                            : 0;
+                        const missHeight =
+                          day.totalTokens > 0
+                            ? (day.inputCacheMissTokens / day.totalTokens) * 100
+                            : 0;
+                        const outputHeight =
+                          day.totalTokens > 0
+                            ? (day.outputTokens / day.totalTokens) * 100
+                            : 0;
+                        const showLabel =
+                          index === 0 ||
+                          index === daysInMonth - 1 ||
+                          (index + 1) % 5 === 0;
+                        return (
+                          <div
+                            key={day.date}
+                            className="flex flex-col items-center gap-1 w-5 shrink-0"
+                            title={`${formatDay(day.date)} 共 ${formatTokenCount(
+                              day.totalTokens
+                            )} tokens`}
+                          >
+                            {barHeight > 0 ? (
+                              <div
+                                className="w-full flex flex-col-reverse rounded-t-sm overflow-hidden bg-[var(--color-surface)]"
+                                style={{ height: `${barHeight}px` }}
+                              >
+                                {day.outputTokens > 0 && (
+                                  <div
+                                    style={{ height: `${outputHeight}%` }}
+                                    className="bg-[var(--color-accent)]"
+                                    title={`输出 ${formatTokenCount(
+                                      day.outputTokens
+                                    )}`}
+                                  />
+                                )}
+                                {day.inputCacheMissTokens > 0 && (
+                                  <div
+                                    style={{ height: `${missHeight}%` }}
+                                    className="bg-[var(--color-accent-muted)]"
+                                    title={`输入（未命中缓存） ${formatTokenCount(
+                                      day.inputCacheMissTokens
+                                    )}`}
+                                  />
+                                )}
+                                {day.inputCacheHitTokens > 0 && (
+                                  <div
+                                    style={{ height: `${hitHeight}%` }}
+                                    className="bg-[var(--color-accent-soft)]"
+                                    title={`输入（命中缓存） ${formatTokenCount(
+                                      day.inputCacheHitTokens
+                                    )}`}
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <div className="w-full h-px bg-[var(--color-border-light)]" />
+                            )}
+                            {showLabel && (
+                              <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                                {formatDay(day.date)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-xs text-[var(--color-text-secondary)]">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-sm bg-[var(--color-accent-soft)]" />
+                      输入（命中缓存）{" "}
+                      {formatTokenCount(
+                        cacheMetrics.data.tokenUsage.inputCacheHitTokens
+                      )}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-sm bg-[var(--color-accent-muted)]" />
+                      输入（未命中缓存）{" "}
+                      {formatTokenCount(
+                        cacheMetrics.data.tokenUsage.inputCacheMissTokens
+                      )}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-sm bg-[var(--color-accent)]" />
+                      输出{" "}
+                      {formatTokenCount(
+                        cacheMetrics.data.tokenUsage.outputTokens
+                      )}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  暂无每日数据
+                </p>
+              )}
+            </div>
           </div>
 
           <div>
@@ -330,98 +495,6 @@ function TokensSection() {
   );
 }
 
-function ProfileSection() {
-  const [nickname, setNickname] = useState("");
-  const [profession, setProfession] = useState("");
-  const [details, setDetails] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleGenerate() {
-    if (!nickname.trim() && !profession.trim() && !details.trim()) return;
-    setGenerating(true);
-    setError(null);
-    setSaved(false);
-    try {
-      const res = await fetch("/api/user/generate-profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname, profession, details }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "生成失败");
-      setSaved(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败");
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  return (
-    <SectionShell id="settings-panel-profile" title="关于你">
-      <p className="text-xs text-[var(--color-text-tertiary)] -mt-2">
-        AI 会根据这些信息更好地理解你的使用场景
-      </p>
-
-      <div className="space-y-4">
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text-primary)]">
-            昵称
-          </label>
-          <Input
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            placeholder="你的称呼"
-            maxLength={60}
-            className="mt-2 h-9 rounded-xl bg-[var(--color-project-control)]"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text-primary)]">
-            职业
-          </label>
-          <Input
-            value={profession}
-            onChange={(e) => setProfession(e.target.value)}
-            placeholder="例如: 计算机学院本科生"
-            maxLength={100}
-            className="mt-2 h-9 rounded-xl bg-[var(--color-project-control)]"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text-primary)]">
-            你的详情
-          </label>
-          <Textarea
-            value={details}
-            onChange={(e) => setDetails(e.target.value)}
-            placeholder="描述你的学习目标、使用习惯等"
-            maxLength={500}
-            className="mt-2 h-24 rounded-xl bg-[var(--color-project-control)] resize-none"
-          />
-        </div>
-        <Button
-          variant="primary"
-          size="md"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="rounded-xl px-4"
-        >
-          {generating ? "生成中..." : saved ? "已保存，点击重新生成" : "生成个人描述"}
-        </Button>
-        {saved && (
-          <p className="text-xs text-[var(--color-success)]">已保存</p>
-        )}
-        {error && (
-          <p className="text-xs text-[var(--color-error)]">{error}</p>
-        )}
-      </div>
-    </SectionShell>
-  );
-}
-
 function AppearanceSection() {
   return (
     <SectionShell id="settings-panel-appearance" title="外观">
@@ -433,9 +506,10 @@ function AppearanceSection() {
   );
 }
 
-function AccountSection() {
+function UserSection() {
   const { data: session, update: updateSession } = useSession();
   const profileQuery = useUserProfile();
+  const updateProfile = useUpdateUserProfile();
 
   const profile = profileQuery.data;
   const currentName = profile?.name || session?.user?.name || "";
@@ -444,156 +518,223 @@ function AccountSection() {
   ).id;
   const email = profile?.email || session?.user?.email || "";
 
-  async function syncSessionProfile(nextProfile: {
-    name: string | null;
-    avatarPreset: AvatarPresetId;
-  }) {
+  const [name, setName] = useState(currentName);
+  const [avatarPreset, setAvatarPreset] =
+    useState<AvatarPresetId>(currentAvatarPreset);
+  const [accountSaved, setAccountSaved] = useState(false);
+
+  const [promptName, setPromptName] = useState("");
+  const [profession, setProfession] = useState("");
+  const [details, setDetails] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [promptSaved, setPromptSaved] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
+
+  async function handleSaveAccount() {
+    setAccountSaved(false);
+    const nextProfile = await updateProfile.mutateAsync({
+      name,
+      avatarPreset,
+    });
     await updateSession({
       user: {
         name: nextProfile.name,
         avatarPreset: nextProfile.avatarPreset,
       },
     });
+    setAccountSaved(true);
+  }
+
+  async function handleGeneratePrompt() {
+    if (!promptName.trim() && !profession.trim() && !details.trim()) return;
+    setGenerating(true);
+    setPromptError(null);
+    setPromptSaved(false);
+    try {
+      const res = await fetch("/api/user/generate-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname: promptName, profession, details }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "生成失败");
+      setPromptSaved(true);
+    } catch (err) {
+      setPromptError(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   return (
-    <SectionShell id="settings-panel-account" title="账户">
-      <AccountProfileForm
-        key={profile ? "profile-loaded" : "session-profile"}
-        initialName={currentName}
-        initialAvatarPreset={currentAvatarPreset}
-        email={email}
-        loading={profileQuery.isPending}
-        onSaved={syncSessionProfile}
-      />
+    <SectionShell id="settings-panel-user" title="用户">
+      <div className="space-y-4 rounded-2xl bg-[var(--color-project-control)] p-4">
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+          账户信息
+        </h3>
 
-      <div className="rounded-2xl bg-[var(--color-project-control)] p-4">
+        <div className="flex items-center gap-3">
+          <AvatarMark presetId={avatarPreset} className="size-10 text-sm" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+              {name.trim() || email || "账户"}
+            </p>
+            <p className="truncate text-xs text-[var(--color-text-tertiary)]">
+              侧栏和账户菜单会显示这个昵称
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-[var(--color-text-primary)]">
+            昵称
+          </label>
+          <Input
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setAccountSaved(false);
+            }}
+            placeholder="你的称呼"
+            maxLength={60}
+            className="mt-2 h-9 rounded-xl bg-[var(--color-surface)]"
+          />
+        </div>
+
+        <div>
+          <p className="text-sm font-medium text-[var(--color-text-primary)]">
+            头像样式
+          </p>
+          <div
+            className="mt-2 grid grid-cols-4 gap-2"
+            role="list"
+            aria-label="头像样式"
+          >
+            {AVATAR_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                aria-pressed={avatarPreset === preset.id}
+                onClick={() => {
+                  setAvatarPreset(preset.id);
+                  setAccountSaved(false);
+                }}
+                className={cn(
+                  "flex h-16 flex-col items-center justify-center gap-1 rounded-xl text-xs transition-colors",
+                  avatarPreset === preset.id
+                    ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                    : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+                )}
+              >
+                <AvatarMark presetId={preset.id} className="size-7" />
+                <span>{preset.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-[var(--color-text-tertiary)]">邮箱</span>
           <span className="text-sm text-[var(--color-text-primary)] truncate">
             {email}
           </span>
         </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleSaveAccount}
+            disabled={profileQuery.isPending || updateProfile.isPending}
+            className="rounded-xl px-4"
+          >
+            {updateProfile.isPending ? "保存中..." : "保存资料"}
+          </Button>
+          {accountSaved && (
+            <span className="text-xs text-[var(--color-success)]">已保存</span>
+          )}
+          {updateProfile.isError && (
+            <span className="text-xs text-[var(--color-error)]">
+              保存失败，请重试
+            </span>
+          )}
+        </div>
       </div>
+
       <Button
         variant="danger"
         size="md"
         onClick={() => signOut({ callbackUrl: "/login" })}
         className="w-fit rounded-xl px-4"
       >
+        <LogOut data-icon="inline-start" size={16} strokeWidth={1.5} />
         退出登录
       </Button>
-    </SectionShell>
-  );
-}
 
-function AccountProfileForm({
-  initialName,
-  initialAvatarPreset,
-  email,
-  loading,
-  onSaved,
-}: {
-  initialName: string;
-  initialAvatarPreset: AvatarPresetId;
-  email: string;
-  loading: boolean;
-  onSaved: (profile: {
-    name: string | null;
-    avatarPreset: AvatarPresetId;
-  }) => Promise<void>;
-}) {
-  const updateProfile = useUpdateUserProfile();
-  const [name, setName] = useState(initialName);
-  const [avatarPreset, setAvatarPreset] =
-    useState<AvatarPresetId>(initialAvatarPreset);
-  const [saved, setSaved] = useState(false);
-
-  async function handleSaveProfile() {
-    setSaved(false);
-    const nextProfile = await updateProfile.mutateAsync({
-      name,
-      avatarPreset,
-    });
-    await onSaved(nextProfile);
-    setSaved(true);
-  }
-
-  return (
-    <div className="space-y-4 rounded-2xl bg-[var(--color-project-control)] p-4">
-      <div className="flex items-center gap-3">
-        <AvatarMark presetId={avatarPreset} className="size-10 text-sm" />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
-            {name.trim() || email || "账户"}
-          </p>
-          <p className="truncate text-xs text-[var(--color-text-tertiary)]">
-            侧栏和账户菜单会显示这个昵称
-          </p>
-        </div>
-      </div>
-
-      <div>
-        <label className="text-sm font-medium text-[var(--color-text-primary)]">
-          昵称
-        </label>
-        <Input
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            setSaved(false);
-          }}
-          placeholder="你的称呼"
-          maxLength={60}
-          className="mt-2 h-9 rounded-xl bg-[var(--color-surface)]"
-        />
-      </div>
-
-      <div>
-        <p className="text-sm font-medium text-[var(--color-text-primary)]">
-          头像样式
+      <div className="space-y-4 rounded-2xl bg-[var(--color-project-control)] p-4">
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+          AI 画像
+        </h3>
+        <p className="text-xs text-[var(--color-text-tertiary)]">
+          AI 会根据这些信息更好地理解你的使用场景
         </p>
-        <div className="mt-2 grid grid-cols-4 gap-2" role="list" aria-label="头像样式">
-          {AVATAR_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              aria-pressed={avatarPreset === preset.id}
-              onClick={() => {
-                setAvatarPreset(preset.id);
-                setSaved(false);
-              }}
-              className={cn(
-                "flex h-16 flex-col items-center justify-center gap-1 rounded-xl text-xs transition-colors",
-                avatarPreset === preset.id
-                  ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                  : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
-              )}
-            >
-              <AvatarMark presetId={preset.id} className="size-7" />
-              <span>{preset.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
 
-      <div className="flex items-center gap-3">
+        <div>
+          <label className="text-sm font-medium text-[var(--color-text-primary)]">
+            名字
+          </label>
+          <Input
+            value={promptName}
+            onChange={(e) => setPromptName(e.target.value)}
+            placeholder="你的名字"
+            maxLength={60}
+            className="mt-2 h-9 rounded-xl bg-[var(--color-surface)]"
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium text-[var(--color-text-primary)]">
+            职业
+          </label>
+          <Input
+            value={profession}
+            onChange={(e) => setProfession(e.target.value)}
+            placeholder="例如: 计算机学院本科生"
+            maxLength={100}
+            className="mt-2 h-9 rounded-xl bg-[var(--color-surface)]"
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium text-[var(--color-text-primary)]">
+            你的详情
+          </label>
+          <Textarea
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            placeholder="描述你的学习目标、使用习惯等"
+            maxLength={500}
+            className="mt-2 h-24 rounded-xl bg-[var(--color-surface)] resize-none"
+          />
+        </div>
         <Button
           variant="primary"
           size="md"
-          onClick={handleSaveProfile}
-          disabled={loading || updateProfile.isPending}
+          onClick={handleGeneratePrompt}
+          disabled={generating}
           className="rounded-xl px-4"
         >
-          {updateProfile.isPending ? "保存中..." : "保存资料"}
+          {generating
+            ? "生成中..."
+            : promptSaved
+              ? "已保存，点击重新生成"
+              : "生成个人描述"}
         </Button>
-        {saved && (
-          <span className="text-xs text-[var(--color-success)]">已保存</span>
+        {promptSaved && (
+          <p className="text-xs text-[var(--color-success)]">已保存</p>
         )}
-        {updateProfile.isError && (
-          <span className="text-xs text-[var(--color-error)]">保存失败，请重试</span>
+        {promptError && (
+          <p className="text-xs text-[var(--color-error)]">{promptError}</p>
         )}
       </div>
-    </div>
+    </SectionShell>
   );
 }

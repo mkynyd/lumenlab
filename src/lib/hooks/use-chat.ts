@@ -83,6 +83,20 @@ function hasStreamingMessage(messages: ChatMessage[]) {
   return messages.some((message) => message.isStreaming);
 }
 
+export async function readChatError(response: Response) {
+  const fallback = `Request failed (${response.status})`;
+  const text = await response.text().catch(() => "");
+  if (!text.trim()) return fallback;
+  try {
+    const data = JSON.parse(text) as { error?: unknown };
+    return typeof data.error === "string" && data.error.trim()
+      ? data.error
+      : fallback;
+  } catch {
+    return text.slice(0, 500) || fallback;
+  }
+}
+
 export function useChat(options: UseChatOptions = {}) {
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>(
@@ -228,8 +242,7 @@ export function useChat(options: UseChatOptions = {}) {
         const response = await fetch("/api/chat", fetchOptions);
 
         if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || `Request failed (${response.status})`);
+          throw new Error(await readChatError(response));
         }
 
         // Get conversation ID from header if new

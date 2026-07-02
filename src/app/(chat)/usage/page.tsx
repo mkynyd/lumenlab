@@ -105,7 +105,7 @@ export default function UsagePage() {
             {data.quota.enforced
               ? `${(data.quota.remaining ?? 0).toLocaleString()} / ${(data.quota.total ?? 0).toLocaleString()}`
               : data.quota.used.toLocaleString()}
-            {" "}信用点
+            {" "}Credits
           </div>
         </div>
       </div>
@@ -116,7 +116,7 @@ export default function UsagePage() {
         </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
-            <div className="text-xs text-[var(--color-text-secondary)]">周期信用点</div>
+            <div className="text-xs text-[var(--color-text-secondary)]">周期Credits</div>
             <div className="text-lg font-medium text-[var(--color-text-primary)]">
               {data.usage.currentCycleCredits.toLocaleString()}
             </div>
@@ -143,7 +143,7 @@ export default function UsagePage() {
         <div className="mt-4">
           <div className="text-xs text-[var(--color-text-secondary)]">最近 5 小时</div>
           <div className="text-lg font-medium text-[var(--color-text-primary)]">
-            {data.usage.last5hCredits.toLocaleString()} 信用点
+            {data.usage.last5hCredits.toLocaleString()} Credits
           </div>
         </div>
       </div>
@@ -163,7 +163,7 @@ export default function UsagePage() {
                   {item.model}
                 </span>
                 <div className="text-right text-sm text-[var(--color-text-secondary)]">
-                  <div>{item.credits.toLocaleString()} 信用点</div>
+                  <div>{item.credits.toLocaleString()} Credits</div>
                   <div>{item.tokens.toLocaleString()} tokens</div>
                 </div>
               </div>
@@ -184,7 +184,7 @@ export default function UsagePage() {
                   <th className="pb-2 font-medium">时间</th>
                   <th className="pb-2 font-medium">模型</th>
                   <th className="pb-2 font-medium">tokens</th>
-                  <th className="pb-2 font-medium">信用点</th>
+                  <th className="pb-2 font-medium">Credits</th>
                 </tr>
               </thead>
               <tbody className="text-[var(--color-text-primary)]">

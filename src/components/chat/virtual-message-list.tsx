@@ -1,11 +1,8 @@
 "use client";
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "@/components/chat/message-bubble";
-import { estimateMessageHeight } from "@/lib/chat-message-layout";
-import { loadFontForOptions } from "@/lib/text-layout";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
 
 type SaveArtifact = (input: {
@@ -59,9 +56,6 @@ const Bubble = memo(function Bubble({
 /** Threshold in px — user is "at bottom" if within this distance from the end. */
 const AT_BOTTOM_THRESHOLD = 64;
 
-const BODY_FONT_SIZE = 14.8;
-const CODE_FONT_SIZE = 13;
-
 export function VirtualMessageList({
   messages,
   onSaveArtifact,
@@ -77,87 +71,6 @@ export function VirtualMessageList({
   const prevMsgCountRef = useRef(messages.length);
   const [pinned, setPinned] = useState(false);
   const pinnedRef = useRef(false);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [fontsReady, setFontsReady] = useState(false);
-
-  // Wait for the fonts Pretext will measure against before trusting estimates.
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      loadFontForOptions({
-        fontSize: BODY_FONT_SIZE,
-        fontFamily: '"Noto Sans SC"',
-      }),
-      loadFontForOptions({
-        fontSize: CODE_FONT_SIZE,
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      }),
-    ]).then(() => {
-      if (!cancelled) setFontsReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const estimates = useMemo(() => {
-    const map = new Map<string, number>();
-    if (containerWidth === 0 || !fontsReady) return map;
-    const context = { containerWidth };
-    for (const message of messages) {
-      map.set(
-        message.id,
-        estimateMessageHeight(
-          {
-            content: message.content,
-            role: message.role,
-            reasoningContent: message.reasoningContent,
-            tokenCount: message.tokenCount,
-            sourceCount: message.sources?.length ?? 0,
-            isStreaming: message.isStreaming,
-            isReasoningOpen: false,
-          },
-          context
-        )
-      );
-    }
-    return map;
-  }, [messages, containerWidth, fontsReady]);
-
-  const estimatesRef = useRef(estimates);
-  estimatesRef.current = estimates;
-
-  // TanStack Virtual intentionally exposes imperative functions that the React Compiler cannot memoize.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: completed.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: (index) =>
-      estimatesRef.current.get(completed[index].id) ?? 120,
-    getItemKey: (index) => completed[index].id,
-    overscan: 5,
-  });
-
-  // Track container width for Pretext-based estimates and force the virtualizer
-  // to remeasure items when the viewport is resized (so Mermaid / tables reflow).
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    const update = () => {
-      setContainerWidth(el.clientWidth);
-      virtualizer.measure();
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [virtualizer]);
-
-  // Re-measure when Pretext estimates change.
-  useLayoutEffect(() => {
-    virtualizer.measure();
-  }, [estimates, virtualizer]);
 
   const isNearBottom = useCallback(() => {
     const el = parentRef.current;
@@ -192,12 +105,6 @@ export function VirtualMessageList({
     return () => el.removeEventListener("scroll", handleScroll);
   }, [isNearBottom]);
 
-  // Force re-measure when message count changes, so newly added user/assistant
-  // messages get their actual DOM height computed before we scroll.
-  useLayoutEffect(() => {
-    virtualizer.measure();
-  }, [messages.length, virtualizer]);
-
   // Auto-scroll only when user is at the bottom
   useLayoutEffect(() => {
     const msgCountChanged = messages.length !== prevMsgCountRef.current;
@@ -205,15 +112,8 @@ export function VirtualMessageList({
 
     if (messages.length === 0) return;
 
-    // New user message → scroll so the latest completed message (the user's
-    // new prompt) sits at the bottom of the viewport. Scrolling to the raw
-    // container bottom would dive into the huge streaming response below the
-    // virtual list and push the sent message out of view.
     if (msgCountChanged) {
-      const lastIndex = completed.length - 1;
-      if (lastIndex >= 0) {
-        virtualizer.scrollToIndex(lastIndex, { align: "end" });
-      }
+      scrollToBottom(false);
       userAtBottomRef.current = true;
       if (pinnedRef.current) {
         pinnedRef.current = false;
@@ -226,7 +126,7 @@ export function VirtualMessageList({
     if (streaming?.content && userAtBottomRef.current) {
       scrollToBottom(false);
     }
-  }, [messages.length, streaming?.content, scrollToBottom, virtualizer, completed.length]);
+  }, [messages.length, streaming?.content, scrollToBottom]);
 
   // Initial scroll to bottom on mount
   useLayoutEffect(() => {
@@ -249,24 +149,15 @@ export function VirtualMessageList({
           </p>
         </div>
       ) : null}
-      <div
-        className="relative w-full"
-        style={{ height: `${virtualizer.getTotalSize()}px` }}
-      >
-        {virtualizer.getVirtualItems().map((item) => {
-          const message = completed[item.index];
-          return (
-            <div
-              key={message.id}
-              ref={virtualizer.measureElement}
-              data-index={item.index}
-              className="absolute left-0 top-0 w-full"
-              style={{ transform: `translateY(${item.start}px)` }}
-            >
-              <Bubble message={message} onSaveArtifact={onSaveArtifact} onSkillFollowUp={onSkillFollowUp} />
-            </div>
-          );
-        })}
+      <div className="w-full">
+        {completed.map((message) => (
+          <Bubble
+            key={message.id}
+            message={message}
+            onSaveArtifact={onSaveArtifact}
+            onSkillFollowUp={onSkillFollowUp}
+          />
+        ))}
       </div>
       {streaming ? (
         <Bubble message={streaming} onSaveArtifact={onSaveArtifact} onSkillFollowUp={onSkillFollowUp} />

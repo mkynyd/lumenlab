@@ -36,4 +36,9 @@ describe("tool registry", () => {
     expect(toolRegistry.require("web.search").riskLevel).toBe("L1");
     expect(toolRegistry.require("project_files.list").riskLevel).toBe("L1");
   });
+
+  it("lets project RAG use the server-side project context", () => {
+    const schema = toolRegistry.require("project_rag.search").inputSchema;
+    expect(schema.required).toEqual(["query"]);
+  });
 });

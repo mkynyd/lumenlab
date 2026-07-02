@@ -25,10 +25,27 @@ export interface CacheMetricsResponse {
   >;
 }
 
-export function useCacheMetrics(days = 7) {
+function toISODate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+export function useCacheMetrics(range: { start: Date; end: Date } | number = 7) {
+  const queryParams =
+    typeof range === "number"
+      ? `days=${range}`
+      : `start=${toISODate(range.start)}&end=${toISODate(range.end)}`;
+
+  const queryKey =
+    typeof range === "number"
+      ? queryKeys.cacheMetrics(range)
+      : queryKeys.cacheMetrics({
+          start: toISODate(range.start),
+          end: toISODate(range.end),
+        });
+
   return useQuery({
-    queryKey: queryKeys.cacheMetrics(days),
+    queryKey,
     queryFn: () =>
-      fetchJson<CacheMetricsResponse>(`/api/metrics/cache?days=${days}`),
+      fetchJson<CacheMetricsResponse>(`/api/metrics/cache?${queryParams}`),
   });
 }

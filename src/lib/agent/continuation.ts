@@ -58,9 +58,9 @@ const JSON_ACTION_INSTRUCTION = `
 \`\`\`
 
 可用工具：
-- project_files.list: 列出项目资料。输入 { projectId: string }
-- project_files.read: 读取项目资料。输入 { projectId: string, fileId: string, maxChars?: number }
-- project_rag.search: 在项目资料中搜索。输入 { projectId: string, query: string, maxResults?: number }
+- project_files.list: 列出当前项目资料。输入 { projectId?: string }
+- project_files.read: 读取当前项目资料。输入 { projectId?: string, fileId: string, maxChars?: number }
+- project_rag.search: 在当前项目资料中搜索。输入 { projectId?: string, query: string, maxResults?: number }
 - web.search: 联网搜索。输入 { query: string, maxResults?: number }
 - web.fetch: 抓取公开网页。输入 { url: string }
 - arxiv.search: arXiv 搜索。输入 { query: string, maxResults?: number }

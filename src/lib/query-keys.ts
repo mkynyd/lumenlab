@@ -25,5 +25,8 @@ export const queryKeys = {
   },
   userProfile: ["user-profile"] as const,
   keys: ["api-keys"] as const,
-  cacheMetrics: (days: number) => ["cache-metrics", days] as const,
+  cacheMetrics: (range: { start: string; end: string } | number) =>
+    typeof range === "number"
+      ? (["cache-metrics", "days", String(range)] as const)
+      : (["cache-metrics", "range", range.start, range.end] as const),
 } as const;

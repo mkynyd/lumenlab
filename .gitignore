@@ -51,7 +51,10 @@ dev.db
 .idea/
 REPOSITORY_INDEX.md
 .codegraph
+.playwright-cli/
 .playwright-mcp/
 .impeccable/
 .superpowers/
 .worktrees/
+/docs/superpowers/
+/output/playwright/

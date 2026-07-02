@@ -171,7 +171,7 @@ const TOOLS: ToolMetadata[] = [
         query: { type: "string" },
         maxResults: { type: "integer" },
       },
-      required: ["projectId", "query"],
+      required: ["query"],
     },
     outputSchema: { type: "object" },
     riskLevel: "L1",
@@ -448,7 +448,7 @@ export function registerBuiltinTools(): void {
   if (registered) return;
   registered = true;
 
-  for (const tool of TOOLS) {
+  for (const tool of TOOLS.filter((item) => !toolRegistry.has(item.toolId))) {
     toolRegistry.register(tool);
   }
 

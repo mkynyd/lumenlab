@@ -69,6 +69,10 @@ function hasSelectedContext(input: SkillRouteInput) {
   );
 }
 
+function hasProjectContext(input: SkillRouteInput) {
+  return hasSelectedContext(input) || Boolean(input.projectId && input.isQuickTask);
+}
+
 function needsProjectMaterial(input: SkillRouteInput) {
   const text = normalize([input.hiddenPrompt, input.message].filter(Boolean).join("\n"));
   return includesAny(text, [
@@ -231,7 +235,7 @@ function missingInfoFor(skillId: string, input: SkillRouteInput) {
   }
   if (
     (skillId === "exam-extract" || skillId === "exam-coach" || skillId === "code-reader") &&
-    !hasSelectedContext(input)
+    !hasProjectContext(input)
   ) {
     return [CONTEXT_REQUEST];
   }

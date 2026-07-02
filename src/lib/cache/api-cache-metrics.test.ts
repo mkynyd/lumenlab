@@ -76,6 +76,24 @@ describe("aggregateTokenUsageRows", () => {
       estimatedCostCny: 0.0009,
       inputTokens: 100,
       outputTokens: 100,
+      inputCacheHitTokens: 0,
+      inputCacheMissTokens: 100,
+      daily: [
+        {
+          date: "2026-06-19",
+          totalTokens: 120,
+          inputCacheHitTokens: 0,
+          inputCacheMissTokens: 0,
+          outputTokens: 0,
+        },
+        {
+          date: "2026-06-20",
+          totalTokens: 300,
+          inputCacheHitTokens: 0,
+          inputCacheMissTokens: 100,
+          outputTokens: 100,
+        },
+      ],
       providers: {
         deepseek: {
           totalTokens: 200,

@@ -30,9 +30,23 @@ describe("SettingsPanel token usage", () => {
           todayTokens: 6_100,
           requestCount: 5,
           unattributedTokens: 30_000,
+          estimatedCostCny: 0.5,
+          inputTokens: 30_000,
+          outputTokens: 12_100,
+          inputCacheHitTokens: 20_000,
+          inputCacheMissTokens: 10_000,
+          daily: [
+            {
+              date: "2026-07-01",
+              totalTokens: 42_100,
+              inputCacheHitTokens: 20_000,
+              inputCacheMissTokens: 10_000,
+              outputTokens: 12_100,
+            },
+          ],
           providers: {
-            deepseek: { totalTokens: 12_100, requestCount: 2 },
-            minimax: { totalTokens: 0, requestCount: 0 },
+            deepseek: { totalTokens: 12_100, requestCount: 2, estimatedCostCny: 0.3 },
+            minimax: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
           },
         },
       },
@@ -43,6 +57,6 @@ describe("SettingsPanel token usage", () => {
     // Sidebar tabs should be visible
     expect(screen.getByText("服务访问")).toBeInTheDocument();
     expect(screen.getByText("用量统计")).toBeInTheDocument();
-    expect(screen.getByText("关于你")).toBeInTheDocument();
+    expect(screen.getByText("用户")).toBeInTheDocument();
   });
 });
