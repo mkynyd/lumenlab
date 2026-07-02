@@ -39,6 +39,16 @@ function formatTokenCount(value: number) {
   return String(value);
 }
 
+function formatInteger(value: number) {
+  return value.toLocaleString("en-US");
+}
+
+function niceChartMax(value: number) {
+  if (value <= 0) return 0;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  return Math.ceil(value / magnitude) * magnitude;
+}
+
 function formatCurrency(value: number) {
   if (value >= 1) return `¥${value.toFixed(2)}`;
   if (value >= 0.01) return `¥${value.toFixed(4)}`;
@@ -233,6 +243,7 @@ function AlphaSection() {
 }
 
 function TokensSection() {
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
@@ -265,8 +276,16 @@ function TokensSection() {
       })()
     : [];
 
-  const maxTokens = Math.max(...monthDays.map((d) => d.totalTokens), 1);
-  const maxBarHeight = 160;
+  const maxTokens = Math.max(...monthDays.map((d) => d.totalTokens), 0);
+  const chartMax = niceChartMax(maxTokens);
+  const hoveredIndex = hoveredDate
+    ? monthDays.findIndex((day) => day.date === hoveredDate)
+    : -1;
+  const hoveredDay = hoveredIndex >= 0 ? monthDays[hoveredIndex] : null;
+  const tooltipLeft =
+    hoveredIndex >= 0
+      ? Math.min(78, Math.max(22, ((hoveredIndex + 0.5) / daysInMonth) * 100))
+      : 50;
 
   return (
     <SectionShell id="settings-panel-tokens" title="用量统计">
@@ -342,18 +361,38 @@ function TokensSection() {
             <p className="text-xs text-[var(--color-text-tertiary)] mb-2">
               每日 Token 构成
             </p>
-            <div className="min-w-0 space-y-4 overflow-hidden rounded-2xl bg-[var(--color-project-control)] p-4">
+            <div className="min-w-0 overflow-hidden rounded-2xl bg-[var(--color-project-control)] p-4">
               {monthDays.length > 0 ? (
-                <>
-                  <div className="h-40 overflow-x-auto overscroll-x-contain border-b border-[var(--color-border-light)]">
-                    <div className="flex h-full min-w-full w-max items-end gap-1 px-1">
-                      {monthDays.map((day, index) => {
-                        const barHeight =
+                <div className="min-w-0">
+                  <div className="flex items-baseline gap-4">
+                    <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+                      Tokens
+                    </span>
+                    <span className="font-mono text-sm tabular-nums text-[var(--color-text-tertiary)]">
+                      {formatInteger(cacheMetrics.data.tokenUsage.totalTokens)}
+                    </span>
+                  </div>
+
+                  <div className="relative mt-4 h-64 min-w-0">
+                    <div className="absolute left-0 top-0 w-12 -translate-y-2 text-right font-mono text-xs tabular-nums text-[var(--color-text-tertiary)]">
+                      {formatInteger(chartMax)}
+                    </div>
+                    <div className="absolute bottom-8 left-0 w-12 translate-y-1 text-right font-mono text-xs tabular-nums text-[var(--color-text-tertiary)]">
+                      0
+                    </div>
+                    <div className="absolute left-14 right-0 top-0 border-t border-[var(--color-border-light)]" />
+                    <div className="absolute bottom-8 left-14 right-0 border-t border-[var(--color-border-light)]" />
+
+                    <div
+                      className="absolute bottom-8 left-14 right-0 top-0 grid items-end gap-1"
+                      style={{
+                        gridTemplateColumns: `repeat(${daysInMonth}, minmax(4px, 1fr))`,
+                      }}
+                    >
+                      {monthDays.map((day) => {
+                        const barHeightPercent =
                           day.totalTokens > 0
-                            ? Math.max(
-                                2,
-                                (day.totalTokens / maxTokens) * maxBarHeight
-                              )
+                            ? Math.max(2, (day.totalTokens / Math.max(chartMax, 1)) * 100)
                             : 0;
                         const hitHeight =
                           day.totalTokens > 0
@@ -367,88 +406,103 @@ function TokensSection() {
                           day.totalTokens > 0
                             ? (day.outputTokens / day.totalTokens) * 100
                             : 0;
-                        const showLabel =
-                          index === 0 ||
-                          index === daysInMonth - 1 ||
-                          (index + 1) % 5 === 0;
+                        const active = hoveredDate === day.date;
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={day.date}
-                            className="flex flex-col items-center gap-1 w-5 shrink-0"
-                            title={`${formatDay(day.date)} 共 ${formatTokenCount(
-                              day.totalTokens
-                            )} tokens`}
+                            className="relative flex h-full min-w-0 items-end justify-center rounded-sm focus-visible:bg-[var(--color-interaction-hover)] focus-visible:outline-none"
+                            aria-label={`${day.date} 共 ${formatInteger(day.totalTokens)} tokens`}
+                            onMouseEnter={() => setHoveredDate(day.date)}
+                            onMouseLeave={() => setHoveredDate(null)}
+                            onFocus={() => setHoveredDate(day.date)}
+                            onBlur={() => setHoveredDate(null)}
                           >
-                            {barHeight > 0 ? (
+                            {active && (
+                              <span className="pointer-events-none absolute bottom-0 top-0 left-1/2 border-l border-dashed border-[var(--color-border-light)]" />
+                            )}
+                            {barHeightPercent > 0 ? (
                               <div
-                                className="w-full flex flex-col-reverse rounded-t-sm overflow-hidden bg-[var(--color-surface)]"
-                                style={{ height: `${barHeight}px` }}
+                                className="flex w-2.5 flex-col-reverse overflow-hidden rounded-t-sm bg-[var(--color-surface)] sm:w-3"
+                                style={{ height: `${barHeightPercent}%` }}
                               >
                                 {day.outputTokens > 0 && (
                                   <div
                                     style={{ height: `${outputHeight}%` }}
                                     className="bg-[var(--color-accent)]"
-                                    title={`输出 ${formatTokenCount(
-                                      day.outputTokens
-                                    )}`}
                                   />
                                 )}
                                 {day.inputCacheMissTokens > 0 && (
                                   <div
                                     style={{ height: `${missHeight}%` }}
                                     className="bg-[var(--color-accent-muted)]"
-                                    title={`输入（未命中缓存） ${formatTokenCount(
-                                      day.inputCacheMissTokens
-                                    )}`}
                                   />
                                 )}
                                 {day.inputCacheHitTokens > 0 && (
                                   <div
                                     style={{ height: `${hitHeight}%` }}
                                     className="bg-[var(--color-accent-soft)]"
-                                    title={`输入（命中缓存） ${formatTokenCount(
-                                      day.inputCacheHitTokens
-                                    )}`}
                                   />
                                 )}
                               </div>
                             ) : (
-                              <div className="w-full h-px bg-[var(--color-border-light)]" />
+                              <span className="mb-0 h-px w-2.5 bg-[var(--color-border-light)] sm:w-3" />
                             )}
-                            {showLabel && (
-                              <span className="text-[10px] text-[var(--color-text-tertiary)]">
-                                {formatDay(day.date)}
-                              </span>
-                            )}
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
+
+                    <div className="absolute bottom-0 left-14 translate-y-1 text-xs text-[var(--color-text-tertiary)]">
+                      {formatDay(monthDays[0].date)}
+                    </div>
+                    <div className="absolute bottom-0 right-0 translate-y-1 text-xs text-[var(--color-text-tertiary)]">
+                      {formatDay(monthDays[monthDays.length - 1].date)}
+                    </div>
+
+                    {hoveredDay && hoveredDay.totalTokens > 0 && (
+                      <div
+                        className="pointer-events-none absolute top-3 z-10 min-w-64 -translate-x-1/2 rounded-2xl bg-[var(--color-control-menu)] px-4 py-3 shadow-[var(--shadow-float)]"
+                        style={{ left: `${tooltipLeft}%` }}
+                      >
+                        <div className="mb-2 grid grid-cols-[1fr_auto] gap-6 text-sm font-semibold text-[var(--color-text-primary)]">
+                          <span>{hoveredDay.date}</span>
+                          <span className="font-mono tabular-nums">
+                            {formatInteger(hoveredDay.totalTokens)} tokens
+                          </span>
+                        </div>
+                        {[
+                          [
+                            "输入（命中缓存）",
+                            hoveredDay.inputCacheHitTokens,
+                            "bg-[var(--color-accent-soft)]",
+                          ],
+                          [
+                            "输入（未命中缓存）",
+                            hoveredDay.inputCacheMissTokens,
+                            "bg-[var(--color-accent-muted)]",
+                          ],
+                          [
+                            "输出",
+                            hoveredDay.outputTokens,
+                            "bg-[var(--color-accent)]",
+                          ],
+                        ].map(([label, value, color]) => (
+                          <div
+                            key={label}
+                            className="grid grid-cols-[auto_1fr_auto] items-center gap-3 py-0.5 text-sm text-[var(--color-text-secondary)]"
+                          >
+                            <span className={cn("h-3 w-3 rounded-sm", color as string)} />
+                            <span>{label}</span>
+                            <span className="font-mono tabular-nums">
+                              {formatInteger(value as number)} tokens
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex flex-wrap gap-3 text-xs text-[var(--color-text-secondary)]">
-                    <span className="inline-flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-sm bg-[var(--color-accent-soft)]" />
-                      输入（命中缓存）{" "}
-                      {formatTokenCount(
-                        cacheMetrics.data.tokenUsage.inputCacheHitTokens
-                      )}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-sm bg-[var(--color-accent-muted)]" />
-                      输入（未命中缓存）{" "}
-                      {formatTokenCount(
-                        cacheMetrics.data.tokenUsage.inputCacheMissTokens
-                      )}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-sm bg-[var(--color-accent)]" />
-                      输出{" "}
-                      {formatTokenCount(
-                        cacheMetrics.data.tokenUsage.outputTokens
-                      )}
-                    </span>
-                  </div>
-                </>
+                </div>
               ) : (
                 <p className="text-sm text-[var(--color-text-secondary)]">
                   暂无每日数据

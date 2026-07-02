@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -49,6 +49,11 @@ describe("SettingsPanel token usage", () => {
             minimax: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
           },
         },
+        rag: {
+          search: { hits: 1, misses: 1, hitRate: 0.5 },
+          "file-select": { hits: 0, misses: 0, hitRate: 0 },
+          "query-embed": { hits: 0, misses: 0, hitRate: 0 },
+        },
       },
     });
 
@@ -58,5 +63,18 @@ describe("SettingsPanel token usage", () => {
     expect(screen.getByText("服务访问")).toBeInTheDocument();
     expect(screen.getByText("用量统计")).toBeInTheDocument();
     expect(screen.getByText("用户")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "用量统计" }));
+
+    expect(screen.getByText("42,100")).toBeInTheDocument();
+    const usageBar = screen.getByRole("button", {
+      name: "2026-07-01 共 42,100 tokens",
+    });
+
+    fireEvent.mouseEnter(usageBar);
+
+    expect(screen.getByText("输入（命中缓存）")).toBeInTheDocument();
+    expect(screen.getByText("输入（未命中缓存）")).toBeInTheDocument();
+    expect(screen.getByText("输出")).toBeInTheDocument();
   });
 });
