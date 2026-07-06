@@ -31,6 +31,15 @@ vi.mock("@/lib/deepseek", () => ({
   createTextMessage: mocks.createTextMessage,
 }));
 
+vi.mock("@/lib/redis", () => ({
+  getRedis: () => ({
+    get: vi.fn().mockResolvedValue(null),
+    setex: vi.fn().mockResolvedValue("OK"),
+    incr: vi.fn().mockResolvedValue(1),
+    mget: vi.fn().mockResolvedValue([]),
+  }),
+}));
+
 import { hybridSearch, retrieveProjectContext, shouldUseProjectContext } from "@/lib/rag/vector-store";
 
 describe("shouldUseProjectContext", () => {

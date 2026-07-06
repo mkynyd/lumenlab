@@ -36,7 +36,10 @@ describe("GET /api/me/usage", () => {
       { model: "deepseek-v4-pro", _sum: { creditsConsumed: 80, totalTokens: 800 } },
       { model: "minimax-m3", _sum: { creditsConsumed: 20, totalTokens: 200 } },
     ]);
-    mockFindMany.mockResolvedValue([]);
+    mockFindMany.mockResolvedValue([
+      { model: "deepseek-v4-pro", creditsConsumed: 80, totalTokens: 800, inputCacheHitTokens: 0, inputCacheMissTokens: 0, outputTokens: 0 },
+      { model: "minimax-m3", creditsConsumed: 20, totalTokens: 200, inputCacheHitTokens: 0, inputCacheMissTokens: 0, outputTokens: 0 },
+    ]);
   });
 
   it("returns usage summary for authenticated user", async () => {
