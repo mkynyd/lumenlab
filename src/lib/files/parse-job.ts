@@ -90,6 +90,44 @@ interface StoredFileAsset {
   resourceUrl: string;
 }
 
+function isInternalRelativePath(value: string): boolean {
+  if (!value) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return false;
+  if (value.startsWith("#")) return false;
+  return true;
+}
+
+export function rewriteAssetReferences(
+  content: string,
+  assetMap: Map<string, string>
+): string {
+  if (assetMap.size === 0) return content;
+
+  // Markdown image references: ![alt](relative/path.png)
+  let rewritten = content.replace(
+    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    (match, alt, href) => {
+      if (!isInternalRelativePath(href)) return match;
+      const url = assetMap.get(href);
+      if (!url) return match;
+      return `![${alt}](${url})`;
+    }
+  );
+
+  // HTML img src references: <img src="relative/path.png" ...>
+  rewritten = rewritten.replace(
+    /<img([^>]*)\bsrc=["']([^"']+)["']([^>]*)>/gi,
+    (match, before, src, after) => {
+      if (!isInternalRelativePath(src)) return match;
+      const url = assetMap.get(src);
+      if (!url) return match;
+      return `<img${before}src="${url}"${after}>`;
+    }
+  );
+
+  return rewritten;
+}
+
 async function storeFileAssets(input: {
   userId: string;
   fileAssetId: string;
@@ -240,13 +278,18 @@ export async function parseFileAsset(input: {
       userId: input.userId,
       file,
     });
-    if (result.assets && result.assets.length > 0) {
-      await persistFileAssets(file.id, input.userId, result.assets);
-    }
+    const stored =
+      result.assets && result.assets.length > 0
+        ? await persistFileAssets(file.id, input.userId, result.assets)
+        : [];
+    const resourceUrlMap = new Map(
+      stored.map((s) => [s.relativePath, s.resourceUrl])
+    );
+    const content = rewriteAssetReferences(result.content, resourceUrlMap);
     const indexMetadata = await generateFileIndexMetadata({
       userId: input.userId,
       filename: file.originalName,
-      content: result.content,
+      content,
     });
     const completedMetadata = {
       ...result.metadata,
@@ -260,7 +303,7 @@ export async function parseFileAsset(input: {
     await prisma.fileAsset.update({
       where: { id: file.id },
       data: {
-        textContent: result.content,
+        textContent: content,
         status: result.status,
         enhancementStatus: file.enhancedContent ? "stale" : "none",
         processingMetadata: mergeMetadata(file.processingMetadata, completedMetadata),
@@ -273,7 +316,7 @@ export async function parseFileAsset(input: {
         fileAssetId: file.id,
         projectId: file.projectId,
         userId: input.userId,
-        textContent: result.content,
+        textContent: content,
         title: file.originalName,
       });
       chunksCreated = true;

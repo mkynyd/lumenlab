@@ -1,19 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { parseFileContent } from "../parse-job";
+import { parseFileContent, parseFileAsset, rewriteAssetReferences } from "../parse-job";
 import * as storage from "@/lib/storage/object-storage";
 import * as providerAccess from "@/lib/data/provider-access";
 import * as minimax from "@/lib/vision/minimax";
 import * as mineru from "@/lib/parse/mineru";
+import * as minimaxAnalyzer from "@/lib/document-pipeline/vision/minimax-analyzer";
+import * as vectorStore from "@/lib/rag/vector-store";
+import * as projectIndex from "@/lib/rag/project-index";
+import * as embedding from "@/lib/rag/embedding";
 import { prisma } from "@/lib/db";
 
 vi.mock("@/lib/storage/object-storage");
 vi.mock("@/lib/data/provider-access");
 vi.mock("@/lib/vision/minimax");
 vi.mock("@/lib/parse/mineru");
+vi.mock("@/lib/document-pipeline/vision/minimax-analyzer");
+vi.mock("@/lib/rag/vector-store");
+vi.mock("@/lib/rag/project-index");
+vi.mock("@/lib/rag/embedding");
 vi.mock("@/lib/db", () => ({
   prisma: {
     fileAsset: {
+      findFirst: vi.fn(),
       update: vi.fn(),
+    },
+    fileAssetResource: {
+      findMany: vi.fn(),
+      deleteMany: vi.fn(),
+      createMany: vi.fn(),
     },
   },
 }));
@@ -24,6 +38,12 @@ describe("parseFileContent", () => {
     vi.mocked(storage.readStoredObject).mockResolvedValue(Buffer.from("content"));
     vi.mocked(providerAccess.getProviderApiKey).mockResolvedValue("key");
     vi.mocked(prisma.fileAsset.update).mockResolvedValue({} as never);
+    vi.mocked(minimaxAnalyzer.analyzeImageWithMiniMax).mockResolvedValue({
+      summary: "A chart",
+      ocrText: "10, 20",
+      confidence: 0.9,
+      warnings: [],
+    });
   });
 
   it("routes text files to text-local parser", async () => {
@@ -81,5 +101,162 @@ describe("parseFileContent", () => {
       },
     });
     expect(result.metadata.parser).toBe("mineru-office");
+  });
+});
+
+describe("rewriteAssetReferences", () => {
+  it("rewrites markdown image references", () => {
+    const map = new Map<string, string>([["pics/chart.png", "/api/files/f1/resources/r1"]]);
+    const content = "![chart](pics/chart.png)";
+    expect(rewriteAssetReferences(content, map)).toBe("![chart](/api/files/f1/resources/r1)");
+  });
+
+  it("rewrites html img src references", () => {
+    const map = new Map<string, string>([["images/diagram.png", "/api/files/f1/resources/r2"]]);
+    const content = '<img src="images/diagram.png" alt="diagram" width="400">';
+    expect(rewriteAssetReferences(content, map)).toBe(
+      '<img src="/api/files/f1/resources/r2" alt="diagram" width="400">'
+    );
+  });
+
+  it("rewrites multiple references", () => {
+    const map = new Map<string, string>([
+      ["a.png", "/api/files/f1/resources/ra"],
+      ["b.png", "/api/files/f1/resources/rb"],
+    ]);
+    const content = "![a](a.png) and <img src=\"b.png\" />";
+    expect(rewriteAssetReferences(content, map)).toBe(
+      "![a](/api/files/f1/resources/ra) and <img src=\"/api/files/f1/resources/rb\" />"
+    );
+  });
+
+  it("leaves external urls unchanged", () => {
+    const map = new Map<string, string>([["pics/chart.png", "/api/files/f1/resources/r1"]]);
+    const content = "![external](https://example.com/img.png) ![local](pics/chart.png)";
+    expect(rewriteAssetReferences(content, map)).toBe(
+      "![external](https://example.com/img.png) ![local](/api/files/f1/resources/r1)"
+    );
+  });
+
+  it("leaves anchors unchanged", () => {
+    const map = new Map<string, string>([["pics/chart.png", "/api/files/f1/resources/r1"]]);
+    const content = "![section](#intro) ![image](pics/chart.png)";
+    expect(rewriteAssetReferences(content, map)).toBe(
+      "![section](#intro) ![image](/api/files/f1/resources/r1)"
+    );
+  });
+
+  it("leaves unmapped paths unchanged", () => {
+    const map = new Map<string, string>();
+    const content = "![other](pics/other.png)";
+    expect(rewriteAssetReferences(content, map)).toBe(content);
+  });
+
+  it("returns original content when map is empty", () => {
+    const content = "![chart](pics/chart.png)";
+    expect(rewriteAssetReferences(content, new Map())).toBe(content);
+  });
+});
+
+describe("parseFileAsset", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(storage.readStoredObject).mockResolvedValue(Buffer.from("pptx"));
+    vi.mocked(storage.uploadObjectBuffer).mockResolvedValue({
+      provider: "local",
+      key: "users/u1/file-assets/f1/resources/RESOURCE_ID/filename.png",
+    });
+    vi.mocked(providerAccess.getProviderApiKey).mockResolvedValue("key");
+    vi.mocked(prisma.fileAsset.findFirst).mockResolvedValue({
+      id: "f1",
+      userId: "u1",
+      originalName: "slides.pptx",
+      projectId: "p1",
+      enhancedContent: null,
+      processingMetadata: {},
+      status: "parsing",
+    } as never);
+    vi.mocked(prisma.fileAsset.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.fileAssetResource.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.fileAssetResource.deleteMany).mockResolvedValue({ count: 0 } as never);
+    vi.mocked(prisma.fileAssetResource.createMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(projectIndex.generateFileIndexMetadata).mockResolvedValue({
+      summary: "Summary",
+      keywords: ["a", "b"],
+    });
+    vi.mocked(vectorStore.createDocumentChunks).mockResolvedValue(1);
+    vi.mocked(embedding.embedChunksForFile).mockResolvedValue(undefined);
+    vi.mocked(projectIndex.refreshProjectIndex).mockResolvedValue("project index");
+    vi.mocked(minimaxAnalyzer.analyzeImageWithMiniMax).mockResolvedValue({
+      summary: "A chart",
+      ocrText: "10, 20",
+      confidence: 0.9,
+      warnings: [],
+    });
+  });
+
+  it("rewrites image references after persisting assets", async () => {
+    vi.mocked(mineru.parseFileWithMinerU).mockResolvedValue({
+      content: "# Slide\n\n![chart](pics/chart.png)",
+      assets: [
+        {
+          relativePath: "pics/chart.png",
+          mimeType: "image/png",
+          buffer: Buffer.alloc(10_000),
+        },
+      ],
+      metadata: {
+        parser: "mineru-pipeline" as const,
+        taskId: "task-1",
+        parsedAt: new Date().toISOString(),
+      },
+    });
+
+    await parseFileAsset({ userId: "u1", fileId: "f1" });
+
+    expect(storage.uploadObjectBuffer).toHaveBeenCalledTimes(1);
+    expect(prisma.fileAssetResource.createMany).toHaveBeenCalledTimes(1);
+
+    const updateCall = vi.mocked(prisma.fileAsset.update).mock.calls.find(
+      (call) => call[0].data && "textContent" in call[0].data
+    );
+    expect(updateCall).toBeDefined();
+    const textContent = (updateCall![0] as { data: { textContent: string } }).data.textContent;
+    expect(textContent).not.toContain("pics/chart.png");
+    expect(textContent).toContain("/api/files/f1/resources/");
+
+    expect(vectorStore.createDocumentChunks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        textContent: expect.stringContaining("/api/files/f1/resources/"),
+      })
+    );
+
+    expect(projectIndex.generateFileIndexMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining("/api/files/f1/resources/"),
+      })
+    );
+  });
+
+  it("keeps content unchanged when there are no assets", async () => {
+    vi.mocked(mineru.parseFileWithMinerU).mockResolvedValue({
+      content: "# Slide\n\nJust text.",
+      assets: [],
+      metadata: {
+        parser: "mineru-pipeline" as const,
+        taskId: "task-1",
+        parsedAt: new Date().toISOString(),
+      },
+    });
+
+    await parseFileAsset({ userId: "u1", fileId: "f1" });
+
+    expect(storage.uploadObjectBuffer).not.toHaveBeenCalled();
+
+    const updateCall = vi.mocked(prisma.fileAsset.update).mock.calls.find(
+      (call) => call[0].data && "textContent" in call[0].data
+    );
+    const textContent = (updateCall![0] as { data: { textContent: string } }).data.textContent;
+    expect(textContent).toBe("# Slide\n\nJust text.");
   });
 });
