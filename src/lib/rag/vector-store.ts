@@ -385,7 +385,7 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
   let candidates: Array<{
     id: string;
     content: string;
-    metadata?: Record<string, unknown>;
+    metadata?: Record<string, unknown> | undefined;
     mediaUrls: string[];
   }>;
 
@@ -397,7 +397,6 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
     candidates = rawChunks.map((chunk, i) => ({
       id: crypto.randomUUID(),
       content: chunk.content,
-      metadata: { sourceType: "text" },
       mediaUrls: chunkMediaUrls[i] ?? [],
     }));
   }
@@ -414,7 +413,9 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
     chunkIndex: i,
     tokenCount: Math.ceil(chunk.content.length / 2),
     mediaUrls: chunk.mediaUrls,
-    metadata: (chunk.metadata || {}) as Prisma.InputJsonValue,
+    metadata: chunk.metadata
+      ? (chunk.metadata as Prisma.InputJsonValue)
+      : undefined,
   }));
 
   await prisma.documentChunk.createMany({ data });
