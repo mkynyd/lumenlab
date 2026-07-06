@@ -26,7 +26,9 @@ describe("TextLocalParser", () => {
 
     expect(result.blocks).toHaveLength(1);
     expect(result.blocks[0].type).toBe("text");
-    expect(result.blocks[0].content).toBe("# Hello\n\nWorld");
+    expect((result.blocks[0] as Extract<typeof result.blocks[number], { type: "text" }>).content).toBe(
+      "# Hello\n\nWorld"
+    );
     expect(result.assets).toHaveLength(0);
     expect(result.metadata.parser).toBe("text-local");
     expect(result.metadata.sourceKind).toBe("text");

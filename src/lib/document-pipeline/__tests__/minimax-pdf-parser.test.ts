@@ -45,7 +45,7 @@ describe("MiniMaxPdfParser", () => {
 
     expect(progress).toHaveBeenCalledWith("model");
     expect(result.blocks[0].type).toBe("heading");
-    expect(result.blocks[0].content).toBe("Title");
+    expect((result.blocks[0] as Extract<typeof result.blocks[number], { type: "heading" }>).content).toBe("Title");
 
     const image = result.blocks.find((b) => b.type === "image") as Extract<
       typeof result.blocks[number],
