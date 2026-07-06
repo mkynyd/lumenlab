@@ -1,21 +1,40 @@
 import { logger } from "@/lib/logger";
+import { getProviderApiKey } from "@/lib/data/provider-access";
+import { ProviderAccessError } from "@/lib/provider-access";
+import { runWebSearch, type WebSearchResult } from "./search-engine";
+import type { ToolExecutionContext } from "@/lib/agent/tool-executor";
+
+export type { WebSearchResult };
 
 /**
- * MVP web 检索：依赖 DeepSeek 内置 web_search；本函数作为兜底，
- * 暂时返回 "no extra results"；后续接入独立搜索 API 时替换实现。
+ * 执行联网搜索。
+ *
+ * 内部统一使用 DeepSeek 内置 web_search，即使主对话模型是 MiniMax。
+ * 如果用户账户没有配置 DeepSeek 凭证，则抛出 ProviderAccessError。
  */
 export async function webSearch(
+  ctx: ToolExecutionContext,
   query: string,
   maxResults = 5
-): Promise<Record<string, unknown>> {
+): Promise<WebSearchResult> {
   const trimmed = query.trim().slice(0, 500);
   if (!trimmed) {
-    return { results: [], query: "" };
+    return { summary: "", sources: [], query: "" };
   }
-  logger.debug("web.search invoked", { query: trimmed, maxResults });
-  return {
-    results: [],
-    query: trimmed,
-    note: "web_search 已并入模型主路径；本工具返回空结果。",
-  };
+
+  let apiKey: string;
+  try {
+    apiKey = await getProviderApiKey(ctx.userId, "deepseek");
+  } catch (error) {
+    logger.warn("web.search failed to resolve DeepSeek API key", {
+      userId: ctx.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    if (error instanceof ProviderAccessError) {
+      throw new Error(`联网搜索需要 DeepSeek 服务配置：${error.message}`);
+    }
+    throw new Error("无法获取 DeepSeek API Key，请检查服务配置");
+  }
+
+  return runWebSearch(trimmed, apiKey, maxResults);
 }

@@ -496,8 +496,8 @@ export function registerBuiltinTools(): void {
       args.maxResults ? Number(args.maxResults) : 5
     );
   });
-  registerToolHandler("web.search", async (_ctx, args) => {
-    return webSearch(String(args.query ?? ""), args.maxResults ? Number(args.maxResults) : 5);
+  registerToolHandler("web.search", async (ctx, args) => {
+    return webSearch(ctx, String(args.query ?? ""), args.maxResults ? Number(args.maxResults) : 5);
   });
   registerToolHandler("web.fetch", async (_ctx, args) => {
     return webFetch(String(args.url ?? ""));

@@ -58,3 +58,5 @@ REPOSITORY_INDEX.md
 .worktrees/
 /docs/superpowers/
 /output/playwright/
+
+LOCALTEST.md

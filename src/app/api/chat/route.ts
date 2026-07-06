@@ -840,24 +840,36 @@ async function handlePost(request: NextRequest) {
   }
 
   // 11.5 Tool call execution loop (max 2 rounds, DeepSeek only)
-  if (!agentOrchestratorEnabled && modelRoute.provider === "deepseek" && "getToolCalls" in streamResult) {
+  // Runs for:
+  //   - native client tool_use blocks (legacy path, orchestrator disabled)
+  //   - DSML-derived tool calls from reasoning content (fallback, always)
+  if (modelRoute.provider === "deepseek" && "getToolCalls" in streamResult) {
     const MAX_TOOL_ROUNDS = 2;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const toolCalls = (streamResult as unknown as { getToolCalls: () => Array<{ id: string; name: string; input: Record<string, unknown> }> }).getToolCalls();
-      const clientToolCalls = toolCalls.filter((tc) => {
+      const executableToolCalls = toolCalls.filter((tc) => {
+        const isDsml = tc.id.startsWith("dsml-");
+        if (agentOrchestratorEnabled) {
+          // When the orchestrator is on, native client tools are handled by
+          // prefetch/continuation; only DSML-derived calls need recovery.
+          return isDsml;
+        }
         const skill = activeSkills?.find((s) => s.name === tc.name);
-        return skill && skill.type === "client";
+        if (skill && skill.type === "client") return true;
+        // DSML-derived tool calls from reasoning content may not be in the
+        // active skill set, but the model clearly intended to invoke them.
+        return isDsml;
       });
 
-      if (clientToolCalls.length === 0) break;
+      if (executableToolCalls.length === 0) break;
 
       const agentTap = new agentLoopInternal.EventTap((chunk) => {
         agentEvents.push(agentDecoder.decode(chunk, { stream: false }));
       });
 
-      // Execute client-side tools
+      // Execute client-side / DSML-derived tools
       const toolResults: Array<{ toolUseId: string; content: string }> = [];
-      for (const tc of clientToolCalls) {
+      for (const tc of executableToolCalls) {
         const autoRun = await agentLoopInternal.runAutoTool(
           {
             userId,
@@ -892,7 +904,7 @@ async function handlePost(request: NextRequest) {
       }
 
       // Build follow-up messages with tool results
-      const assistantContent = clientToolCalls.map((tc) => ({
+      const assistantContent = executableToolCalls.map((tc) => ({
         type: "tool_use" as const,
         id: tc.id,
         name: tc.name,
@@ -1057,17 +1069,21 @@ export async function accumulateAndSave(
     reader.releaseLock();
   }
 
-  if (fullContent) {
+  if (fullContent || fullReasoning) {
     const usage = getUsage();
     const promptTokens = usage?.prompt_tokens ?? 0;
     const completionTokens = usage?.completion_tokens ?? 0;
     const hitTokens = usage?.prompt_cache_hit_tokens ?? 0;
-    const missTokens = usage?.prompt_cache_miss_tokens ?? (promptTokens - hitTokens);
+    const missTokens = Math.max(
+      usage?.prompt_cache_miss_tokens ?? 0,
+      promptTokens - hitTokens,
+      0
+    );
 
     await prisma.message.update({
       where: { id: messageId },
       data: {
-        content: fullContent,
+        content: fullContent || "（模型未输出正文）",
         reasoningContent: fullReasoning || null,
         tokenCount: usage?.total_tokens ?? null,
         provider,

@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   messageFindMany: vi.fn(),
   messageUpdate: vi.fn(),
   messageDelete: vi.fn(),
+  userFindUnique: vi.fn(),
+  userUpdate: vi.fn(),
+  tokenUsageCreate: vi.fn(),
+  transaction: vi.fn(),
   getProviderApiKey: vi.fn(),
   retrieveProjectContext: vi.fn(),
   shouldUseProjectContext: vi.fn(),
@@ -45,9 +49,9 @@ vi.mock("@/lib/db", () => ({
       update: mocks.messageUpdate,
       delete: mocks.messageDelete,
     },
-    user: { findUnique: vi.fn(), update: vi.fn() },
-    tokenUsage: { create: vi.fn() },
-    $transaction: vi.fn((ops: Array<Promise<unknown>>) => Promise.all(ops)),
+    user: { findUnique: mocks.userFindUnique, update: mocks.userUpdate },
+    tokenUsage: { create: mocks.tokenUsageCreate },
+    $transaction: mocks.transaction,
   },
 }));
 
@@ -123,6 +127,17 @@ describe("POST /api/chat", () => {
     mocks.messageFindMany.mockResolvedValue([]);
     mocks.messageUpdate.mockResolvedValue({});
     mocks.messageDelete.mockResolvedValue({});
+    mocks.userFindUnique.mockResolvedValue({
+      id: "user-1",
+      cycleStartedAt: new Date("2026-07-01T00:00:00.000Z"),
+      creditsUsed: 0,
+      planCredits: 0,
+    });
+    mocks.userUpdate.mockResolvedValue({});
+    mocks.tokenUsageCreate.mockResolvedValue({ id: "usage-1" });
+    mocks.transaction.mockImplementation((ops: Array<Promise<unknown>>) =>
+      Promise.all(ops)
+    );
     mocks.conversationCreate.mockResolvedValue({
       id: "conversation-1",
       userId: "user-1",
@@ -253,6 +268,22 @@ describe("POST /api/chat", () => {
 });
 
 describe("accumulateAndSave", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.messageUpdate.mockResolvedValue({});
+    mocks.userFindUnique.mockResolvedValue({
+      id: "user-1",
+      cycleStartedAt: new Date("2026-07-01T00:00:00.000Z"),
+      creditsUsed: 0,
+      planCredits: 0,
+    });
+    mocks.userUpdate.mockResolvedValue({});
+    mocks.tokenUsageCreate.mockResolvedValue({ id: "usage-1" });
+    mocks.transaction.mockImplementation((ops: Array<Promise<unknown>>) =>
+      Promise.all(ops)
+    );
+  });
+
   it("persists the provider that actually produced the response", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -285,6 +316,52 @@ describe("accumulateAndSave", () => {
         content: "完成",
         provider: "minimax",
         tokenCount: 12,
+      }),
+    });
+  });
+
+  it("classifies unreported input tokens as cache misses before persistence", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { content: "完成" } }] })}\n\n`
+          )
+        );
+        controller.close();
+      },
+    });
+
+    await accumulateAndSave(
+      stream,
+      "conversation-1",
+      "message-1",
+      "user-1",
+      "deepseek-v4-pro",
+      "deepseek",
+      () => ({
+        prompt_tokens: 1377,
+        completion_tokens: 1143,
+        total_tokens: 2520,
+        prompt_cache_hit_tokens: 1024,
+        prompt_cache_miss_tokens: 0,
+      })
+    );
+
+    expect(mocks.messageUpdate).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: expect.objectContaining({
+        tokenCount: 2520,
+        cacheHitTokens: 1024,
+        cacheMissTokens: 353,
+      }),
+    });
+    expect(mocks.tokenUsageCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        totalTokens: 2520,
+        inputCacheHitTokens: 1024,
+        inputCacheMissTokens: 353,
+        outputTokens: 1143,
       }),
     });
   });

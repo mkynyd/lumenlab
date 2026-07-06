@@ -1,4 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  extractDsmlToolCalls,
+  stripDsmlToolCalls,
+} from "@/lib/agent/dsml-parser";
 
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic";
 
@@ -15,6 +19,7 @@ export interface DeepSeekRequest {
   reasoning_effort?: "high" | "max";
   max_tokens?: number;
   tools?: Array<{ type: string; [key: string]: unknown }>;
+  tool_choice?: { type: "auto" | "any" | "tool" | "none"; name?: string };
 }
 
 export interface DeepSeekUsage {
@@ -144,7 +149,12 @@ export async function createTextMessage(
 export async function completeChat(
   apiKey: string,
   params: DeepSeekRequest
-): Promise<{ content: string; reasoningContent?: string; usage: DeepSeekUsage | null }> {
+): Promise<{
+  content: string;
+  reasoningContent?: string;
+  usage: DeepSeekUsage | null;
+  rawContentBlocks?: unknown[];
+}> {
   const { system, history } = splitMessages(params.messages);
   try {
     const response = await createClient(apiKey).messages.create({
@@ -156,6 +166,8 @@ export async function completeChat(
       ...(params.thinking?.type === "enabled" ? { thinking: { type: "enabled" } as any } : {}),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(params.tools?.length ? { tools: params.tools as any } : {}),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(params.tool_choice ? { tool_choice: params.tool_choice as any } : {}),
     });
 
     const content = response.content
@@ -164,19 +176,36 @@ export async function completeChat(
       .join("")
       .trim();
 
-    const reasoningContent = response.content
-      .filter((block) => block.type === "thinking")
-      .map((block) => (block.type === "thinking" ? block.thinking : ""))
-      .join("")
-      .trim();
+    const reasoningContent = stripDsmlToolCalls(
+      response.content
+        .filter((block) => block.type === "thinking")
+        .map((block) => (block.type === "thinking" ? block.thinking : ""))
+        .join("")
+        .trim()
+    );
 
-    const usage = response.usage
+    const rawUsage = response.usage as
+      | (typeof response.usage & {
+          prompt_cache_hit_tokens?: number;
+          prompt_cache_miss_tokens?: number;
+        })
+      | undefined;
+    const inputTokens = rawUsage?.input_tokens ?? 0;
+    const cacheHitTokens =
+      rawUsage?.cache_read_input_tokens ??
+      rawUsage?.prompt_cache_hit_tokens ??
+      0;
+    const cacheMissTokens =
+      rawUsage?.cache_creation_input_tokens ??
+      rawUsage?.prompt_cache_miss_tokens ??
+      0;
+    const usage = rawUsage
       ? {
-          prompt_tokens: response.usage.input_tokens,
-          completion_tokens: response.usage.output_tokens,
-          total_tokens: response.usage.input_tokens + response.usage.output_tokens,
-          prompt_cache_hit_tokens: response.usage.cache_creation_input_tokens ?? undefined,
-          prompt_cache_miss_tokens: response.usage.cache_read_input_tokens ?? undefined,
+          prompt_tokens: inputTokens + cacheHitTokens + cacheMissTokens,
+          completion_tokens: rawUsage.output_tokens,
+          total_tokens: inputTokens + cacheHitTokens + cacheMissTokens + rawUsage.output_tokens,
+          prompt_cache_hit_tokens: cacheHitTokens,
+          prompt_cache_miss_tokens: cacheMissTokens,
         }
       : null;
 
@@ -184,6 +213,7 @@ export async function completeChat(
       content,
       ...(reasoningContent ? { reasoningContent } : {}),
       usage,
+      rawContentBlocks: response.content as unknown[],
     };
   } catch (error) {
     throw toDeepSeekError(error);
@@ -226,6 +256,12 @@ export async function streamChat(
   // Track current tool_use block being built
   let currentToolUse: { id: string; name: string; inputJson: string } | null = null;
 
+  // Reasoning models may emit tool-call-like markup (DSML) inside thinking.
+  // We accumulate the raw reasoning so we can strip the markup from the UI
+  // and recover any implied tool calls at the end of the stream.
+  let rawReasoning = "";
+  let cleanedReasoningStreamed = "";
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let promptTokens = 0;
@@ -267,9 +303,9 @@ export async function streamChat(
         for await (const event of anthropicStream) {
           if (event.type === "message_start") {
             const rawUsage = event.message.usage as unknown as Record<string, number>;
-            promptTokens = rawUsage.input_tokens || 0;
             cacheHitTokens = rawUsage.prompt_cache_hit_tokens || rawUsage.cache_read_input_tokens || 0;
             cacheMissTokens = rawUsage.prompt_cache_miss_tokens || rawUsage.cache_creation_input_tokens || 0;
+            promptTokens = (rawUsage.input_tokens || 0) + cacheHitTokens + cacheMissTokens;
           } else if (event.type === "content_block_start") {
             const block = event.content_block as unknown as {
               type: string;
@@ -309,13 +345,19 @@ export async function streamChat(
                 )
               );
             } else if (delta.type === "thinking_delta") {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    choices: [{ delta: { reasoning_content: delta.thinking || "" } }],
-                  })}\n\n`
-                )
-              );
+              rawReasoning += delta.thinking || "";
+              const cleanedReasoning = stripDsmlToolCalls(rawReasoning);
+              const newCleaned = cleanedReasoning.slice(cleanedReasoningStreamed.length);
+              cleanedReasoningStreamed = cleanedReasoning;
+              if (newCleaned) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      choices: [{ delta: { reasoning_content: newCleaned } }],
+                    })}\n\n`
+                  )
+                );
+              }
             }
           } else if (event.type === "content_block_stop") {
             // Flush any pending tool_use when block stops
@@ -330,6 +372,28 @@ export async function streamChat(
         // Flush any remaining tool_use at end of stream
         if (currentToolUse) {
           flushToolUse();
+        }
+
+        // Fallback: some reasoning models emit tool-call-like markup inside
+        // thinking content instead of native tool_use blocks. Extract those
+        // calls so the route can execute them and get a real answer.
+        if (toolCalls.length === 0 && rawReasoning) {
+          const dsmlCalls = extractDsmlToolCalls(rawReasoning);
+          for (let index = 0; index < dsmlCalls.length; index += 1) {
+            const call = dsmlCalls[index];
+            const mappedName = call.name === "web_search" ? "web.search" : call.name;
+            const toolUseBlock: ToolUseBlock = {
+              id: `dsml-${mappedName}-${index + 1}`,
+              name: mappedName,
+              input: call.input,
+            };
+            toolCalls.push(toolUseBlock);
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ tool_call: toolUseBlock })}\n\n`
+              )
+            );
+          }
         }
 
         usage = {
