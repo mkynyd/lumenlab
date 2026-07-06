@@ -9,10 +9,6 @@ import {
   refreshProjectIndex,
 } from "@/lib/rag/project-index";
 import { logger } from "@/lib/logger";
-import {
-  parseImageWithMiniMax,
-  parseDocumentWithMiniMax,
-} from "@/lib/vision/minimax";
 import { embedChunksForFile } from "@/lib/rag/embedding";
 import {
   readStoredObject,
@@ -20,8 +16,9 @@ import {
   deleteStoredObject,
   type StorageProvider,
 } from "@/lib/storage/object-storage";
-import { parseFileWithMinerU } from "@/lib/parse/mineru";
 import type { ParsedImageAsset } from "@/lib/parse/mineru-result";
+import { DocumentPipeline } from "@/lib/document-pipeline/pipeline";
+import type { ParseInput } from "@/lib/document-pipeline/types";
 
 export const PARSING_STAGES = {
   uploading: "上传文件中",
@@ -32,44 +29,6 @@ export const PARSING_STAGES = {
   complete: "完成",
 } as const;
 
-const TEXT_EXTENSIONS = new Set([
-  "txt",
-  "md",
-  "csv",
-  "json",
-  "ts",
-  "tsx",
-  "js",
-  "jsx",
-  "py",
-  "c",
-  "cpp",
-  "h",
-  "java",
-  "sql",
-  "html",
-  "css",
-]);
-
-const PDF_EXTENSIONS = new Set(["pdf"]);
-
-const OFFICE_EXTENSIONS = new Set([
-  "ppt",
-  "pptx",
-  "doc",
-  "docx",
-  "xls",
-  "xlsx",
-  "wps",
-  "et",
-  "dps",
-  "pages",
-  "numbers",
-  "key",
-]);
-
-const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-
 function mergeMetadata(current: unknown, next: Record<string, unknown>): Prisma.InputJsonObject {
   return {
     ...(current && typeof current === "object"
@@ -77,11 +36,6 @@ function mergeMetadata(current: unknown, next: Record<string, unknown>): Prisma.
       : {}),
     ...(next as Prisma.InputJsonObject),
   } as Prisma.InputJsonObject;
-}
-
-function extensionOf(filename: string) {
-  const index = filename.lastIndexOf(".");
-  return index >= 0 ? filename.slice(index + 1).toLowerCase() : "";
 }
 
 async function updateStage(
@@ -171,59 +125,61 @@ async function storeFileAssets(input: {
   return stored;
 }
 
-const MD_IMAGE_REGEX = /(!\[[^\]]*]\(\s*)(<?)([^)\s>]+)(>?)([^)]*\))/g;
-const HTML_IMAGE_REGEX = /(<img\b[^>]*\bsrc\s*=\s*["'])([^"']+)(["'][^>]*>)/gi;
-
-function rewriteAssetReferences(
-  content: string,
-  assetMap: StoredFileAsset[]
-): string {
-  const lookup = new Map(assetMap.map((a) => [a.relativePath, a.resourceUrl]));
-  return content
-    .replace(MD_IMAGE_REGEX, (match, prefix, open, reference, close, suffix) => {
-      const url = lookup.get(reference);
-      return url ? `${prefix}${open}${url}${close}${suffix}` : match;
-    })
-    .replace(HTML_IMAGE_REGEX, (match, prefix, reference, suffix) => {
-      const url = lookup.get(reference);
-      return url ? `${prefix}${url}${suffix}` : match;
-    });
-}
-
-async function parseOfficeWithMinerU(options: {
+export async function parseFileContent(options: {
   userId: string;
   file: {
     id: string;
     originalName: string;
+    mimeType: string;
+    storageProvider: string;
+    storagePath: string;
     processingMetadata: unknown;
   };
-  data: Buffer;
 }) {
-  const token = await getMinerUToken(options.userId);
-  if (!token) {
-    throw new Error("尚未配置 MinerU Token，Office 文件无法解析");
-  }
-
-  const parsed = await parseFileWithMinerU({
-    token,
-    fileBuffer: options.data,
-    filename: options.file.originalName,
-    onProgress(stage, progress) {
-      const normalizedStage =
-        stage === "running" || stage === "converting" ? "model" : stage;
-      if (normalizedStage === "model" && progress) {
-        void updateStage(options.file, "model", {
-          parser: "mineru-office",
-          extractedPages: progress.current,
-          totalPages: progress.total,
-        });
-      }
-    },
+  const data = await readStoredObject({
+    provider: options.file.storageProvider as StorageProvider,
+    key: options.file.storagePath,
   });
 
-  // 清理旧资源（重新解析时）
+  const parseInput: ParseInput = {
+    userId: options.userId,
+    fileAssetId: options.file.id,
+    filename: options.file.originalName,
+    mimeType: options.file.mimeType,
+    data,
+    apiKeys: {
+      minimax: await getMiniMaxKey(options.userId),
+      mineru: await getMinerUToken(options.userId),
+      bailian: await getBailianKey(options.userId),
+    },
+  };
+
+  await updateStage(options.file, "model", { parser: "document-pipeline" });
+
+  const pipeline = new DocumentPipeline();
+  const result = await pipeline.run(parseInput, (stage, progress) => {
+    void updateStage(options.file, stage as keyof typeof PARSING_STAGES, {
+      ...(progress ? { current: progress.current, total: progress.total } : {}),
+    });
+  });
+
+  return {
+    content: result.content,
+    status: result.status,
+    metadata: result.metadata,
+    assets: result.assets,
+  };
+}
+
+async function persistFileAssets(
+  fileAssetId: string,
+  userId: string,
+  assets: { id: string; relativePath: string; mimeType: string; buffer: Buffer }[]
+) {
+  if (assets.length === 0) return [];
+
   const oldResources = await prisma.fileAssetResource.findMany({
-    where: { fileAssetId: options.file.id },
+    where: { fileAssetId },
     select: { id: true, storageProvider: true, storagePath: true },
   });
   if (oldResources.length > 0) {
@@ -235,21 +191,23 @@ async function parseOfficeWithMinerU(options: {
         }).catch(() => {})
       )
     );
-    await prisma.fileAssetResource.deleteMany({
-      where: { fileAssetId: options.file.id },
-    });
+    await prisma.fileAssetResource.deleteMany({ where: { fileAssetId } });
   }
 
-  const storedAssets = await storeFileAssets({
-    userId: options.userId,
-    fileAssetId: options.file.id,
-    assets: parsed.assets,
+  const stored = await storeFileAssets({
+    userId,
+    fileAssetId,
+    assets: assets.map((a) => ({
+      relativePath: a.relativePath,
+      mimeType: a.mimeType,
+      buffer: a.buffer,
+    })),
   });
 
   await prisma.fileAssetResource.createMany({
-    data: storedAssets.map((asset) => ({
+    data: stored.map((asset) => ({
       id: asset.id,
-      fileAssetId: options.file.id,
+      fileAssetId,
       relativePath: asset.relativePath,
       mimeType: asset.mimeType,
       size: asset.size,
@@ -258,117 +216,7 @@ async function parseOfficeWithMinerU(options: {
     })),
   });
 
-  const content = rewriteAssetReferences(parsed.content, storedAssets);
-
-  return {
-    content,
-    status: "parsed" as const,
-    metadata: {
-      ...parsed.metadata,
-      parsedAt: new Date().toISOString(),
-      assetCount: storedAssets.length,
-    },
-  };
-}
-
-type MiniMaxImageMedia = "image/png" | "image/jpeg" | "image/webp";
-
-function imageMediaType(mimeType: string): MiniMaxImageMedia | null {
-  if ((IMAGE_MEDIA_TYPES as Set<string>).has(mimeType)) {
-    return mimeType as MiniMaxImageMedia;
-  }
-  return null;
-}
-
-async function parseFileContent(options: {
-  userId: string;
-  file: {
-    id: string;
-    originalName: string;
-    mimeType: string;
-    storageProvider: string;
-    storagePath: string;
-    processingMetadata: unknown;
-  };
-}) {
-  const ext = extensionOf(options.file.originalName || options.file.storagePath);
-  const data = await readStoredObject({
-    provider: options.file.storageProvider as StorageProvider,
-    key: options.file.storagePath,
-  });
-
-  if (TEXT_EXTENSIONS.has(ext)) {
-    return {
-      content: data.toString("utf-8"),
-      status: "parsed" as const,
-      metadata: {
-        parser: "text-local",
-        parsedAt: new Date().toISOString(),
-      },
-    };
-  }
-
-  if (OFFICE_EXTENSIONS.has(ext)) {
-    return parseOfficeWithMinerU({
-      userId: options.userId,
-      file: {
-        id: options.file.id,
-        originalName: options.file.originalName,
-        processingMetadata: options.file.processingMetadata,
-      },
-      data,
-    });
-  }
-
-  if (!PDF_EXTENSIONS.has(ext) && options.file.mimeType !== "application/pdf") {
-    const imageType = imageMediaType(options.file.mimeType);
-    if (!imageType) {
-      throw new Error(`不支持的文件类型: .${ext || options.file.mimeType}`);
-    }
-
-    const apiKey = await getMiniMaxKey(options.userId);
-    if (!apiKey) {
-      throw new Error("尚未配置 MiniMax API Key，请先在设置中添加");
-    }
-
-    await updateStage(options.file, "model", { parser: "minimax-m3-image" });
-    const content = await parseImageWithMiniMax({
-      apiKey,
-      data,
-      mediaType: imageType,
-    });
-    return {
-      content,
-      status: "parsed" as const,
-      metadata: {
-        parser: "minimax-m3-image",
-        parsedAt: new Date().toISOString(),
-        requiresVisionModel: true,
-      },
-    };
-  }
-
-  const apiKey = await getMiniMaxKey(options.userId);
-  if (!apiKey) {
-    throw new Error("尚未配置 MiniMax API Key，请先在设置中添加");
-  }
-
-  await updateStage(options.file, "model", { parser: "minimax-m3-pdf" });
-  const content = await parseDocumentWithMiniMax({
-    apiKey,
-    data,
-    filename: options.file.originalName,
-    mediaType: "application/pdf",
-  });
-  return {
-    content,
-    status: "parsed" as const,
-    metadata: {
-      parser: "minimax-m3-pdf",
-      parsedAt: new Date().toISOString(),
-      requiresVisionModel: true,
-    },
-  };
+  return stored;
 }
 
 export async function parseFileAsset(input: {
@@ -392,6 +240,9 @@ export async function parseFileAsset(input: {
       userId: input.userId,
       file,
     });
+    if (result.assets && result.assets.length > 0) {
+      await persistFileAssets(file.id, input.userId, result.assets);
+    }
     const indexMetadata = await generateFileIndexMetadata({
       userId: input.userId,
       filename: file.originalName,
