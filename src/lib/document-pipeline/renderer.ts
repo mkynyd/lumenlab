@@ -17,6 +17,15 @@ function escapeMarkdown(
   return text.replace(pattern, "\\$1");
 }
 
+function encodeMarkdownUrl(path: string): string {
+  // Encode characters that can break Markdown link syntax while preserving
+  // forward slashes used as path separators.
+  return path.replace(
+    /[()\[\] ?#&<>]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
 function renderBlock(block: DocumentBlock): string {
   switch (block.type) {
     case "text":
@@ -51,14 +60,16 @@ function renderBlock(block: DocumentBlock): string {
 
     default: {
       const _exhaustive: never = block;
-      return _exhaustive;
+      throw new Error(
+        `Unsupported block type: ${String((_exhaustive as Record<string, unknown>).type)}`
+      );
     }
   }
 }
 
 function renderImage(block: ImageBlock): string {
   const alt = block.altText || "";
-  const imageLine = `![${escapeMarkdown(alt)}](${encodeURI(block.relativePath)})`;
+  const imageLine = `![${escapeMarkdown(alt)}](${encodeMarkdownUrl(block.relativePath)})`;
   const quote = renderImageAnalysisQuote(block);
   return quote ? `${imageLine}\n\n${quote}` : imageLine;
 }
@@ -77,13 +88,13 @@ function renderImageAnalysisQuote(block: ImageBlock): string | undefined {
 
   const lines: string[] = [];
   if (block.visionSummary) {
-    lines.push(`图像解析：${block.visionSummary}`);
+    lines.push(`图像解析：${escapeMarkdown(block.visionSummary)}`);
   }
   if (block.visionText) {
-    lines.push(`图中文字：${block.visionText}`);
+    lines.push(`图中文字：${escapeMarkdown(block.visionText)}`);
   }
   if (block.extractedText && block.extractedText !== block.visionText) {
-    lines.push(`结构化内容：${block.extractedText}`);
+    lines.push(`结构化内容：${escapeMarkdown(block.extractedText)}`);
   }
 
   if (

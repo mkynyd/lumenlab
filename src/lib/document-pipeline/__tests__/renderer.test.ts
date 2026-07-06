@@ -304,4 +304,50 @@ describe("renderDocumentToMarkdown", () => {
     expect(output).toContain("> 图像解析：summary");
     expect(output).toContain("低置信度");
   });
+
+  it("preserves trailing whitespace without trimming", () => {
+    const blocks: DocumentBlock[] = [
+      { type: "text", id: "t1", content: "line ending with two spaces  " },
+    ];
+
+    expect(renderDocumentToMarkdown(blocks)).toBe("line ending with two spaces  ");
+  });
+
+  it("escapes markdown characters in vision analysis strings", () => {
+    const blocks: DocumentBlock[] = [
+      {
+        type: "image",
+        id: "i1",
+        assetId: "a1",
+        relativePath: "x.png",
+        analysisStatus: "parsed",
+        visionSummary: "*bold* summary",
+        visionText: "[link](url)",
+        extractedText: "`code`",
+      },
+    ];
+
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain("> 图像解析：\\*bold\\* summary");
+    expect(output).toContain("> 图中文字：\\[link\\]\\(url\\)");
+    expect(output).toContain("> 结构化内容：\\`code\\`");
+  });
+
+  it("encodes characters that break markdown link syntax in image paths", () => {
+    const blocks: DocumentBlock[] = [
+      {
+        type: "image",
+        id: "i1",
+        assetId: "a1",
+        relativePath: "path/with(parens)[brackets]and spaces.png?x=1#frag",
+        altText: "image",
+        analysisStatus: "pending",
+      },
+    ];
+
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain(
+      "![image](path/with%28parens%29%5Bbrackets%5Dand%20spaces.png%3Fx=1%23frag)"
+    );
+  });
 });
