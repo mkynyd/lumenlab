@@ -304,6 +304,12 @@ describe("parseFileAsset", () => {
       })
     );
 
+    expect(vectorStore.createDocumentChunks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetResourceUrlMap: expect.any(Map),
+      })
+    );
+
     expect(projectIndex.generateFileIndexMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         content: expect.stringContaining("/api/files/f1/resources/"),
@@ -331,6 +337,39 @@ describe("parseFileAsset", () => {
     );
     const textContent = (updateCall![0] as { data: { textContent: string } }).data.textContent;
     expect(textContent).toBe("# Slide\n\nJust text.");
+  });
+
+  it("converts local resource URLs to absolute URLs when NEXT_PUBLIC_APP_URL is set", async () => {
+    const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.example.com";
+    try {
+      vi.mocked(mineru.parseFileWithMinerU).mockResolvedValue({
+        content: "# Slide\n\n![chart](pics/chart.png)",
+        assets: [
+          {
+            relativePath: "pics/chart.png",
+            mimeType: "image/png",
+            buffer: Buffer.alloc(10_000),
+          },
+        ],
+        metadata: {
+          parser: "mineru-pipeline" as const,
+          taskId: "task-1",
+          parsedAt: new Date().toISOString(),
+        },
+      });
+
+      await parseFileAsset({ userId: "u1", fileId: "f1" });
+
+      const callArgs = vi.mocked(vectorStore.createDocumentChunks).mock.calls[0][0];
+      expect(callArgs.assetResourceUrlMap).toBeInstanceOf(Map);
+      const map = callArgs.assetResourceUrlMap as Map<string, string>;
+      const resourceUrl = map.get("pics/chart.png");
+      expect(resourceUrl).toBeDefined();
+      expect(resourceUrl!.startsWith("https://app.example.com/api/files/f1/resources/")).toBe(true);
+    } finally {
+      process.env.NEXT_PUBLIC_APP_URL = originalAppUrl;
+    }
   });
 
   it("delegates failures to the durable job runner without throwing", async () => {

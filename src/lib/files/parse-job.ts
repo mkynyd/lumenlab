@@ -18,6 +18,7 @@ import {
 } from "@/lib/storage/object-storage";
 import type { ParsedImageAsset } from "@/lib/parse/mineru-result";
 import { DocumentPipeline } from "@/lib/document-pipeline/pipeline";
+import type { PipelineResult } from "@/lib/document-pipeline/pipeline";
 import type { ParseInput } from "@/lib/document-pipeline/types";
 import {
   runFileParseJob,
@@ -45,139 +46,122 @@ export async function runParseStages(
     parseRunId: crypto.randomUUID(),
   });
 
-  // Stage: read_file
-  attempt("read_file");
-  const data = await readStoredObject({
-    provider: file.storageProvider as StorageProvider,
-    key: file.storagePath,
-  });
-
-  // Stage: parse_layout
-  attempt("parse_layout");
-  const input: ParseInput = {
-    userId: ctx.userId,
-    fileAssetId: file.id,
-    filename: file.originalName,
-    mimeType: file.mimeType,
-    data,
-    apiKeys: {
-      minimax: await getMiniMaxKey(ctx.userId),
-      mineru: await getMinerUToken(ctx.userId),
-      bailian: await getBailianKey(ctx.userId),
-    },
-  };
-
-  await updateStage(file, "model", { parser: "document-pipeline" });
-  const pipeline = new DocumentPipeline();
-  const result = await pipeline.run(input, (stage, progress) => {
-    const normalizedStage =
-      stage === "running" || stage === "converting"
-        ? "model"
-        : stage === "complete" || stage === "done"
-          ? "complete"
-          : stage === "failed"
-            ? "failed"
-            : stage;
-    if (normalizedStage in PARSING_STAGES) {
-      void updateStage(file, normalizedStage as keyof typeof PARSING_STAGES, {
-        ...(progress ? { current: progress.current, total: progress.total } : {}),
-      });
-    }
-  });
-
-  // Stage: store_assets
-  attempt("store_assets");
-  const storedAssets = result.assets.length > 0
-    ? await persistFileAssets(file.id, ctx.userId, result.assets)
-    : [];
-
-  // Stage: rewrite_refs
-  attempt("rewrite_refs");
-  const resourceUrlMap = new Map(storedAssets.map((s) => [s.relativePath, s.resourceUrl]));
-  const content = rewriteAssetReferences(result.content, resourceUrlMap);
-
-  // Stage: render metadata already done by pipeline; build index metadata.
-  const indexMetadata = await generateFileIndexMetadata({
-    userId: ctx.userId,
-    filename: file.originalName,
-    content,
-  });
-
-  const completedMetadata = {
-    ...result.metadata,
-    ...indexMetadata,
-    parsingStage: "complete",
-    parsingStageLabel: PARSING_STAGES.complete,
-  };
-
-  await updateStage(file, "writing", completedMetadata);
-
-  await prisma.fileAsset.update({
-    where: { id: file.id },
-    data: {
-      textContent: content,
-      status: result.status,
-      enhancementStatus: file.enhancedContent ? "stale" : "none",
-      processingMetadata: mergeMetadata(file.processingMetadata, completedMetadata),
-    },
-  });
-
-  // Stage: chunk_index
-  attempt("chunk_index");
-
-  // Build absolute URLs for local resources so the multimodal embedding provider can fetch them.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
-  const absoluteResourceUrlMap = new Map(
-    [...resourceUrlMap.entries()].map(([path, url]) => [
-      path,
-      url.startsWith("/") && appUrl ? `${appUrl.replace(/\/$/, "")}${url}` : url,
-    ])
-  );
-
-  let chunksCreated = false;
   try {
-    await createDocumentChunks({
-      fileAssetId: file.id,
-      projectId: file.projectId,
+    // Stage: read_file
+    attempt("read_file");
+
+    // Stage: parse_layout
+    attempt("parse_layout");
+    const result = await runDocumentPipelineForFile(file, ctx.userId);
+
+    // Stage: store_assets
+    attempt("store_assets");
+    const storedAssets = result.assets.length > 0
+      ? await persistFileAssets(file.id, ctx.userId, result.assets)
+      : [];
+
+    // Stage: rewrite_refs
+    attempt("rewrite_refs");
+    const resourceUrlMap = new Map(storedAssets.map((s) => [s.relativePath, s.resourceUrl]));
+    const content = rewriteAssetReferences(result.content, resourceUrlMap);
+
+    // Stage: render metadata already done by pipeline; build index metadata.
+    const indexMetadata = await generateFileIndexMetadata({
       userId: ctx.userId,
-      textContent: content,
-      title: file.originalName,
-      blocks: result.blocks,
-      assetResourceUrlMap: absoluteResourceUrlMap,
+      filename: file.originalName,
+      content,
     });
-    chunksCreated = true;
-  } catch {
+
+    const completedMetadata = {
+      ...result.metadata,
+      ...indexMetadata,
+      parsingStage: "complete",
+      parsingStageLabel: PARSING_STAGES.complete,
+    };
+
+    await updateStage(file, "writing", completedMetadata);
+
     await prisma.fileAsset.update({
       where: { id: file.id },
       data: {
+        textContent: content,
+        status: result.status,
+        enhancementStatus: file.enhancedContent ? "stale" : "none",
+        processingMetadata: mergeMetadata(file.processingMetadata, completedMetadata),
+      },
+    });
+
+    // Stage: chunk_index
+    attempt("chunk_index");
+
+    // Build absolute URLs for local resources so the multimodal embedding provider can fetch them.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+    const absoluteResourceUrlMap = new Map(
+      [...resourceUrlMap.entries()].map(([path, url]) => [
+        path,
+        url.startsWith("/") && appUrl ? `${appUrl.replace(/\/$/, "")}${url}` : url,
+      ])
+    );
+
+    let chunksCreated = false;
+    try {
+      await createDocumentChunks({
+        fileAssetId: file.id,
+        projectId: file.projectId,
+        userId: ctx.userId,
+        textContent: content,
+        title: file.originalName,
+        blocks: result.blocks,
+        assetResourceUrlMap: absoluteResourceUrlMap,
+      });
+      chunksCreated = true;
+    } catch {
+      await prisma.fileAsset.update({
+        where: { id: file.id },
+        data: {
+          processingMetadata: mergeMetadata(file.processingMetadata, {
+            ...result.metadata,
+            chunkWarning: "解析内容已保存，但检索分块创建失败",
+          }),
+        },
+      });
+    }
+
+    if (chunksCreated) {
+      const bailianKey = await getBailianKey(ctx.userId);
+      if (bailianKey) {
+        await embedChunksForFile({
+          fileAssetId: file.id,
+          apiKey: bailianKey,
+        }).catch((error) => {
+          logger.error("嵌入向量生成失败", {
+            fileId: file.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    }
+
+    if (file.projectId) {
+      await refreshProjectIndex({
+        userId: ctx.userId,
+        projectId: file.projectId,
+      }).catch(() => {});
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await prisma.fileAsset.update({
+      where: { id: file.id },
+      data: {
+        status: "failed",
         processingMetadata: mergeMetadata(file.processingMetadata, {
-          ...result.metadata,
-          chunkWarning: "解析内容已保存，但检索分块创建失败",
+          parsingStage: "failed",
+          parseError: message,
+          failedAt: new Date().toISOString(),
         }),
       },
     });
-  }
-
-  if (chunksCreated) {
-    const bailianKey = await getBailianKey(ctx.userId);
-    if (bailianKey) {
-      await embedChunksForFile({
-        fileAssetId: file.id,
-        apiKey: bailianKey,
-      }).catch((error) => {
-        logger.error("嵌入向量生成失败", {
-          fileId: file.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }
-  }
-
-  if (file.projectId) {
-    await refreshProjectIndex({
-      userId: ctx.userId,
-      projectId: file.projectId,
-    }).catch(() => {});
+    throw error;
   }
 }
 
@@ -337,6 +321,53 @@ async function storeFileAssets(input: {
   return stored;
 }
 
+async function runDocumentPipelineForFile(
+  file: {
+    id: string;
+    originalName: string;
+    mimeType: string;
+    storageProvider: string;
+    storagePath: string;
+    processingMetadata: unknown;
+  },
+  userId: string
+): Promise<PipelineResult> {
+  const data = await readStoredObject({
+    provider: file.storageProvider as StorageProvider,
+    key: file.storagePath,
+  });
+
+  const input: ParseInput = {
+    userId,
+    fileAssetId: file.id,
+    filename: file.originalName,
+    mimeType: file.mimeType,
+    data,
+    apiKeys: {
+      minimax: await getMiniMaxKey(userId),
+      mineru: await getMinerUToken(userId),
+      bailian: await getBailianKey(userId),
+    },
+  };
+
+  await updateStage(file, "model", { parser: "document-pipeline" });
+
+  const pipeline = new DocumentPipeline();
+  return pipeline.run(input, (stage, progress) => {
+    const normalizedStage =
+      stage === "running" || stage === "converting"
+        ? "model"
+        : stage === "complete" || stage === "done"
+          ? "complete"
+          : stage;
+    if (normalizedStage in PARSING_STAGES) {
+      void updateStage(file, normalizedStage as keyof typeof PARSING_STAGES, {
+        ...(progress ? { current: progress.current, total: progress.total } : {}),
+      });
+    }
+  });
+}
+
 export async function parseFileContent(options: {
   userId: string;
   file: {
@@ -348,43 +379,7 @@ export async function parseFileContent(options: {
     processingMetadata: unknown;
   };
 }) {
-  const data = await readStoredObject({
-    provider: options.file.storageProvider as StorageProvider,
-    key: options.file.storagePath,
-  });
-
-  const parseInput: ParseInput = {
-    userId: options.userId,
-    fileAssetId: options.file.id,
-    filename: options.file.originalName,
-    mimeType: options.file.mimeType,
-    data,
-    apiKeys: {
-      minimax: await getMiniMaxKey(options.userId),
-      mineru: await getMinerUToken(options.userId),
-      bailian: await getBailianKey(options.userId),
-    },
-  };
-
-  await updateStage(options.file, "model", { parser: "document-pipeline" });
-
-  const pipeline = new DocumentPipeline();
-  const result = await pipeline.run(parseInput, (stage, progress) => {
-    const normalizedStage =
-      stage === "running" || stage === "converting"
-        ? "model"
-        : stage === "complete" || stage === "done"
-          ? "complete"
-          : stage === "failed"
-            ? "failed"
-            : stage;
-    if (normalizedStage in PARSING_STAGES) {
-      void updateStage(options.file, normalizedStage as keyof typeof PARSING_STAGES, {
-        ...(progress ? { current: progress.current, total: progress.total } : {}),
-      });
-    }
-  });
-
+  const result = await runDocumentPipelineForFile(options.file, options.userId);
   return {
     content: result.content,
     status: result.status,
