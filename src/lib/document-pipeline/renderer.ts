@@ -6,24 +6,33 @@ export function renderDocumentToMarkdown(blocks: DocumentBlock[]): string {
   return blocks.map(renderBlock).join("\n\n");
 }
 
-function escapeMarkdown(
-  text: string,
-  options: { escapeBackticks?: boolean } = {}
-): string {
-  const { escapeBackticks = true } = options;
-  const pattern = escapeBackticks
-    ? /([\\`*_{}\[\]()#|!])/g
-    : /([\\*_{}\[\]()#|!])/g;
-  return text.replace(pattern, "\\$1");
+function escapeMarkdown(text: string): string {
+  return text.replace(/([\\`*_{}\[\]()#|])/g, "\\$1");
+}
+
+function escapeFormula(text: string): string {
+  return text
+    .replace(/([\\{}[\]()#|])/g, "\\$1")
+    .replace(/`/g, "\\`");
 }
 
 function encodeMarkdownUrl(path: string): string {
   // Encode characters that can break Markdown link syntax while preserving
   // forward slashes used as path separators.
-  return path.replace(
-    /[()\[\] ?#&<>]/g,
-    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
-  );
+  const shouldEncode = /[()\[\] ?#&<>"\\]/;
+  let result = "";
+  for (const char of path) {
+    if (shouldEncode.test(char) || char.codePointAt(0)! > 0x7f) {
+      if (char.length === 1 && char.charCodeAt(0) < 0x80) {
+        result += `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`;
+      } else {
+        result += encodeURIComponent(char);
+      }
+    } else {
+      result += char;
+    }
+  }
+  return result;
 }
 
 function renderBlock(block: DocumentBlock): string {
@@ -44,12 +53,11 @@ function renderBlock(block: DocumentBlock): string {
     }
 
     case "formula":
-      return `$$${escapeMarkdown(block.content)}$$`;
+      return `$$${escapeFormula(block.content)}$$`;
 
     case "code": {
       const language = block.language ?? "";
-      const content = escapeMarkdown(block.content, { escapeBackticks: false });
-      return `\`\`\`${language}\n${content}\n\`\`\``;
+      return `\`\`\`${language}\n${block.content}\n\`\`\``;
     }
 
     case "page-break":

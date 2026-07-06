@@ -58,7 +58,7 @@ describe("renderDocumentToMarkdown", () => {
     ];
 
     expect(renderDocumentToMarkdown(blocks)).toBe(
-      "```python\nprint\\('hi'\\)\n```"
+      "```python\nprint('hi')\n```"
     );
   });
 
@@ -234,7 +234,7 @@ describe("renderDocumentToMarkdown", () => {
     const output = renderDocumentToMarkdown(blocks);
     expect(output).toContain("\\*not bold\\*");
     expect(output).toContain("# \\# not a heading");
-    expect(output).toContain("$$x \\* y$$");
+    expect(output).toContain("$$x * y$$");
     expect(output).toContain("\\*not italic\\*");
   });
 
@@ -250,6 +250,21 @@ describe("renderDocumentToMarkdown", () => {
 
     expect(renderDocumentToMarkdown(blocks)).toBe(
       "```ts\nconst x = `hello`;\n```"
+    );
+  });
+
+  it("preserves literal markdown characters inside code blocks", () => {
+    const blocks: DocumentBlock[] = [
+      {
+        type: "code",
+        id: "c3",
+        language: "md",
+        content: "* _ [ ] ( ) # |",
+      },
+    ];
+
+    expect(renderDocumentToMarkdown(blocks)).toBe(
+      "```md\n* _ [ ] ( ) # |\n```"
     );
   });
 
