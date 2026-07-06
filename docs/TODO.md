@@ -1,6 +1,6 @@
 # TODO
 
-> Last updated: 2026-06-29
+> Last updated: 2026-07-07
 
 This document tracks completed first-slice Agent Orchestrator work plus deferred Skill, Tool, and follow-up action work.
 
@@ -175,8 +175,8 @@ Status: Iteration 0-2 MVP is complete. The document pipeline now supports text, 
 
 - [ ] Iteration 3: PDF hybrid parsing strategy (`chooseDocumentParsingStrategy`).
   - **Status: skipped.** Previous practice showed text/scanned classification heuristics unreliable for this project. PDF parsing will remain on the existing MiniMax-M3 document path until a better signal is available.
-- [ ] Iteration 4: Persistent `FileParseJob` table and recoverable queue.
-- [ ] Iteration 5: Dedicated image chunks with `sourceType` metadata and **multimodal embedding** (project already uses `qwen3-vl-embedding` with image+text fusion).
-- [ ] Iteration 6: Agent roles and quality checker.
+- [x] Iteration 4: Persistent `FileParseJob` table and recoverable queue. Done — see `prisma/schema.prisma` `FileParseJob`, `src/lib/document-pipeline/job-runner.ts`, and `src/lib/files/parse-job.ts`.
+- [x] Iteration 5: Dedicated image chunks with `sourceType` metadata and **multimodal embedding** (project already uses `qwen3-vl-embedding` with image+text fusion). Done — see `src/lib/document-pipeline/chunk-builder.ts` and `src/lib/rag/vector-store.ts`.
+- [x] Iteration 6: Agent roles and quality checker. Done — see `src/lib/document-pipeline/quality-checker.ts` and `src/lib/document-pipeline/pipeline.ts`.
 - [ ] Iteration 7: UI parsing-mode controls and per-file quality reports.
   - **Status: will not do.** User explicitly excluded UI controls from this phase.
