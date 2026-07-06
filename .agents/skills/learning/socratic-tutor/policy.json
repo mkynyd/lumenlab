@@ -1,0 +1,55 @@
+{
+  "version": "1.0.0",
+  "category": "learning",
+  "display_name": "苏格拉底导师",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "project_files.list",
+    "project_files.read",
+    "project_rag.search",
+    "artifact.save",
+    "artifact.list"
+  ],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "auto",
+  "required_scopes": ["project.read", "artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "question": { "type": "string" },
+      "subject": { "type": "string" },
+      "stuckStep": { "type": "string" }
+    },
+    "required": ["question"]
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "turn": { "type": "integer" },
+      "prompt": { "type": "string" },
+      "hint": { "type": "string" },
+      "nextStep": { "type": "string" },
+      "artifactId": { "type": "string" }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": false,
+    "may_persist": true,
+    "retention_days": 30
+  },
+  "triggers": {
+    "include": [
+      "苏格拉底", "socratic", "引导我", "追问",
+      "一步步问", "启发式", "教我", "帮我理解",
+      "不会做", "看不懂", "这道题", "卡住了"
+    ],
+    "exclude": [
+      "直接告诉我答案", "给我答案", "帮我写"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**", "assets/**"],
+    "deny": ["scripts/**"]
+  }
+}

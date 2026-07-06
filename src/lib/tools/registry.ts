@@ -32,6 +32,7 @@ import {
   formatAttachedReferences,
 } from "./reference/manage";
 import { exportArtifactAsDocx } from "./artifact-export/docx";
+import { activateSkill, buildActivateSkillEnum } from "../agent/skill-activate-handler";
 
 const TOOLS: ToolMetadata[] = [
   {
@@ -440,6 +441,34 @@ const TOOLS: ToolMetadata[] = [
     auditLevel: "standard",
     requiredScopes: ["artifact.write"],
   },
+  {
+    toolId: "skill.activate",
+    name: "activate_skill",
+    description: "激活一个技能以获取详细的工作指令。当任务匹配某个技能的描述时调用此工具。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          enum: [],
+          description: "要激活的技能名称",
+        },
+      },
+      required: ["name"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L1",
+    isReadOnly: true,
+    hasExternalSideEffect: false,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: false,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "minimal",
+    requiredScopes: [],
+  },
 ];
 
 let registered = false;
@@ -556,6 +585,22 @@ export function registerBuiltinTools(): void {
       String(args.artifactId ?? "")
     );
   });
+  registerToolHandler("skill.activate", async (_ctx, args) => {
+    return activateSkill(String(args.name ?? ""));
+  });
+
+  // 动态更新 activate_skill 的 enum（在 skills 注册完成后）
+  const activateTool = toolRegistry.get("skill.activate");
+  if (activateTool) {
+    const skillIds = buildActivateSkillEnum();
+    (activateTool.inputSchema as Record<string, unknown>).properties = {
+      name: {
+        type: "string",
+        enum: skillIds,
+        description: "要激活的技能名称",
+      },
+    };
+  }
 }
 
 // 模块副作用注册：导入即生效

@@ -1,0 +1,58 @@
+{
+  "version": "1.0.0",
+  "category": "academic",
+  "display_name": "论文写作助手",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "project_files.list",
+    "project_files.read",
+    "project_rag.search",
+    "web.search",
+    "web.fetch",
+    "artifact.save",
+    "artifact.list"
+  ],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["project.read", "artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "topic": { "type": "string" },
+      "draftType": {
+        "type": "string",
+        "enum": ["outline", "introduction", "section", "revision", "abstract"]
+      }
+    },
+    "required": ["topic"]
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "artifactId": { "type": "string" },
+      "references": { "type": "array" }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": true,
+    "may_persist": true,
+    "retention_days": 90
+  },
+  "triggers": {
+    "include": [
+      "写一篇", "撰写", "初稿", "论文初稿", "paper draft",
+      "ieee", "acm", "latex", "摘要", "introduction",
+      "related work", "论文写作", "帮我写",
+      "生成论文", "写论文"
+    ],
+    "exclude": [
+      "读论文", "论文总结", "精读", "速读",
+      "这篇论文讲了什么"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**", "assets/**"],
+    "deny": ["scripts/**"]
+  }
+}

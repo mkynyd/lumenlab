@@ -54,6 +54,18 @@ function isAgentContinuationEnabled() {
   return process.env.AGENT_CONTINUATION_ENABLED === "1";
 }
 
+/**
+ * 判断是否应该服务端预注入 skill instructions。
+ * - 用户手动选择：总是预注入
+ * - Router 高置信度（>= 0.85）：预注入，避免首轮 tool 往返延迟
+ * - 低置信度：不预注入，让模型自己调用 activate_skill
+ */
+function shouldPreInject(route: { source: string; confidence: number }): boolean {
+  if (route.source === "manual") return true;
+  if (route.source === "rule" && route.confidence >= 0.85) return true;
+  return false;
+}
+
 async function parseRequest(request: NextRequest): Promise<{
   body: SendMessageInput;
   attachments: ServerFileAttachment[];
@@ -401,6 +413,16 @@ async function handlePost(request: NextRequest) {
 
   if (project && hiddenPrompt) {
     systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
+  }
+
+  // Skill pre-injection（渐进披露优化）:
+  // Router 高置信度或用户手动选择时，在首轮调用前直接注入完整 skill instructions，
+  // 不走 activate_skill tool 往返，保证首轮质量。
+  if (skillRoute.activeSkillId && shouldPreInject(skillRoute)) {
+    const activeSkill = skillRegistry.get(skillRoute.activeSkillId);
+    if (activeSkill?.instructions) {
+      systemPrompt = `${systemPrompt}\n\n<skill_content name="${activeSkill.skillId}">\n${activeSkill.instructions}\n</skill_content>`;
+    }
   }
 
   const modelRoute = routeModel(conversation, attachments, {

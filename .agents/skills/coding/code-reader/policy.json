@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "category": "coding",
+  "display_name": "代码阅读",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "web.fetch",
+    "web.search",
+    "artifact.save",
+    "artifact.list"
+  ],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "repoUrl": { "type": "string" },
+      "focusFile": { "type": "string" }
+    },
+    "required": ["repoUrl"]
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "artifactId": { "type": "string" },
+      "summary": { "type": "string" }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": true,
+    "may_persist": true,
+    "retention_days": 30
+  },
+  "triggers": {
+    "include": [
+      "调用链", "代码", "typescript", "react", "next.js",
+      "函数", "class", "repository", "项目结构",
+      "github", "开源", "架构", "code reader",
+      "读代码", "理解这个项目", "代码分析"
+    ],
+    "exclude": [
+      "写代码", "实现", "帮我写", "debug", "修bug"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**", "assets/**"],
+    "deny": ["scripts/**"]
+  }
+}

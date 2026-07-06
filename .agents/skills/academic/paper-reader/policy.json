@@ -1,0 +1,104 @@
+{
+  "version": "1.0.0",
+  "category": "academic",
+  "display_name": "论文速读",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "project_files.list",
+    "project_files.read",
+    "project_rag.search",
+    "arxiv.search",
+    "arxiv.read",
+    "arxiv.fetch",
+    "web.fetch",
+    "reference.add",
+    "reference.list",
+    "reference.attach",
+    "reference.format",
+    "artifact.save",
+    "artifact.list",
+    "artifact.export_docx"
+  ],
+  "allowed_risk_level": ["L1", "L2", "L3"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["project.read", "artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "papers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string" },
+            "source": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["arxiv_id", "pdf_file_id", "pasted_text"]
+                },
+                "content": { "type": "string" }
+              },
+              "required": ["kind", "content"]
+            }
+          },
+          "required": ["source"]
+        }
+      },
+      "compare_dimensions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "context": {
+        "type": "object",
+        "properties": {
+          "my_direction": { "type": "string" },
+          "specific_question": { "type": "string" }
+        }
+      },
+      "preferences": {
+        "type": "object",
+        "properties": {
+          "language": { "type": "string", "enum": ["zh", "en", "bilingual"] },
+          "depth_hint": {
+            "type": "string",
+            "enum": ["auto", "force_skim", "force_deep"]
+          }
+        }
+      }
+    },
+    "required": ["papers"]
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "summaryCard": { "type": "object" },
+      "connectionPoints": { "type": "array" },
+      "deepDiveAnswers": { "type": "array" },
+      "comparison": { "type": "object" },
+      "artifactIds": { "type": "array", "items": { "type": "string" } }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": true,
+    "may_persist": true,
+    "retention_days": 90
+  },
+  "triggers": {
+    "include": [
+      "精读", "读论文", "paper reader", "arxiv:", "doi:", "openreview",
+      "论文速读", "论文对比", "帮我读", "总结这篇论文",
+      "这篇论文讲了什么", "多篇对比"
+    ],
+    "exclude": [
+      "写一篇", "撰写", "初稿", "论文初稿", "paper draft",
+      "ieee", "acm", "latex", "降重"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**", "assets/**"],
+    "deny": ["scripts/**"]
+  }
+}

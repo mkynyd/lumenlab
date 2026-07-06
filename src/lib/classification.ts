@@ -11,6 +11,7 @@
 
 import { prisma } from "@/lib/db";
 import { GLOBAL_SYSTEM_PROMPT, GLOBAL_SYSTEM_PROMPT_WEB_SEARCH, getModePrompt } from "@/lib/ai/prompts";
+import { skillRegistry } from "@/lib/agent/skill-registry";
 
 // ============================================================
 // LLM 生成项目级 Prompt
@@ -221,6 +222,40 @@ export async function assembleSystemPrompt(
   const modePrompt = getModePrompt(mode);
   if (modePrompt) {
     parts.push(modePrompt);
+  }
+
+  // Layer 5: Skill catalog（渐进披露 Tier 1 — 只放 name + description）
+  const skills = skillRegistry.list();
+  if (skills.length > 0) {
+    const catalogParts: string[] = ["## 可用技能"];
+    catalogParts.push(
+      "当任务匹配某个技能的描述时，调用 activate_skill(name) 获取详细指令。",
+    );
+
+    // 按 category 分组
+    const grouped = new Map<string, typeof skills>();
+    for (const s of skills) {
+      const cat = s.category || "其他";
+      if (!grouped.has(cat)) grouped.set(cat, []);
+      grouped.get(cat)!.push(s);
+    }
+
+    const CAT_LABELS: Record<string, string> = {
+      academic: "论文学术",
+      exam: "考试复习",
+      coding: "编程技术",
+      learning: "通识学习",
+    };
+
+    for (const [cat, catSkills] of grouped) {
+      const label = CAT_LABELS[cat] || cat;
+      catalogParts.push(`### ${label}`);
+      for (const s of catSkills) {
+        catalogParts.push(`- ${s.skillId}: ${s.description}`);
+      }
+    }
+
+    parts.push(catalogParts.join("\n"));
   }
 
   return parts.join("\n\n");

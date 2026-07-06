@@ -1,3 +1,13 @@
+/**
+ * LumenLab Skill Router
+ *
+ * 基于 skill metadata triggers + 硬编码 fallback 的自动路由。
+ * 迁移策略：优先使用 skillRegistry 中每个 skill 的 triggers（来自 policy.json），
+ * 当无 triggers 时 fallback 到硬编码关键词以确保向后兼容。
+ */
+
+import { skillRegistry } from "./skill-registry";
+
 export type TaskProfile = "simple" | "rag" | "research" | "workflow";
 export type SkillRouteStatus = "none" | "active" | "awaiting_context";
 export type SkillRouteSource = "manual" | "rule" | "none";
@@ -43,14 +53,16 @@ export interface SkillRouteResult {
 const CONTEXT_REQUEST =
   "请上传文档、粘贴论文编号（例如 arXiv ID ），或选择项目资料。";
 
-const BUILTIN_SKILL_IDS = new Set([
-  "paper-reader",
-  "paper-writer",
-  "exam-extract",
-  "exam-coach",
-  "code-reader",
-  "socratic-tutor",
-]);
+/** 动态获取已注册 skill 的 ID 集合（来自 skillRegistry） */
+function getBuiltinSkillIds(): Set<string> {
+  const registered = skillRegistry.list().map((s) => s.skillId);
+  if (registered.length > 0) return new Set(registered);
+  // Fallback: skillRegistry 为空时（测试环境或注册未完成），使用硬编码集合
+  return new Set([
+    "paper-reader", "paper-writer", "exam-extract",
+    "exam-coach", "code-reader", "socratic-tutor",
+  ]);
+}
 
 function normalize(input: string) {
   return input.toLowerCase().replace(/\s+/g, " ").trim();
@@ -133,7 +145,55 @@ function defaultSuggestions(input: SkillRouteInput, activeSkillId: string | null
   return suggestions;
 }
 
-function routeByRules(input: SkillRouteInput) {
+/**
+ * 基于 skill metadata triggers（来自 policy.json）的路由匹配。
+ * 遍历所有已注册 skill 的 triggers.include/exclude 规则，
+ * 根据命中的 include 数量计算置信度。
+ */
+function routeByTriggers(input: SkillRouteInput) {
+  const text = normalize([input.hiddenPrompt, input.message].filter(Boolean).join("\n"));
+  const files = fileSignals(input);
+  const skills = skillRegistry.list();
+
+  let bestMatch: { skillId: string; confidence: number; reason: string } | null = null;
+
+  for (const skill of skills) {
+    const triggers = skill.triggers;
+    if (!triggers || (!triggers.include.length && !triggers.exclude.length)) continue;
+
+    // exclude 检查（任一命中则跳过该 skill）
+    const excludeHits = triggers.exclude.filter((p) =>
+      includesAny(text, [p]) || (files && includesAny(files, [p]))
+    );
+    if (excludeHits.length > 0) continue;
+
+    // include 检查
+    const includeHits = triggers.include.filter((p) =>
+      includesAny(text, [p]) || (files && includesAny(files, [p]))
+    );
+    if (includeHits.length === 0) continue;
+
+    // 置信度：命中数 / 总 include 数，基础值不低于 0.78
+    const ratio = includeHits.length / triggers.include.length;
+    const confidence = Math.max(0.78, Math.min(0.95, 0.85 + ratio * 0.1));
+
+    if (!bestMatch || confidence > bestMatch.confidence) {
+      bestMatch = {
+        skillId: skill.skillId,
+        confidence: Math.round(confidence * 100) / 100,
+        reason: `Matched triggers: ${includeHits.slice(0, 3).join(", ")}`,
+      };
+    }
+  }
+
+  return bestMatch;
+}
+
+/**
+ * 硬编码关键词 fallback 路由。
+ * 当 triggers-based 路由无匹配时使用，保证向后兼容。
+ */
+function routeByHardcodedRules(input: SkillRouteInput) {
   const text = normalize([input.hiddenPrompt, input.message].filter(Boolean).join("\n"));
   const files = fileSignals(input);
 
@@ -150,7 +210,7 @@ function routeByRules(input: SkillRouteInput) {
     return {
       skillId: "socratic-tutor",
       confidence: 0.92,
-      reason: "Socratic tutoring intent",
+      reason: "Socratic tutoring intent (hardcoded fallback)",
     };
   }
 
@@ -165,7 +225,7 @@ function routeByRules(input: SkillRouteInput) {
       "exam coach",
     ])
   ) {
-    return { skillId: "exam-coach", confidence: 0.88, reason: "Exam coaching intent" };
+    return { skillId: "exam-coach", confidence: 0.88, reason: "Exam coaching intent (hardcoded fallback)" };
   }
 
   if (
@@ -175,7 +235,7 @@ function routeByRules(input: SkillRouteInput) {
     return {
       skillId: "exam-extract",
       confidence: files ? 0.9 : 0.82,
-      reason: "Exam extraction intent with course material",
+      reason: "Exam extraction intent (hardcoded fallback)",
     };
   }
 
@@ -192,7 +252,7 @@ function routeByRules(input: SkillRouteInput) {
     ]) &&
     includesAny(text, ["写", "撰写", "生成", "draft", "paper", "论文"])
   ) {
-    return { skillId: "paper-writer", confidence: 0.86, reason: "Paper writing intent" };
+    return { skillId: "paper-writer", confidence: 0.86, reason: "Paper writing intent (hardcoded fallback)" };
   }
 
   if (
@@ -207,7 +267,7 @@ function routeByRules(input: SkillRouteInput) {
     ]) &&
     !includesAny(text, ["写一篇", "撰写", "初稿"])
   ) {
-    return { skillId: "paper-reader", confidence: 0.84, reason: "Paper reading intent" };
+    return { skillId: "paper-reader", confidence: 0.84, reason: "Paper reading intent (hardcoded fallback)" };
   }
 
   if (
@@ -223,8 +283,20 @@ function routeByRules(input: SkillRouteInput) {
       "项目结构",
     ])
   ) {
-    return { skillId: "code-reader", confidence: 0.78, reason: "Code reading intent" };
+    return { skillId: "code-reader", confidence: 0.78, reason: "Code reading intent (hardcoded fallback)" };
   }
+
+  return null;
+}
+
+function routeByRules(input: SkillRouteInput) {
+  // 优先尝试 triggers-based 路由
+  const triggerMatch = routeByTriggers(input);
+  if (triggerMatch) return triggerMatch;
+
+  // Fallback 到硬编码关键词
+  const hardcoded = routeByHardcodedRules(input);
+  if (hardcoded) return hardcoded;
 
   return { skillId: null, confidence: 0, reason: "No skill intent" };
 }
@@ -243,7 +315,9 @@ function missingInfoFor(skillId: string, input: SkillRouteInput) {
 }
 
 export function routeSkill(input: SkillRouteInput): SkillRouteResult {
-  if (input.manualSkillId && BUILTIN_SKILL_IDS.has(input.manualSkillId)) {
+  const builtinIds = getBuiltinSkillIds();
+
+  if (input.manualSkillId && builtinIds.has(input.manualSkillId)) {
     const missingInfo = missingInfoFor(input.manualSkillId, input);
     return {
       activeSkillId: input.manualSkillId,

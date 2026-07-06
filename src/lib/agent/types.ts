@@ -59,6 +59,15 @@ export interface SkillMetadata {
     mayPersist: boolean;
     retentionDays?: number;
   };
+  /** Agent Skills 扩展：路由触发词 */
+  triggers?: {
+    include: string[];
+    exclude: string[];
+  };
+  /** Agent Skills 扩展：分类 slug */
+  category?: string;
+  /** Agent Skills 扩展：展示名称 */
+  displayName?: string;
 }
 
 export interface AffectedResource {

@@ -1,10 +1,15 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, beforeAll } from "vitest";
 import { toolRegistry } from "./tool-registry";
 import "@/lib/tools/registry";
 import type { AgentContext, ToolMetadata } from "./types";
 import { skillRegistry } from "./skill-registry";
 import "@/lib/skills/registry";
+import { registerFromDiscovery } from "@/lib/skills/registry";
 import type { SkillMetadata } from "./types";
+
+beforeAll(async () => {
+  await registerFromDiscovery();
+});
 
 const userPrefs: Array<{ userId: string; toolId: string; approvalMode: string }> = [];
 

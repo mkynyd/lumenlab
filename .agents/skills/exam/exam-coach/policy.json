@@ -1,0 +1,54 @@
+{
+  "version": "1.1.0",
+  "category": "exam",
+  "display_name": "复习教练",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "project_files.list",
+    "project_files.read",
+    "project_rag.search",
+    "artifact.save",
+    "artifact.list"
+  ],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["project.read", "artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "examName": { "type": "string" },
+      "daysUntilExam": { "type": "integer", "minimum": 0 },
+      "hoursPerDay": { "type": "number", "minimum": 0 },
+      "focusAreas": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["examName"]
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "planArtifactId": { "type": "string" },
+      "cardArtifactIds": { "type": "array", "items": { "type": "string" } },
+      "weakTopics": { "type": "array", "items": { "type": "string" } }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": false,
+    "may_persist": true,
+    "retention_days": 60
+  },
+  "triggers": {
+    "include": [
+      "速记卡", "记忆卡", "flashcard", "自测题", "刷题",
+      "复习计划", "exam coach", "备考", "考试复习",
+      "错题整理", "帮我复习", "期末复习", "考前冲刺"
+    ],
+    "exclude": [
+      "考点分析", "考试重点", "划重点", "考题要点"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**", "assets/**"],
+    "deny": ["scripts/**"]
+  }
+}

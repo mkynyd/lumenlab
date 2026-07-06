@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useMemo } from "react";
 import {
   Brain,
   ChatBubbleQuestion,
@@ -21,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+/** 硬编码 fallback（API 不可用时使用） */
 export const BUILTIN_SKILL_OPTIONS = [
   { value: "auto", label: "自动 Skill" },
   { value: "paper-reader", label: "论文阅读" },
@@ -32,7 +34,12 @@ export const BUILTIN_SKILL_OPTIONS = [
   { value: "off", label: "关闭 Skill" },
 ] as const;
 
-export type SkillSelectorValue = (typeof BUILTIN_SKILL_OPTIONS)[number]["value"];
+export type SkillSelectorValue = string;
+
+interface SkillOption {
+  value: string;
+  label: string;
+}
 
 interface SkillSelectorProps {
   value: SkillSelectorValue;
@@ -41,7 +48,41 @@ interface SkillSelectorProps {
   compact?: boolean;
 }
 
-const SKILL_ICONS: Record<SkillSelectorValue, typeof Brain> = {
+/** 从 /api/skills/catalog 加载动态 skill 列表 */
+function useSkillCatalog(): { options: SkillOption[]; loading: boolean } {
+  const [options, setOptions] = useState<SkillOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/skills/catalog")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.categories) return;
+        const items: SkillOption[] = [];
+        for (const cat of data.categories) {
+          for (const skill of cat.skills) {
+            items.push({
+              value: skill.name,
+              label: skill.displayName || skill.name,
+            });
+          }
+        }
+        setOptions(items);
+      })
+      .catch(() => {
+        // API 不可用时静默失败，使用 fallback
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  return { options, loading };
+}
+
+const SKILL_ICONS: Record<string, typeof Brain> = {
   auto: MagicWand,
   "paper-reader": OpenBook,
   "paper-writer": EditPencil,
@@ -52,15 +93,43 @@ const SKILL_ICONS: Record<SkillSelectorValue, typeof Brain> = {
   off: Xmark,
 };
 
+function getSkillIcon(value: string) {
+  return SKILL_ICONS[value] ?? Brain;
+}
+
 export function SkillSelector({
   value,
   onChange,
   disabled,
   compact = true,
 }: SkillSelectorProps) {
-  const selected = BUILTIN_SKILL_OPTIONS.find((option) => option.value === value);
+  const { options: dynamicOptions, loading: _loading } = useSkillCatalog();
+
+  // 合并动态选项 + 固定选项（auto / off）
+  const allOptions = useMemo(() => {
+    const merged: SkillOption[] = [
+      { value: "auto", label: "自动 Skill" },
+    ];
+    // 优先使用 API 返回的动态选项
+    if (dynamicOptions.length > 0) {
+      for (const opt of dynamicOptions) {
+        merged.push(opt);
+      }
+    } else {
+      // Fallback 到硬编码
+      for (const opt of BUILTIN_SKILL_OPTIONS) {
+        if (opt.value !== "auto" && opt.value !== "off") {
+          merged.push({ value: opt.value, label: opt.label });
+        }
+      }
+    }
+    merged.push({ value: "off", label: "关闭 Skill" });
+    return merged;
+  }, [dynamicOptions]);
+
+  const selected = allOptions.find((option) => option.value === value);
   const isOff = value === "off";
-  const TriggerIcon = isOff ? Xmark : Brain;
+  const TriggerIcon = isOff ? Xmark : getSkillIcon(value);
 
   return (
     <DropdownMenu>
@@ -85,8 +154,8 @@ export function SkillSelector({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="workbench-border-glow min-w-40">
         <DropdownMenuGroup>
-          {BUILTIN_SKILL_OPTIONS.map((option) => {
-            const Icon = SKILL_ICONS[option.value];
+          {allOptions.map((option) => {
+            const Icon = getSkillIcon(option.value);
             const selectedOption = option.value === value;
 
             return (

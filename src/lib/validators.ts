@@ -13,16 +13,9 @@ export const sendMessageSchema = z.object({
   mode: z.enum(["experiment", "review", "coding", "general"]).optional(),
   webSearchActive: z.boolean().default(false),
   // Agent Orchestrator manual controls
-  manualSkillId: z
-    .enum([
-      "paper-reader",
-      "paper-writer",
-      "exam-extract",
-      "exam-coach",
-      "code-reader",
-      "socratic-tutor",
-    ])
-    .optional(),
+  // 从硬编码 enum 改为 z.string()，运行时由 skillRegistry.has() 校验。
+  // Phase 1 保留硬编码 enum 作为编译时文档参考。
+  manualSkillId: z.string().optional(),
   skillOff: z.boolean().default(false),
   // Quick task flag: when true, treat as project-context quick task
   isQuickTask: z.boolean().default(false),

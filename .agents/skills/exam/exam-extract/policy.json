@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0",
+  "category": "exam",
+  "display_name": "考点分析",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "project_files.list",
+    "project_files.read",
+    "project_rag.search",
+    "artifact.save",
+    "artifact.list"
+  ],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["project.read", "artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "syllabusTopics": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "examType": {
+        "type": "string",
+        "enum": ["mcq", "short-answer", "long-answer"]
+      },
+      "hoursAvailable": { "type": "number", "minimum": 0 },
+      "triage": { "type": "boolean", "default": false }
+    },
+    "required": ["syllabusTopics"]
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "priorityOrder": { "type": "array", "items": { "type": "string" } },
+      "extractedTopics": { "type": "array" },
+      "artifactIds": { "type": "array", "items": { "type": "string" } },
+      "missingTopics": { "type": "array", "items": { "type": "string" } }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": false,
+    "may_persist": true,
+    "retention_days": 30
+  },
+  "triggers": {
+    "include": [
+      "考试重点", "考点", "大题", "选择题", "填空题", "题型",
+      "期末", "划重点", "考题要点", "exam extract",
+      "syllabus", "考纲", "考点分析", "帮我准备考试",
+      "我明天考", "过一遍"
+    ],
+    "exclude": [
+      "速记卡", "flashcard", "复习计划", "自测题",
+      "错题整理", "exam coach"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**", "assets/**"],
+    "deny": ["scripts/**"]
+  }
+}

@@ -1,43 +1,70 @@
 /**
  * 内置 Skill 注册
  *
+ * 从 .agents/skills/ 目录 discovery 加载（Agent Skills 标准兼容）。
  * 副作用导入：import "@/lib/skills/registry"; 即可注册全部 Skill。
  */
 
 import { skillRegistry } from "../agent/skill-registry";
-import { PAPER_WRITER_SKILL } from "./paper-writer/manifest";
-import { EXAM_COACH_SKILL } from "./exam-coach/manifest";
-import { CODE_READER_SKILL } from "./code-reader/manifest";
-import { PAPER_READER_SKILL } from "./paper-reader/manifest";
-import { EXAM_EXTRACT_SKILL } from "./exam-extract/manifest";
-import { SOCRATIC_TUTOR_SKILL } from "./socratic-tutor/manifest";
 
 let registered = false;
 
+/**
+ * 从 discovery 注册 skill（异步，应在服务启动时调用）。
+ * 也作为 registerBuiltinSkills 的 fallback：当 discovery 尚未执行时，
+ * 先触发同步注册占位，等待后续 discovery 刷新。
+ */
+export async function registerFromDiscovery(): Promise<number> {
+  const { discoverAll } = await import("./discovery");
+  const { discoveredToMetadata } = await import("./migration");
+  const path = await import("path");
+
+  const baseDir = path.join(process.cwd(), ".agents/skills");
+
+  try {
+    const result = await discoverAll(baseDir);
+
+    for (const err of result.errors) {
+      console.error(`[SkillRegistry] Discovery error [${err.skill}]: ${err.message}`);
+    }
+    for (const warn of result.warnings) {
+      console.warn(`[SkillRegistry] Discovery warning [${warn.skill}]: ${warn.message}`);
+    }
+
+    // 清空旧注册，以 discovery 为准
+    skillRegistry.reset();
+
+    for (const skill of result.skills) {
+      const metadata = discoveredToMetadata(skill);
+      skillRegistry.register(metadata);
+    }
+
+    console.log(
+      `[SkillRegistry] Registered ${result.skills.length} skills from discovery ` +
+      `(${result.catalog.length} categories)`,
+    );
+
+    registered = true;
+    return result.skills.length;
+  } catch (err) {
+    console.error("[SkillRegistry] Discovery failed:", err);
+    return 0;
+  }
+}
+
+/**
+ * 同步注册入口（模块加载时调用）。
+ * 当 discovery 尚未执行时，无 skill 注册。
+ * 真正的注册由 registerFromDiscovery() 在运行时完成。
+ */
 export function registerBuiltinSkills(): void {
   if (registered) return;
   registered = true;
-  skillRegistry.register(PAPER_WRITER_SKILL);
-  skillRegistry.register(EXAM_COACH_SKILL);
-  skillRegistry.register(CODE_READER_SKILL);
-  skillRegistry.register(PAPER_READER_SKILL);
-  skillRegistry.register(EXAM_EXTRACT_SKILL);
-  skillRegistry.register(SOCRATIC_TUTOR_SKILL);
+  // discovery 将在首次 API 调用或启动时通过 registerFromDiscovery() 完成
 }
-
-export {
-  PAPER_WRITER_SKILL,
-  EXAM_COACH_SKILL,
-  CODE_READER_SKILL,
-  PAPER_READER_SKILL,
-  EXAM_EXTRACT_SKILL,
-  SOCRATIC_TUTOR_SKILL,
-};
 
 /**
  * 旧 skills 模块兼容：保留 SkillDefinition / getSkillSet / buildToolsPayload。
- *
- * 真实的新调用应该走 agent/skill-registry；这里只为不让旧 chat/route.ts 立刻崩。
  */
 
 export interface SkillDefinition {
@@ -76,7 +103,6 @@ export const SKILL_LIST_PROJECT_FILES: SkillDefinition = {
 };
 
 export function getSkillSet(mode?: string): SkillDefinition[] {
-  // mode 保留给未来按项目类型裁剪技能集使用，当前返回完整技能集。
   void mode;
   return [
     SKILL_WEB_SEARCH,
@@ -85,17 +111,11 @@ export function getSkillSet(mode?: string): SkillDefinition[] {
   ];
 }
 
-/**
- * Provider-aware tools payload
- *
- * DeepSeek anthropic-compat 只支持 server 端 web_search；客户端工具不应发送，
- * 否则 DeepSeek 会以 400 拒绝（unknown variant `custom`）。
- */
 export const DEEPSEEK_WEB_SEARCH_TYPE = "web_search_20250305";
 
 export function buildToolsPayloadForProvider(
   skills: SkillDefinition[],
-  provider: "deepseek" | "minimax"
+  provider: "deepseek" | "minimax",
 ): Array<{ type: string; name?: string }> | undefined {
   if (provider === "minimax") return undefined;
   const serverSkills = skills.filter((s) => s.type === "server");
@@ -106,4 +126,5 @@ export function buildToolsPayloadForProvider(
   }));
 }
 
+// 模块副作用
 registerBuiltinSkills();
