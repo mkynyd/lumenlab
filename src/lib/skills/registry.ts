@@ -1,7 +1,7 @@
 /**
  * 内置 Skill 注册
  *
- * 从 .agents/skills/ 目录 discovery 加载（Agent Skills 标准兼容）。
+ * 从 .lumenlab/skills/ 目录 discovery 加载（Agent Skills 标准兼容）。
  * 副作用导入：import "@/lib/skills/registry"; 即可注册全部 Skill。
  */
 
@@ -19,7 +19,7 @@ export async function registerFromDiscovery(): Promise<number> {
   const { discoveredToMetadata } = await import("./migration");
   const path = await import("path");
 
-  const baseDir = path.join(process.cwd(), ".agents/skills");
+  const baseDir = path.join(process.cwd(), ".lumenlab/skills");
 
   try {
     const result = await discoverAll(baseDir);

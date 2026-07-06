@@ -49,7 +49,7 @@ export function activateSkill(name: string): ActivateSkillResult | { error: stri
     content,
     resources,
     base_directory: skill.category
-      ? `.agents/skills/${skill.category}/${skill.skillId}/`
+      ? `.lumenlab/skills/${skill.category}/${skill.skillId}/`
       : "",
     policy_summary: {
       allowed_tools: skill.allowedTools,

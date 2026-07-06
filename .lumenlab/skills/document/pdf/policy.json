@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "category": "document",
+  "display_name": "PDF 处理",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": ["project_files.list", "project_files.read", "project_rag.search", "artifact.save", "artifact.list"],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["project.read", "artifact.write"],
+  "input_contract": { "type": "object", "properties": { "fileId": { "type": "string" } } },
+  "output_contract": { "type": "object", "properties": { "extractedText": { "type": "string" }, "pages": { "type": "integer" } } },
+  "data_handling": { "may_send_to_external": false, "may_persist": true, "retention_days": 90 },
+  "triggers": {
+    "include": ["PDF", "pdf文件", "提取PDF", "PDF内容", "读PDF", "合并PDF", "拆分PDF", "扫描件", "OCR", "PDF文字", "pdf阅读"],
+    "exclude": ["论文", "paper", "arxiv"]
+  },
+  "resources": { "allow": ["references/**"], "deny": ["scripts/**"] }
+}

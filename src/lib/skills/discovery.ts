@@ -2,7 +2,7 @@
  * SkillDiscovery — Agent Skills 标准兼容的 skill 发现与解析模块
  *
  * 负责：
- * 1. 扫描 .agents/skills/ 目录树，发现所有 SKILL.md
+ * 1. 扫描 .lumenlab/skills/ 目录树，发现所有 SKILL.md
  * 2. 解析 YAML frontmatter（name, description）
  * 3. 加载同目录下的 policy.json
  * 4. 校验 skill 完整性

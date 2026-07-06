@@ -25,6 +25,10 @@
 | `QINIU_PRIVATE_DOMAIN` | 必需 | `coursecdn.mkynstudio.top` | 七牛云私有下载域名 |
 | `NEXT_PUBLIC_APP_NAME` | 必需 | `LumenLab` | 前端展示的应用名称 |
 | `USER_API_KEYS_ENABLED` | 可选 | `false` | 自托管开关；设为 `1` 或 `true` 时优先读取用户自行配置的 API Key |
+| `AGENT_ORCHESTRATOR_ENABLED` | 可选 | `false` | 是否启用 Agent Orchestrator 确定性工具预取 |
+| `AGENT_CONTINUATION_ENABLED` | 可选 | `false` | 是否启用模型驱动的多轮 JSON action 续跑 |
+| `AGENT_DEBUG_EVENTS` | 可选 | `false` | 是否在 SSE 中发送 router/debug 事件 |
+| `WEB_FETCH_ALLOWLIST` | 可选 | — | 允许 `web.fetch` 抓取的域名列表，建议生产环境显式配置 |
 | `CACHE_EXPERIMENT_PROMPT_REORDER` | 可选 | `false` | 是否启用提示词重排实验 |
 | `CACHE_EXPERIMENT_REORDER_STRATEGY` | 可选 | `rag-to-last-user` | 提示词重排策略 |
 | `CACHE_EXPERIMENT_MINIMAX_ACTIVE` | 可选 | `false` | 是否启用 MiniMax 模型缓存实验 |
@@ -56,6 +60,15 @@
 - 设为 `1` 或 `true`：优先读取 `ApiKey` 表中用户自行提供的 API Key，未找到时回退到中央密钥组。
 
 该开关没有前端 UI，需由部署者通过环境变量控制。
+
+支持的 provider 包括 `deepseek`、`minimax`、`mineru`、`bailian`。项目资料中的 PDF/图片解析依赖 MiniMax，Office/WPS/iWork 解析依赖 MinerU，向量检索依赖 Bailian；缺失对应密钥时，相关能力会报错或降级。
+
+### Agent 与联网
+
+- `AGENT_ORCHESTRATOR_ENABLED=1` 会在最终模型回答前运行确定性工具计划，例如项目文件读取、项目 RAG 和网页抓取。
+- `AGENT_CONTINUATION_ENABLED=1` 会启用模型驱动的多轮 JSON action 续跑，适合验证新 Tool loop。
+- `AGENT_DEBUG_EVENTS=1` 会把 router candidates、confidence、stop reason 等调试事件写入 SSE，生产环境默认关闭。
+- `WEB_FETCH_ALLOWLIST` 控制 `web.fetch` 可抓取的域名。即使域名在 allowlist 中，服务端仍会做公开 URL、DNS、重定向和 SSRF 校验。
 
 ### 缓存实验开关
 

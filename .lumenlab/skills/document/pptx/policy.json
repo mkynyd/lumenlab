@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "category": "document",
+  "display_name": "PPT 演示",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": ["project_files.list", "project_files.read", "artifact.save", "artifact.list", "artifact.export_docx"],
+  "allowed_risk_level": ["L1", "L2", "L3"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["project.read", "artifact.write"],
+  "input_contract": { "type": "object", "properties": { "type": { "type": "string", "enum": ["course", "defense", "academic", "group"] }, "topic": { "type": "string" } } },
+  "output_contract": { "type": "object", "properties": { "artifactId": { "type": "string" }, "slides": { "type": "integer" } } },
+  "data_handling": { "may_send_to_external": false, "may_persist": true, "retention_days": 90 },
+  "triggers": {
+    "include": ["PPT", "幻灯片", "演示", "presentation", "slides", "汇报", "答辩", "课件制作", "展示", "slideshow", "讲稿", "演讲稿"],
+    "exclude": ["论文", "Word", "excel", "表格"]
+  },
+  "resources": { "allow": ["references/**"], "deny": ["scripts/**"] }
+}

@@ -29,14 +29,14 @@ const NODE_COLORS: Record<
   { fill: string; stroke: string; text: string }
 > = {
   topic: {
-    fill: "var(--color-text-tertiary)",
+    fill: "var(--color-panel)",
     stroke: "var(--color-text-tertiary)",
-    text: "var(--color-bg)",
+    text: "var(--color-text-primary)",
   },
   file: {
-    fill: "var(--color-panel)",
-    stroke: "var(--color-border)",
-    text: "var(--color-text-primary)",
+    fill: "var(--color-text-secondary)",
+    stroke: "var(--color-text-secondary)",
+    text: "var(--color-bg)",
   },
   chunk: {
     fill: "var(--color-border)",
@@ -67,6 +67,8 @@ export function VectorLibraryView({
   const [sizeKey, setSizeKey] = useState(0);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  const applyGraphFocusRef = useRef<((id: string | null) => void) | null>(null);
 
   useEffect(() => {
     const id = window.setTimeout(() => setVisible(true), 0);
@@ -74,6 +76,10 @@ export function VectorLibraryView({
   }, []);
 
   const graph = useMemo<VectorLibraryGraph | null>(() => data ?? null, [data]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   function tooltipLines(d: VectorLibraryNode): string[] {
     switch (d.type) {
@@ -120,11 +126,11 @@ export function VectorLibraryView({
     });
 
     // Adaptive node scale based on viewport area and node count.
-    // Larger viewports / fewer nodes → bigger nodes; dense graphs → smaller nodes.
+    // Larger viewports / fewer nodes -> bigger nodes; dense graphs -> smaller nodes.
     const area = Math.max(1, width * height);
     const nodeCount = Math.max(1, filteredNodes.length);
     const idealAreaPerNode = area / nodeCount;
-    const nodeScale = Math.min(1.35, Math.max(0.38, Math.sqrt(idealAreaPerNode) / 42));
+    const nodeScale = Math.min(1.5, Math.max(0.42, Math.sqrt(idealAreaPerNode) / 38));
 
     const BASE_RADIUS: Record<VectorLibraryNode["type"], number> = {
       topic: 24,
@@ -133,7 +139,8 @@ export function VectorLibraryView({
     };
 
     function scaledRadius(d: VectorLibraryNode): number {
-      return Math.max(2, Math.round(BASE_RADIUS[d.type] * nodeScale));
+      const radius = d.radius || BASE_RADIUS[d.type];
+      return Math.max(2, Math.round(radius * nodeScale));
     }
 
     function fontSizeFor(d: VectorLibraryNode): number {
@@ -151,18 +158,37 @@ export function VectorLibraryView({
       strength: number;
     }
 
+    function linkEndpointId(value: string | VectorLibraryNode) {
+      return typeof value === "string" ? value : value.id;
+    }
+
     const nodeIdSet = new Set(filteredNodes.map((n) => n.id));
     const filteredLinks = graph.links.filter(
-      (l) => nodeIdSet.has(l.source as string) && nodeIdSet.has(l.target as string)
+      (l) =>
+        nodeIdSet.has(linkEndpointId(l.source as string | VectorLibraryNode)) &&
+        nodeIdSet.has(linkEndpointId(l.target as string | VectorLibraryNode))
     ) as SimLink[];
+
+    const neighbors = new Map<string, Set<string>>();
+    for (const nodeData of filteredNodes) {
+      neighbors.set(nodeData.id, new Set([nodeData.id]));
+    }
+    for (const linkData of filteredLinks) {
+      const sourceId = linkEndpointId(linkData.source as string | VectorLibraryNode);
+      const targetId = linkEndpointId(linkData.target as string | VectorLibraryNode);
+      neighbors.get(sourceId)?.add(targetId);
+      neighbors.get(targetId)?.add(sourceId);
+    }
 
     // Adaptive force parameters: denser graphs need stronger repulsion and
     // shorter links so nodes don't pile up on the right or overlap.
     const densityFactor = Math.min(1, Math.sqrt(nodeCount / 80));
-    const chargeStrength = -120 - densityFactor * 240;
+    const chargeStrength = -170 - densityFactor * 320;
     const linkDistance = (d: SimLink) => {
-      const base = d.strength > 0.5 ? 45 : 100;
-      return base * (1 - densityFactor * 0.35);
+      const target = d.target as VectorLibraryNode | string;
+      const targetType = typeof target === "string" ? undefined : target.type;
+      const base = targetType === "chunk" ? 34 : d.strength > 0.5 ? 72 : 118;
+      return base * (1 - densityFactor * 0.28) * nodeScale;
     };
 
     const simulation = d3
@@ -173,32 +199,53 @@ export function VectorLibraryView({
           .forceLink<VectorLibraryNode, SimLink>(filteredLinks)
           .id((d) => d.id)
           .distance(linkDistance)
-          .strength((d) => d.strength * (1 - densityFactor * 0.25))
+          .strength((d) => Math.max(0.08, d.strength * (1 - densityFactor * 0.2)))
       )
       .force(
         "charge",
         d3
           .forceManyBody<VectorLibraryNode>()
-          .strength((d) => (d.type === "chunk" ? -20 * nodeScale : chargeStrength))
+          .strength((d) =>
+            d.type === "chunk" ? -16 * nodeScale : d.type === "file" ? chargeStrength : chargeStrength * 0.75
+          )
       )
       .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("x", d3.forceX(width / 2).strength(0.035))
+      .force("y", d3.forceY(height / 2).strength(0.045))
       .force(
         "collide",
         d3
           .forceCollide<VectorLibraryNode>()
-          .radius((d) => scaledRadius(d) + 4 + densityFactor * 6)
-          .iterations(2)
+          .radius((d) => scaledRadius(d) + (d.type === "chunk" ? 5 : 12) + densityFactor * 7)
+          .iterations(3)
       )
-      .alphaDecay(0.02);
+      .alphaDecay(0.018);
+
+    const defs = svg.append("defs");
+    const nodeFilter = defs
+      .append("filter")
+      .attr("id", "vector-node-depth")
+      .attr("x", "-40%")
+      .attr("y", "-40%")
+      .attr("width", "180%")
+      .attr("height", "180%");
+    nodeFilter
+      .append("feDropShadow")
+      .attr("dx", 0)
+      .attr("dy", 6)
+      .attr("stdDeviation", 5)
+      .attr("flood-color", "oklch(0.15 0 0 / 0.16)");
 
     const link = g
       .append("g")
       .attr("stroke", "var(--color-border)")
-      .attr("stroke-opacity", 0.6)
+      .attr("stroke-linecap", "round")
       .selectAll("line")
       .data(filteredLinks)
       .join("line")
-      .attr("stroke-width", 1);
+      .attr("class", "viz-link")
+      .attr("stroke-opacity", (d: SimLink) => (d.strength > 0.5 ? 0.5 : 0.28))
+      .attr("stroke-width", (d: SimLink) => (d.strength > 0.5 ? 1.1 : 0.8));
 
     const node = g
       .append("g")
@@ -221,21 +268,14 @@ export function VectorLibraryView({
           title: d.label,
           lines: tooltipLines(d),
         });
-        d3.select(this)
-          .select(".viz-circle")
-          .attr("stroke", "var(--color-accent)")
-          .attr("stroke-width", d.type === "chunk" ? 2 : 3);
+        applyFocus(d.id);
       })
       .on("mousemove", function (event: MouseEvent) {
         setTooltip((prev) => ({ ...prev, x: event.clientX, y: event.clientY }));
       })
-      .on("mouseleave", function (_event: MouseEvent, d: VectorLibraryNode) {
+      .on("mouseleave", function () {
         setTooltip((prev) => ({ ...prev, visible: false }));
-        const isSelected = selectedId === d.id;
-        d3.select(this)
-          .select(".viz-circle")
-          .attr("stroke", isSelected ? "var(--color-accent)" : NODE_COLORS[d.type].stroke)
-          .attr("stroke-width", isSelected ? 3 : d.type === "chunk" ? 0 : Math.max(1, 1.5 * nodeScale));
+        applyFocus(selectedIdRef.current);
       })
       .on("click", (_event: MouseEvent, d: VectorLibraryNode) => selectNode(d))
       .on("keydown", function (event: KeyboardEvent, d: VectorLibraryNode) {
@@ -256,10 +296,12 @@ export function VectorLibraryView({
           title: d.label,
           lines: tooltipLines(d),
         });
+        applyFocus(d.id);
       })
       .on("blur", function () {
         d3.select(this).select(".focus-ring").attr("stroke", "transparent").attr("stroke-opacity", 0);
         setTooltip((prev) => ({ ...prev, visible: false }));
+        applyFocus(selectedIdRef.current);
       });
 
     // Focus ring (rendered behind visible circle)
@@ -285,8 +327,9 @@ export function VectorLibraryView({
         d.status === "failed" ? "var(--color-error)" : NODE_COLORS[d.type].stroke
       )
       .attr("stroke-width", (d: VectorLibraryNode) =>
-        d.type === "chunk" ? 0 : Math.max(1, 1.5 * nodeScale)
-      );
+        d.type === "chunk" ? 0 : Math.max(1, 1.4 * nodeScale)
+      )
+      .attr("filter", (d: VectorLibraryNode) => (d.type === "file" ? "url(#vector-node-depth)" : null));
 
     // Failed icon
     node
@@ -334,21 +377,56 @@ export function VectorLibraryView({
     });
 
     function selectNode(d: VectorLibraryNode) {
+      selectedIdRef.current = d.id;
       setSelectedId(d.id);
       setLiveMessage(
         `已选择 ${d.type === "topic" ? "主题" : d.type === "file" ? "文件" : "片段"}: ${d.label}`
       );
-      svg
-        .selectAll<SVGGElement, VectorLibraryNode>(".viz-node")
-        .select(".viz-circle")
-        .attr("stroke", (n) =>
-          n.id === d.id ? "var(--color-accent)" : NODE_COLORS[n.type].stroke
+      applyFocus(d.id);
+    }
+
+    function applyFocus(activeId: string | null) {
+      const activeNeighbors = activeId ? neighbors.get(activeId) : null;
+      node
+        .transition()
+        .duration(140)
+        .style("opacity", (n: VectorLibraryNode) =>
+          !activeNeighbors || activeNeighbors.has(n.id) ? 1 : 0.28
+        );
+      node
+        .select<SVGCircleElement>(".viz-circle")
+        .transition()
+        .duration(140)
+        .attr("stroke", (n: VectorLibraryNode) =>
+          activeId === n.id ? "var(--color-accent)" : NODE_COLORS[n.type].stroke
         )
-        .attr("stroke-width", (n) => {
-          const base = n.type === "chunk" ? 0 : Math.max(1, 1.5 * nodeScale);
-          return n.id === d.id ? 3 : base;
+        .attr("stroke-width", (n: VectorLibraryNode) => {
+          const base = n.type === "chunk" ? 0 : Math.max(1, 1.4 * nodeScale);
+          return activeId === n.id ? (n.type === "chunk" ? 2 : 3) : base;
+        });
+      link
+        .transition()
+        .duration(140)
+        .attr("stroke", (l: SimLink) =>
+          activeId && linkTouches(l, activeId) ? "var(--color-accent)" : "var(--color-border)"
+        )
+        .attr("stroke-opacity", (l: SimLink) => {
+          if (!activeId) return l.strength > 0.5 ? 0.5 : 0.28;
+          return linkTouches(l, activeId) ? 0.72 : 0.08;
+        })
+        .attr("stroke-width", (l: SimLink) => {
+          if (!activeId) return l.strength > 0.5 ? 1.1 : 0.8;
+          return linkTouches(l, activeId) ? 1.7 : 0.7;
         });
     }
+
+    function linkTouches(linkData: SimLink, id: string) {
+      const sourceId = linkEndpointId(linkData.source as string | VectorLibraryNode);
+      const targetId = linkEndpointId(linkData.target as string | VectorLibraryNode);
+      return sourceId === id || targetId === id;
+    }
+
+    applyGraphFocusRef.current = applyFocus;
 
     // Fit the graph into the viewport with padding, avoiding the empty-right-edge
     // issue when the simulation drifts or the viewport is wide.
@@ -380,8 +458,10 @@ export function VectorLibraryView({
 
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        selectedIdRef.current = null;
         setSelectedId(null);
         setLiveMessage("选择已清除");
+        applyFocus(null);
       }
     };
     window.addEventListener("keydown", keyHandler);
@@ -402,8 +482,9 @@ export function VectorLibraryView({
       simulation.stop();
       window.removeEventListener("keydown", keyHandler);
       resizeObserver.disconnect();
+      applyGraphFocusRef.current = null;
     };
-  }, [graph, showChunks, showTopics, selectedId, sizeKey]);
+  }, [graph, showChunks, showTopics, sizeKey]);
 
   const selectedNode = useMemo<VectorLibraryNode | null>(
     () => graph?.nodes.find((n) => n.id === selectedId) || null,
@@ -423,15 +504,23 @@ export function VectorLibraryView({
     >
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-panel)] px-4 py-3">
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-project-control)] text-[var(--color-text-secondary)]">
             <Network width={18} height={18} strokeWidth={1.8} />
           </div>
-          <div>
+          <div className="min-w-0">
             <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
               资料图谱
             </h2>
-            <p className="text-[11px] text-[var(--color-text-tertiary)]">{projectName}</p>
+            <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">
+              {projectName}
+              {graph ? (
+                <>
+                  <span className="mx-1.5 text-[var(--color-border)]">/</span>
+                  {graph.stats.fileCount} 文件 · {graph.stats.topicCount} 主题 · {graph.stats.chunkCount} 片段
+                </>
+              ) : null}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -455,7 +544,23 @@ export function VectorLibraryView({
       {/* Main workspace */}
       <div className="relative flex min-h-0 flex-1">
         {/* Graph stage */}
-        <div ref={wrapperRef} className="relative flex-1 overflow-hidden">
+        <div
+          ref={wrapperRef}
+          className="relative flex-1 overflow-hidden bg-[var(--color-bg)]"
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(circle at 50% 42%, var(--color-surface) 0, transparent 38%), radial-gradient(circle at 50% 50%, var(--color-project-control) 0 1px, transparent 1.4px)",
+              backgroundSize: "100% 100%, 28px 28px",
+            }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[var(--color-panel)] to-transparent opacity-70"
+          />
           {isPending && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--color-bg)]/80">
               <LoadingIndicator size="md" />
@@ -470,19 +575,22 @@ export function VectorLibraryView({
           )}
           <svg
             ref={svgRef}
-            className="h-full w-full"
+            className="relative h-full w-full"
             role="img"
             aria-label="项目资料力导向图，可使用 Tab 键在节点间切换并按 Enter 选中"
           />
           {/* Legend */}
-          <div className="pointer-events-none absolute left-4 top-4 rounded-[var(--radius-sm)] bg-[var(--color-panel)]/95 p-3 shadow-[var(--shadow-panel)] backdrop-blur-sm">
+          <div className="pointer-events-none absolute left-4 top-4 rounded-[var(--radius-sm)] bg-[var(--color-panel)] p-3 shadow-[var(--shadow-panel)]">
             <div className="mb-1.5 text-[11px] font-medium text-[var(--color-text-primary)]">
               图例
             </div>
-            <LegendItem label="主题" color="var(--color-text-tertiary)" size={10} />
-            <LegendItem label="文件" color="var(--color-panel)" border />
+            <LegendItem label="主题" color="var(--color-panel)" border />
+            <LegendItem label="文件" color="var(--color-text-secondary)" size={10} />
             <LegendItem label="片段" color="var(--color-border)" size={5} />
             <LegendItem label="失败" color="var(--color-error)" size={8} failed />
+          </div>
+          <div className="pointer-events-none absolute bottom-4 left-4 max-w-[280px] rounded-[var(--radius-sm)] bg-[var(--color-panel)] px-3 py-2 text-[11px] leading-relaxed text-[var(--color-text-tertiary)] shadow-[var(--shadow-panel)]">
+            滚轮缩放，拖动画布平移。选中节点会保留它的直接关系。
           </div>
         </div>
 
@@ -517,7 +625,11 @@ export function VectorLibraryView({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setSelectedId(null)}
+                  onClick={() => {
+                    selectedIdRef.current = null;
+                    setSelectedId(null);
+                    applyGraphFocusRef.current?.(null);
+                  }}
                   className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
                   aria-label="关闭检查器"
                 >

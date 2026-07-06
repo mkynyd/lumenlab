@@ -42,7 +42,25 @@
 
 对应实现也位于 `src/lib/chat/history-adapter.ts` 的 `filterThinkingForMiniMax()`。
 
-## Tool / Skill 路由
+## Skill Router
+
+`src/lib/agent/skill-router.ts` 会在 `/api/chat` 入口处根据用户输入、隐藏快捷任务提示、手动 Skill、历史 active Skill、项目上下文、选中文件和联网意图返回：
+
+- `activeSkillId`：当前激活的 Skill。
+- `status`：`none` / `active` / `awaiting_context`。
+- `source`：手动选择、规则命中或无 Skill。
+- `profile`：`simple` / `rag` / `research` / `workflow`。
+- `webAccessRecommended`：是否建议启用联网。
+- `suggestions`：可在前端展示的替代 Skill。
+
+路由优先级：
+
+1. 手动选择 Skill 或手动关闭 Skill。
+2. `.lumenlab/skills/*/policy.json` 中的 `triggers.include/exclude`。
+3. 兼容旧行为的硬编码关键词 fallback。
+4. 无命中时保持通用对话。
+
+## Tool 分发
 
 不同模型对 Tool 的支持能力不同，系统做了显式分层：
 
@@ -51,6 +69,7 @@
 - 仅发送**服务端工具** `web_search_20250305`。
 - 客户端工具（如项目文件管理、成果保存、导出等）不进入 DeepSeek 的 tools payload，而是在收到模型返回的 `tool_use` 后，由 `src/lib/agent/conversation-loop.ts` 在服务端执行并回填结果。
 - Tool 元数据构建在 `src/lib/skills/registry.ts` 的 `buildToolsPayloadForProvider()` 中完成。
+- Agent Orchestrator 可在最终模型回答前执行确定性预取工具，如 `project_files.read`、`project_rag.search`、`web.fetch`。
 
 ### MiniMax
 

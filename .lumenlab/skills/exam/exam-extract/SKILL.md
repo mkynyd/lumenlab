@@ -28,13 +28,25 @@ description: 考点分析：大纲驱动的 8 字段考点抽取，支持 triage
 - 资料中没有的 topic → 明确说「本 topic 在你的资料中未找到，请检查资料。」
 - PDF 与 syllabus topic 名称不一致时 → 用 PDF 实际名称，但标注「你的笔记里把这个讲成 X」。
 
+## 缺失输入处理
+
+- 没有学习资料 → 说"请先分享你的笔记或 PDF。我不会用外部知识。"
+- 没有 syllabus → 说"请列出你的考试范围（topics），确保我覆盖到所有考点。"
+- 考试类型未说明 → 默认按论述题格式，但追加问一句"这是选择题还是笔试？"
+- topic 在资料中未找到 → 说"本 topic 在你的资料中未找到，请检查资料。"
+
 ## Triage mode（时间紧张时）
 
 若用户说「我只有 X 小时」：
 
-1. **先输出 priority list**：按 syllabus 给的权重分 + topic 在 PDF 里出现频次 + 子主题广度排序
+1. **先输出 priority list**：按以下公式排序所有 syllabus topic：
+   - 显式权重（syllabus 中注明的分数占比）
+   - 在 PDF 中出现频次（覆盖率越高 = 优先级越高）
+   - 子主题广度（涉及子主题越多 = 优先级越高）
 2. 按优先级展开，不按 syllabus 顺序
-3. 时间 ≤1 小时：每 topic 只输出 Definition + Key Points + Exam Line，跳过 Diagram
+3. 时间 ≤1 小时：每 topic 只输出 Definition + Key Points + Exam Line，跳过 Diagram 和 MCQ Trick
+4. 时间 1-3 小时：保留 Diagram，跳过 Cross-references
+5. 时间 >3 小时：完整输出
 
 ## 输入格式（缺失时必问）
 

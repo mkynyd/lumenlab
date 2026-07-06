@@ -1,0 +1,67 @@
+{
+  "version": "1.0.0",
+  "category": "academic",
+  "display_name": "文献综述",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "web.search",
+    "web.fetch",
+    "arxiv.search",
+    "arxiv.read",
+    "arxiv.fetch",
+    "reference.add",
+    "reference.list",
+    "reference.attach",
+    "reference.format",
+    "artifact.save",
+    "artifact.list"
+  ],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "topic": { "type": "string" },
+      "scope": {
+        "type": "string",
+        "enum": ["seminal_paper", "broad_survey", "compare_methods", "gap_analysis", "evidence_synthesis"]
+      },
+      "field": { "type": "string" },
+      "maxPapers": { "type": "integer", "minimum": 5, "maximum": 50, "default": 20 }
+    },
+    "required": ["topic"]
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "artifactId": { "type": "string" },
+      "paperCount": { "type": "integer" },
+      "references": { "type": "array" }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": true,
+    "may_persist": true,
+    "retention_days": 90
+  },
+  "triggers": {
+    "include": [
+      "文献综述", "literature review", "文献调研", "研究现状",
+      "开题报告", "related work", "有哪些相关论文",
+      "这个领域的研究进展", "系统梳理", "对比现有方法",
+      "有什么论文", "开创性论文", "seminal paper",
+      "研究空白", "gap analysis", "证据综合",
+      "找论文", "查文献", "文献回顾"
+    ],
+    "exclude": [
+      "读论文", "精读", "速读", "帮我读这篇",
+      "写论文", "初稿", "撰写"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**", "assets/**"],
+    "deny": ["scripts/**"]
+  }
+}

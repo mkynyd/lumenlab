@@ -19,7 +19,7 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 | `(auth)` | `/login`、`/register` | 登录、注册、注册码校验 |
 | `(chat)` | `/chat`、`/chat/[id]`、`/projects`、`/tools`、`/tools/[id]` | 工作台：对话、项目、资料、快捷任务 |
 | `/docs` | `/docs` | 静态文档站点 |
-| `/api/*` | `/api/chat`、`/api/agent/*` | 服务端 API |
+| `/api/*` | `/api/chat`、`/api/agent/*`、`/api/skills/catalog` | 服务端 API |
 
 ## 核心目录
 
@@ -31,12 +31,12 @@ src/
 ├── lib/chat/                 # 模型路由、历史压缩
 ├── lib/rag/                  # 向量检索、全文检索、关键词检索、embedding
 ├── lib/agent/                # Policy Engine、Tool 注册与执行、审批 token、事件流
-│   ├── adapters/             # DeepSeekAdapter / MiniMaxAdapter  Provider 适配器
-│   ├── continuation.ts       # 模型驱动的 Agent Orchestrator 续跑循环
 │   ├── orchestrator.ts       # 确定性预取工具规划与执行
-│   ├── provider-adapter.ts   # ProviderAdapter 接口与统一流式结果类型
 │   ├── skill-router.ts       # Skill 意图路由与任务画像推断
 │   └── sources.ts            # AgentSource 聚合与持久化
+├── lib/skills/               # .lumenlab/skills discovery、metadata migration、legacy compat
+├── lib/tools/                # project files / artifact / web / arxiv / reference / export tools
+├── lib/files/                # 项目文件上传解析、MiniMax PDF/图片、MinerU Office
 ├── lib/cache/                # 应用级缓存、导出缓存、实验开关、缓存指标
 ├── lib/export/               # Markdown / DOCX / PDF 导出与格式转换
 └── lib/storage/              # 本地存储与七牛云对象存储抽象
@@ -64,11 +64,10 @@ src/app/api/chat/route.ts
   ├─ Agent Orchestrator 预取与续跑
   │        ├─ buildPlannedToolCalls() 根据画像生成确定性工具计划
   │        ├─ executePlannedToolCalls() 执行并聚合 AgentSource
-  │        └─ runContinuationLoop() 模型驱动的多轮工具调用循环
-  ├─ createProviderAdapter() 创建 DeepSeekAdapter / MiniMaxAdapter
-  ├─ adapter.stream() 发起 SSE 流
+  │        └─ AGENT_CONTINUATION_ENABLED=1 时启用模型驱动多轮工具续跑
+  ├─ DeepSeek / MiniMax Anthropic-compatible stream 发起 SSE 流
   │        ├─ 模型返回流式 token
-  │        ├─ tool_use 触发 Agent 审批 / 执行（仅 DeepSeek 路径）
+  │        ├─ DeepSeek 路径可触发服务端 Tool 审批 / 执行
   │        └─ token 使用、缓存命中信息回传
   ├─ 创建 assistant Message 行，sources 写入 Message.sources
   └─ accumulateAndSave() 异步保存内容与来源到 PostgreSQL
@@ -84,6 +83,23 @@ src/app/api/chat/route.ts
 - **自托管模式**：开启 `USER_API_KEYS_ENABLED=1` 后，系统优先读取 `ApiKey` 表中该用户对应 provider 的密钥；未找到再回退中央凭证。自托管用户可通过 `POST /api/user/api-keys` 自行维护密钥，也可使用 `scripts/setup-api-key.ts` 初始化。
 
 用户如需更换当前激活的注册码（即切换到另一组中央凭证），可调用 `POST /api/user/switch-code`。
+
+## 文件解析流水线
+
+项目资料解析集中在 `src/lib/files/parse-job.ts`：
+
+| 文件类型 | 解析路径 |
+|---|---|
+| 文本、Markdown、CSV、代码 | 本地读取 UTF-8 文本 |
+| 图片 | MiniMax M3 视觉 OCR |
+| PDF | MiniMax M3 原生文档解析 |
+| Office / WPS / iWork | MinerU 解析 Markdown，图片保存为 `FileAssetResource` |
+
+解析完成后会刷新 `ProjectIndex`，创建 `DocumentChunk`，并在可用时通过百炼 `qwen3-vl-embedding` 生成 1024 维向量。
+
+## Skill 与 Tool 注册
+
+运行时从 `.lumenlab/skills` 发现 Skill 包，读取每个 `SKILL.md` 和 `policy.json` 并转换为 `SkillMetadata`。Tool 元数据和 handler 在 `src/lib/tools/registry.ts` 注册，`PolicyEngine` 会在执行前统一检查 Skill allowlist、风险上限、scope、所有权和参数。
 
 ## 与其他文档的关联
 

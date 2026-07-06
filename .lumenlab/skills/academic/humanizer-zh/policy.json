@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "category": "academic",
+  "display_name": "AI 痕迹去除",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "artifact.save",
+    "artifact.list"
+  ],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "auto",
+  "required_scopes": ["artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "text": { "type": "string" },
+      "mode": {
+        "type": "string",
+        "enum": ["quick", "standard", "deep"]
+      }
+    }
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "humanizedText": { "type": "string" },
+      "score": { "type": "object" },
+      "changes": { "type": "array" }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": false,
+    "may_persist": true,
+    "retention_days": 30
+  },
+  "triggers": {
+    "include": [
+      "去AI", "人性化", "humanize", "AI痕迹", "AI味",
+      "润色", "改写", "polish", "改自然", "太AI了",
+      "机器味", "像机器写的", "像AI写的", "去除AI",
+      "降AI", "自然一点", "更有人味", "口语化",
+      "不像人话", "写得太生硬", "能不能像人写的"
+    ],
+    "exclude": [
+      "翻译成英文", "翻译成中文", "扩写", "缩写"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**"],
+    "deny": ["scripts/**"]
+  }
+}

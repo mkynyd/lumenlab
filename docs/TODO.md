@@ -174,7 +174,9 @@ Status: Iteration 0-2 MVP is complete. The document pipeline now supports text, 
 ### Deferred Iterations
 
 - [ ] Iteration 3: PDF hybrid parsing strategy (`chooseDocumentParsingStrategy`).
+  - **Status: skipped.** Previous practice showed text/scanned classification heuristics unreliable for this project. PDF parsing will remain on the existing MiniMax-M3 document path until a better signal is available.
 - [ ] Iteration 4: Persistent `FileParseJob` table and recoverable queue.
-- [ ] Iteration 5: Dedicated image chunks with `sourceType` metadata and image embedding.
+- [ ] Iteration 5: Dedicated image chunks with `sourceType` metadata and **multimodal embedding** (project already uses `qwen3-vl-embedding` with image+text fusion).
 - [ ] Iteration 6: Agent roles and quality checker.
 - [ ] Iteration 7: UI parsing-mode controls and per-file quality reports.
+  - **Status: will not do.** User explicitly excluded UI controls from this phase.

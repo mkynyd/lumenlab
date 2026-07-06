@@ -4,6 +4,14 @@
 
 ## 自托管快速开始
 
+### 0. 准备运行环境
+
+- Node.js 20+
+- PostgreSQL 16 + pgvector
+- Redis 7（可选，但生产建议配置）
+- 可用的 DeepSeek / MiniMax / MinerU / Bailian 凭证，或由管理端同步的中央凭证组
+- 生产文件存储建议配置七牛云 Kodo 私有空间
+
 ### 1. 启用用户自定义 API Key
 
 修改 `src/lib/config.ts` 或设置环境变量：
@@ -46,6 +54,13 @@ USER_API_KEYS_ENABLED=1 npx tsx scripts/setup-api-key.ts \
 
 支持 provider：`deepseek`、`minimax`、`mineru`、`bailian`。
 
+最小可用组合：
+
+- 普通文字聊天：DeepSeek。
+- 图片和 PDF 项目解析：MiniMax。
+- Office/WPS/iWork 项目解析和 `/tools` PDF 转 Markdown：MinerU。
+- 向量检索：Bailian，缺失时可降级为关键词检索。
+
 **方式 B：调用 API 路由**
 
 先登录获取会话 Cookie，然后：
@@ -65,6 +80,20 @@ curl -X POST http://localhost:3000/api/user/api-keys \
 npm install
 npm run dev   # 或 npm run build && npm start
 ```
+
+生产构建使用 Next.js standalone 输出：
+
+```bash
+npm run build
+cp -r .next/static .next/standalone/.next/static
+PORT=3000 HOSTNAME=127.0.0.1 node .next/standalone/server.js
+```
+
+反向代理需要注意：
+
+- SSE 聊天接口关闭代理缓冲。
+- 上传限制建议不低于 400MB，以覆盖应用的 50MB 单文件、300MB 批量校验前置过程和 Next.js proxy 上限。
+- `/_next/static` 可由 Nginx / Caddy 直接服务。
 
 ## 回退到中央管理模式
 

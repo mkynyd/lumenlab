@@ -1,6 +1,6 @@
 # LumenLab 文档
 
-> 本文档面向 LumenLab 普通用户。LumenLab 是一个面向大学计算机课程的 AI 学习工作台，集成 AI 对话、项目资料管理、PDF 文档解析与成果导出。
+> 本文档面向 LumenLab 普通用户。LumenLab 是一个面向大学计算机课程的 AI 学习工作台，集成 AI 对话、项目资料管理、文档解析、受控 Agent 和成果导出。
 
 ## 文档导航
 
@@ -12,17 +12,17 @@
 ### 使用指南
 
 - [项目管理](./guides/projects.md) — 项目类型、上下文与默认模型
-- [资料与 RAG](./guides/files-and-rag.md) — 上传、解析、OCR、关键词与语义检索
+- [资料与 RAG](./guides/files-and-rag.md) — 上传、MiniMax / MinerU 解析、资料图谱、关键词与语义检索
 - [成果与导出](./guides/artifacts.md) — Artifact 库、Markdown / DOCX / PDF 导出
-- [Agent 模式](./guides/agent-mode.md) — Skill、Tool、审批流程与使用场景
-- [Skills 与 Tools](./guides/skills-and-tools.md) — 内置 Skills、Tool 调用与风险等级
+- [Agent 模式](./guides/agent-mode.md) — Skill Router、Tool、审批流程与使用场景
+- [Skills 与 Tools](./guides/skills-and-tools.md) — 13 个内置 Skill、Tool 调用与风险等级
 
 ### 常见问题
 
 - [常见问题](./faq.md) — 账号、聊天、项目、成果、Agent 高频问答
 - [常见错误与处理](./reference/error-codes.md) — 注册码、上传、导出、Agent 等报错排查
 
-### 开发者文档（暂未开放）
+### 开发者文档
 
 以下页面主要面向开发与运维人员，普通用户可忽略：
 

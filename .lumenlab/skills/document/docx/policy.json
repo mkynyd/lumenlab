@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "category": "document",
+  "display_name": "Word 文档",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": ["artifact.save", "artifact.list", "artifact.export_docx", "project_files.read"],
+  "allowed_risk_level": ["L1", "L2", "L3"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["artifact.write", "project.read"],
+  "input_contract": { "type": "object", "properties": { "docType": { "type": "string" }, "title": { "type": "string" } } },
+  "output_contract": { "type": "object", "properties": { "artifactId": { "type": "string" }, "format": { "type": "string" } } },
+  "data_handling": { "may_send_to_external": false, "may_persist": true, "retention_days": 90 },
+  "triggers": {
+    "include": ["Word文档", "word", "docx", "报告", "排版", "导出Word", "论文排版", "简历", "封面", "目录生成", "页眉页脚", "生成报告", "实验报告"],
+    "exclude": ["PDF", "幻灯片", "PPT", "Excel", "表格处理"]
+  },
+  "resources": { "allow": ["references/**"], "deny": ["scripts/**"] }
+}

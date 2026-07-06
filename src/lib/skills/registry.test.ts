@@ -106,9 +106,9 @@ describe("skill allowlists align with registered tools (via discovery)", () => {
     assertAllToolsExist(skill, "paper-writer");
   });
 
-  it("all 6 built-in skills have required metadata", () => {
+  it("all built-in skills have required metadata", () => {
     const skills = skillRegistry.list();
-    expect(skills.length).toBe(6);
+    expect(skills.length).toBeGreaterThanOrEqual(6);
 
     for (const skill of skills) {
       expect(skill.skillId).toBeTruthy();

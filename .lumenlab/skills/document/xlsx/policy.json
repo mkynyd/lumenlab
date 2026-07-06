@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "category": "document",
+  "display_name": "表格处理",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": ["project_files.list", "project_files.read", "artifact.save", "artifact.list", "web.fetch"],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "ask_first",
+  "required_scopes": ["project.read", "artifact.write"],
+  "input_contract": { "type": "object", "properties": { "dataDescription": { "type": "string" } } },
+  "output_contract": { "type": "object", "properties": { "artifactId": { "type": "string" }, "rowCount": { "type": "integer" } } },
+  "data_handling": { "may_send_to_external": false, "may_persist": true, "retention_days": 90 },
+  "triggers": {
+    "include": ["Excel", "excel", "表格", "csv", "数据统计", "数据分析", "图表", "电子表格", "xlsx", "公式计算", "数据处理", "画图表", "实验数据", "成绩统计", "汇总"],
+    "exclude": ["Word", "PPT", "论文"]
+  },
+  "resources": { "allow": ["references/**"], "deny": ["scripts/**"] }
+}

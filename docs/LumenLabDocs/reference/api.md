@@ -23,6 +23,26 @@
 
 ## User
 
+### `GET /api/user/profile`
+
+- 描述：读取当前用户资料、昵称、头像 URL、profile prompt 等设置。
+- 认证：需登录。
+- 响应：当前用户资料对象。
+
+### `PATCH /api/user/profile`
+
+- 描述：更新当前用户昵称或 AI profile prompt。
+- 认证：需登录。
+- 请求：`{ name?, profilePrompt? }`
+- 响应：更新后的用户资料。
+
+### `POST /api/user/profile/avatar`
+
+- 描述：上传当前用户头像，生产环境通过七牛云私有对象存储保存，开发环境可回退到本地存储。
+- 认证：需登录。
+- 请求：`multipart/form-data`
+- 响应：更新后的头像 URL。
+
 ### `GET /api/user/api-keys`
 
 - 描述：列出当前用户自行配置的 API Key（自托管模式下生效）。
@@ -42,6 +62,12 @@
 - 认证：需登录。
 - 响应：包含新配置 ID 与状态信息。
 
+### `GET /api/me/usage`
+
+- 描述：读取当前用户 token 与成本统计。
+- 认证：需登录。
+- 响应：按 provider、时间和项目聚合的使用数据。
+
 ### `POST /api/user/switch-code`
 
 - 描述：切换当前用户绑定的注册码，用于更新所属密钥组或延长使用期限。
@@ -59,6 +85,13 @@
 - 认证：需登录。
 - 请求：`{ messages, conversationId?, projectId?, model?, options? }`
 - 响应：`text/event-stream`，每条消息为一个 SSE 数据帧。
+
+### `POST /api/chat/compact`
+
+- 描述：对长对话进行上下文压缩，减少后续模型输入体积。
+- 认证：需登录。
+- 请求：`{ conversationId }`
+- 响应：压缩结果摘要。
 
 ---
 
@@ -164,12 +197,18 @@
 - 认证：需登录。
 - 响应：快捷任务数组。
 
-### `POST /api/projects/[id]/quick-actions/generate`
+### `POST /api/projects/[id]/generate-prompt`
 
-- 描述：为项目生成推荐快捷任务。
+- 描述：根据项目类型和资料生成或更新项目提示词。
 - 认证：需登录。
 - 请求：`{ context? }`
-- 响应：生成的快捷任务列表。
+- 响应：生成的提示词内容。
+
+### `GET /api/projects/[id]/vector-library`
+
+- 描述：返回项目资料图谱数据，包含 topic / file / chunk 节点和关系边。
+- 认证：需登录。
+- 响应：`{ nodes, links, stats }`
 
 ---
 
@@ -196,9 +235,15 @@
 
 ### `POST /api/files/[id]/parse`
 
-- 描述：触发文件解析，支持 PDF / Office / 图片 / 文本等格式。MinerU Precision 用于高精度 PDF 解析。
+- 描述：触发文件解析，支持 PDF / Office / WPS / iWork / 图片 / 文本 / 代码等格式。项目 PDF 与图片走 MiniMax M3；Office/WPS/iWork 走 MinerU；文本和代码本地读取。
 - 认证：需登录。
 - 响应：`{ id, status, parsedContent? }`
+
+### `GET /api/files/[id]/resources/[resourceId]`
+
+- 描述：读取文件解析过程中保存的私有图片资源。
+- 认证：需登录，且资源需属于当前用户文件。
+- 响应：图片二进制流。
 
 ### `GET /api/files/[id]/download`
 
@@ -255,9 +300,37 @@
 
 ### `POST /api/tools/conversions/*`
 
-- 描述：Office / WPS / iWork 文档转换入口，将文档转为 PDF 后再进入解析流程。
+- 描述：文档转换记录与完整包生成入口。`/api/tools/conversions` 管理转换列表，`/api/tools/conversions/[id]` 读取单条转换详情。
 - 认证：需登录。
 - 请求与响应：具体形状取决于转换类型，通常为异步任务 ID。
+
+---
+
+## Skills
+
+### `GET /api/skills/catalog`
+
+- 描述：返回当前 `.lumenlab/skills` 发现到的 Skill catalog，包括分类、显示名、描述、触发词和策略摘要。
+- 认证：需登录。
+- 响应：`{ categories, skills }`
+
+---
+
+## Agent
+
+### `POST /api/agent/approve`
+
+- 描述：消费一次性审批 token，授权当前待执行 Tool。
+- 认证：需登录。
+- 请求：`{ executionId, approvalToken, argumentsHash?, sessionApprove? }`
+- 响应：审批后的 ToolExecution 状态。
+
+### `POST /api/agent/reject`
+
+- 描述：拒绝一次待执行 Tool，并把对应 `ToolExecution` 标记为失败或拒绝。
+- 认证：需登录。
+- 请求：`{ executionId }`
+- 响应：更新后的 ToolExecution 状态。
 
 ---
 

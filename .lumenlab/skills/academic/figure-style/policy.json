@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "category": "academic",
+  "display_name": "图表规范",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [
+    "artifact.save",
+    "artifact.list",
+    "web.fetch"
+  ],
+  "allowed_risk_level": ["L1", "L2"],
+  "default_approval_policy": "auto",
+  "required_scopes": ["artifact.write"],
+  "input_contract": {
+    "type": "object",
+    "properties": {
+      "chartType": {
+        "type": "string",
+        "enum": ["bar", "line", "scatter", "heatmap", "boxplot", "distribution", "multi-panel"]
+      },
+      "dataDescription": { "type": "string" }
+    }
+  },
+  "output_contract": {
+    "type": "object",
+    "properties": {
+      "suggestions": { "type": "array" },
+      "warnings": { "type": "array" }
+    }
+  },
+  "data_handling": {
+    "may_send_to_external": false,
+    "may_persist": false
+  },
+  "triggers": {
+    "include": [
+      "图表规范", "figure style", "作图", "画图",
+      "图表怎么画", "数据可视化", "图表设计",
+      "什么图表合适", "选图", "配色",
+      "图表排版", "科学图表", "论文图表"
+    ],
+    "exclude": [
+      "画架构图", "流程图", "UML"
+    ]
+  },
+  "resources": {
+    "allow": ["references/**", "assets/**"],
+    "deny": ["scripts/**"]
+  }
+}
