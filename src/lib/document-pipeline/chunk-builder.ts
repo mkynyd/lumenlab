@@ -40,7 +40,7 @@ export function buildChunksFromBlocks(
             id: crypto.randomUUID(),
             content,
             metadata: {
-              sourceType: "text",
+              sourceType: block.type,
               blockId: block.id,
               pageNumber: block.pageNumber,
               slideNumber: block.slideNumber,
@@ -141,11 +141,12 @@ function imageBlockChunks(
     id: crypto.randomUUID(),
     content: block.altText || `图片：${block.relativePath}`,
     metadata: {
-      sourceType: "image_summary",
+      sourceType: "image_fallback",
       blockId: block.id,
       assetId: block.assetId,
       pageNumber: block.pageNumber,
       slideNumber: block.slideNumber,
+      confidence: block.confidence,
       warnings,
     },
     mediaUrls,
@@ -154,9 +155,23 @@ function imageBlockChunks(
   return result;
 }
 
-function splitText(text: string, size: number, overlap: number): string[] {
+export function splitText(text: string, size: number, overlap: number): string[] {
+  if (size <= 0) throw new Error("splitText: size must be greater than 0");
+  if (overlap < 0) throw new Error("splitText: overlap must be non-negative");
+  if (overlap >= size) throw new Error("splitText: overlap must be less than size");
   if (!text || text.trim().length === 0) return [];
   if (text.length <= size) return [text.trim()];
+
+  const boundaries = [
+    { marker: "\n\n", offset: 2 },
+    { marker: "。\n", offset: 2 },
+    { marker: "。", offset: 1 },
+    { marker: ". ", offset: 2 },
+    { marker: "? ", offset: 2 },
+    { marker: "! ", offset: 2 },
+    { marker: "；", offset: 1 },
+    { marker: "; ", offset: 2 },
+  ];
 
   const chunks: string[] = [];
   let start = 0;
@@ -165,11 +180,16 @@ function splitText(text: string, size: number, overlap: number): string[] {
     let end = Math.min(start + size, text.length);
     if (end < text.length) {
       const searchRegion = text.slice(end - overlap, end);
-      const lastPara = searchRegion.lastIndexOf("\n\n");
-      const lastPeriod = searchRegion.lastIndexOf("。\n");
       let breakPoint = -1;
-      if (lastPara !== -1) breakPoint = end - overlap + lastPara + 2;
-      else if (lastPeriod !== -1) breakPoint = end - overlap + lastPeriod + 1;
+      for (const { marker, offset } of boundaries) {
+        const index = searchRegion.lastIndexOf(marker);
+        if (index !== -1) {
+          const candidate = end - overlap + index + offset;
+          if (candidate > start && candidate > breakPoint) {
+            breakPoint = candidate;
+          }
+        }
+      }
       if (breakPoint > start) end = breakPoint;
     }
     chunks.push(text.slice(start, end).trim());
