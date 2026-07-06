@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import crypto from "crypto";
 import { createTextMessage } from "@/lib/deepseek";
 import { getProviderApiKey } from "@/lib/data/provider-access";
@@ -22,6 +23,8 @@ import {
   getFileSelectCache,
   setFileSelectCache,
 } from "@/lib/cache/rag-file-select-cache";
+import { buildChunksFromBlocks } from "@/lib/document-pipeline/chunk-builder";
+import type { DocumentBlock } from "@/lib/document-pipeline/types";
 
 // ============================================================
 // Configuration
@@ -52,6 +55,8 @@ export interface CreateChunksParams {
   userId: string;
   textContent: string;
   title?: string;
+  blocks?: DocumentBlock[];
+  assetResourceUrlMap?: Map<string, string>;
 }
 
 export interface SearchParams {
@@ -357,17 +362,19 @@ function splitTextIntoChunks(text: string, size = CHUNK_SIZE, overlap = CHUNK_OV
  * MVP: no embedding — only stores content.
  */
 export async function createDocumentChunks(params: CreateChunksParams): Promise<number> {
-  const { fileAssetId, projectId, userId, textContent, title } = params;
+  const {
+    fileAssetId,
+    projectId,
+    userId,
+    textContent,
+    title,
+    blocks,
+    assetResourceUrlMap,
+  } = params;
 
-  // Delete existing chunks for this file
   await prisma.documentChunk.deleteMany({
     where: { fileAssetId, userId },
   });
-
-  const rawChunks = splitTextIntoChunks(textContent);
-  if (rawChunks.length === 0) return 0;
-
-  const texts = rawChunks.map((chunk) => chunk.content);
 
   const contentHash = crypto
     .createHash("sha256")
@@ -375,19 +382,39 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
     .digest("hex")
     .slice(0, 32);
 
-  const chunkMediaUrls = assignMediaUrlsToChunks(textContent, rawChunks);
+  let candidates: Array<{
+    id: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+    mediaUrls: string[];
+  }>;
 
-  // Batch insert
-  const data = texts.map((content, i) => ({
+  if (blocks && blocks.length > 0) {
+    candidates = buildChunksFromBlocks(blocks, assetResourceUrlMap || new Map());
+  } else {
+    const rawChunks = splitTextIntoChunks(textContent);
+    const chunkMediaUrls = assignMediaUrlsToChunks(textContent, rawChunks);
+    candidates = rawChunks.map((chunk, i) => ({
+      id: crypto.randomUUID(),
+      content: chunk.content,
+      metadata: { sourceType: "text" },
+      mediaUrls: chunkMediaUrls[i] ?? [],
+    }));
+  }
+
+  if (candidates.length === 0) return 0;
+
+  const data = candidates.map((chunk, i) => ({
     userId,
     projectId,
     fileAssetId,
     title: title || null,
-    content,
+    content: chunk.content,
     contentHash,
     chunkIndex: i,
-    tokenCount: Math.ceil(content.length / 2), // rough estimate: ~2 chars per token
-    mediaUrls: chunkMediaUrls[i] ?? [],
+    tokenCount: Math.ceil(chunk.content.length / 2),
+    mediaUrls: chunk.mediaUrls,
+    metadata: (chunk.metadata || {}) as Prisma.InputJsonValue,
   }));
 
   await prisma.documentChunk.createMany({ data });
@@ -396,7 +423,7 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
     await invalidateSearchCache(projectId);
   }
 
-  return texts.length;
+  return candidates.length;
 }
 
 /**
