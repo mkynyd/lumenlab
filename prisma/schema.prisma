@@ -277,10 +277,11 @@ model FileAsset {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  chunks  DocumentChunk[]
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chunks    DocumentChunk[]
   resources FileAssetResource[]
+  parseJob  FileParseJob?
 
   @@index([userId])
   @@index([projectId])
@@ -396,6 +397,29 @@ model FileAssetResource {
   @@unique([fileAssetId, relativePath])
   @@index([fileAssetId])
   @@index([storageProvider])
+}
+
+model FileParseJob {
+  id            String   @id @default(cuid())
+  userId        String
+  fileAssetId   String   @unique
+  status        String   @default("pending")
+  stage         String   @default("pending")
+  attempt       Int      @default(0)
+  strategy      String?
+  costEstimate  Int?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  error         String?
+  warnings      String[] @default([])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  fileAsset FileAsset @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([fileAssetId])
 }
 
 model DocumentChunk {
