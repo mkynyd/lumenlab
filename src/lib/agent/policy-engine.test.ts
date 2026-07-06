@@ -24,6 +24,26 @@ vi.mock("@/lib/db", () => ({
         );
       }),
     },
+    project: {
+      findFirst: vi.fn(async ({ where }: { where: { id?: string; userId?: string } }) => {
+        if (where.userId === "user-1" && where.id === "p1") {
+          return { id: "p1" };
+        }
+        return null;
+      }),
+    },
+    fileAsset: {
+      findFirst: vi.fn(async ({ where }: { where: { id?: string; userId?: string; projectId?: string } }) => {
+        if (
+          where.userId === "user-1" &&
+          where.id === "f1" &&
+          (where.projectId === undefined || where.projectId === "p1")
+        ) {
+          return { id: "f1", originalName: "test.txt", mimeType: "text/plain" };
+        }
+        return null;
+      }),
+    },
   },
 }));
 

@@ -23,6 +23,7 @@ export interface WebSearchResult {
   summary: string;
   sources: Array<{ url: string; title?: string }>;
   query: string;
+  [key: string]: unknown;
 }
 
 function buildCacheKey(query: string, maxResults: number): string {

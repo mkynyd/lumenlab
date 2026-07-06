@@ -7,6 +7,9 @@ import {
   type ToolLoopRecord,
 } from "./orchestrator";
 
+// web.fetch 现在依赖 WEB_FETCH_ALLOWLIST；测试需要 example.com 在白名单中。
+process.env.WEB_FETCH_ALLOWLIST = "example.com";
+
 describe("agent orchestrator loop controls", () => {
   it("executes planned tools, aggregates sources, and builds a context message", async () => {
     const calls = [

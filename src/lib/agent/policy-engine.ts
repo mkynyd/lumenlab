@@ -21,6 +21,7 @@ import type {
   ToolMetadata,
 } from "./types";
 import { prisma } from "@/lib/db";
+import { assertProjectOwned, assertFileOwned } from "@/lib/tools/shared/sanitize";
 
 const RISK_RANK: Record<RiskLevel, number> = {
   L0: 0,
@@ -44,15 +45,30 @@ function maxStrictness(a: ApprovalMode, b: ApprovalMode): ApprovalMode {
 /**
  * 检查用户是否拥有参数引用的资源（按 projectId/ownerId 跨租户检查）
  */
-function checkResourceOwnership(
+async function checkResourceOwnership(
   args: Record<string, unknown>,
   ctx: AgentContext
-): { ok: true } | { ok: false; reason: string } {
-  const projectId = (args.projectId as string | undefined) ?? ctx.resourceContext.projectId;
-  if (projectId && ctx.user.scopes.length > 0 && !ctx.user.scopes.includes("project.read")) {
-    // 服务端会再次校验 project.userId === user.id；这里做静态短路
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    const projectId =
+      (args.projectId as string | undefined) ?? ctx.resourceContext.projectId;
+    if (projectId) {
+      await assertProjectOwned(ctx.user.id, projectId);
+    }
+
+    const fileId = args.fileId as string | undefined;
+    if (fileId) {
+      await assertFileOwned(ctx.user.id, fileId, projectId);
+    }
+
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      reason:
+        error instanceof Error ? error.message : "资源归属校验失败",
+    };
   }
-  return { ok: true };
 }
 
 /**
@@ -181,7 +197,7 @@ export async function evaluatePolicy(
   }
 
   // 5. 跨租户
-  const ownership = checkResourceOwnership(args, ctx);
+  const ownership = await checkResourceOwnership(args, ctx);
   if (!ownership.ok) {
     return denyDecision(tool, "CROSS_TENANT_ACCESS", ownership.reason, skill);
   }

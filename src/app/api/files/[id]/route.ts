@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import {
-  createDocumentChunks,
-  deleteChunksByFileAsset,
-} from "@/lib/rag/vector-store";
+import { createDocumentChunks } from "@/lib/rag/vector-store";
 import { FILE_CATEGORIES } from "@/lib/file-categories";
 import { refreshProjectIndex } from "@/lib/rag/project-index";
 import { z } from "zod";
-import { deleteStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
 import { logger } from "@/lib/logger";
-import { invalidateSearchCache } from "@/lib/cache/rag-search-cache";
-import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
+import { deleteFileAsset } from "@/lib/files/delete-file-asset";
 
 const updateFileSchema = z
   .object({
@@ -141,50 +136,20 @@ export async function DELETE(
   }
   const { id } = await params;
 
-  const file = await prisma.fileAsset.findFirst({
-    where: { id, userId: session.user.id },
-    include: {
-      resources: {
-        select: { storageProvider: true, storagePath: true },
-      },
-    },
+  const result = await deleteFileAsset({
+    fileAssetId: id,
+    userId: session.user.id,
   });
 
-  if (!file) {
-    return NextResponse.json({ error: "文件不存在" }, { status: 404 });
-  }
-
-  // Delete related chunks
-  await deleteChunksByFileAsset(file.id, session.user.id);
-
-  await deleteStoredObject({
-    provider: file.storageProvider as StorageProvider,
-    key: file.storagePath,
-  }).catch((error) => {
-    logger.warn("文件对象删除失败", { fileId: file.id, error: String(error) });
-  });
-  await Promise.all(
-    file.resources.map((resource) =>
-      deleteStoredObject({
-        provider: resource.storageProvider as StorageProvider,
-        key: resource.storagePath,
-      }).catch((error) => {
-        logger.warn("文件图片对象删除失败", {
-          fileId: file.id,
-          error: String(error),
-        });
-      })
-    )
-  );
-
-  await prisma.fileAsset.delete({ where: { id } });
-  if (file.projectId) {
-    await invalidateSearchCache(file.projectId);
-    await invalidateFileSelectCache(file.projectId);
-    await refreshProjectIndex({
-      userId: session.user.id,
-      projectId: file.projectId,
-    }).catch(() => {});
+  if (!result.deleted) {
+    if (result.error === "NOT_FOUND") {
+      return NextResponse.json({ error: "文件不存在" }, { status: 404 });
+    }
+    logger.error("删除文件失败", { fileId: id, error: result.error });
+    return NextResponse.json(
+      { error: result.error || "删除文件失败" },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({ success: true });

@@ -5,11 +5,12 @@ vi.mock("@/lib/db", () => {
   return {
     prisma: {
       approvalToken: {
-        create: vi.fn(async ({ data }: { data: { tokenHash: string; argumentsHash: string; expiresAt: Date } }) => {
+        create: vi.fn(async ({ data }: { data: { tokenHash: string; argumentsHash: string; requestId: string; expiresAt: Date } }) => {
           const list = ((globalThis as { __recorded?: unknown[] }).__recorded ??= []) as Array<{
             id: string;
             tokenHash: string;
             argumentsHash: string;
+            requestId: string;
             consumedAt: Date | null;
             expiresAt: Date;
           }>;
@@ -17,6 +18,7 @@ vi.mock("@/lib/db", () => {
             id: `tkn-${list.length + 1}`,
             tokenHash: data.tokenHash,
             argumentsHash: data.argumentsHash,
+            requestId: data.requestId,
             consumedAt: null,
             expiresAt: data.expiresAt,
           };
@@ -43,6 +45,7 @@ type TokenRow = {
   id: string;
   tokenHash: string;
   argumentsHash: string;
+  requestId: string;
   consumedAt: Date | null;
   expiresAt: Date;
 };
@@ -94,6 +97,7 @@ describe("approval-token", () => {
     });
     const result = await consumeApprovalToken(issued.token, args);
     expect(result.ok).toBe(true);
+    if (result.ok) expect(result.requestId).toBe("exec-2");
     expect(getRows()[0].consumedAt).not.toBeNull();
   });
 
@@ -164,5 +168,22 @@ describe("approval-token", () => {
     const result = await consumeApprovalToken("no-dot", {});
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("MALFORMED");
+  });
+
+  it("returns requestId so caller can verify executionId binding", async () => {
+    const { issueApprovalToken, consumeApprovalToken } = await import(
+      "./approval-token"
+    );
+    const args = { projectId: "p1" };
+    const issued = await issueApprovalToken({
+      userId: "u1",
+      conversationId: "c1",
+      toolId: "project_files.delete",
+      argumentsHash: hashArguments(args),
+      requestId: "exec-bound",
+    });
+    const result = await consumeApprovalToken(issued.token, args);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.requestId).toBe("exec-bound");
   });
 });

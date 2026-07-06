@@ -1,27 +1,28 @@
-import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { invalidateSearchCache } from "@/lib/cache/rag-search-cache";
-import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
+import { deleteFileAsset } from "@/lib/files/delete-file-asset";
 
 export async function deleteProjectFile(
   userId: string,
   projectId: string,
   fileId: string
 ): Promise<Record<string, unknown>> {
-  const file = await prisma.fileAsset.findFirst({
-    where: { id: fileId, userId, projectId },
-    select: { id: true, originalName: true },
+  const result = await deleteFileAsset({
+    fileAssetId: fileId,
+    userId,
+    projectId,
   });
-  if (!file) {
-    return { error: "NOT_FOUND" };
-  }
-  try {
-    await prisma.fileAsset.delete({ where: { id: fileId } });
-    await invalidateSearchCache(projectId);
-    await invalidateFileSelectCache(projectId);
-  } catch (error) {
-    logger.error("delete file failed", { error: String(error), fileId });
+
+  if (!result.deleted) {
+    if (result.error === "NOT_FOUND") {
+      return { error: "NOT_FOUND" };
+    }
+    logger.error("delete file failed", { error: result.error, fileId });
     return { error: "DELETE_FAILED" };
   }
-  return { deleted: true, id: file.id, name: file.originalName };
+
+  return {
+    deleted: true,
+    id: result.id,
+    name: result.originalName,
+  };
 }

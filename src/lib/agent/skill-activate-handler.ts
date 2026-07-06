@@ -20,6 +20,7 @@ export interface ActivateSkillResult {
     approval: string;
     may_send_to_external: boolean;
   };
+  [key: string]: unknown;
 }
 
 /**

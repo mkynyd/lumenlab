@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, createElement } from "react";
 import {
   Brain,
   ChatBubbleQuestion,
@@ -103,7 +103,7 @@ export function SkillSelector({
   disabled,
   compact = true,
 }: SkillSelectorProps) {
-  const { options: dynamicOptions, loading: _loading } = useSkillCatalog();
+  const { options: dynamicOptions } = useSkillCatalog();
 
   // 合并动态选项 + 固定选项（auto / off）
   const allOptions = useMemo(() => {
@@ -146,7 +146,7 @@ export function SkillSelector({
             value !== "auto" && !isOff && "bg-[var(--color-surface-active)] text-[var(--color-accent)]"
           )}
         >
-          <TriggerIcon className="size-[17px]" strokeWidth={2} />
+          {createElement(TriggerIcon, { className: "size-[17px]", strokeWidth: 2 })}
           {!compact && selected && (
             <span className="ml-1.5 text-xs">{selected.label}</span>
           )}
