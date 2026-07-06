@@ -19,15 +19,166 @@ import {
 import type { ParsedImageAsset } from "@/lib/parse/mineru-result";
 import { DocumentPipeline } from "@/lib/document-pipeline/pipeline";
 import type { ParseInput } from "@/lib/document-pipeline/types";
+import {
+  runFileParseJob,
+  enqueueFileParseJobs,
+} from "@/lib/document-pipeline/job-runner";
 import type { JobContext, ParseStage } from "@/lib/document-pipeline/job-runner";
 
 export async function runParseStages(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _ctx: JobContext,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _onStageUpdate: (stage: ParseStage, data: { attempt: number; warnings: string[] }) => void
+  ctx: JobContext,
+  onStageUpdate: (stage: ParseStage, data: { attempt: number; warnings: string[] }) => void
 ): Promise<void> {
-  throw new Error("runParseStages not implemented");
+  const file = await prisma.fileAsset.findFirst({
+    where: { id: ctx.fileAssetId, userId: ctx.userId },
+  });
+  if (!file) throw new Error("文件不存在");
+
+  const attempt = (stage: ParseStage) => {
+    const current = ctx.attempt + 1;
+    onStageUpdate(stage, { attempt: current, warnings: [] });
+    return current;
+  };
+
+  await updateStage(file, "uploading", {
+    parseStartedAt: new Date().toISOString(),
+    parseRunId: crypto.randomUUID(),
+  });
+
+  // Stage: read_file
+  attempt("read_file");
+  const data = await readStoredObject({
+    provider: file.storageProvider as StorageProvider,
+    key: file.storagePath,
+  });
+
+  // Stage: parse_layout
+  attempt("parse_layout");
+  const input: ParseInput = {
+    userId: ctx.userId,
+    fileAssetId: file.id,
+    filename: file.originalName,
+    mimeType: file.mimeType,
+    data,
+    apiKeys: {
+      minimax: await getMiniMaxKey(ctx.userId),
+      mineru: await getMinerUToken(ctx.userId),
+      bailian: await getBailianKey(ctx.userId),
+    },
+  };
+
+  await updateStage(file, "model", { parser: "document-pipeline" });
+  const pipeline = new DocumentPipeline();
+  const result = await pipeline.run(input, (stage, progress) => {
+    const normalizedStage =
+      stage === "running" || stage === "converting"
+        ? "model"
+        : stage === "complete" || stage === "done"
+          ? "complete"
+          : stage === "failed"
+            ? "failed"
+            : stage;
+    if (normalizedStage in PARSING_STAGES) {
+      void updateStage(file, normalizedStage as keyof typeof PARSING_STAGES, {
+        ...(progress ? { current: progress.current, total: progress.total } : {}),
+      });
+    }
+  });
+
+  // Stage: store_assets
+  attempt("store_assets");
+  const storedAssets = result.assets.length > 0
+    ? await persistFileAssets(file.id, ctx.userId, result.assets)
+    : [];
+
+  // Stage: rewrite_refs
+  attempt("rewrite_refs");
+  const resourceUrlMap = new Map(storedAssets.map((s) => [s.relativePath, s.resourceUrl]));
+  const content = rewriteAssetReferences(result.content, resourceUrlMap);
+
+  // Stage: render metadata already done by pipeline; build index metadata.
+  const indexMetadata = await generateFileIndexMetadata({
+    userId: ctx.userId,
+    filename: file.originalName,
+    content,
+  });
+
+  const completedMetadata = {
+    ...result.metadata,
+    ...indexMetadata,
+    parsingStage: "complete",
+    parsingStageLabel: PARSING_STAGES.complete,
+  };
+
+  await updateStage(file, "writing", completedMetadata);
+
+  await prisma.fileAsset.update({
+    where: { id: file.id },
+    data: {
+      textContent: content,
+      status: result.status,
+      enhancementStatus: file.enhancedContent ? "stale" : "none",
+      processingMetadata: mergeMetadata(file.processingMetadata, completedMetadata),
+    },
+  });
+
+  // Stage: chunk_index
+  attempt("chunk_index");
+
+  // Build absolute URLs for local resources so the multimodal embedding provider can fetch them.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+  const absoluteResourceUrlMap = new Map(
+    [...resourceUrlMap.entries()].map(([path, url]) => [
+      path,
+      url.startsWith("/") && appUrl ? `${appUrl.replace(/\/$/, "")}${url}` : url,
+    ])
+  );
+
+  let chunksCreated = false;
+  try {
+    await createDocumentChunks({
+      fileAssetId: file.id,
+      projectId: file.projectId,
+      userId: ctx.userId,
+      textContent: content,
+      title: file.originalName,
+      blocks: result.blocks,
+      assetResourceUrlMap: absoluteResourceUrlMap,
+    });
+    chunksCreated = true;
+  } catch {
+    await prisma.fileAsset.update({
+      where: { id: file.id },
+      data: {
+        processingMetadata: mergeMetadata(file.processingMetadata, {
+          ...result.metadata,
+          chunkWarning: "解析内容已保存，但检索分块创建失败",
+        }),
+      },
+    });
+  }
+
+  if (chunksCreated) {
+    const bailianKey = await getBailianKey(ctx.userId);
+    if (bailianKey) {
+      await embedChunksForFile({
+        fileAssetId: file.id,
+        apiKey: bailianKey,
+      }).catch((error) => {
+        logger.error("嵌入向量生成失败", {
+          fileId: file.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+  }
+
+  if (file.projectId) {
+    await refreshProjectIndex({
+      userId: ctx.userId,
+      projectId: file.projectId,
+    }).catch(() => {});
+  }
 }
 
 export const PARSING_STAGES = {
@@ -301,120 +452,37 @@ export async function parseFileAsset(input: {
     throw new Error("文件不存在");
   }
 
-  await updateStage(file, "uploading", {
-    parseStartedAt: new Date().toISOString(),
-    parseRunId: crypto.randomUUID(),
+  // Ensure a job exists and run it.
+  const job = await prisma.fileParseJob.upsert({
+    where: { fileAssetId: file.id },
+    create: {
+      userId: input.userId,
+      fileAssetId: file.id,
+      status: "pending",
+      stage: "pending",
+      attempt: 0,
+    },
+    update: {
+      status: "pending",
+      stage: "pending",
+      attempt: 0,
+      error: null,
+      completedAt: null,
+    },
   });
 
-  try {
-    const result = await parseFileContent({
-      userId: input.userId,
-      file,
-    });
-    const stored =
-      result.assets && result.assets.length > 0
-        ? await persistFileAssets(file.id, input.userId, result.assets)
-        : [];
-    const resourceUrlMap = new Map(
-      stored.map((s) => [s.relativePath, s.resourceUrl])
-    );
-    const content = rewriteAssetReferences(result.content, resourceUrlMap);
-    const indexMetadata = await generateFileIndexMetadata({
-      userId: input.userId,
-      filename: file.originalName,
-      content,
-    });
-    const completedMetadata = {
-      ...result.metadata,
-      ...indexMetadata,
-      parsingStage: "complete",
-      parsingStageLabel: PARSING_STAGES.complete,
-    };
+  await runFileParseJob(job.id);
 
-    await updateStage(file, "writing", completedMetadata);
-
-    await prisma.fileAsset.update({
-      where: { id: file.id },
-      data: {
-        textContent: content,
-        status: result.status,
-        enhancementStatus: file.enhancedContent ? "stale" : "none",
-        processingMetadata: mergeMetadata(file.processingMetadata, completedMetadata),
-      },
-    });
-
-    let chunksCreated = false;
-    try {
-      await createDocumentChunks({
-        fileAssetId: file.id,
-        projectId: file.projectId,
-        userId: input.userId,
-        textContent: content,
-        title: file.originalName,
-      });
-      chunksCreated = true;
-    } catch {
-      await prisma.fileAsset.update({
-        where: { id: file.id },
-        data: {
-          processingMetadata: mergeMetadata(file.processingMetadata, {
-            ...result.metadata,
-            chunkWarning: "解析内容已保存，但检索分块创建失败",
-          }),
-        },
-      });
-    }
-
-    if (chunksCreated) {
-      const bailianKey = await getBailianKey(input.userId);
-      if (bailianKey) {
-        await embedChunksForFile({
-          fileAssetId: file.id,
-          apiKey: bailianKey,
-        }).catch((error) => {
-          logger.error("嵌入向量生成失败", {
-            fileId: file.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-      }
-    }
-
-    if (file.projectId) {
-      await refreshProjectIndex({
-        userId: input.userId,
-        projectId: file.projectId,
-      }).catch(() => {});
-    }
-
-    return {
-      fileId: file.id,
-      projectId: file.projectId,
-      status: result.status,
-      metadata: result.metadata,
-    };
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "文件解析失败，请稍后重试";
-    await prisma.fileAsset.update({
-      where: { id: file.id },
-      data: {
-        status: "failed",
-        processingMetadata: mergeMetadata(file.processingMetadata, {
-          parseError: message.slice(0, 300),
-          parsingStage: "failed",
-          failedAt: new Date().toISOString(),
-        }),
-      },
-    });
-    if (file.projectId) {
-      await refreshProjectIndex({
-        userId: input.userId,
-        projectId: file.projectId,
-      }).catch(() => {});
-    }
-    throw error;
-  }
+  // Return latest state
+  const updated = await prisma.fileAsset.findFirst({
+    where: { id: input.fileId, userId: input.userId },
+  });
+  return {
+    fileId: updated?.id,
+    projectId: updated?.projectId,
+    status: updated?.status,
+    metadata: updated?.processingMetadata,
+  };
 }
 
 export async function parseFileBatch(input: {
@@ -436,5 +504,5 @@ export function startFileParseBatch(input: {
   userId: string;
   fileIds: string[];
 }) {
-  void parseFileBatch(input);
+  void enqueueFileParseJobs(input.fileIds, input.userId);
 }

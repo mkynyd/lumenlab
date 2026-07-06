@@ -27,15 +27,19 @@ export async function POST(
 
   try {
     const result = await parseFileAsset({ userId, fileId: file.id });
+    const metadata =
+      result.metadata && typeof result.metadata === "object" && !Array.isArray(result.metadata)
+        ? (result.metadata as Record<string, unknown>)
+        : {};
     return NextResponse.json({
       file: {
         id: file.id,
         status: result.status,
         hasTextContent: true,
-        parser: result.metadata.parser,
+        parser: typeof metadata.parser === "string" ? metadata.parser : null,
         truncated:
-          "truncated" in result.metadata
-            ? Boolean(result.metadata.truncated)
+          "truncated" in metadata
+            ? Boolean(metadata.truncated)
             : false,
       },
     });

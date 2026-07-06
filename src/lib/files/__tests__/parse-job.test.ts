@@ -29,6 +29,11 @@ vi.mock("@/lib/db", () => ({
       deleteMany: vi.fn(),
       createMany: vi.fn(),
     },
+    fileParseJob: {
+      upsert: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
   },
 }));
 
@@ -231,6 +236,23 @@ describe("parseFileAsset", () => {
     vi.mocked(prisma.fileAssetResource.findMany).mockResolvedValue([]);
     vi.mocked(prisma.fileAssetResource.deleteMany).mockResolvedValue({ count: 0 } as never);
     vi.mocked(prisma.fileAssetResource.createMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.fileParseJob.upsert).mockResolvedValue({
+      id: "job-1",
+      userId: "u1",
+      fileAssetId: "f1",
+      status: "pending",
+      stage: "pending",
+      attempt: 0,
+    } as never);
+    vi.mocked(prisma.fileParseJob.findUnique).mockResolvedValue({
+      id: "job-1",
+      userId: "u1",
+      fileAssetId: "f1",
+      status: "pending",
+      stage: "pending",
+      attempt: 0,
+    } as never);
+    vi.mocked(prisma.fileParseJob.update).mockResolvedValue({} as never);
     vi.mocked(projectIndex.generateFileIndexMetadata).mockResolvedValue({
       summary: "Summary",
       keywords: ["a", "b"],
@@ -311,18 +333,23 @@ describe("parseFileAsset", () => {
     expect(textContent).toBe("# Slide\n\nJust text.");
   });
 
-  it("sets status to failed and stores parseError when parseFileContent throws", async () => {
+  it("delegates failures to the durable job runner without throwing", async () => {
     vi.mocked(mineru.parseFileWithMinerU).mockRejectedValue(new Error("MinerU failed"));
 
-    await expect(parseFileAsset({ userId: "u1", fileId: "f1" })).rejects.toThrow("MinerU failed");
+    const result = await parseFileAsset({ userId: "u1", fileId: "f1" });
 
-    const failedUpdateCall = vi.mocked(prisma.fileAsset.update).mock.calls.find(
+    expect(result.fileId).toBe("f1");
+    expect(prisma.fileParseJob.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { fileAssetId: "f1" },
+        create: expect.objectContaining({ status: "pending", stage: "pending" }),
+      })
+    );
+    const failedJobUpdate = vi.mocked(prisma.fileParseJob.update).mock.calls.find(
       (call) => call[0].data && "status" in call[0].data && call[0].data.status === "failed"
     );
-    expect(failedUpdateCall).toBeDefined();
-    const metadata = (failedUpdateCall![0] as { data: { processingMetadata: Record<string, unknown> } }).data.processingMetadata;
-    expect(metadata.parseError).toBe("MinerU failed");
-    expect(metadata.parsingStage).toBe("failed");
-    expect(metadata.failedAt).toBeDefined();
+    expect(failedJobUpdate).toBeDefined();
+    const data = (failedJobUpdate![0] as { data: { error: string } }).data;
+    expect(data.error).toContain("MinerU failed");
   });
 });
