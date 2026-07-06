@@ -77,17 +77,18 @@ export function buildParseQualityReport(options: BuildReportOptions): ParseQuali
         : undefined,
   });
 
+  const lowConfidencePassed = !images.some(
+    (i) =>
+      i.analysisStatus === "parsed" &&
+      (i.confidence ?? 1) < 0.7 &&
+      ["chart", "diagram"].some((k) =>
+        (i.relativePath + " " + (i.altText || "")).includes(k)
+      )
+  );
   checks.push({
     rule: "low_confidence_images_flagged",
-    passed: !images.some(
-      (i) =>
-        i.analysisStatus === "parsed" &&
-        (i.confidence ?? 1) < 0.7 &&
-        ["chart", "diagram"].some((k) =>
-          (i.relativePath + " " + (i.altText || "")).includes(k)
-        )
-    ),
-    message: "低置信度图表/流程图，建议核对数字和标签",
+    passed: lowConfidencePassed,
+    message: lowConfidencePassed ? undefined : "低置信度图表/流程图，建议核对数字和标签",
   });
 
   const warningCount = metadata.parseWarnings.length + checks.filter((c) => !c.passed).length;
