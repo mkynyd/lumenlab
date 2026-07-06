@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { logger } from "@/lib/logger";
+import type { Prisma } from "@/generated/prisma/client";
 
 export const PARSE_STAGES = [
   "pending",
@@ -72,16 +74,8 @@ export async function recoverStaleJobs(maxAgeMinutes = STALE_JOB_MINUTES): Promi
 
 async function updateJob(
   jobId: string,
-  data: Partial<{
-    status: string;
-    stage: string;
-    attempt: number;
-    error: string | null;
-    warnings: string[];
-    startedAt: Date;
-    completedAt: Date;
-  }>
-) {
+  data: Prisma.FileParseJobUpdateInput
+): Promise<void> {
   await prisma.fileParseJob.update({
     where: { id: jobId },
     data,
@@ -100,12 +94,16 @@ export async function runFileParseJob(jobId: string): Promise<void> {
     startedAt: job.startedAt || new Date(),
   });
 
+  const stage = PARSE_STAGES.includes(job.stage as ParseStage)
+    ? (job.stage as ParseStage)
+    : "pending";
+
   try {
     await executeStages({
       jobId,
       userId: job.userId,
       fileAssetId: job.fileAssetId,
-      stage: job.stage as ParseStage,
+      stage,
       attempt: job.attempt,
     });
     await updateJob(jobId, {
@@ -116,21 +114,31 @@ export async function runFileParseJob(jobId: string): Promise<void> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await updateJob(jobId, {
-      status: "failed",
-      error: message.slice(0, 500),
-      completedAt: new Date(),
-    });
+    try {
+      await updateJob(jobId, {
+        status: "failed",
+        error: message.slice(0, 500),
+        completedAt: new Date(),
+      });
+    } catch (persistError) {
+      logger.error("Failed to persist job failure state", {
+        jobId,
+        error: persistError instanceof Error ? persistError.message : String(persistError),
+      });
+    }
   }
 }
 
 async function executeStages(ctx: JobContext): Promise<void> {
   const { runParseStages } = await import("@/lib/files/parse-job");
-  await runParseStages(ctx, async (stage, data) => {
-    await updateJob(ctx.jobId, {
-      stage,
-      attempt: data.attempt,
-      warnings: data.warnings,
-    });
-  });
+  await runParseStages(
+    ctx,
+    async (stage: ParseStage, data: { attempt: number; warnings: string[] }) => {
+      await updateJob(ctx.jobId, {
+        stage,
+        attempt: data.attempt,
+        warnings: data.warnings,
+      });
+    }
+  );
 }

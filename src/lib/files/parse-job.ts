@@ -19,6 +19,16 @@ import {
 import type { ParsedImageAsset } from "@/lib/parse/mineru-result";
 import { DocumentPipeline } from "@/lib/document-pipeline/pipeline";
 import type { ParseInput } from "@/lib/document-pipeline/types";
+import type { JobContext, ParseStage } from "@/lib/document-pipeline/job-runner";
+
+export async function runParseStages(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _ctx: JobContext,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _onStageUpdate: (stage: ParseStage, data: { attempt: number; warnings: string[] }) => void
+): Promise<void> {
+  throw new Error("runParseStages not implemented");
+}
 
 export const PARSING_STAGES = {
   uploading: "上传文件中",
