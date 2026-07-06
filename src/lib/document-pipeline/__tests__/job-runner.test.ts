@@ -4,6 +4,7 @@ import {
   enqueueFileParseJobs,
   recoverStaleJobs,
 } from "../job-runner";
+import { runParseStages } from "@/lib/files/parse-job";
 import { prisma } from "@/lib/db";
 
 vi.mock("@/lib/db", () => ({
@@ -21,8 +22,6 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/files/parse-job", () => ({
   runParseStages: vi.fn(),
 }));
-
-import { runParseStages } from "@/lib/files/parse-job";
 
 describe("job runner", () => {
   beforeEach(() => {
