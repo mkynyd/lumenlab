@@ -103,12 +103,25 @@ export function rewriteAssetReferences(
 ): string {
   if (assetMap.size === 0) return content;
 
+  function resolveAssetUrl(rawValue: string): string | undefined {
+    if (assetMap.has(rawValue)) return assetMap.get(rawValue);
+    try {
+      const decoded = decodeURIComponent(rawValue);
+      if (decoded !== rawValue && assetMap.has(decoded)) {
+        return assetMap.get(decoded);
+      }
+    } catch {
+      // decodeURIComponent failed; fall through
+    }
+    return undefined;
+  }
+
   // Markdown image references: ![alt](relative/path.png)
   let rewritten = content.replace(
     /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
     (match, alt, href) => {
       if (!isInternalRelativePath(href)) return match;
-      const url = assetMap.get(href);
+      const url = resolveAssetUrl(href);
       if (!url) return match;
       return `![${alt}](${url})`;
     }
@@ -119,7 +132,7 @@ export function rewriteAssetReferences(
     /<img([^>]*)\bsrc=["']([^"']+)["']([^>]*)>/gi,
     (match, before, src, after) => {
       if (!isInternalRelativePath(src)) return match;
-      const url = assetMap.get(src);
+      const url = resolveAssetUrl(src);
       if (!url) return match;
       return `<img${before}src="${url}"${after}>`;
     }

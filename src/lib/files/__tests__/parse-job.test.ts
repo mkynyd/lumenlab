@@ -156,6 +156,57 @@ describe("rewriteAssetReferences", () => {
     const content = "![chart](pics/chart.png)";
     expect(rewriteAssetReferences(content, new Map())).toBe(content);
   });
+
+  it("rewrites markdown image references with URL-encoded paths", () => {
+    const map = new Map<string, string>([
+      ["pics/my chart.png", "/api/files/f1/resources/r1"],
+    ]);
+    const content = "![chart](pics/my%20chart.png)";
+    expect(rewriteAssetReferences(content, map)).toBe(
+      "![chart](/api/files/f1/resources/r1)"
+    );
+  });
+
+  it("rewrites html img src references with URL-encoded paths", () => {
+    const map = new Map<string, string>([
+      ["images/my diagram.png", "/api/files/f1/resources/r2"],
+    ]);
+    const content = '<img src="images/my%20diagram.png" alt="diagram">';
+    expect(rewriteAssetReferences(content, map)).toBe(
+      '<img src="/api/files/f1/resources/r2" alt="diagram">'
+    );
+  });
+
+  it("rewrites paths with encoded parentheses and brackets", () => {
+    const map = new Map<string, string>([
+      ["pics/chart (v2) [final].png", "/api/files/f1/resources/r3"],
+    ]);
+    const content = "![chart](pics/chart%20%28v2%29%20%5Bfinal%5D.png)";
+    expect(rewriteAssetReferences(content, map)).toBe(
+      "![chart](/api/files/f1/resources/r3)"
+    );
+  });
+
+  it("rewrites mixed external URLs, anchors, and asset references", () => {
+    const map = new Map<string, string>([
+      ["pics/my chart.png", "/api/files/f1/resources/r1"],
+      ["images/diagram.png", "/api/files/f1/resources/r2"],
+    ]);
+    const content = [
+      "![external](https://example.com/img.png)",
+      "![anchor](#section)",
+      '![encoded](pics/my%20chart.png)',
+      '<img src="images/diagram.png" alt="local">',
+    ].join("\n\n");
+    expect(rewriteAssetReferences(content, map)).toBe(
+      [
+        "![external](https://example.com/img.png)",
+        "![anchor](#section)",
+        "![encoded](/api/files/f1/resources/r1)",
+        '<img src="/api/files/f1/resources/r2" alt="local">',
+      ].join("\n\n")
+    );
+  });
 });
 
 describe("parseFileAsset", () => {
