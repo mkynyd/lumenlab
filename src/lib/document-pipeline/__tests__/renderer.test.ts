@@ -39,9 +39,9 @@ describe("renderDocumentToMarkdown", () => {
 
     const output = renderDocumentToMarkdown(blocks);
     expect(output).toContain("| a | b |");
-    expect(output).toContain("> Table 1");
+    expect(output).toContain("*Table 1*");
     expect(output).toContain("| x | y |");
-    expect(output.match(/> Table 1/g)).toHaveLength(1);
+    expect(output.match(/\*Table 1\*/g)).toHaveLength(1);
   });
 
   it("renders a formula block as display math", () => {
@@ -108,10 +108,10 @@ describe("renderDocumentToMarkdown", () => {
 
     const output = renderDocumentToMarkdown(blocks);
     expect(output).toContain("![Figure](pics/fig.png)");
-    expect(output).toContain("> Shows growth over time.");
+    expect(output).toContain("> 图像解析：Shows growth over time.");
   });
 
-  it("prefers visionSummary over visionText and extractedText", () => {
+  it("renders all present image annotation fields separately", () => {
     const blocks: DocumentBlock[] = [
       {
         type: "image",
@@ -125,9 +125,10 @@ describe("renderDocumentToMarkdown", () => {
       },
     ];
 
-    expect(renderDocumentToMarkdown(blocks)).toContain("> summary"
-    );
-    expect(renderDocumentToMarkdown(blocks)).not.toContain("> text");
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain("> 图像解析：summary");
+    expect(output).toContain("> 图中文字：text");
+    expect(output).toContain("> 结构化内容：extracted");
   });
 
   it("quotes extractedText when no vision result is present", () => {
@@ -142,7 +143,7 @@ describe("renderDocumentToMarkdown", () => {
       },
     ];
 
-    expect(renderDocumentToMarkdown(blocks)).toContain("> OCR result");
+    expect(renderDocumentToMarkdown(blocks)).toContain("> 结构化内容：OCR result");
   });
 
   it("shows a low-confidence warning when confidence is below threshold", () => {
@@ -158,8 +159,8 @@ describe("renderDocumentToMarkdown", () => {
     ];
 
     const output = renderDocumentToMarkdown(blocks);
-    expect(output).toContain("![image](pics/z.png)");
-    expect(output).toContain("> 置信度较低");
+    expect(output).toContain("![](pics/z.png)");
+    expect(output).toContain("> 注意：低置信度，关键数字/公式建议核对原文。");
   });
 
   it("shows a failure message for failed analysis", () => {
@@ -175,12 +176,12 @@ describe("renderDocumentToMarkdown", () => {
     ];
 
     const output = renderDocumentToMarkdown(blocks);
-    expect(output).toContain("![image](pics/bad.png)");
-    expect(output).toContain("> 视觉理解失败");
+    expect(output).toContain("![](pics/bad.png)");
+    expect(output).toContain("> 图像解析失败");
     expect(output).toContain("vision timeout");
   });
 
-  it("shows a skip reason for skipped analysis", () => {
+  it("renders only the image line for skipped analysis", () => {
     const blocks: DocumentBlock[] = [
       {
         type: "image",
@@ -192,9 +193,7 @@ describe("renderDocumentToMarkdown", () => {
       },
     ];
 
-    const output = renderDocumentToMarkdown(blocks);
-    expect(output).toContain("> 已跳过视觉理解");
-    expect(output).toContain("decorative image");
+    expect(renderDocumentToMarkdown(blocks)).toBe("![](pics/skip.png)");
   });
 
   it("separates multiple blocks with blank lines", () => {

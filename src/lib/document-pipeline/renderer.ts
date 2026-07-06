@@ -16,7 +16,7 @@ function renderBlock(block: DocumentBlock): string {
       if (!block.caption) {
         return block.markdown;
       }
-      return `${block.markdown}\n\n> ${block.caption}`;
+      return `${block.markdown}\n\n*${block.caption}*`;
     }
 
     case "formula":
@@ -39,7 +39,7 @@ function renderBlock(block: DocumentBlock): string {
 }
 
 function renderImage(block: ImageBlock): string {
-  const alt = block.altText || "image";
+  const alt = block.altText || "";
   const imageLine = `![${alt}](${block.relativePath})`;
   const quote = renderImageAnalysisQuote(block);
   return quote ? `${imageLine}\n\n${quote}` : imageLine;
@@ -47,23 +47,33 @@ function renderImage(block: ImageBlock): string {
 
 function renderImageAnalysisQuote(block: ImageBlock): string | undefined {
   if (block.analysisStatus === "failed") {
-    return `> 视觉理解失败${block.skipReason ? `：${block.skipReason}` : ""}`;
+    return `> 图像解析失败${block.skipReason ? `：${block.skipReason}` : ""}`;
   }
 
   if (block.analysisStatus === "skipped") {
-    return `> 已跳过视觉理解${block.skipReason ? `：${block.skipReason}` : ""}`;
+    return undefined;
   }
 
-  const text = block.visionSummary ?? block.visionText ?? block.extractedText;
-  if (text) {
-    return text
-      .split("\n")
+  const lines: string[] = [];
+  if (block.visionSummary) {
+    lines.push(`图像解析：${block.visionSummary}`);
+  }
+  if (block.visionText) {
+    lines.push(`图中文字：${block.visionText}`);
+  }
+  if (block.extractedText && block.extractedText !== block.visionText) {
+    lines.push(`结构化内容：${block.extractedText}`);
+  }
+
+  if (lines.length > 0) {
+    return lines
+      .flatMap((line) => line.split("\n"))
       .map((line) => `> ${line}`)
       .join("\n");
   }
 
-  if (block.confidence !== undefined && block.confidence < 0.5) {
-    return `> 置信度较低（${Math.round(block.confidence * 100)}%），请人工核对。`;
+  if (block.confidence !== undefined && block.confidence < 0.7) {
+    return `> 注意：低置信度，关键数字/公式建议核对原文。`;
   }
 
   return undefined;
