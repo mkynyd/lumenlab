@@ -14,6 +14,7 @@ import type { MiniMaxImageMedia } from "./vision/minimax-analyzer";
 import { TextLocalParser } from "./parsers/text-local-parser";
 import { MinerUParser } from "./parsers/mineru-parser";
 import { MiniMaxPdfParser } from "./parsers/minimax-pdf-parser";
+import { ImageParser } from "./parsers/image-parser";
 import { extensionOf } from "./parsers/utils";
 
 export interface PipelineResult {
@@ -26,6 +27,7 @@ export interface PipelineResult {
 
 export class DocumentPipeline {
   private parsers: DocumentParser[] = [
+    new ImageParser(),
     new TextLocalParser(),
     new MinerUParser(),
     new MiniMaxPdfParser(),
