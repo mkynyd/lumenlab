@@ -153,7 +153,7 @@ describe("document-pipeline types", () => {
   it("ParseResult metadata contains required timestamps", () => {
     const metadata: ParsingMetadata = {
       parser: "test-parser",
-      pipelineVersion: "1.0.0",
+      pipelineVersion: "0.2.0",
       sourceKind: "pdf",
       requiresVisionModel: false,
       assetCount: 0,
@@ -182,7 +182,7 @@ describe("document-pipeline types", () => {
         onProgress?.("parsing", { current: 1, total: 2 });
         const metadata: ParsingMetadata = {
           parser: "test-parser",
-          pipelineVersion: "1.0.0",
+          pipelineVersion: "0.2.0",
           sourceKind: "pdf",
           requiresVisionModel: false,
           assetCount: 0,

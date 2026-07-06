@@ -58,7 +58,7 @@ describe("renderDocumentToMarkdown", () => {
     ];
 
     expect(renderDocumentToMarkdown(blocks)).toBe(
-      "```python\nprint('hi')\n```"
+      "```python\nprint\\('hi'\\)\n```"
     );
   });
 
@@ -203,5 +203,105 @@ describe("renderDocumentToMarkdown", () => {
     ];
 
     expect(renderDocumentToMarkdown(blocks)).toBe("First\n\nSecond");
+  });
+
+  it("returns an empty string for an empty block array", () => {
+    expect(renderDocumentToMarkdown([])).toBe("");
+  });
+
+  it("clamps heading levels to the range 1-6", () => {
+    const blocks: DocumentBlock[] = [
+      { type: "heading", id: "h1", level: 0, content: "Too low" },
+      { type: "heading", id: "h2", level: 8, content: "Too high" },
+    ];
+
+    expect(renderDocumentToMarkdown(blocks)).toBe("# Too low\n\n###### Too high");
+  });
+
+  it("escapes markdown special characters in content", () => {
+    const blocks: DocumentBlock[] = [
+      { type: "text", id: "t1", content: "*not bold*" },
+      { type: "heading", id: "h1", level: 1, content: "# not a heading" },
+      { type: "formula", id: "f1", content: "x * y" },
+      {
+        type: "table",
+        id: "tb1",
+        markdown: "|a|",
+        caption: "*not italic*",
+      },
+    ];
+
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain("\\*not bold\\*");
+    expect(output).toContain("# \\# not a heading");
+    expect(output).toContain("$$x \\* y$$");
+    expect(output).toContain("\\*not italic\\*");
+  });
+
+  it("does not escape backticks inside code blocks", () => {
+    const blocks: DocumentBlock[] = [
+      {
+        type: "code",
+        id: "c1",
+        language: "ts",
+        content: "const x = `hello`;",
+      },
+    ];
+
+    expect(renderDocumentToMarkdown(blocks)).toBe(
+      "```ts\nconst x = `hello`;\n```"
+    );
+  });
+
+  it("escapes image alt text and url-encodes the image path", () => {
+    const blocks: DocumentBlock[] = [
+      {
+        type: "image",
+        id: "i1",
+        assetId: "a1",
+        relativePath: "path with spaces/image.png",
+        altText: "[not](a link)",
+        analysisStatus: "pending",
+      },
+    ];
+
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain("\\[not\\]\\(a link\\)");
+    expect(output).toContain("path%20with%20spaces/image.png");
+  });
+
+  it("replaces newlines with spaces in failed image skip reasons", () => {
+    const blocks: DocumentBlock[] = [
+      {
+        type: "image",
+        id: "i1",
+        assetId: "a1",
+        relativePath: "bad.png",
+        analysisStatus: "failed",
+        skipReason: "line one\nline two",
+      },
+    ];
+
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain("line one line two");
+    expect(output).not.toContain("line one\nline two");
+  });
+
+  it("appends a low-confidence warning even when other annotations exist", () => {
+    const blocks: DocumentBlock[] = [
+      {
+        type: "image",
+        id: "i1",
+        assetId: "a1",
+        relativePath: "x.png",
+        analysisStatus: "parsed",
+        visionSummary: "summary",
+        confidence: 0.3,
+      },
+    ];
+
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain("> 图像解析：summary");
+    expect(output).toContain("低置信度");
   });
 });

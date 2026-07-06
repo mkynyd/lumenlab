@@ -1,30 +1,46 @@
 import type { DocumentBlock, ImageBlock } from "./types";
 
+export const LOW_CONFIDENCE_THRESHOLD = 0.7;
+
 export function renderDocumentToMarkdown(blocks: DocumentBlock[]): string {
-  return blocks.map(renderBlock).join("\n\n").trim();
+  return blocks.map(renderBlock).join("\n\n");
+}
+
+function escapeMarkdown(
+  text: string,
+  options: { escapeBackticks?: boolean } = {}
+): string {
+  const { escapeBackticks = true } = options;
+  const pattern = escapeBackticks
+    ? /([\\`*_{}\[\]()#|!])/g
+    : /([\\*_{}\[\]()#|!])/g;
+  return text.replace(pattern, "\\$1");
 }
 
 function renderBlock(block: DocumentBlock): string {
   switch (block.type) {
     case "text":
-      return block.content;
+      return escapeMarkdown(block.content);
 
-    case "heading":
-      return `${"#".repeat(block.level)} ${block.content}`;
+    case "heading": {
+      const level = Math.max(1, Math.min(6, block.level));
+      return `${"#".repeat(level)} ${escapeMarkdown(block.content)}`;
+    }
 
     case "table": {
       if (!block.caption) {
         return block.markdown;
       }
-      return `${block.markdown}\n\n*${block.caption}*`;
+      return `${block.markdown}\n\n*${escapeMarkdown(block.caption)}*`;
     }
 
     case "formula":
-      return `$$${block.content}$$`;
+      return `$$${escapeMarkdown(block.content)}$$`;
 
     case "code": {
       const language = block.language ?? "";
-      return `\`\`\`${language}\n${block.content}\n\`\`\``;
+      const content = escapeMarkdown(block.content, { escapeBackticks: false });
+      return `\`\`\`${language}\n${content}\n\`\`\``;
     }
 
     case "page-break":
@@ -33,21 +49,26 @@ function renderBlock(block: DocumentBlock): string {
     case "image":
       return renderImage(block);
 
-    default:
-      return "";
+    default: {
+      const _exhaustive: never = block;
+      return _exhaustive;
+    }
   }
 }
 
 function renderImage(block: ImageBlock): string {
   const alt = block.altText || "";
-  const imageLine = `![${alt}](${block.relativePath})`;
+  const imageLine = `![${escapeMarkdown(alt)}](${encodeURI(block.relativePath)})`;
   const quote = renderImageAnalysisQuote(block);
   return quote ? `${imageLine}\n\n${quote}` : imageLine;
 }
 
 function renderImageAnalysisQuote(block: ImageBlock): string | undefined {
   if (block.analysisStatus === "failed") {
-    return `> 图像解析失败${block.skipReason ? `：${block.skipReason}` : ""}`;
+    const skipReason = block.skipReason
+      ? block.skipReason.replace(/\n/g, " ")
+      : "";
+    return `> 图像解析失败${skipReason ? `：${escapeMarkdown(skipReason)}` : ""}`;
   }
 
   if (block.analysisStatus === "skipped") {
@@ -65,15 +86,18 @@ function renderImageAnalysisQuote(block: ImageBlock): string | undefined {
     lines.push(`结构化内容：${block.extractedText}`);
   }
 
+  if (
+    block.confidence !== undefined &&
+    block.confidence < LOW_CONFIDENCE_THRESHOLD
+  ) {
+    lines.push("注意：低置信度，关键数字/公式建议核对原文。");
+  }
+
   if (lines.length > 0) {
     return lines
       .flatMap((line) => line.split("\n"))
       .map((line) => `> ${line}`)
       .join("\n");
-  }
-
-  if (block.confidence !== undefined && block.confidence < 0.7) {
-    return `> 注意：低置信度，关键数字/公式建议核对原文。`;
   }
 
   return undefined;
