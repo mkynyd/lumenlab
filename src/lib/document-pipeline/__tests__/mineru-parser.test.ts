@@ -65,6 +65,70 @@ describe("markdownToBlocks", () => {
 
     expect(blocks.map((b) => b.type)).toEqual(["text", "page-break", "text"]);
   });
+
+  it("returns empty array for empty input", () => {
+    expect(markdownToBlocks("")).toEqual([]);
+  });
+
+  it("treats inline image in text as text, not image block", () => {
+    const blocks = markdownToBlocks("See ![chart](pics/chart.png) here");
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("text");
+    expect((blocks[0] as Extract<typeof blocks[number], { type: "text" }>).content).toBe(
+      "See ![chart](pics/chart.png) here"
+    );
+  });
+
+  it("preserves internal $$ inside multi-line formulas", () => {
+    const blocks = markdownToBlocks("$$\nx $$ y\n$$");
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("formula");
+    expect((blocks[0] as Extract<typeof blocks[number], { type: "formula" }>).content).toBe("x $$ y");
+  });
+
+  it("treats unclosed code fence as code block to EOF", () => {
+    const blocks = markdownToBlocks("```ts\nconst x = 1;\nconst y = 2;");
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("code");
+    expect((blocks[0] as Extract<typeof blocks[number], { type: "code" }>).content).toBe(
+      "const x = 1;\nconst y = 2;"
+    );
+  });
+
+  it("does not treat a single-pipe line as a table without proper header", () => {
+    const blocks = markdownToBlocks("a | b\n\nc | d | e");
+
+    expect(blocks.every((b) => b.type !== "table")).toBe(true);
+  });
+
+  it("recognizes horizontal rule variants", () => {
+    const blocks = markdownToBlocks("Before\n\n- - -\n\nAfter");
+
+    expect(blocks.map((b) => b.type)).toEqual(["text", "page-break", "text"]);
+  });
+
+  it("keeps multi-paragraph text as a single text block", () => {
+    const blocks = markdownToBlocks("First paragraph.\n\nSecond paragraph.");
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("text");
+    expect((blocks[0] as Extract<typeof blocks[number], { type: "text" }>).content).toBe(
+      "First paragraph.\n\nSecond paragraph."
+    );
+  });
+
+  it("extracts image path without title and handles escaped parens", () => {
+    const blocks = markdownToBlocks('![chart](pics/chart\\(v2\\).png "title")');
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("image");
+    const image = blocks[0] as Extract<typeof blocks[number], { type: "image" }>;
+    expect(image.relativePath).toBe("pics/chart(v2).png");
+    expect(image.altText).toBe("chart");
+  });
 });
 
 describe("assignAssetIdsToImageBlocks", () => {

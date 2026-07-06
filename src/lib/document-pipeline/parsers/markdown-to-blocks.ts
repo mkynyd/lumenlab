@@ -1,10 +1,14 @@
 import crypto from "crypto";
 import type { DocumentBlock, ParsedAsset } from "../types";
 
-const HORIZONTAL_RULE_REGEX = /^(?:-{3,}|\*{3,}|_{3,})$/;
+const HORIZONTAL_RULE_REGEX = /^\s*(?:(?:-\s*){3,}|\*{3,}|_{3,})\s*$/;
 const TABLE_SEPARATOR_REGEX = /^\|?[-:|\s]+\|?$/;
 const HEADING_REGEX = /^(#{1,6})\s+(.+)$/;
-const IMAGE_REGEX = /!\[([^\]]*)\]\(([^)]+)\)/;
+const IMAGE_REGEX = /^!\[([^\]]*)\]\((.+?)(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'))?\)$/;
+
+function unescapeMarkdownPath(path: string): string {
+  return path.replace(/\\(.)/g, "$1");
+}
 
 export function markdownToBlocks(markdown: string): DocumentBlock[] {
   const lines = markdown.split("\n");
@@ -62,9 +66,12 @@ export function markdownToBlocks(markdown: string): DocumentBlock[] {
       continue;
     }
 
-    // Table (simple heuristic: line contains | and next line is separator)
+    // Table (simple heuristic: line looks like a header and next line is separator)
+    const pipeCount = line.split("|").length - 1;
+    const looksLikeTableHeader =
+      (line.startsWith("|") && line.endsWith("|")) || pipeCount >= 2;
     if (
-      line.includes("|") &&
+      looksLikeTableHeader &&
       i + 1 < lines.length &&
       TABLE_SEPARATOR_REGEX.test(lines[i + 1])
     ) {
@@ -83,7 +90,7 @@ export function markdownToBlocks(markdown: string): DocumentBlock[] {
       continue;
     }
 
-    // Image
+    // Image (only standalone lines that are exactly an image reference)
     const imageMatch = line.match(IMAGE_REGEX);
     if (imageMatch) {
       flushText();
@@ -91,7 +98,7 @@ export function markdownToBlocks(markdown: string): DocumentBlock[] {
         type: "image",
         id: crypto.randomUUID(),
         assetId: "", // filled by caller
-        relativePath: imageMatch[2].trim(),
+        relativePath: unescapeMarkdownPath(imageMatch[2].trim()),
         altText: imageMatch[1].trim() || undefined,
         analysisStatus: "pending",
       });
@@ -125,13 +132,19 @@ export function markdownToBlocks(markdown: string): DocumentBlock[] {
         formulaLines.push(lines[i]);
         i++;
       }
-      const joined = formulaLines.join("\n");
-      const firstDouble = joined.indexOf("$$");
-      const lastDouble = joined.lastIndexOf("$$");
-      const content =
-        firstDouble >= 0 && lastDouble > firstDouble
-          ? joined.slice(firstDouble + 2, lastDouble).trim()
-          : joined.trim();
+
+      // Slice using the known opening/closing boundaries so internal $$ is preserved.
+      const firstLine = formulaLines[0];
+      const lastLine = formulaLines[formulaLines.length - 1];
+      const startIdx = firstLine.indexOf("$$");
+      const endIdx = lastLine.lastIndexOf("$$");
+      const firstPart = startIdx >= 0 ? firstLine.slice(startIdx + 2).trim() : firstLine.trim();
+      const lastPart = endIdx >= 0 ? lastLine.slice(0, endIdx).trim() : lastLine.trim();
+      const middleParts = formulaLines.slice(1, -1);
+      const content = [firstPart, ...middleParts, lastPart]
+        .filter((part) => part.length > 0)
+        .join("\n")
+        .trim();
       blocks.push({
         type: "formula",
         id: crypto.randomUUID(),
@@ -141,7 +154,7 @@ export function markdownToBlocks(markdown: string): DocumentBlock[] {
     }
 
     // Horizontal rule / page break
-    if (HORIZONTAL_RULE_REGEX.test(line.trim())) {
+    if (HORIZONTAL_RULE_REGEX.test(line)) {
       flushText();
       blocks.push({ type: "page-break", id: crypto.randomUUID() });
       i++;

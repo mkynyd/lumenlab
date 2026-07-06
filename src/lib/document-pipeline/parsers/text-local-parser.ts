@@ -1,5 +1,7 @@
 import crypto from "crypto";
 import type { DocumentParser, ParseInput, ParseResult } from "../types";
+import { extensionOf } from "./utils";
+import { PIPELINE_VERSION } from "../version";
 
 const TEXT_EXTENSIONS = new Set([
   "txt",
@@ -25,7 +27,7 @@ export class TextLocalParser implements DocumentParser {
   readonly sourceKind = "text";
 
   canParse(input: ParseInput): boolean {
-    const ext = this.extensionOf(input.filename);
+    const ext = extensionOf(input.filename);
     return TEXT_EXTENSIONS.has(ext);
   }
 
@@ -45,7 +47,7 @@ export class TextLocalParser implements DocumentParser {
       assets: [],
       metadata: {
         parser: this.parserId,
-        pipelineVersion: "0.2.0",
+        pipelineVersion: PIPELINE_VERSION,
         sourceKind: this.sourceKind,
         requiresVisionModel: false,
         assetCount: 0,
@@ -56,8 +58,4 @@ export class TextLocalParser implements DocumentParser {
     };
   }
 
-  private extensionOf(filename: string): string {
-    const index = filename.lastIndexOf(".");
-    return index >= 0 ? filename.slice(index + 1).toLowerCase() : "";
-  }
 }

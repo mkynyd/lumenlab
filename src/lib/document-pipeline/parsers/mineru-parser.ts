@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import { parseFileWithMinerU } from "@/lib/parse/mineru";
 import type { DocumentParser, ParseInput, ParseResult, ParsedAsset } from "../types";
+import { PIPELINE_VERSION } from "../version";
+import { extensionOf } from "./utils";
 import { assignAssetIdsToImageBlocks, markdownToBlocks } from "./markdown-to-blocks";
 
 export class MinerUParser implements DocumentParser {
@@ -23,7 +25,7 @@ export class MinerUParser implements DocumentParser {
   ]);
 
   canParse(input: ParseInput): boolean {
-    const ext = this.extensionOf(input.filename);
+    const ext = extensionOf(input.filename);
     return this.officeExtensions.has(ext);
   }
 
@@ -72,7 +74,7 @@ export class MinerUParser implements DocumentParser {
       assets,
       metadata: {
         parser: this.parserId,
-        pipelineVersion: "0.2.0",
+        pipelineVersion: PIPELINE_VERSION,
         sourceKind: this.sourceKind,
         requiresVisionModel: true,
         assetCount: assets.length,
@@ -83,8 +85,4 @@ export class MinerUParser implements DocumentParser {
     };
   }
 
-  private extensionOf(filename: string): string {
-    const index = filename.lastIndexOf(".");
-    return index >= 0 ? filename.slice(index + 1).toLowerCase() : "";
-  }
 }

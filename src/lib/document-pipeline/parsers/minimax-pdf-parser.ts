@@ -1,5 +1,6 @@
 import { parseDocumentWithMiniMax } from "@/lib/vision/minimax";
 import type { DocumentParser, ParseInput, ParseResult } from "../types";
+import { PIPELINE_VERSION } from "../version";
 import { markdownToBlocks } from "./markdown-to-blocks";
 
 export class MiniMaxPdfParser implements DocumentParser {
@@ -45,7 +46,7 @@ export class MiniMaxPdfParser implements DocumentParser {
       assets: [],
       metadata: {
         parser: this.parserId,
-        pipelineVersion: "0.2.0",
+        pipelineVersion: PIPELINE_VERSION,
         sourceKind: this.sourceKind,
         requiresVisionModel: true,
         assetCount: 0,
