@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { loginSchema } from "@/lib/validators";
 import { prisma } from "@/lib/db";
 import { authConfig } from "@/lib/auth.config";
+import { buildUserAvatarUrl } from "@/lib/user-profile";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -32,6 +33,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           avatarPreset: user.avatarPreset,
+          image: buildUserAvatarUrl(user),
         };
       },
     }),

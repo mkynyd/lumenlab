@@ -9,11 +9,12 @@ export interface UserProfile {
   email: string;
   name: string | null;
   avatarPreset: AvatarPresetId;
+  avatarUrl: string | null;
 }
 
 export interface UpdateUserProfileInput {
   name: string;
-  avatarPreset: AvatarPresetId;
+  avatarPreset?: AvatarPresetId;
 }
 
 export function useUserProfile() {
@@ -32,6 +33,23 @@ export function useUpdateUserProfile() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       }),
+    onSuccess: (profile) => {
+      queryClient.setQueryData(queryKeys.userProfile, profile);
+    },
+  });
+}
+
+export function useUploadUserAvatar() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      return fetchJson<UserProfile>("/api/user/profile/avatar", {
+        method: "POST",
+        body: formData,
+      });
+    },
     onSuccess: (profile) => {
       queryClient.setQueryData(queryKeys.userProfile, profile);
     },

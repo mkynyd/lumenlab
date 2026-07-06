@@ -253,6 +253,7 @@ export function createSignedDownloadUrl(input: {
   provider: StorageProvider;
   key: string;
   filename?: string;
+  styleName?: string;
   expiresInSeconds?: number;
 }) {
   if (input.provider !== "qiniu") {
@@ -265,9 +266,12 @@ export function createSignedDownloadUrl(input: {
   const query = input.filename
     ? `?attname=${encodeURIComponent(input.filename)}`
     : "";
+  const objectKey = input.styleName
+    ? `${input.key}-${input.styleName}`
+    : input.key;
   return bucketManager.privateDownloadUrl(
     config.privateDomain,
-    `${input.key}${query}`,
+    `${objectKey}${query}`,
     deadline
   );
 }

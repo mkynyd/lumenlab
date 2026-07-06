@@ -55,10 +55,12 @@ export const authConfig: NextAuthConfig = {
         token.name = user.name;
         token.email = user.email;
         token.avatarPreset = user.avatarPreset ?? null;
+        token.picture = user.image ?? null;
       }
       if (trigger === "update" && session?.user) {
         token.name = session.user.name;
         token.avatarPreset = session.user.avatarPreset ?? null;
+        token.picture = session.user.image ?? null;
       }
       return token;
     },
@@ -67,6 +69,7 @@ export const authConfig: NextAuthConfig = {
         session.user.id = token.id as string;
         session.user.name = token.name ?? null;
         session.user.avatarPreset = token.avatarPreset ?? null;
+        session.user.image = token.picture ?? null;
       }
       return session;
     },

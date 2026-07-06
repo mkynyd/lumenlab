@@ -20,6 +20,10 @@ model User {
   passwordHash        String
   name                String?
   avatarPreset        String   @default("lumen")
+  avatarStorageProvider String?
+  avatarObjectKey     String?
+  avatarMimeType      String?
+  avatarUpdatedAt     DateTime?
   accessStatus        String   @default("active")
   credentialProfileId String?
   planTier            String   @default("premium") // free | pro | premium

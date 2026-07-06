@@ -20,3 +20,18 @@ export function avatarPresetById(id: string | null | undefined) {
     AVATAR_PRESETS.find((preset) => preset.id === DEFAULT_AVATAR_PRESET)!
   );
 }
+
+export function buildUserAvatarUrl(user: {
+  avatarObjectKey?: string | null;
+  avatarUpdatedAt?: Date | string | null;
+}) {
+  if (!user.avatarObjectKey) return null;
+  const updatedAt =
+    user.avatarUpdatedAt instanceof Date
+      ? user.avatarUpdatedAt.getTime()
+      : user.avatarUpdatedAt
+        ? new Date(user.avatarUpdatedAt).getTime()
+        : 0;
+  const version = Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0;
+  return `/api/user/profile/avatar?v=${version}`;
+}

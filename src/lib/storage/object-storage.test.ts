@@ -117,4 +117,24 @@ describe("object storage adapter", () => {
     expect(url).toContain("e=1781827800");
     expect(url).toContain("token=ak:");
   });
+
+  it("creates a private Qiniu URL for a multimedia style", () => {
+    setEnv("QINIU_ACCESS_KEY", "ak");
+    setEnv("QINIU_SECRET_KEY", "sk");
+    setEnv("QINIU_BUCKET", "course-ai-lab");
+    setEnv("QINIU_PRIVATE_DOMAIN", "coursecdn.mkynstudio.top");
+
+    const url = createSignedDownloadUrl({
+      provider: "qiniu",
+      key: "users/user-1/profile/avatar/source.png",
+      styleName: "avatar.jpg",
+      expiresInSeconds: 600,
+    });
+
+    expect(url).toContain(
+      "https://coursecdn.mkynstudio.top/users/user-1/profile/avatar/source.png-avatar.jpg"
+    );
+    expect(url).toContain("e=1781827800");
+    expect(url).toContain("token=ak:");
+  });
 });

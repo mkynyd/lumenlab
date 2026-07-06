@@ -178,6 +178,7 @@ export function Sidebar({
   const accountEmail = session?.user?.email || "";
   const accountAvatarPreset =
     session?.user?.avatarPreset || DEFAULT_AVATAR_PRESET;
+  const accountAvatarUrl = session?.user?.image || null;
 
   return (
     <SidebarProvider
@@ -523,7 +524,12 @@ export function Sidebar({
                 )}
                 aria-label="打开账户菜单"
               >
-                <AvatarMark presetId={accountAvatarPreset} className="size-7" />
+                <AvatarMark
+                  presetId={accountAvatarPreset}
+                  src={accountAvatarUrl}
+                  alt={`${accountName} 的头像`}
+                  className="size-7"
+                />
                 <span
                   className={cn(
                     "min-w-0 flex-1",

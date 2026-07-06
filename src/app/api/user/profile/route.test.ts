@@ -37,11 +37,15 @@ describe("/api/user/profile", () => {
       email: "student@example.com",
       name: "YJH",
       avatarPreset: "code",
+      avatarObjectKey: "users/user-1/profile/avatar/avatar.png",
+      avatarUpdatedAt: new Date("2026-07-03T06:30:00.000Z"),
     });
     mocks.userUpdate.mockResolvedValue({
       email: "student@example.com",
       name: "殷浚航",
       avatarPreset: "study",
+      avatarObjectKey: null,
+      avatarUpdatedAt: null,
     });
   });
 
@@ -53,10 +57,17 @@ describe("/api/user/profile", () => {
       email: "student@example.com",
       name: "YJH",
       avatarPreset: "code",
+      avatarUrl: "/api/user/profile/avatar?v=1783060200000",
     });
     expect(mocks.userFindUnique).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      select: { email: true, name: true, avatarPreset: true },
+      select: {
+        email: true,
+        name: true,
+        avatarPreset: true,
+        avatarObjectKey: true,
+        avatarUpdatedAt: true,
+      },
     });
   });
 
@@ -70,20 +81,37 @@ describe("/api/user/profile", () => {
       email: "student@example.com",
       name: "殷浚航",
       avatarPreset: "study",
+      avatarUrl: null,
     });
     expect(mocks.userUpdate).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: { name: "殷浚航", avatarPreset: "study" },
-      select: { email: true, name: true, avatarPreset: true },
+      select: {
+        email: true,
+        name: true,
+        avatarPreset: true,
+        avatarObjectKey: true,
+        avatarUpdatedAt: true,
+      },
     });
   });
 
-  it("clears blank names", async () => {
-    await PATCH(makePatchRequest({ name: " ", avatarPreset: "lumen" }));
+  it("updates only the name when avatar preset is omitted", async () => {
+    await PATCH(makePatchRequest({ name: "  殷浚航  " }));
 
     expect(mocks.userUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { name: null, avatarPreset: "lumen" },
+        data: { name: "殷浚航" },
+      })
+    );
+  });
+
+  it("clears blank names", async () => {
+    await PATCH(makePatchRequest({ name: " " }));
+
+    expect(mocks.userUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { name: null },
       })
     );
   });

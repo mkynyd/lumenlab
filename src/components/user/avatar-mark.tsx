@@ -13,12 +13,31 @@ const AVATAR_STYLE_CLASSES: Record<AvatarPresetId, string> = {
 
 export function AvatarMark({
   presetId,
+  src,
+  alt = "用户头像",
   className,
 }: {
   presetId: AvatarPresetId | string | null | undefined;
+  src?: string | null;
+  alt?: string;
   className?: string;
 }) {
   const preset = avatarPresetById(presetId);
+
+  if (src) {
+    return (
+      <span
+        className={cn(
+          "flex shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-surface)]",
+          className
+        )}
+      >
+        {/* Authenticated avatar URLs cannot go through the Next image optimizer. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={alt} className="h-full w-full object-cover" />
+      </span>
+    );
+  }
 
   return (
     <span

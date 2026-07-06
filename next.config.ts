@@ -1,5 +1,20 @@
 import type { NextConfig } from "next";
 
+function cspImageSourceFromDomain(domain: string | undefined) {
+  if (!domain) return "";
+  const withScheme = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
+  try {
+    return new URL(withScheme).origin;
+  } catch {
+    return "";
+  }
+}
+
+const qiniuImageSource = cspImageSourceFromDomain(process.env.QINIU_PRIVATE_DOMAIN);
+const imageSources = ["'self'", "data:", "blob:", qiniuImageSource]
+  .filter(Boolean)
+  .join(" ");
+
 const nextConfig: NextConfig = {
   output: "standalone",
 
@@ -44,7 +59,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+              `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src ${imageSources}; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
           },
         ],
       },
