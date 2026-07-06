@@ -97,7 +97,7 @@ function normalize(text: string) {
 function extractPublicUrls(text: string) {
   const matches = text.match(/https?:\/\/[^\s<>"')\]}，。；、]+/g) ?? [];
   return [...new Set(matches.map((url) => url.replace(/[),.;!?]+$/, "")))]
-    .filter(isSafePublicHttpUrl)
+    .filter((url) => isSafePublicHttpUrl(url))
     .slice(0, 3);
 }
 

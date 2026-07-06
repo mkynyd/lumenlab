@@ -1,62 +1,18 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import path from "path";
 import crypto from "crypto";
 import { startFileParseBatch } from "@/lib/files/parse-job";
 import { uploadFileBuffer } from "@/lib/storage/object-storage";
 import { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import { logger } from "@/lib/logger";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
-
-const CODE_EXTENSIONS: Record<string, string> = {
-  "txt": "text/plain",
-  "md": "text/markdown",
-  "csv": "text/csv",
-  "json": "application/json",
-  "ts": "text/typescript",
-  "tsx": "text/tsx",
-  "js": "text/javascript",
-  "jsx": "text/jsx",
-  "py": "text/x-python",
-  "c": "text/x-c",
-  "cpp": "text/x-c++",
-  "h": "text/x-c",
-  "java": "text/x-java",
-  "sql": "text/x-sql",
-  "html": "text/html",
-  "css": "text/css",
-};
-
-const DOCUMENT_EXTENSIONS: Record<string, string> = {
-  pdf: "application/pdf",
-  // Microsoft Office
-  doc: "application/msword",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xls: "application/vnd.ms-excel",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ppt: "application/vnd.ms-powerpoint",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  // WPS Office
-  wps: "application/wps-office.wps",
-  et: "application/wps-office.et",
-  dps: "application/wps-office.dps",
-  // Apple iWork
-  pages: "application/vnd.apple.pages",
-  numbers: "application/vnd.apple.numbers",
-  key: "application/vnd.apple.keynote",
-};
-
-const IMAGE_EXTENSIONS: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  webp: "image/webp",
-};
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const MAX_TOTAL_SIZE = 300 * 1024 * 1024; // 300MB
-const MAX_FILES_PER_REQUEST = 50;
+import {
+  extensionOf,
+  getMimeTypeForExtension,
+  validateUploadBatch,
+  validateUploadFile,
+} from "@/lib/files/file-upload-policy";
 
 function isFileCategory(value: unknown): value is FileCategory {
   return (
@@ -162,24 +118,9 @@ export async function POST(
       return NextResponse.json({ error: "请选择文件" }, { status: 400 });
     }
 
-    if (rawFiles.length > MAX_FILES_PER_REQUEST) {
-      return NextResponse.json(
-        { error: `单次最多上传 ${MAX_FILES_PER_REQUEST} 个文件` },
-        { status: 400 }
-      );
-    }
-
-    const totalSize = rawFiles.reduce(
-      (sum, file) => sum + (isUploadFile(file) ? file.size : 0),
-      0
-    );
-    if (totalSize > MAX_TOTAL_SIZE) {
-      return NextResponse.json(
-        {
-          error: `单次上传总大小超过 300MB 限制（当前 ${(totalSize / 1024 / 1024).toFixed(1)}MB）`,
-        },
-        { status: 413 }
-      );
+    const batchCheck = validateUploadBatch(rawFiles as File[]);
+    if (!batchCheck.ok) {
+      return NextResponse.json({ error: batchCheck.error }, { status: 400 });
     }
 
     // 模态窗口 step1 选定的文件分类,会写入每条 FileAsset。
@@ -209,32 +150,21 @@ export async function POST(
           continue;
         }
 
-        if (file.size > MAX_FILE_SIZE) {
-          results.push({
-            success: false,
-            originalName: file.name,
-            error: `超过 50MB 限制`,
-          });
-          continue;
-        }
-
         const originalName = file.name;
-        const ext = path.extname(originalName).toLowerCase().slice(1);
-
-        if (!CODE_EXTENSIONS[ext] && !DOCUMENT_EXTENSIONS[ext] && !IMAGE_EXTENSIONS[ext]) {
+        const fileError = validateUploadFile(file);
+        if (fileError) {
           results.push({
             success: false,
             originalName,
-            error: `不支持的文件类型: .${ext}`,
+            error: fileError,
           });
           continue;
         }
 
+        const ext = extensionOf(originalName);
         const fileId = crypto.randomUUID();
         const mimeType =
-          CODE_EXTENSIONS[ext] ||
-          DOCUMENT_EXTENSIONS[ext] ||
-          IMAGE_EXTENSIONS[ext] ||
+          getMimeTypeForExtension(ext) ||
           file.type ||
           "application/octet-stream";
 

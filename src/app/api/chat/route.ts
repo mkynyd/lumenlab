@@ -42,6 +42,7 @@ import { skillRegistry } from "@/lib/agent/skill-registry";
 import { runContinuationLoop } from "@/lib/agent/continuation";
 import type { AgentSource } from "@/lib/agent/sources";
 import type { Prisma } from "@/generated/prisma/client";
+import { validateUploadBatch } from "@/lib/files/file-upload-policy";
 import "@/lib/tools/registry";
 
 function isAgentOrchestratorEnabled() {
@@ -91,6 +92,12 @@ async function parseRequest(request: NextRequest): Promise<{
         data: Buffer.from(await value.arrayBuffer()),
       });
     }
+
+    const batchCheck = validateUploadBatch(attachments);
+    if (!batchCheck.ok) {
+      throw new Error(batchCheck.error);
+    }
+
     return { body: parsed.data, attachments };
   }
 

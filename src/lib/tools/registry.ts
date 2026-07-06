@@ -215,7 +215,7 @@ const TOOLS: ToolMetadata[] = [
   {
     toolId: "web.fetch",
     name: "抓取网页",
-    description: "抓取公开网页（仅白名单域名）。",
+    description: "抓取公开网页（仅允许白名单域名，由 WEB_FETCH_ALLOWLIST 配置）。",
     inputSchema: {
       type: "object",
       properties: { url: { type: "string" } },

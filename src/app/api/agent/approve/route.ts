@@ -58,6 +58,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (result.requestId !== body.executionId) {
+    const reason = "executionId 与 token 绑定请求不一致";
+    await recordAuditEvent({
+      userId,
+      eventType: "approval_denied",
+      severity: "warn",
+      payload: { reason, executionId: body.executionId, expectedRequestId: result.requestId },
+      ip: request.headers.get("x-forwarded-for") ?? undefined,
+      userAgent: request.headers.get("user-agent") ?? undefined,
+    });
+    return NextResponse.json({ ok: false, reason }, { status: 400 });
+  }
+
   const execution = await prisma.toolExecution.findUnique({
     where: { id: body.executionId },
   });

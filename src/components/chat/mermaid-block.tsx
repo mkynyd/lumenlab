@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 import { Download, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MermaidViewer } from "@/components/chat/mermaid-viewer";
@@ -138,13 +139,16 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
         const mermaid = (await import("mermaid")).default;
         mermaid.initialize({
           startOnLoad: false,
-          securityLevel: "loose",
+          securityLevel: "antiscript",
           suppressErrorRendering: true,
           ...resolveMermaidTheme(),
         });
         const { svg: renderedSvg } = await mermaid.render(id, code);
+        const cleanSvg = DOMPurify.sanitize(renderedSvg, {
+          USE_PROFILES: { svg: true, svgFilters: true },
+        });
         if (!cancelled) {
-          setSvg(renderedSvg);
+          setSvg(cleanSvg);
           setFailed(false);
           setErrorMsg("");
         }

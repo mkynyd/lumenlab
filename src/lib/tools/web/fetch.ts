@@ -47,7 +47,29 @@ function isPrivateIp(hostname: string) {
   return false;
 }
 
-export function isSafePublicHttpUrl(rawUrl: string): boolean {
+function getFetchAllowlist(): string[] {
+  const raw = process.env.WEB_FETCH_ALLOWLIST;
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function hostMatchesAllowlist(host: string, allowlist: string[]): boolean {
+  const normalizedHost = host.toLowerCase();
+  return allowlist.some((domain) => {
+    if (!domain) return false;
+    return (
+      normalizedHost === domain || normalizedHost.endsWith(`.${domain}`)
+    );
+  });
+}
+
+export function isSafePublicHttpUrl(
+  rawUrl: string,
+  allowlist: string[] = getFetchAllowlist()
+): boolean {
   try {
     const url = new URL(rawUrl);
     if (url.protocol !== "https:" && url.protocol !== "http:") return false;
@@ -61,6 +83,7 @@ export function isSafePublicHttpUrl(rawUrl: string): boolean {
       return false;
     }
     if (isIP(host) && isPrivateIp(host)) return false;
+    if (!hostMatchesAllowlist(host, allowlist)) return false;
     return true;
   } catch {
     return false;

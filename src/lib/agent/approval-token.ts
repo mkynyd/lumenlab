@@ -74,7 +74,14 @@ export async function issueApprovalToken(params: {
 }
 
 export type ConsumeResult =
-  | { ok: true; recordId: string; userId: string; conversationId: string; toolId: string }
+  | {
+      ok: true;
+      recordId: string;
+      userId: string;
+      conversationId: string;
+      toolId: string;
+      requestId: string;
+    }
   | {
       ok: false;
       reason:
@@ -119,5 +126,6 @@ export async function consumeApprovalToken(
     userId: record.userId,
     conversationId: record.conversationId,
     toolId: record.toolId,
+    requestId: record.requestId,
   };
 }

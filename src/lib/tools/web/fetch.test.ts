@@ -1,16 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll } from "vitest";
 import {
   htmlToReadableMarkdown,
   isSafePublicHttpUrl,
 } from "./fetch";
 
 describe("web.fetch safety", () => {
-  it("accepts public http(s) URLs without requiring a fixed host allowlist", () => {
-    expect(isSafePublicHttpUrl("https://example.com/article")).toBe(true);
-    expect(isSafePublicHttpUrl("http://example.com/article")).toBe(true);
+  beforeAll(() => {
+    process.env.WEB_FETCH_ALLOWLIST = "example.com,example.org";
   });
 
-  it("blocks private, local, metadata, and non-http URLs", () => {
+  it("accepts public http(s) URLs on the configured allowlist", () => {
+    expect(isSafePublicHttpUrl("https://example.com/article")).toBe(true);
+    expect(isSafePublicHttpUrl("http://example.com/article")).toBe(true);
+    expect(isSafePublicHttpUrl("https://sub.example.org/path")).toBe(true);
+  });
+
+  it("rejects public http(s) URLs not on the allowlist", () => {
+    expect(isSafePublicHttpUrl("https://other-site.com/article")).toBe(false);
+    expect(isSafePublicHttpUrl("https://notexample.com/article")).toBe(false);
+  });
+
+  it("blocks private, local, metadata, and non-http URLs even if allowlisted", () => {
     expect(isSafePublicHttpUrl("http://localhost:3000")).toBe(false);
     expect(isSafePublicHttpUrl("http://127.0.0.1:3000")).toBe(false);
     expect(isSafePublicHttpUrl("http://10.0.0.2/admin")).toBe(false);
@@ -18,6 +28,10 @@ describe("web.fetch safety", () => {
     expect(isSafePublicHttpUrl("http://192.168.1.5/admin")).toBe(false);
     expect(isSafePublicHttpUrl("http://169.254.169.254/latest/meta-data")).toBe(false);
     expect(isSafePublicHttpUrl("file:///etc/passwd")).toBe(false);
+  });
+
+  it("rejects everything when the allowlist is empty", () => {
+    expect(isSafePublicHttpUrl("https://example.com/article", [])).toBe(false);
   });
 });
 

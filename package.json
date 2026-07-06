@@ -29,6 +29,7 @@
     "clsx": "^2.1.1",
     "d3": "^7.9.0",
     "dashscope-sdk-official": "^1.25.4",
+    "dompurify": "^3.3.0",
     "docx": "^9.7.1",
     "gsap": "^3.15.0",
     "highlight.js": "^11.11.1",
