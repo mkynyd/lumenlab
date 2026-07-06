@@ -1,3 +1,5 @@
+import type { ParseQualityReport } from "./quality-checker";
+
 export type DocumentBlock =
   | TextBlock
   | HeadingBlock
@@ -69,6 +71,7 @@ export interface ParsingMetadata {
   parseCompletedAt: string;
   parseWarnings: string[];
   strategy?: string;
+  parseReport?: ParseQualityReport;
 }
 
 export interface DocumentParser {

@@ -16,6 +16,7 @@ import { MinerUParser } from "./parsers/mineru-parser";
 import { MiniMaxPdfParser } from "./parsers/minimax-pdf-parser";
 import { ImageParser } from "./parsers/image-parser";
 import { extensionOf } from "./parsers/utils";
+import { buildParseQualityReport } from "./quality-checker";
 
 export interface PipelineResult {
   content: string;
@@ -55,6 +56,14 @@ export class DocumentPipeline {
     const content = renderDocumentToMarkdown(parseResult.blocks);
     const completedAt = new Date().toISOString();
 
+    const qualityReport = buildParseQualityReport({
+      blocks: parseResult.blocks,
+      assets: parseResult.assets,
+      content,
+      metadata: parseResult.metadata,
+      originalSize: input.data.length,
+    });
+
     return {
       content,
       status: "parsed",
@@ -62,6 +71,7 @@ export class DocumentPipeline {
         ...parseResult.metadata,
         parseStartedAt: startedAt,
         parseCompletedAt: completedAt,
+        parseReport: qualityReport,
       },
       blocks: parseResult.blocks,
       assets: parseResult.assets,
