@@ -26,8 +26,7 @@ const ROTATING_SIZE = "text-[24px] sm:text-[28px]";
 export function LandingFooter() {
   return (
     <footer
-      data-section="footer"
-      className="relative flex min-h-screen snap-center items-center bg-[var(--color-bg)]"
+      className="relative flex min-h-screen items-center bg-[var(--color-bg)]"
     >
       <div className="mx-auto w-full max-w-7xl px-4 py-24 sm:px-6 sm:py-36">
         <ScrollReveal>
@@ -68,7 +67,7 @@ export function LandingFooter() {
                 </Button>
               </div>
               <p className="mt-3 text-[13px] text-[var(--color-text-tertiary)]">
-                Alpha 阶段完全免费，注册码由管理员现场签发
+                Alpha 阶段完全免费，注册码由管理员签发
               </p>
             </div>
 

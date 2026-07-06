@@ -26,9 +26,8 @@ export function HowToSection() {
   return (
     <section
       id="how-to"
-      data-section="how-to"
       aria-label="三步建项目"
-      className="relative flex min-h-screen snap-center items-center bg-[var(--color-bg)] py-24 sm:py-36"
+      className="relative flex min-h-screen items-center bg-[var(--color-bg)] py-24 sm:py-36"
     >
       <div className="mx-auto grid w-full max-w-7xl gap-14 px-4 sm:px-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] md:gap-16 lg:gap-20">
         <ScrollReveal className="flex flex-col justify-center">

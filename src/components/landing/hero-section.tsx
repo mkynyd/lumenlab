@@ -18,7 +18,7 @@ import { ScrollReveal } from "./scroll-reveal";
  */
 export function HeroSection() {
   return (
-    <section data-section="hero" className="relative isolate flex min-h-screen snap-center items-center overflow-hidden">
+    <section className="relative isolate flex min-h-screen items-center overflow-hidden">
       <AmbientField
         intensity="medium"
         density="wide"

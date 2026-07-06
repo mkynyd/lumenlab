@@ -610,19 +610,6 @@ pre code {
   height: 100%;
 }
 
-html.landing-snap {
-  scroll-snap-type: y proximity;
-  scroll-padding-top: 3.5rem;
-  scroll-behavior: smooth;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html.landing-snap {
-    scroll-snap-type: none;
-    scroll-behavior: auto;
-  }
-}
-
 .workbench-glass {
   background: var(--color-panel);
   box-shadow: var(--shadow-panel);
