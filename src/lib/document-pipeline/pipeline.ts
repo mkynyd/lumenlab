@@ -10,7 +10,7 @@ import type {
 import { renderDocumentToMarkdown } from "./renderer";
 import { filterImagesForAnalysis, inferImageMode } from "./image-filter";
 import { analyzeImageWithMiniMax } from "./vision/minimax-analyzer";
-import type { ImageAnalysisMode } from "./vision/minimax-analyzer";
+import type { MiniMaxImageMedia } from "./vision/minimax-analyzer";
 import { TextLocalParser } from "./parsers/text-local-parser";
 import { MinerUParser } from "./parsers/mineru-parser";
 import { MiniMaxPdfParser } from "./parsers/minimax-pdf-parser";
@@ -42,7 +42,11 @@ export class DocumentPipeline {
 
     const parseResult = await parser.parse(input, onProgress);
 
-    if (parseResult.assets.length > 0 && input.apiKeys.minimax) {
+    if (
+      parseResult.assets.length > 0 &&
+      input.apiKeys.minimax &&
+      parseResult.metadata.requiresVisionModel
+    ) {
       await this.analyzeImages(parseResult, input, onProgress);
     }
 
@@ -97,11 +101,14 @@ export class DocumentPipeline {
       });
 
       try {
-        const resourceUrl = `/api/files/${input.fileAssetId}/resources/${asset.id}`;
         const result = await analyzeImageWithMiniMax({
           apiKey: input.apiKeys.minimax!,
-          image: { type: "url", url: resourceUrl },
-          mode: inferImageMode(block) as ImageAnalysisMode,
+          image: {
+            type: "base64",
+            mediaType: asset.mimeType as MiniMaxImageMedia,
+            data: asset.buffer,
+          },
+          mode: inferImageMode(block),
         });
 
         block.visionSummary = result.summary;
