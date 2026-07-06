@@ -1,3 +1,4 @@
+import type { ImageAnalysisMode } from "./vision/minimax-analyzer";
 import type { ImageBlock, ParsedAsset } from "@/lib/document-pipeline/types";
 
 export interface ImageFilterResult {
@@ -72,10 +73,6 @@ function parsePngDimensions(buffer: Buffer): { width: number; height: number } |
   return null;
 }
 
-function getAssetById(assets: ParsedAsset[], assetId: string): ParsedAsset | undefined {
-  return assets.find((asset) => asset.id === assetId);
-}
-
 function hasContentHint(block: ImageBlock): boolean {
   return Boolean(
     block.altText?.trim() ||
@@ -101,7 +98,7 @@ function isDecorative(block: ImageBlock): boolean {
   return DECORATIVE_PATTERNS.some((pattern) => haystack.includes(pattern.toLowerCase()));
 }
 
-export function inferImageMode(block: ImageBlock): string {
+export function inferImageMode(block: ImageBlock): ImageAnalysisMode {
   const haystack = [
     block.relativePath,
     block.altText ?? "",
@@ -152,12 +149,22 @@ export function filterImagesForAnalysis(
   const minHeight = options.minHeight ?? DEFAULT_MIN_HEIGHT;
   const retainMinBytes = options.retainMinBytes ?? DEFAULT_RETAIN_MIN_BYTES;
 
+  const assetMap = new Map(assets.map((a) => [a.id, a]));
+
   const retained: ImageBlock[] = [];
   const skipped: Array<{ block: ImageBlock; reason: string }> = [];
   const seenSha256 = new Set<string>();
 
   for (const block of blocks) {
-    const asset = getAssetById(assets, block.assetId);
+    if (block.analysisStatus !== "pending") {
+      skipped.push({
+        block,
+        reason: `analysis status ${block.analysisStatus} is not pending`,
+      });
+      continue;
+    }
+
+    const asset = assetMap.get(block.assetId);
     if (!asset) {
       skipped.push({ block, reason: "missing asset" });
       continue;
@@ -198,7 +205,13 @@ export function filterImagesForAnalysis(
     }
     seenSha256.add(asset.sha256);
 
-    if (!hasContentHint(block) && asset.buffer.length < retainMinBytes && !dimensions) {
+    const mode = inferImageMode(block);
+    if (
+      mode === "general" &&
+      !hasContentHint(block) &&
+      asset.buffer.length < retainMinBytes &&
+      !dimensions
+    ) {
       skipped.push({
         block,
         reason: `no content hint and byte size ${asset.buffer.length} below retain minimum ${retainMinBytes}`,

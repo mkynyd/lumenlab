@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   filterImagesForAnalysis,
   inferImageMode,
-} from "@/lib/document-pipeline/image-filter";
-import type { ImageBlock, ParsedAsset } from "@/lib/document-pipeline/types";
+} from "../image-filter";
+import type { ImageBlock, ParsedAsset } from "../types";
 
+// Produces PNGs with valid IHDR data but dummy/zero CRCs — effectively CRC-less.
 function makePngBuffer(width: number, height: number, extraBytes = 0): Buffer {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const ihdrLength = Buffer.alloc(4);
@@ -117,6 +118,40 @@ describe("inferImageMode", () => {
 });
 
 describe("filterImagesForAnalysis", () => {
+  it("handles empty blocks and assets", () => {
+    expect(filterImagesForAnalysis([], [])).toEqual({ retained: [], skipped: [] });
+  });
+
+  it("skips non-pending analysisStatus before other checks", () => {
+    const result = filterImagesForAnalysis(
+      [makeBlock("b1", "a-missing", { analysisStatus: "parsed" })],
+      []
+    );
+    expect(result.retained).toHaveLength(0);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0].reason).toContain("pending");
+  });
+
+  it("retains small chart/diagram/code images even without content hints", () => {
+    const smallJpeg = Buffer.alloc(10_000, 0xff);
+
+    const assets: ParsedAsset[] = [
+      makeAsset("a1", "image/jpeg", smallJpeg, { sha256: "h1" }),
+      makeAsset("a2", "image/jpeg", smallJpeg, { sha256: "h2" }),
+      makeAsset("a3", "image/jpeg", smallJpeg, { sha256: "h3" }),
+    ];
+
+    const blocks: ImageBlock[] = [
+      makeBlock("b1", "a1", { relativePath: "sales-chart.jpg" }),
+      makeBlock("b2", "a2", { relativePath: "system-diagram.jpg" }),
+      makeBlock("b3", "a3", { relativePath: "code-snippet.jpg" }),
+    ];
+
+    const result = filterImagesForAnalysis(blocks, assets);
+    expect(result.retained.map((b) => b.id)).toEqual(["b1", "b2", "b3"]);
+    expect(result.skipped).toHaveLength(0);
+  });
+
   it("retains large meaningful images and skips small ones", () => {
     const large = makePngBuffer(200, 200, 60_000);
     const small = makePngBuffer(200, 200, 100);
