@@ -25,6 +25,29 @@ export class MiniMaxError extends Error {
   }
 }
 
+export function mapAnthropicErrorToMiniMaxError(
+  error: InstanceType<typeof Anthropic.APIError>,
+  context?: string
+): MiniMaxError {
+  const status = error.status ?? 502;
+  const messages: Record<number, string> = {
+    400: context
+      ? `MiniMax ${context}请求格式无效`
+      : "MiniMax 请求格式无效",
+    401: "MiniMax API Key 无效，请在设置中更新",
+    413: context
+      ? `${context}或请求体超过 MiniMax 限制`
+      : "请求体超过 MiniMax 限制",
+    429: "MiniMax 请求频率过高，请稍后重试",
+    500: "MiniMax 服务异常，请稍后重试",
+    529: "MiniMax 服务过载，请稍后重试",
+  };
+  return new MiniMaxError(
+    status,
+    messages[status] || `MiniMax API 错误 (${status})`
+  );
+}
+
 export async function parseImageWithMiniMax(options: {
   apiKey: string;
   data: Buffer;
@@ -81,18 +104,7 @@ export async function parseImageWithMiniMax(options: {
   } catch (error) {
     if (error instanceof MiniMaxError) throw error;
     if (error instanceof Anthropic.APIError) {
-      const messages: Record<number, string> = {
-        400: "MiniMax 请求格式无效",
-        401: "MiniMax API Key 无效，请在设置中更新",
-        413: "图片或请求体超过 MiniMax 限制",
-        429: "MiniMax 请求频率过高，请稍后重试",
-        500: "MiniMax 服务异常，请稍后重试",
-        529: "MiniMax 服务过载，请稍后重试",
-      };
-      throw new MiniMaxError(
-        error.status,
-        messages[error.status] || `MiniMax API 错误 (${error.status})`
-      );
+      throw mapAnthropicErrorToMiniMaxError(error, "图片");
     }
     throw new MiniMaxError(502, "无法连接 MiniMax API，请稍后重试");
   }
@@ -152,18 +164,7 @@ export async function parseDocumentWithMiniMax(options: {
   } catch (error) {
     if (error instanceof MiniMaxError) throw error;
     if (error instanceof Anthropic.APIError) {
-      const messages: Record<number, string> = {
-        400: "MiniMax 文档请求格式无效",
-        401: "MiniMax API Key 无效，请在设置中更新",
-        413: "文档或请求体超过 MiniMax 限制",
-        429: "MiniMax 请求频率过高，请稍后重试",
-        500: "MiniMax 服务异常，请稍后重试",
-        529: "MiniMax 服务过载，请稍后重试",
-      };
-      throw new MiniMaxError(
-        error.status,
-        messages[error.status] || `MiniMax API 错误 (${error.status})`
-      );
+      throw mapAnthropicErrorToMiniMaxError(error, "文档");
     }
     throw new MiniMaxError(502, "无法连接 MiniMax API，请稍后重试");
   }

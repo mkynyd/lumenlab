@@ -1,7 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { cacheExperiments } from "@/lib/cache/experiment-config";
 import { applyActiveCache } from "@/lib/cache/minimax-active-cache";
-import { MiniMaxError } from "@/lib/vision/minimax";
+import {
+  MiniMaxError,
+  mapAnthropicErrorToMiniMaxError,
+} from "@/lib/vision/minimax";
 
 const MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic";
 
@@ -121,7 +124,9 @@ function parseAnalysisResponse(text: string): ImageAnalysisResult {
           ? (parsed.structured as ImageAnalysisResult["structured"])
           : undefined,
       confidence:
-        typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
+        typeof parsed.confidence === "number"
+          ? Math.min(1, Math.max(0, parsed.confidence))
+          : 0.5,
       warnings: Array.isArray(parsed.warnings)
         ? parsed.warnings.map(String)
         : [],
@@ -162,9 +167,12 @@ export async function analyzeImageWithMiniMax(
           },
   };
 
-  // The Anthropic SDK type may not yet expose `detail` on image sources.
-  // Cast through `unknown` to attach the MiniMax-specific field.
-  ((imageContent.source as unknown) as Record<string, unknown>).detail = detail;
+  // The Anthropic SDK type only supports `detail` on base64 image sources.
+  if (options.image.type === "base64") {
+    (
+      (imageContent.source as unknown) as Record<string, unknown>
+    ).detail = detail;
+  }
 
   const requestBody: Anthropic.MessageCreateParamsNonStreaming = {
     model: "MiniMax-M3",
@@ -214,18 +222,7 @@ export async function analyzeImageWithMiniMax(
   } catch (error) {
     if (error instanceof MiniMaxError) throw error;
     if (error instanceof Anthropic.APIError) {
-      const messages: Record<number, string> = {
-        400: "MiniMax 请求格式无效",
-        401: "MiniMax API Key 无效，请在设置中更新",
-        413: "图片或请求体超过 MiniMax 限制",
-        429: "MiniMax 请求频率过高，请稍后重试",
-        500: "MiniMax 服务异常，请稍后重试",
-        529: "MiniMax 服务过载，请稍后重试",
-      };
-      throw new MiniMaxError(
-        error.status,
-        messages[error.status] || `MiniMax API 错误 (${error.status})`
-      );
+      throw mapAnthropicErrorToMiniMaxError(error, "图片");
     }
     throw new MiniMaxError(502, "无法连接 MiniMax API，请稍后重试");
   }

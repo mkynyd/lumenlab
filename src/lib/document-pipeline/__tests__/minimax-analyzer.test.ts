@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -6,6 +7,7 @@ import {
   selectImageThinking,
 } from "../vision/minimax-analyzer";
 import { MiniMaxError } from "@/lib/vision/minimax";
+import { applyActiveCache } from "@/lib/cache/minimax-active-cache";
 
 const { createMock } = vi.hoisted(() => ({ createMock: vi.fn() }));
 
@@ -21,6 +23,10 @@ vi.mock("@anthropic-ai/sdk", async (importOriginal) => {
     default: MockedAnthropic,
   };
 });
+
+vi.mock("@/lib/cache/minimax-active-cache", () => ({
+  applyActiveCache: vi.fn((body) => body),
+}));
 
 function mockCreate(response: unknown) {
   createMock.mockReset();
@@ -55,7 +61,7 @@ describe("analyzeImageWithMiniMax", () => {
     expect(request.thinking).toEqual({ type: "disabled" });
     expect(request.messages[0].content[1]).toEqual({
       type: "image",
-      source: { type: "url", url: "https://example.com/img.png", detail: "default" },
+      source: { type: "url", url: "https://example.com/img.png" },
     });
     expect(result.summary).toBe("ok");
     expect(result.ocrText).toBe("hi");
@@ -184,5 +190,104 @@ describe("analyzeImageWithMiniMax", () => {
       expect(error).toBeInstanceOf(MiniMaxError);
       expect((error as MiniMaxError).status).toBe(502);
     }
+  });
+
+  it("extracts JSON from fenced code block", async () => {
+    mockCreate({
+      content: [
+        {
+          type: "text",
+          text: '```json\n{"summary":"fenced","ocrText":"text","confidence":0.7,"warnings":[]}\n```',
+        },
+      ],
+    });
+
+    const result = await analyzeImageWithMiniMax({
+      apiKey: "sk-test",
+      image: { type: "url", url: "https://example.com/img.png" },
+    });
+
+    expect(result.summary).toBe("fenced");
+    expect(result.ocrText).toBe("text");
+    expect(result.confidence).toBe(0.7);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("falls back to plain text when JSON parse fails", async () => {
+    mockCreate({
+      content: [{ type: "text", text: "plain text response" }],
+    });
+
+    const result = await analyzeImageWithMiniMax({
+      apiKey: "sk-test",
+      image: { type: "url", url: "https://example.com/img.png" },
+    });
+
+    expect(result.summary).toBe("plain text response");
+    expect(result.ocrText).toBe("plain text response");
+    expect(result.confidence).toBe(0.5);
+    expect(result.warnings).toContain("模型未返回 JSON，已按纯文本处理");
+  });
+
+  it("throws when response text is empty", async () => {
+    mockCreate({ content: [], usage: { input_tokens: 1, output_tokens: 0 } });
+
+    await expect(
+      analyzeImageWithMiniMax({
+        apiKey: "sk-test",
+        image: { type: "url", url: "https://example.com/img.png" },
+      })
+    ).rejects.toThrow(MiniMaxError);
+  });
+
+  it("applies active cache", async () => {
+    vi.mocked(applyActiveCache).mockClear();
+    mockCreate({
+      content: [
+        {
+          type: "text",
+          text: '{"summary":"cached","ocrText":"","confidence":0.5,"warnings":[]}',
+        },
+      ],
+    });
+
+    await analyzeImageWithMiniMax({
+      apiKey: "sk-test",
+      image: { type: "url", url: "https://example.com/img.png" },
+    });
+
+    expect(applyActiveCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("clamps confidence to [0, 1]", async () => {
+    mockCreate({
+      content: [
+        {
+          type: "text",
+          text: '{"summary":"x","ocrText":"y","confidence":1.5,"warnings":[]}',
+        },
+      ],
+    });
+
+    const high = await analyzeImageWithMiniMax({
+      apiKey: "sk-test",
+      image: { type: "url", url: "https://example.com/img.png" },
+    });
+    expect(high.confidence).toBe(1);
+
+    mockCreate({
+      content: [
+        {
+          type: "text",
+          text: '{"summary":"x","ocrText":"y","confidence":-0.5,"warnings":[]}',
+        },
+      ],
+    });
+
+    const low = await analyzeImageWithMiniMax({
+      apiKey: "sk-test",
+      image: { type: "url", url: "https://example.com/img.png" },
+    });
+    expect(low.confidence).toBe(0);
   });
 });
