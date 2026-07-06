@@ -209,9 +209,19 @@ export async function parseFileContent(options: {
 
   const pipeline = new DocumentPipeline();
   const result = await pipeline.run(parseInput, (stage, progress) => {
-    void updateStage(options.file, stage as keyof typeof PARSING_STAGES, {
-      ...(progress ? { current: progress.current, total: progress.total } : {}),
-    });
+    const normalizedStage =
+      stage === "running" || stage === "converting"
+        ? "model"
+        : stage === "complete" || stage === "done"
+          ? "complete"
+          : stage === "failed"
+            ? "failed"
+            : stage;
+    if (normalizedStage in PARSING_STAGES) {
+      void updateStage(options.file, normalizedStage as keyof typeof PARSING_STAGES, {
+        ...(progress ? { current: progress.current, total: progress.total } : {}),
+      });
+    }
   });
 
   return {

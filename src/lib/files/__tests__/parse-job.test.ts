@@ -310,4 +310,19 @@ describe("parseFileAsset", () => {
     const textContent = (updateCall![0] as { data: { textContent: string } }).data.textContent;
     expect(textContent).toBe("# Slide\n\nJust text.");
   });
+
+  it("sets status to failed and stores parseError when parseFileContent throws", async () => {
+    vi.mocked(mineru.parseFileWithMinerU).mockRejectedValue(new Error("MinerU failed"));
+
+    await expect(parseFileAsset({ userId: "u1", fileId: "f1" })).rejects.toThrow("MinerU failed");
+
+    const failedUpdateCall = vi.mocked(prisma.fileAsset.update).mock.calls.find(
+      (call) => call[0].data && "status" in call[0].data && call[0].data.status === "failed"
+    );
+    expect(failedUpdateCall).toBeDefined();
+    const metadata = (failedUpdateCall![0] as { data: { processingMetadata: Record<string, unknown> } }).data.processingMetadata;
+    expect(metadata.parseError).toBe("MinerU failed");
+    expect(metadata.parsingStage).toBe("failed");
+    expect(metadata.failedAt).toBeDefined();
+  });
 });
