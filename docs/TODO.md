@@ -150,3 +150,31 @@ Add these after the MVP loop, approval UX, and tool-result continuation are stab
 - A stuck-learning request activates `socratic-tutor`.
 - User manual Skill selection or off preference always outranks Router output. DONE.
 - Router can enable web access automatically when the task clearly requires public external information, but the UI must show that web access is active. DONE.
+
+## Multimodal Document Parsing Pipeline — Complete
+
+Design: `docs/superpowers/specs/2026-07-06-multimodal-document-pipeline-design.md`
+
+Status: Iteration 0-2 MVP is complete. The document pipeline now supports text, PDF (MiniMax M3), Office/WPS/iWork (MinerU), and standalone image files, with image filtering/dedup, vision analysis, and Markdown rendering.
+
+### Iteration 0-2 MVP (complete)
+
+- [x] Update `docs/LumenLabDocs/guides/files-and-rag.md` to reflect Office/PPT/Word support via MinerU.
+- [x] Add `src/lib/document-pipeline/types.ts` with `DocumentBlock` union and `DocumentParser` interface.
+- [x] Add `src/lib/document-pipeline/pipeline.ts` orchestrator and `src/lib/document-pipeline/renderer.ts`.
+- [x] Add `TextLocalParser`, `MinerUParser`, `MiniMaxPdfParser` in `src/lib/document-pipeline/parsers/`.
+- [x] Extend MiniMax vision in `src/lib/document-pipeline/vision/minimax-analyzer.ts` with URL/base64, detail, thinking adaptive, mode, and usage tracking.
+- [x] Add `src/lib/document-pipeline/image-filter.ts` for dedup, size, and heuristic filtering.
+- [x] Refactor `src/lib/files/parse-job.ts` to use `DocumentPipeline`, preserving `parseFileAsset()` signature.
+- [x] Wire Office/PPT/Word image re-parsing into the MinerU flow and write vision results back to Markdown.
+- [x] Add metadata fields: `parser`, `pipelineVersion`, `sourceKind`, `requiresVisionModel`, `assetCount`, `parseStartedAt`, `parseCompletedAt`, `parseWarnings`.
+- [x] Add tests: `parse-job.test.ts`, `mineru-parser.test.ts`, `image-filter.test.ts`, `minimax-analyzer.test.ts`, `renderer.test.ts`.
+- [x] Update `REPOSITORY_INDEX.md` with new module layout.
+
+### Deferred Iterations
+
+- [ ] Iteration 3: PDF hybrid parsing strategy (`chooseDocumentParsingStrategy`).
+- [ ] Iteration 4: Persistent `FileParseJob` table and recoverable queue.
+- [ ] Iteration 5: Dedicated image chunks with `sourceType` metadata and image embedding.
+- [ ] Iteration 6: Agent roles and quality checker.
+- [ ] Iteration 7: UI parsing-mode controls and per-file quality reports.
