@@ -6,6 +6,7 @@ import {
   isQuotaEnforced,
   getRemainingCredits,
 } from "@/lib/tokens";
+import { getDisplayTotalTokens } from "@/lib/token-usage-display";
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 
@@ -34,16 +35,22 @@ export async function GET() {
   const now = new Date();
 
   const [
-    currentCycleTotal,
+    currentCycleRecords,
     last24h,
     last7d,
     last5h,
-    modelDistribution,
     recentRecords,
   ] = await Promise.all([
-    prisma.tokenUsage.aggregate({
-      _sum: { creditsConsumed: true, totalTokens: true },
+    prisma.tokenUsage.findMany({
       where: { userId, createdAt: { gte: cycleStart } },
+      select: {
+        model: true,
+        creditsConsumed: true,
+        totalTokens: true,
+        inputCacheHitTokens: true,
+        inputCacheMissTokens: true,
+        outputTokens: true,
+      },
     }),
     prisma.tokenUsage.aggregate({
       _sum: { creditsConsumed: true },
@@ -57,11 +64,6 @@ export async function GET() {
       _sum: { creditsConsumed: true },
       where: { userId, createdAt: { gte: new Date(now.getTime() - 5 * MS_PER_HOUR) } },
     }),
-    prisma.tokenUsage.groupBy({
-      by: ["model"],
-      _sum: { creditsConsumed: true, totalTokens: true },
-      where: { userId, createdAt: { gte: cycleStart } },
-    }),
     prisma.tokenUsage.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -71,11 +73,34 @@ export async function GET() {
         model: true,
         provider: true,
         totalTokens: true,
+        inputCacheHitTokens: true,
+        inputCacheMissTokens: true,
+        outputTokens: true,
         creditsConsumed: true,
         createdAt: true,
       },
     }),
   ]);
+
+  const currentCycleCredits = currentCycleRecords.reduce(
+    (sum, record) => sum + record.creditsConsumed,
+    0
+  );
+  const currentCycleTokens = currentCycleRecords.reduce(
+    (sum, record) => sum + getDisplayTotalTokens(record),
+    0
+  );
+  const modelDistribution = [
+    ...currentCycleRecords
+      .reduce((map, record) => {
+        const current = map.get(record.model) || { credits: 0, tokens: 0 };
+        current.credits += record.creditsConsumed;
+        current.tokens += getDisplayTotalTokens(record);
+        map.set(record.model, current);
+        return map;
+      }, new Map<string, { credits: number; tokens: number }>())
+      .entries(),
+  ].map(([model, values]) => ({ model, ...values }));
 
   return NextResponse.json({
     tier: user.planTier,
@@ -90,17 +115,20 @@ export async function GET() {
       enforced: isQuotaEnforced(user.planCredits),
     },
     usage: {
-      currentCycleCredits: currentCycleTotal._sum.creditsConsumed ?? 0,
-      currentCycleTokens: currentCycleTotal._sum.totalTokens ?? 0,
+      currentCycleCredits,
+      currentCycleTokens,
       last24hCredits: last24h._sum.creditsConsumed ?? 0,
       last7dCredits: last7d._sum.creditsConsumed ?? 0,
       last5hCredits: last5h._sum.creditsConsumed ?? 0,
-      modelDistribution: modelDistribution.map((item) => ({
-        model: item.model,
-        credits: item._sum.creditsConsumed ?? 0,
-        tokens: item._sum.totalTokens ?? 0,
+      modelDistribution,
+      recentRecords: recentRecords.map((record) => ({
+        id: record.id,
+        model: record.model,
+        provider: record.provider,
+        totalTokens: getDisplayTotalTokens(record),
+        creditsConsumed: record.creditsConsumed,
+        createdAt: record.createdAt,
       })),
-      recentRecords,
     },
   });
 }

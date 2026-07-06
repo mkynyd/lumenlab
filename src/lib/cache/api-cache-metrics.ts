@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getRedis } from "@/lib/redis";
 import { getCreditWeights } from "@/lib/tokens/credits";
+import { getDisplayTotalTokens } from "@/lib/token-usage-display";
 
 export interface CacheMetricRow {
   createdAt: Date;
@@ -149,9 +150,23 @@ export function aggregateTokenUsageRows(
   for (const row of rows) {
     if (row.tokenCount === null) continue;
     const inputCacheHitTokens = row.inputCacheHitTokens || 0;
-    const inputCacheMissTokens = row.inputCacheMissTokens || 0;
-    const inputTokens = inputCacheHitTokens + inputCacheMissTokens;
     const outputTokens = row.outputTokens || 0;
+    const recordedMissTokens = row.inputCacheMissTokens || 0;
+    const measuredInputTokens = Math.max(
+      row.tokenCount - outputTokens,
+      inputCacheHitTokens + recordedMissTokens,
+      0
+    );
+    const inputCacheMissTokens =
+      recordedMissTokens +
+      Math.max(measuredInputTokens - inputCacheHitTokens - recordedMissTokens, 0);
+    const inputTokens = inputCacheHitTokens + inputCacheMissTokens;
+    const totalTokens = getDisplayTotalTokens({
+      tokenCount: row.tokenCount,
+      inputCacheHitTokens,
+      inputCacheMissTokens,
+      outputTokens,
+    });
     const weights = row.model ? getCreditWeights(row.model) : undefined;
     const estimatedCostCny = weights
       ? (inputCacheHitTokens * weights.hit +
@@ -160,7 +175,7 @@ export function aggregateTokenUsageRows(
         1_000_000
       : 0;
 
-    summary.totalTokens += row.tokenCount;
+    summary.totalTokens += totalTokens;
     summary.inputTokens += inputTokens;
     summary.outputTokens += outputTokens;
     summary.inputCacheHitTokens += inputCacheHitTokens;
@@ -170,7 +185,7 @@ export function aggregateTokenUsageRows(
 
     const date = row.createdAt.toISOString().slice(0, 10);
     if (date === todayDate) {
-      summary.todayTokens += row.tokenCount;
+      summary.todayTokens += totalTokens;
     }
 
     const daily = dailyMap.get(date) || {
@@ -179,18 +194,18 @@ export function aggregateTokenUsageRows(
       inputCacheMissTokens: 0,
       outputTokens: 0,
     };
-    daily.totalTokens += row.tokenCount;
+    daily.totalTokens += totalTokens;
     daily.inputCacheHitTokens += inputCacheHitTokens;
     daily.inputCacheMissTokens += inputCacheMissTokens;
     daily.outputTokens += outputTokens;
     dailyMap.set(date, daily);
 
     if (row.provider === "deepseek" || row.provider === "minimax") {
-      summary.providers[row.provider].totalTokens += row.tokenCount;
+      summary.providers[row.provider].totalTokens += totalTokens;
       summary.providers[row.provider].requestCount += 1;
       summary.providers[row.provider].estimatedCostCny += estimatedCostCny;
     } else {
-      summary.unattributedTokens += row.tokenCount;
+      summary.unattributedTokens += totalTokens;
     }
   }
 

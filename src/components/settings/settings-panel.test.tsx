@@ -25,6 +25,10 @@ describe("SettingsPanel token usage", () => {
     mocks.useCacheMetrics.mockReturnValue({
       isPending: false,
       data: {
+        cycle: {
+          start: "2026-07-01T00:00:00.000Z",
+          end: "2026-07-31T00:00:00.000Z",
+        },
         tokenUsage: {
           totalTokens: 42_100,
           todayTokens: 6_100,
@@ -66,6 +70,7 @@ describe("SettingsPanel token usage", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "用量统计" }));
 
+    expect(mocks.useCacheMetrics).toHaveBeenCalledWith("cycle");
     expect(screen.getByText("42,100")).toBeInTheDocument();
     const usageBar = screen.getByRole("button", {
       name: "2026-07-01 共 42,100 tokens",

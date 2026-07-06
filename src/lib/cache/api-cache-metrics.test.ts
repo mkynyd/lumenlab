@@ -74,23 +74,23 @@ describe("aggregateTokenUsageRows", () => {
       requestCount: 3,
       unattributedTokens: 120,
       estimatedCostCny: 0.0009,
-      inputTokens: 100,
+      inputTokens: 320,
       outputTokens: 100,
       inputCacheHitTokens: 0,
-      inputCacheMissTokens: 100,
+      inputCacheMissTokens: 320,
       daily: [
         {
           date: "2026-06-19",
           totalTokens: 120,
           inputCacheHitTokens: 0,
-          inputCacheMissTokens: 0,
+          inputCacheMissTokens: 120,
           outputTokens: 0,
         },
         {
           date: "2026-06-20",
           totalTokens: 300,
           inputCacheHitTokens: 0,
-          inputCacheMissTokens: 100,
+          inputCacheMissTokens: 200,
           outputTokens: 100,
         },
       ],
@@ -121,5 +121,59 @@ describe("aggregateTokenUsageRows", () => {
     expect(result.todayTokens).toBe(0);
     expect(result.requestCount).toBe(0);
     expect(result.providers.deepseek.requestCount).toBe(0);
+  });
+
+  it("treats unclassified input tokens as cache misses", () => {
+    const result = aggregateTokenUsageRows(
+      [
+        {
+          createdAt: new Date("2026-07-03T02:00:00Z"),
+          tokenCount: 2520,
+          provider: "deepseek",
+          model: "deepseek-v4-pro",
+          inputCacheHitTokens: 1024,
+          inputCacheMissTokens: 0,
+          outputTokens: 1143,
+        },
+      ],
+      "2026-07-03"
+    );
+
+    expect(result.inputCacheHitTokens).toBe(1024);
+    expect(result.inputCacheMissTokens).toBe(353);
+    expect(result.inputTokens).toBe(1377);
+    expect(result.daily[0]).toMatchObject({
+      totalTokens: 2520,
+      inputCacheHitTokens: 1024,
+      inputCacheMissTokens: 353,
+      outputTokens: 1143,
+    });
+  });
+
+  it("uses component totals when stored totals excluded cache tokens", () => {
+    const result = aggregateTokenUsageRows(
+      [
+        {
+          createdAt: new Date("2026-07-03T02:00:00Z"),
+          tokenCount: 2520,
+          provider: "deepseek",
+          model: "deepseek-v4-pro",
+          inputCacheHitTokens: 1024,
+          inputCacheMissTokens: 1079,
+          outputTokens: 1143,
+        },
+      ],
+      "2026-07-03"
+    );
+
+    expect(result.totalTokens).toBe(3246);
+    expect(result.todayTokens).toBe(3246);
+    expect(result.providers.deepseek.totalTokens).toBe(3246);
+    expect(result.daily[0]).toMatchObject({
+      totalTokens: 3246,
+      inputCacheHitTokens: 1024,
+      inputCacheMissTokens: 1079,
+      outputTokens: 1143,
+    });
   });
 });

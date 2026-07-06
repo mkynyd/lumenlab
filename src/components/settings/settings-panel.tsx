@@ -2,7 +2,7 @@
 
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowUpRight,
   Database,
@@ -11,6 +11,7 @@ import {
   Palette,
   ShieldCheck,
   Sparkles,
+  Upload,
   UserRound,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -21,17 +22,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AvatarMark } from "@/components/user/avatar-mark";
 import { useCacheMetrics } from "@/lib/hooks/use-cache-metrics";
 import {
+  useUploadUserAvatar,
   useUpdateUserProfile,
   useUserProfile,
 } from "@/lib/hooks/use-user-profile";
 import {
-  AVATAR_PRESETS,
   avatarPresetById,
-  type AvatarPresetId,
 } from "@/lib/user-profile";
 import { cn } from "@/lib/utils";
 
 type TabId = "alpha" | "tokens" | "user" | "appearance";
+const MAX_AVATAR_UPLOAD_BYTES = 20 * 1024 * 1024;
+const TOKEN_CHART_COLORS = {
+  hit: "color-mix(in oklch, var(--color-accent) 24%, var(--color-surface))",
+  miss: "color-mix(in oklch, var(--color-accent) 42%, var(--color-surface))",
+  output: "var(--color-accent)",
+};
 
 function formatTokenCount(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -58,6 +64,24 @@ function formatCurrency(value: number) {
 function formatDay(date: string) {
   const [, month, day] = date.split("-").map(Number);
   return `${month}-${day}`;
+}
+
+function dateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function buildDateRange(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  const days = Math.max(
+    1,
+    Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1
+  );
+  return Array.from({ length: days }, (_, i) => {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + i);
+    return dateKey(date);
+  });
 }
 
 export function SettingsPanel() {
@@ -244,25 +268,19 @@ function AlphaSection() {
 
 function TokensSection() {
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const monthStart = new Date(Date.UTC(year, month, 1));
-  const monthEnd = new Date(Date.UTC(year, month + 1, 0));
-  const cacheMetrics = useCacheMetrics({ start: monthStart, end: monthEnd });
-
-  const monthLabel = `${month + 1} 月`;
-  const daysInMonth = monthEnd.getUTCDate();
+  const cacheMetrics = useCacheMetrics("cycle");
+  const cycleStart = cacheMetrics.data?.cycle?.start.slice(0, 10);
+  const cycleEnd = cacheMetrics.data?.cycle?.end.slice(0, 10);
 
   const monthDays = cacheMetrics.data
     ? (() => {
         const byDate = new Map(
           cacheMetrics.data.tokenUsage.daily.map((d) => [d.date, d])
         );
-        return Array.from({ length: daysInMonth }, (_, i) => {
-          const date = new Date(Date.UTC(year, month, i + 1))
-            .toISOString()
-            .slice(0, 10);
+        return buildDateRange(
+          cycleStart || cacheMetrics.data.tokenUsage.daily[0]?.date || dateKey(new Date()),
+          cycleEnd || cacheMetrics.data.tokenUsage.daily.at(-1)?.date || dateKey(new Date())
+        ).map((date) => {
           return (
             byDate.get(date) || {
               date,
@@ -284,13 +302,13 @@ function TokensSection() {
   const hoveredDay = hoveredIndex >= 0 ? monthDays[hoveredIndex] : null;
   const tooltipLeft =
     hoveredIndex >= 0
-      ? Math.min(78, Math.max(22, ((hoveredIndex + 0.5) / daysInMonth) * 100))
+      ? Math.min(78, Math.max(22, ((hoveredIndex + 0.5) / monthDays.length) * 100))
       : 50;
 
   return (
     <SectionShell id="settings-panel-tokens" title="用量统计">
       <p className="text-xs text-[var(--color-text-tertiary)] -mt-2">
-        {monthLabel} Token 使用情况
+        本期 Token 使用情况
       </p>
 
       {cacheMetrics.isPending ? (
@@ -306,7 +324,7 @@ function TokensSection() {
           >
             <div className="min-w-0 rounded-2xl bg-[var(--color-project-control)] p-4">
               <p className="text-xs text-[var(--color-text-tertiary)]">
-                {monthLabel}总量
+                本期总量
               </p>
               <p className="mt-1 break-words text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
                 {formatTokenCount(cacheMetrics.data.tokenUsage.totalTokens)}
@@ -386,7 +404,7 @@ function TokensSection() {
                     <div
                       className="absolute bottom-8 left-14 right-0 top-0 grid items-end gap-1"
                       style={{
-                        gridTemplateColumns: `repeat(${daysInMonth}, minmax(4px, 1fr))`,
+                        gridTemplateColumns: `repeat(${monthDays.length}, minmax(4px, 1fr))`,
                       }}
                     >
                       {monthDays.map((day) => {
@@ -406,6 +424,18 @@ function TokensSection() {
                           day.totalTokens > 0
                             ? (day.outputTokens / day.totalTokens) * 100
                             : 0;
+                        const visibleTokens =
+                          day.inputCacheHitTokens +
+                          day.inputCacheMissTokens +
+                          day.outputTokens;
+                        const otherInputTokens = Math.max(
+                          day.totalTokens - visibleTokens,
+                          0
+                        );
+                        const otherInputHeight =
+                          day.totalTokens > 0
+                            ? (otherInputTokens / day.totalTokens) * 100
+                            : 0;
                         const active = hoveredDate === day.date;
                         return (
                           <button
@@ -423,25 +453,39 @@ function TokensSection() {
                             )}
                             {barHeightPercent > 0 ? (
                               <div
-                                className="flex w-2.5 flex-col-reverse overflow-hidden rounded-t-sm bg-[var(--color-surface)] sm:w-3"
+                                className="flex w-2.5 flex-col-reverse overflow-hidden rounded-t-[4px] sm:w-3"
                                 style={{ height: `${barHeightPercent}%` }}
                               >
                                 {day.outputTokens > 0 && (
                                   <div
-                                    style={{ height: `${outputHeight}%` }}
-                                    className="bg-[var(--color-accent)]"
+                                    style={{
+                                      height: `${outputHeight}%`,
+                                      backgroundColor: TOKEN_CHART_COLORS.output,
+                                    }}
                                   />
                                 )}
                                 {day.inputCacheMissTokens > 0 && (
                                   <div
-                                    style={{ height: `${missHeight}%` }}
-                                    className="bg-[var(--color-accent-muted)]"
+                                    style={{
+                                      height: `${missHeight}%`,
+                                      backgroundColor: TOKEN_CHART_COLORS.miss,
+                                    }}
+                                  />
+                                )}
+                                {otherInputTokens > 0 && (
+                                  <div
+                                    style={{
+                                      height: `${otherInputHeight}%`,
+                                      backgroundColor: TOKEN_CHART_COLORS.miss,
+                                    }}
                                   />
                                 )}
                                 {day.inputCacheHitTokens > 0 && (
                                   <div
-                                    style={{ height: `${hitHeight}%` }}
-                                    className="bg-[var(--color-accent-soft)]"
+                                    style={{
+                                      height: `${hitHeight}%`,
+                                      backgroundColor: TOKEN_CHART_COLORS.hit,
+                                    }}
                                   />
                                 )}
                               </div>
@@ -475,24 +519,27 @@ function TokensSection() {
                           [
                             "输入（命中缓存）",
                             hoveredDay.inputCacheHitTokens,
-                            "bg-[var(--color-accent-soft)]",
+                            TOKEN_CHART_COLORS.hit,
                           ],
                           [
                             "输入（未命中缓存）",
                             hoveredDay.inputCacheMissTokens,
-                            "bg-[var(--color-accent-muted)]",
+                            TOKEN_CHART_COLORS.miss,
                           ],
                           [
                             "输出",
                             hoveredDay.outputTokens,
-                            "bg-[var(--color-accent)]",
+                            TOKEN_CHART_COLORS.output,
                           ],
                         ].map(([label, value, color]) => (
                           <div
                             key={label}
                             className="grid grid-cols-[auto_1fr_auto] items-center gap-3 py-0.5 text-sm text-[var(--color-text-secondary)]"
                           >
-                            <span className={cn("h-3 w-3 rounded-sm", color as string)} />
+                            <span
+                              className="h-3 w-3 rounded-sm"
+                              style={{ backgroundColor: color as string }}
+                            />
                             <span>{label}</span>
                             <span className="font-mono tabular-nums">
                               {formatInteger(value as number)} tokens
@@ -564,18 +611,22 @@ function UserSection() {
   const { data: session, update: updateSession } = useSession();
   const profileQuery = useUserProfile();
   const updateProfile = useUpdateUserProfile();
+  const uploadAvatar = useUploadUserAvatar();
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const profile = profileQuery.data;
   const currentName = profile?.name || session?.user?.name || "";
   const currentAvatarPreset = avatarPresetById(
     profile?.avatarPreset || session?.user?.avatarPreset
   ).id;
+  const currentAvatarUrl = profile?.avatarUrl || session?.user?.image || null;
   const email = profile?.email || session?.user?.email || "";
 
   const [name, setName] = useState(currentName);
-  const [avatarPreset, setAvatarPreset] =
-    useState<AvatarPresetId>(currentAvatarPreset);
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   const [accountSaved, setAccountSaved] = useState(false);
+  const [avatarSaved, setAvatarSaved] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   const [promptName, setPromptName] = useState("");
   const [profession, setProfession] = useState("");
@@ -583,20 +634,48 @@ function UserSection() {
   const [generating, setGenerating] = useState(false);
   const [promptSaved, setPromptSaved] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
+  const selectedAvatarTooLarge =
+    selectedAvatarFile !== null &&
+    selectedAvatarFile.size > MAX_AVATAR_UPLOAD_BYTES;
 
   async function handleSaveAccount() {
     setAccountSaved(false);
     const nextProfile = await updateProfile.mutateAsync({
       name,
-      avatarPreset,
     });
     await updateSession({
       user: {
         name: nextProfile.name,
         avatarPreset: nextProfile.avatarPreset,
+        image: nextProfile.avatarUrl,
       },
     });
     setAccountSaved(true);
+  }
+
+  async function handleUploadAvatar() {
+    if (!selectedAvatarFile) return;
+    setAvatarSaved(false);
+    setAvatarError(null);
+    if (selectedAvatarTooLarge) {
+      setAvatarError("头像不能超过 20MB");
+      return;
+    }
+    try {
+      const nextProfile = await uploadAvatar.mutateAsync(selectedAvatarFile);
+      await updateSession({
+        user: {
+          name: nextProfile.name,
+          avatarPreset: nextProfile.avatarPreset,
+          image: nextProfile.avatarUrl,
+        },
+      });
+      setSelectedAvatarFile(null);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+      setAvatarSaved(true);
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : "上传失败，请重试");
+    }
   }
 
   async function handleGeneratePrompt() {
@@ -628,7 +707,12 @@ function UserSection() {
         </h3>
 
         <div className="flex items-center gap-3">
-          <AvatarMark presetId={avatarPreset} className="size-10 text-sm" />
+          <AvatarMark
+            presetId={currentAvatarPreset}
+            src={currentAvatarUrl}
+            alt={`${name.trim() || email || "账户"} 的头像`}
+            className="size-10 text-sm"
+          />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
               {name.trim() || email || "账户"}
@@ -657,33 +741,55 @@ function UserSection() {
 
         <div>
           <p className="text-sm font-medium text-[var(--color-text-primary)]">
-            头像样式
+            上传头像
           </p>
-          <div
-            className="mt-2 grid grid-cols-4 gap-2"
-            role="list"
-            aria-label="头像样式"
-          >
-            {AVATAR_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                aria-pressed={avatarPreset === preset.id}
-                onClick={() => {
-                  setAvatarPreset(preset.id);
-                  setAccountSaved(false);
-                }}
-                className={cn(
-                  "flex h-16 flex-col items-center justify-center gap-1 rounded-xl text-xs transition-colors",
-                  avatarPreset === preset.id
-                    ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                    : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
-                )}
+          <div className="mt-2 space-y-2">
+            <Input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) => {
+                setSelectedAvatarFile(event.target.files?.[0] ?? null);
+                setAvatarSaved(false);
+                setAvatarError(null);
+              }}
+              className="h-9 rounded-xl bg-[var(--color-surface)] text-sm"
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={handleUploadAvatar}
+                disabled={
+                  !selectedAvatarFile ||
+                  selectedAvatarTooLarge ||
+                  uploadAvatar.isPending
+                }
+                className="rounded-xl px-4"
               >
-                <AvatarMark presetId={preset.id} className="size-7" />
-                <span>{preset.name}</span>
-              </button>
-            ))}
+                <Upload data-icon="inline-start" size={16} strokeWidth={1.5} />
+                {uploadAvatar.isPending ? "上传中..." : "上传头像"}
+              </Button>
+              <span className="text-xs text-[var(--color-text-tertiary)]">
+                JPG、PNG 或 WebP，最大 20MB
+              </span>
+            </div>
+            {selectedAvatarFile && (
+              <p className="truncate text-xs text-[var(--color-text-secondary)]">
+                已选择 {selectedAvatarFile.name}
+              </p>
+            )}
+            {selectedAvatarTooLarge && (
+              <p className="text-xs text-[var(--color-error)]">
+                头像不能超过 20MB
+              </p>
+            )}
+            {avatarSaved && (
+              <p className="text-xs text-[var(--color-success)]">头像已上传</p>
+            )}
+            {avatarError && (
+              <p className="text-xs text-[var(--color-error)]">{avatarError}</p>
+            )}
           </div>
         </div>
 

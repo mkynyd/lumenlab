@@ -79,7 +79,7 @@ export default function UsagePage() {
     });
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto h-full w-full max-w-3xl overflow-y-auto p-6 pb-12">
       <h1 className="mb-6 text-2xl font-semibold text-[var(--color-text-primary)]">
         用量统计
       </h1>
@@ -177,7 +177,7 @@ export default function UsagePage() {
           <h2 className="mb-4 text-base font-medium text-[var(--color-text-primary)]">
             最近请求
           </h2>
-          <div className="max-h-96 overflow-auto">
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="text-xs text-[var(--color-text-secondary)]">
                 <tr>
