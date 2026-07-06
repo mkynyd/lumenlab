@@ -419,7 +419,6 @@ model FileParseJob {
 
   @@index([userId])
   @@index([status])
-  @@index([fileAssetId])
 }
 
 model DocumentChunk {
