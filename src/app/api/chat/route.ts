@@ -318,6 +318,36 @@ function toAnthropicToolPayload(
     }));
 }
 
+function formatToolInstructions(tools: ToolMetadata[]): string {
+  const instructionTools = tools.filter((tool) => tool.toolId !== "web.search");
+  if (instructionTools.length === 0) return "";
+
+  const lines = [
+    "你可以调用以下工具获取信息或执行操作。需要调用时，请严格使用如下 XML 格式（可包含多个 invoke）：",
+    "",
+    "<tool_calls>",
+    '  <invoke name="tool.id">',
+    '    <parameter name="key">value</parameter>',
+    "  </invoke>",
+    "</tool_calls>",
+    "",
+    "可用工具：",
+  ];
+
+  for (const tool of instructionTools) {
+    const schema = tool.inputSchema as {
+      properties?: Record<string, { description?: string }>;
+      required?: string[];
+    };
+    const required = schema.required?.length
+      ? `（必填：${schema.required.join(", ")}）`
+      : "";
+    lines.push(`- ${tool.toolId}: ${tool.description}${required}`);
+  }
+
+  return lines.join("\n");
+}
+
 function mergeToolCalls(
   nativeCalls: ToolUseBlock[],
   parsedCalls: Array<{ name: string; input: Record<string, unknown> }>
@@ -1100,6 +1130,15 @@ async function handlePost(request: NextRequest) {
       { error: "无法连接模型服务，请稍后重试" },
       { status: 502 }
     );
+  }
+
+  // DeepSeek 只能下发内置 web_search，其它工具靠 XML/DSML fallback。
+  // 把允许的工具清单注入 system prompt，让模型知道可以调用哪些工具以及如何输出。
+  if (modelRoute.provider === "deepseek" && activeTools.length > 0) {
+    const toolInstructions = formatToolInstructions(activeTools);
+    if (toolInstructions) {
+      systemPrompt = `${systemPrompt}\n\n${toolInstructions}`;
+    }
   }
 
   // 11.5 DeepSeek streaming tool loop (max 2 rounds).
