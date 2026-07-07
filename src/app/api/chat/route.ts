@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { sendMessageSchema, type SendMessageInput } from "@/lib/validators";
-import { DeepSeekError, DeepSeekMessage, ToolUseBlock } from "@/lib/deepseek";
+import {
+  DeepSeekError,
+  DeepSeekMessage,
+  ToolUseBlock,
+  DeepSeekContentBlock,
+} from "@/lib/deepseek";
 import { MiniMaxChatError } from "@/lib/chat/minimax-chat";
 import { filterThinkingForMiniMax } from "@/lib/chat/history-adapter";
 import { createProviderAdapter } from "@/lib/agent/adapters";
@@ -13,8 +18,7 @@ import {
 } from "@/lib/chat/router";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { assembleSystemPrompt } from "@/lib/classification";
-import { getSkillSet, buildToolsPayloadForProvider, ensureDiscovery } from "@/lib/skills/registry";
-import type { SkillDefinition } from "@/lib/skills/registry";
+import { ensureDiscovery } from "@/lib/skills/registry";
 import {
   retrieveProjectContext,
   shouldUseProjectContext,
@@ -40,8 +44,11 @@ import {
 } from "@/lib/agent/orchestrator";
 import { formatAgentEvent } from "@/lib/agent/event-stream";
 import { skillRegistry } from "@/lib/agent/skill-registry";
-import { runContinuationLoop } from "@/lib/agent/continuation";
+import { toolRegistry } from "@/lib/agent/tool-registry";
+import { parseToolCalls, sanitizeModelText } from "@/lib/agent/tool-call-parser";
+import { recordAuditEvent } from "@/lib/agent/audit-log";
 import type { AgentSource } from "@/lib/agent/sources";
+import type { ToolMetadata } from "@/lib/agent/types";
 import { runWebSearch } from "@/lib/tools/web/search-engine";
 import type { Prisma } from "@/generated/prisma/client";
 import { validateUploadBatch } from "@/lib/files/file-upload-policy";
@@ -51,10 +58,6 @@ function isAgentOrchestratorEnabled() {
   if (process.env.AGENT_ORCHESTRATOR_ENABLED === "0") return false;
   if (process.env.AGENT_ORCHESTRATOR_ENABLED === "1") return true;
   return process.env.NODE_ENV !== "production";
-}
-
-function isAgentContinuationEnabled() {
-  return process.env.AGENT_CONTINUATION_ENABLED === "1";
 }
 
 /**
@@ -202,6 +205,7 @@ async function bufferSSEStream(stream: ReadableStream<Uint8Array>) {
 
   return {
     stream: replaySSEChunks(chunks),
+    chunks,
   };
 }
 
@@ -225,6 +229,162 @@ async function safeRunAutoTool(
     });
     return { status: "failed", error: message };
   }
+}
+
+interface MergedToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+function buildDeepSeekAllowedTools(input: {
+  projectId?: string | null;
+  webSearchActive: boolean;
+  activeSkillId?: string | null;
+}): ToolMetadata[] {
+  const allowed = new Map<string, ToolMetadata>();
+  const add = (toolId: string) => {
+    const tool = toolRegistry.get(toolId);
+    if (tool) allowed.set(toolId, tool);
+  };
+
+  // Always expose skill activation.
+  add("skill.activate");
+
+  if (input.projectId) {
+    for (const tool of toolRegistry.list()) {
+      if (
+        tool.toolId.startsWith("project_") ||
+        tool.toolId.startsWith("artifact.") ||
+        tool.toolId.startsWith("reference.") ||
+        tool.toolId.startsWith("arxiv.")
+      ) {
+        add(tool.toolId);
+      }
+    }
+  }
+
+  if (input.webSearchActive) {
+    add("web.search");
+    add("web.fetch");
+  }
+
+  const skill = input.activeSkillId
+    ? skillRegistry.get(input.activeSkillId)
+    : undefined;
+  if (skill?.allowedTools?.length) {
+    const baseIds = new Set(allowed.keys());
+    for (const id of baseIds) {
+      if (id === "skill.activate") continue;
+      if (!skill.allowedTools.includes(id)) {
+        // Keep web tools if the user explicitly enabled web search.
+        if (
+          input.webSearchActive &&
+          (id === "web.search" || id === "web.fetch")
+        ) {
+          continue;
+        }
+        allowed.delete(id);
+      }
+    }
+    for (const toolId of skill.allowedTools) {
+      add(toolId);
+    }
+  }
+
+  return [...allowed.values()];
+}
+
+function toAnthropicToolPayload(
+  tools: ToolMetadata[]
+): Array<{
+  type: "tool";
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}> {
+  return tools.map((tool) => ({
+    type: "tool",
+    name: tool.toolId,
+    description: tool.description,
+    input_schema: tool.inputSchema,
+  }));
+}
+
+function mergeToolCalls(
+  nativeCalls: ToolUseBlock[],
+  parsedCalls: Array<{ name: string; input: Record<string, unknown> }>
+): MergedToolCall[] {
+  const result: MergedToolCall[] = [];
+  const seen = new Set<string>();
+  const key = (name: string, input: Record<string, unknown>) =>
+    `${name}:${JSON.stringify(input, Object.keys(input).sort())}`;
+
+  for (const tc of nativeCalls) {
+    const k = key(tc.name, tc.input);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    result.push({ id: tc.id, name: tc.name, input: tc.input });
+  }
+
+  for (let i = 0; i < parsedCalls.length; i++) {
+    const tc = parsedCalls[i];
+    const k = key(tc.name, tc.input);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    result.push({ id: `parsed-${tc.name}-${i}`, name: tc.name, input: tc.input });
+  }
+
+  return result;
+}
+
+function filterToolCallsByWhitelist(
+  calls: MergedToolCall[],
+  allowedNames: Set<string>
+): { executable: MergedToolCall[]; blocked: MergedToolCall[] } {
+  const executable: MergedToolCall[] = [];
+  const blocked: MergedToolCall[] = [];
+  for (const tc of calls) {
+    if (allowedNames.has(tc.name)) {
+      executable.push(tc);
+    } else {
+      blocked.push(tc);
+    }
+  }
+  return { executable, blocked };
+}
+
+function buildToolFollowUpMessages(
+  messages: DeepSeekMessage[],
+  toolCalls: MergedToolCall[],
+  toolResults: Array<{ toolUseId: string; content: string }>,
+  rawContent: string
+): DeepSeekMessage[] {
+  const assistantContent: DeepSeekContentBlock[] = [];
+  const sanitizedText = sanitizeModelText(rawContent);
+  if (sanitizedText) {
+    assistantContent.push({ type: "text", text: sanitizedText });
+  }
+  for (const tc of toolCalls) {
+    assistantContent.push({
+      type: "tool_use",
+      id: tc.id,
+      name: tc.name,
+      input: tc.input,
+    });
+  }
+
+  const userContent: DeepSeekContentBlock[] = toolResults.map((tr) => ({
+    type: "tool_result",
+    tool_use_id: tr.toolUseId,
+    content: tr.content,
+  }));
+
+  return [
+    ...messages,
+    { role: "assistant", content: assistantContent },
+    { role: "user", content: userContent },
+  ];
 }
 
 export async function POST(request: NextRequest) {
@@ -780,17 +940,21 @@ async function handlePost(request: NextRequest) {
         : userPromptWithTools,
     },
   ];
-  let messages = cacheExperiments.adaptivePromptOrdering.enabled
-    ? reorderMessagesForCache(
-        experimentalBaseMessages,
-        systemPrompt,
-        retrievedContext,
-        cacheExperiments.adaptivePromptOrdering
-      )
-    : legacyMessages;
+  type StringMessage = { role: string; content: string };
+  const stringMessages =
+    (cacheExperiments.adaptivePromptOrdering.enabled
+      ? reorderMessagesForCache(
+          experimentalBaseMessages as unknown as StringMessage[],
+          systemPrompt,
+          retrievedContext,
+          cacheExperiments.adaptivePromptOrdering
+        )
+      : legacyMessages) as unknown as StringMessage[];
+
+  let messages: DeepSeekMessage[] = stringMessages as DeepSeekMessage[];
 
   // 上下文窗口预算检查与自动压缩
-  const budgetCheck = checkContextBudget(messages);
+  const budgetCheck = checkContextBudget(messages as unknown as StringMessage[]);
   if (budgetCheck.status === "warn") {
     emitAgentEvent({
       type: "context_budget_warning",
@@ -805,7 +969,7 @@ async function handlePost(request: NextRequest) {
       const compressionApiKey = await getProviderApiKey(userId, "deepseek");
       const compressionResult = await compressHistory({
         apiKey: compressionApiKey,
-        messages,
+        messages: messages as unknown as StringMessage[],
       });
       if (compressionResult) {
         await prisma.message.create({
@@ -819,8 +983,11 @@ async function handlePost(request: NextRequest) {
             } as Prisma.InputJsonValue,
           },
         });
-        messages = buildCompressedMessages(messages, compressionResult.summary);
-        const reCheck = checkContextBudget(messages);
+        messages = buildCompressedMessages(
+          messages as unknown as StringMessage[],
+          compressionResult.summary
+        ) as DeepSeekMessage[];
+        const reCheck = checkContextBudget(messages as unknown as StringMessage[]);
         emitAgentEvent({
           type: "context_budget_compressed",
           tokens: reCheck.tokens,
@@ -858,83 +1025,6 @@ async function handlePost(request: NextRequest) {
     }
   }
 
-  // Agent Orchestrator continuation loop: let the model request additional tools
-  // after the deterministic prefetch. Currently DeepSeek only.
-  if (
-    agentOrchestratorEnabled &&
-    isAgentContinuationEnabled() &&
-    modelRoute.provider === "deepseek"
-  ) {
-    try {
-      const agentTap = new agentLoopInternal.EventTap((chunk) => {
-        agentEvents.push(agentDecoder.decode(chunk, { stream: false }));
-      });
-      const continuation = await runContinuationLoop({
-        apiKey,
-        model,
-        systemPrompt,
-        messages,
-        profile: skillRoute.profile,
-        thinkingEnabled,
-        reasoningEffort,
-        runTool: async (call: PlannedToolCall) => {
-          const result = await safeRunAutoTool(
-            {
-              userId,
-              conversationId: conversation.id,
-              projectId: project?.id,
-              skillId: skillRoute.activeSkillId ?? undefined,
-              apiKey,
-              model,
-              thinkingEnabled,
-              reasoningEffort,
-              activeTools: [],
-              initialMessages: [],
-              signal: new AbortController().signal,
-            },
-            { id: call.id, name: call.name, input: call.input },
-            agentTap
-          );
-          if (result.status === "succeeded" && result.summary) {
-            return { status: "succeeded", summary: result.summary };
-          }
-          return {
-            status: "failed",
-            error: result.error ?? "工具执行失败",
-          };
-        },
-        emit: emitAgentEvent,
-      });
-      messages = continuation.finalMessages;
-      orchestratorSources = [...orchestratorSources, ...continuation.sources];
-      if (orchestratorSources.length > 0) {
-        emitAgentEvent({
-          type: "sources_updated",
-          sources: orchestratorSources,
-        });
-      }
-      if (continuation.stopReason && process.env.AGENT_DEBUG_EVENTS === "1") {
-        emitAgentEvent({
-          type: "tool_loop_stop_reason",
-          reason: continuation.stopReason,
-        });
-      }
-    } catch (err) {
-      logger.error("Agent continuation failed", { error: String(err) });
-      if (err instanceof DeepSeekError) {
-        const status = err.status >= 400 && err.status < 500 ? err.status : 502;
-        return NextResponse.json(
-          { error: err.message, deepseekStatus: err.status },
-          { status }
-        );
-      }
-      return NextResponse.json(
-        { error: "Agent 工具续写失败，请稍后重试" },
-        { status: 502 }
-      );
-    }
-  }
-
   const minimaxHistorySummary = shouldCompressDeepSeekHistory
     ? summarizeHistoryForMiniMax(history)
     : "";
@@ -949,19 +1039,23 @@ async function handlePost(request: NextRequest) {
   // 11. 调用模型
   let streamResult;
   let adapter: ReturnType<typeof createProviderAdapter> | undefined;
-  const activeSkills: SkillDefinition[] = [];
+  let activeTools: ToolMetadata[] = [];
+  let toolsPayload:
+    | ReturnType<typeof toAnthropicToolPayload>
+    | undefined;
   try {
     adapter = createProviderAdapter(modelRoute.provider, apiKey);
 
-    // Build skills: always include project file skills in project mode,
-    // plus web_search if the user has it enabled.
-    const skillSet = getSkillSet(projectMode);
-    if (webSearchActive) {
-      activeSkills.push(...skillSet);
-    } else {
-      activeSkills.push(...skillSet.filter((s) => s.type === "client"));
-    }
-    const toolsPayload = buildToolsPayloadForProvider(activeSkills, modelRoute.provider);
+    // Build the active tool allowlist from the real tool registry.
+    activeTools = buildDeepSeekAllowedTools({
+      projectId: project?.id,
+      webSearchActive,
+      activeSkillId: skillRoute.activeSkillId,
+    });
+    toolsPayload =
+      modelRoute.provider === "deepseek" && activeTools.length > 0
+        ? toAnthropicToolPayload(activeTools)
+        : undefined;
 
     const adapterMessages =
       modelRoute.provider === "minimax"
@@ -1001,54 +1095,70 @@ async function handlePost(request: NextRequest) {
     );
   }
 
-  // 11.5 Tool call execution loop (max 2 rounds, DeepSeek only)
-  // Runs for:
-  //   - native client tool_use blocks (legacy path, orchestrator disabled)
-  //   - DSML-derived tool calls from reasoning content (fallback, always)
-  const shouldResolveStreamingToolCalls =
-    Boolean(project) ||
-    webSearchActive ||
-    activeSkills.some((skill) => skill.type === "server");
-  if (
-    modelRoute.provider === "deepseek" &&
-    "getToolCalls" in streamResult &&
-    shouldResolveStreamingToolCalls
-  ) {
+  // 11.5 DeepSeek streaming tool loop (max 2 rounds).
+  // Each round is fully buffered server-side so that pseudo tool markup never
+  // leaks to the client. Only whitelisted, structurally valid tool calls are
+  // executed; malformed markup is sanitized away before replay/persistence.
+  if (modelRoute.provider === "deepseek" && activeTools.length > 0) {
     const MAX_TOOL_ROUNDS = 2;
+    const allowedToolNames = new Set(activeTools.map((t) => t.toolId));
+    let executedInLastRound = false;
+
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const buffered = await bufferSSEStream(streamResult.stream);
       streamResult = { ...streamResult, stream: buffered.stream };
-      const toolCalls = (streamResult as unknown as { getToolCalls: () => Array<{ id: string; name: string; input: Record<string, unknown> }> }).getToolCalls();
-      const executableToolCalls = toolCalls.filter((tc) => {
-        const isDsml = tc.id.startsWith("dsml-");
-        const isXmlFallback = tc.id.startsWith("xml-");
-        if (agentOrchestratorEnabled) {
-          // When the orchestrator is on, native client tools are handled by
-          // prefetch/continuation; only DSML-derived calls need recovery.
-          return isDsml || isXmlFallback;
-        }
-        const skill = activeSkills?.find((s) => s.name === tc.name);
-        if (skill && skill.type === "client") return true;
-        // DSML-derived tool calls from reasoning content may not be in the
-        // active skill set, but the model clearly intended to invoke them.
-        return isDsml || isXmlFallback || tc.name.includes(".");
-      });
 
-      if (executableToolCalls.length === 0) break;
+      const rawContent = streamResult.getRawContent?.() ?? "";
+      const rawReasoning = streamResult.getRawReasoning?.() ?? "";
+      const nativeCalls = streamResult.getToolCalls();
+      const parsedCalls = parseToolCalls(`${rawReasoning}\n${rawContent}`);
+      const merged = mergeToolCalls(nativeCalls, parsedCalls);
+      const { executable, blocked } = filterToolCallsByWhitelist(
+        merged,
+        allowedToolNames
+      );
+
+      for (let i = 0; i < blocked.length; i++) {
+        const tc = blocked[i];
+        const executionId = tc.id.startsWith("parsed-")
+          ? `blocked-${tc.name}-${i}`
+          : tc.id;
+        emitAgentEvent({
+          type: "tool_blocked",
+          executionId,
+          reasonCode: "NOT_IN_ALLOWLIST",
+          reason: `Tool ${tc.name} 不在当前允许列表中`,
+        });
+        recordAuditEvent({
+          userId,
+          conversationId: conversation.id,
+          toolId: tc.name,
+          eventType: "tool_blocked",
+          severity: "warn",
+          payload: {
+            reason: "not_in_allowlist",
+            input: tc.input,
+            source: tc.id.startsWith("parsed-") ? "parsed_fallback" : "native",
+          },
+        }).catch(() => {});
+      }
+
+      if (executable.length === 0) {
+        break;
+      }
 
       const agentTap = new agentLoopInternal.EventTap((chunk) => {
         agentEvents.push(agentDecoder.decode(chunk, { stream: false }));
       });
 
-      // Execute client-side / DSML-derived tools
       const toolResults: Array<{ toolUseId: string; content: string }> = [];
-      for (const tc of executableToolCalls) {
+      for (const tc of executable) {
         const autoRun = await safeRunAutoTool(
           {
             userId,
             conversationId: conversation.id,
             projectId: project?.id,
-            skillId: undefined,
+            skillId: skillRoute.activeSkillId ?? undefined,
             apiKey,
             model,
             thinkingEnabled,
@@ -1061,7 +1171,10 @@ async function handlePost(request: NextRequest) {
           agentTap
         );
         if (autoRun.status === "succeeded" && autoRun.summary) {
-          toolResults.push({ toolUseId: tc.id, content: JSON.stringify(autoRun.summary) });
+          toolResults.push({
+            toolUseId: tc.id,
+            content: JSON.stringify(autoRun.summary),
+          });
         } else if (autoRun.error && autoRun.error !== "approval_pending") {
           toolResults.push({
             toolUseId: tc.id,
@@ -1076,38 +1189,46 @@ async function handlePost(request: NextRequest) {
         }
       }
 
-      // Build follow-up messages with tool results
-      const assistantContent = executableToolCalls.map((tc) => ({
-        type: "tool_use" as const,
-        id: tc.id,
-        name: tc.name,
-        input: tc.input,
-      }));
-
-      const userContent = toolResults.map((tr) => ({
-        type: "tool_result" as const,
-        tool_use_id: tr.toolUseId,
-        content: tr.content,
-      }));
-
-      const followUpMessages: DeepSeekMessage[] = [
-        ...messages,
-        { role: "assistant", content: JSON.stringify(assistantContent) },
-        { role: "user", content: JSON.stringify(userContent) },
-      ];
+      messages = buildToolFollowUpMessages(
+        messages,
+        executable,
+        toolResults,
+        rawContent
+      );
 
       try {
         if (!adapter) break;
+
+        if (round === MAX_TOOL_ROUNDS - 1) {
+          // Round limit reached: force a final no-tool completion.
+          streamResult = await adapter.stream({
+            model,
+            messages,
+            thinkingEnabled,
+            reasoningEffort,
+          });
+          executedInLastRound = true;
+          break;
+        }
+
         streamResult = await adapter.stream({
           model,
-          messages: followUpMessages,
+          messages,
           thinkingEnabled,
           reasoningEffort,
+          tools: toolsPayload,
         });
       } catch (err) {
         logger.error("Tool execution follow-up failed", { error: String(err) });
         break;
       }
+    }
+
+    if (executedInLastRound) {
+      // The final no-tool stream may still contain pseudo tool markup from a
+      // hallucinating model; deepseek.ts sanitizes content/reasoning, so we
+      // simply stream it without executing further tools.
+      void streamResult.getToolCalls;
     }
   }
 
@@ -1256,8 +1377,8 @@ export async function accumulateAndSave(
     await prisma.message.update({
       where: { id: messageId },
       data: {
-        content: fullContent || "（模型未输出正文）",
-        reasoningContent: fullReasoning || null,
+        content: sanitizeModelText(fullContent) || "（模型未输出正文）",
+        reasoningContent: sanitizeModelText(fullReasoning) || null,
         tokenCount: usage?.total_tokens ?? null,
         provider,
         cacheHitTokens: hitTokens || null,

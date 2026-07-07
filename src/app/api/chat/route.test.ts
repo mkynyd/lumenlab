@@ -614,3 +614,503 @@ describe("accumulateAndSave", () => {
     });
   });
 });
+
+function makeSSEStream(
+  deltas: Array<{ content?: string; reasoning_content?: string }>,
+  extras?: { usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }
+) {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const delta of deltas) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
+          )
+        );
+      }
+      if (extras?.usage) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({ usage: extras.usage })}\n\n`
+          )
+        );
+      }
+      controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+}
+
+function makeStreamResult(options: {
+  deltas: Array<{ content?: string; reasoning_content?: string }>;
+  toolCalls?: { id: string; name: string; input: Record<string, unknown> }[];
+  rawContent?: string;
+  rawReasoning?: string;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+}) {
+  return {
+    stream: makeSSEStream(options.deltas, { usage: options.usage }),
+    getUsage: () =>
+      options.usage ?? {
+        prompt_tokens: 1,
+        completion_tokens: 1,
+        total_tokens: 2,
+      },
+    getToolCalls: () => options.toolCalls ?? [],
+    getRawContent: () => options.rawContent ?? "",
+    getRawReasoning: () => options.rawReasoning ?? "",
+  };
+}
+
+describe("DeepSeek streaming tool loop", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
+    mocks.projectFindFirst.mockResolvedValue({
+      id: "project-1",
+      userId: "user-1",
+      name: "实验项目",
+      type: "academic",
+      description: null,
+    });
+    mocks.fileFindMany.mockResolvedValue([]);
+    mocks.conversationCreate.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      projectId: "project-1",
+      model: "deepseek-v4-pro",
+      modelLock: null,
+      thinkingEnabled: true,
+      activeSkillId: null,
+      skillDisabled: false,
+    });
+    mocks.conversationFindFirst.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      projectId: "project-1",
+      model: "deepseek-v4-pro",
+      modelLock: null,
+      thinkingEnabled: true,
+      activeSkillId: null,
+      skillDisabled: false,
+    });
+    mocks.messageFindMany.mockResolvedValue([]);
+    mocks.messageCreate
+      .mockResolvedValueOnce({ id: "user-message-1" })
+      .mockResolvedValueOnce({ id: "assistant-message-1" });
+    mocks.conversationUpdate.mockResolvedValue({});
+    mocks.conversationSkillCreate.mockResolvedValue({});
+    mocks.conversationSkillUpdateMany.mockResolvedValue({});
+    mocks.messageUpdate.mockResolvedValue({});
+    mocks.messageDelete.mockResolvedValue({});
+    mocks.toolExecutionCreate.mockResolvedValue({ id: "tool-execution-1" });
+    mocks.toolExecutionUpdate.mockResolvedValue({});
+    mocks.agentAuditLogCreate.mockResolvedValue({ id: "audit-1" });
+    mocks.getProviderApiKey.mockResolvedValue("sk-test");
+    mocks.tokenUsageCreate.mockResolvedValue({ id: "usage-1" });
+    mocks.userFindUnique.mockResolvedValue({
+      id: "user-1",
+      cycleStartedAt: new Date("2026-07-01T00:00:00.000Z"),
+      creditsUsed: 0,
+      planCredits: 0,
+    });
+    mocks.userUpdate.mockResolvedValue({});
+    mocks.transaction.mockImplementation((ops: Array<Promise<unknown>>) =>
+      Promise.all(ops)
+    );
+  });
+
+  it("executes native tool_use blocks and streams the final answer", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    mocks.streamChat
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "我先" }, { content: "查看资料。" }],
+          toolCalls: [
+            {
+              id: "tu-1",
+              name: "project_files.list",
+              input: { projectId: "project-1" },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "最终" }, { content: "论文提纲" }],
+        })
+      );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "基于项目资料写论文提纲",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain("最终");
+      expect(body).toContain("论文提纲");
+      expect(body).not.toContain("<tool_calls>");
+      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toolId: "project_files.list",
+            status: "proposed",
+          }),
+        })
+      );
+      // Final answer should be delivered as multiple SSE data lines.
+      expect(body.match(/data:/g)?.length).toBeGreaterThan(2);
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("executes DSML tool calls from raw reasoning", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    mocks.streamChat
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ reasoning_content: "检索资料中。" }],
+          rawReasoning:
+            '检索资料中。<| | DSML | | invoke name="project_files.list"><| | DSML | | parameter name="projectId">project-1</| | DSML | | parameter></| | DSML | | invoke>',
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "资料列表为空，继续回答。" }],
+        })
+      );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "列出项目资料",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain("资料列表为空，继续回答。");
+      expect(body).not.toContain("DSML");
+      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toolId: "project_files.list",
+            status: "proposed",
+          }),
+        })
+      );
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("sanitizes malformed nested tool_calls instead of executing them", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    const raw =
+      '思考。<tool_calls> <tool_calls> list </tool_calls> 继续。';
+    mocks.streamChat.mockResolvedValueOnce(
+      makeStreamResult({
+        // The stream from deepseek.ts is already sanitized; raw markup is only
+        // exposed through getRawContent for route-level parsing.
+        deltas: [{ content: "思考。 继续。" }],
+        rawContent: raw,
+      })
+    );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "基于项目资料写论文提纲",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain("思考。");
+      expect(body).toContain("继续。");
+      expect(body).not.toContain("<tool_calls>");
+      expect(body).not.toContain("list");
+      expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+      expect(mocks.toolExecutionCreate).not.toHaveBeenCalled();
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("blocks hallucinated tool names and records an audit event", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    mocks.streamChat.mockResolvedValueOnce(
+      makeStreamResult({
+        deltas: [{ content: "我将调用 foo.bar。" }],
+        toolCalls: [{ id: "tu-foo", name: "foo.bar", input: { x: 1 } }],
+      })
+    );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "测试",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+      expect(mocks.agentAuditLogCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            eventType: "tool_blocked",
+            toolId: "foo.bar",
+          }),
+        })
+      );
+      expect(mocks.toolExecutionCreate).not.toHaveBeenCalled();
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("stops after 2 tool rounds and still produces a final answer", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    mocks.streamChat
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "第1轮：列出文件。" }],
+          toolCalls: [
+            {
+              id: "tu-list",
+              name: "project_files.list",
+              input: { projectId: "project-1" },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "第2轮：读取文件。" }],
+          toolCalls: [
+            {
+              id: "tu-read",
+              name: "project_files.read",
+              input: { projectId: "project-1", fileId: "file-1" },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "最终回答" }],
+        })
+      );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "详细分析资料",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain("最终回答");
+      expect(mocks.streamChat).toHaveBeenCalledTimes(3);
+      expect(mocks.toolExecutionCreate).toHaveBeenCalledTimes(2);
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("runs the tool loop when the orchestrator is enabled", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "1";
+
+    mocks.streamChat
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "我先看资料。" }],
+          toolCalls: [
+            {
+              id: "tu-1",
+              name: "project_files.list",
+              input: { projectId: "project-1" },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "最终回答" }],
+        })
+      );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "基于项目资料写论文提纲",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("X-Agent-Orchestrator")).toBe("enabled");
+      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toolId: "project_files.list",
+            status: "proposed",
+          }),
+        })
+      );
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+});
+
+describe("accumulateAndSave sanitization", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.messageUpdate.mockResolvedValue({});
+  });
+
+  it("persists sanitized content and reasoning without tool markup", async () => {
+    const stream = makeSSEStream([
+      { content: "正文" },
+      { content: '<tool_calls><invoke name="x"></invoke></tool_calls>' },
+      { reasoning_content: "思考" },
+      {
+        reasoning_content:
+          '<| | DSML | | invoke name="y"><| | DSML | | parameter name="z">1</| | DSML | | parameter></| | DSML | | invoke>',
+      },
+    ]);
+
+    await accumulateAndSave(
+      stream,
+      "conversation-1",
+      "message-1",
+      "user-1",
+      "deepseek-v4-pro",
+      "deepseek",
+      () => ({
+        prompt_tokens: 10,
+        completion_tokens: 2,
+        total_tokens: 12,
+      })
+    );
+
+    expect(mocks.messageUpdate).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: expect.objectContaining({
+        content: "正文",
+        reasoningContent: "思考",
+      }),
+    });
+    const updateCall = mocks.messageUpdate.mock.calls.find(
+      (call) => call[0].where.id === "message-1"
+    );
+    const data = updateCall?.[0].data as Record<string, unknown>;
+    expect(String(data.content)).not.toContain("<tool_calls>");
+    expect(String(data.content)).not.toContain("invoke name");
+    expect(String(data.reasoningContent)).not.toContain("DSML");
+    expect(String(data.reasoningContent)).not.toContain("<|");
+  });
+});

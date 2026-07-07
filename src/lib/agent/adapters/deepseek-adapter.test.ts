@@ -22,6 +22,8 @@ describe("DeepSeekAdapter", () => {
       getToolCalls: () => [
         { id: "tc-1", name: "web_search", input: { query: "test" } },
       ],
+      getRawContent: () => "",
+      getRawReasoning: () => "",
     });
 
     const adapter = new DeepSeekAdapter("sk-test");

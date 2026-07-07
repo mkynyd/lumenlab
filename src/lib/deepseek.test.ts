@@ -38,7 +38,7 @@ describe("streamChat", () => {
     vi.clearAllMocks();
   });
 
-  it("strips XML tool calls from content and exposes them after stream consumption", async () => {
+  it("captures raw XML/DSML tool markup while keeping the streamed output sanitized", async () => {
     async function* anthropicEvents() {
       yield {
         type: "message_start",
@@ -71,9 +71,50 @@ describe("streamChat", () => {
 
     expect(body).toContain("先检查资料。");
     expect(body).not.toContain("<tool_calls>");
+    expect(body).not.toContain("invoke name");
+    expect(result.getToolCalls()).toEqual([]);
+    expect(result.getRawContent()).toContain(
+      '<tool_calls><invoke name="project_files.list">'
+    );
+  });
+
+  it("captures native tool_use blocks from the stream", async () => {
+    async function* anthropicEvents() {
+      yield {
+        type: "message_start",
+        message: { usage: { input_tokens: 3 } },
+      };
+      yield {
+        type: "content_block_start",
+        content_block: { type: "tool_use", id: "tu-1", name: "project_files.list" },
+      };
+      yield {
+        type: "content_block_delta",
+        delta: { type: "input_json_delta", partial_json: '{"projectId":"project-1"}' },
+      };
+      yield {
+        type: "content_block_stop",
+      };
+      yield {
+        type: "message_delta",
+        usage: { output_tokens: 4 },
+      };
+    }
+    mocks.create.mockResolvedValue(anthropicEvents());
+
+    const result = await streamChat("sk-test", {
+      model: "deepseek-v4-pro",
+      messages: [
+        { role: "system", content: "sys" },
+        { role: "user", content: "hi" },
+      ],
+    });
+
+    await readStreamText(result.stream);
+
     expect(result.getToolCalls()).toEqual([
       {
-        id: "dsml-project_files.list-1",
+        id: "tu-1",
         name: "project_files.list",
         input: { projectId: "project-1" },
       },

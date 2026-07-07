@@ -61,7 +61,7 @@ function contentBlockForAttachment(attachment: ServerFileAttachment) {
 }
 
 function applyAttachmentsToLastUserMessage(
-  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  messages: Array<{ role: "user" | "assistant"; content: string | unknown }>,
   attachments: ServerFileAttachment[]
 ) {
   if (attachments.length === 0) return messages;
@@ -76,13 +76,17 @@ function applyAttachmentsToLastUserMessage(
 
   return messages.map((message, index) => {
     if (index !== lastUserIndex) return message;
+    const text =
+      typeof message.content === "string"
+        ? message.content || "请阅读附件并回答。"
+        : "请阅读附件并回答。";
     return {
       ...message,
       content: [
-        { type: "text", text: message.content || "请阅读附件并回答。" },
+        { type: "text", text },
         ...attachments.map(contentBlockForAttachment),
       ],
-    } as never;
+    } as (typeof messages)[number];
   });
 }
 
@@ -134,7 +138,7 @@ export async function streamMiniMaxChat(
       messages: applyAttachmentsToLastUserMessage(
         history,
         params.attachments || []
-      ),
+      ) as unknown as Anthropic.Messages.MessageParam[],
       stream: true,
     });
   } catch (error) {

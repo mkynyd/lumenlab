@@ -1,14 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
-import {
-  extractDsmlToolCalls,
-  stripDsmlToolCalls,
-} from "@/lib/agent/dsml-parser";
+import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
 
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic";
 
+export type DeepSeekContentBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+  | { type: "tool_result"; tool_use_id: string; content: string };
+
 export interface DeepSeekMessage {
   role: string;
-  content: string;
+  content: string | DeepSeekContentBlock[];
   reasoning_content?: string;
 }
 
@@ -40,6 +42,8 @@ interface StreamResult {
   stream: ReadableStream<Uint8Array>;
   getUsage: () => DeepSeekUsage | null;
   getToolCalls: () => ToolUseBlock[];
+  getRawContent: () => string;
+  getRawReasoning: () => string;
 }
 
 export const DEEPSEEK_ERROR_MAP: Record<number, string> = {
@@ -78,14 +82,18 @@ function createClient(apiKey: string) {
 function splitMessages(messages: DeepSeekMessage[]) {
   const system = messages
     .filter((message) => message.role === "system")
-    .map((message) => message.content)
+    .map((message) =>
+      typeof message.content === "string" ? message.content : ""
+    )
     .join("\n\n");
 
   const history = messages
     .filter((message) => message.role === "user" || message.role === "assistant")
     .map((message) => ({
       role: message.role as "user" | "assistant",
-      content: message.content,
+      content: message.content as unknown as
+        | string
+        | Anthropic.Messages.ContentBlockParam[],
     }));
 
   return { system, history };
@@ -170,13 +178,15 @@ export async function completeChat(
       ...(params.tool_choice ? { tool_choice: params.tool_choice as any } : {}),
     });
 
-    const content = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => (block.type === "text" ? block.text : ""))
-      .join("")
-      .trim();
+    const content = sanitizeModelText(
+      response.content
+        .filter((block) => block.type === "text")
+        .map((block) => (block.type === "text" ? block.text : ""))
+        .join("")
+        .trim()
+    );
 
-    const reasoningContent = stripDsmlToolCalls(
+    const reasoningContent = sanitizeModelText(
       response.content
         .filter((block) => block.type === "thinking")
         .map((block) => (block.type === "thinking" ? block.thinking : ""))
@@ -256,9 +266,10 @@ export async function streamChat(
   // Track current tool_use block being built
   let currentToolUse: { id: string; name: string; inputJson: string } | null = null;
 
-  // Reasoning models may emit tool-call-like markup (DSML) inside thinking.
-  // We accumulate the raw reasoning so we can strip the markup from the UI
-  // and recover any implied tool calls at the end of the stream.
+  // Reasoning models may emit tool-call-like markup inside thinking/content.
+  // We accumulate the raw text so we can sanitize it before streaming to the UI.
+  // Actual tool calls come from native tool_use blocks; pseudo markup is handled
+  // and cleaned by the route-level parser.
   let rawReasoning = "";
   let cleanedReasoningStreamed = "";
   let rawContent = "";
@@ -282,19 +293,6 @@ export async function streamChat(
             name: currentToolUse.name,
             input,
           });
-
-          // Emit tool call event to frontend
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                tool_call: {
-                  id: currentToolUse.id,
-                  name: currentToolUse.name,
-                  input,
-                },
-              })}\n\n`
-            )
-          );
         } catch {
           // Invalid JSON — skip this tool call
         }
@@ -340,7 +338,7 @@ export async function streamChat(
               currentToolUse.inputJson += delta.partial_json;
             } else if (delta.type === "text_delta") {
               rawContent += delta.text || "";
-              const cleanedContent = stripDsmlToolCalls(rawContent);
+              const cleanedContent = sanitizeModelText(rawContent);
               const newCleaned = cleanedContent.slice(cleanedContentStreamed.length);
               cleanedContentStreamed = cleanedContent;
               if (newCleaned) {
@@ -354,7 +352,7 @@ export async function streamChat(
               }
             } else if (delta.type === "thinking_delta") {
               rawReasoning += delta.thinking || "";
-              const cleanedReasoning = stripDsmlToolCalls(rawReasoning);
+              const cleanedReasoning = sanitizeModelText(rawReasoning);
               const newCleaned = cleanedReasoning.slice(cleanedReasoningStreamed.length);
               cleanedReasoningStreamed = cleanedReasoning;
               if (newCleaned) {
@@ -382,28 +380,6 @@ export async function streamChat(
           flushToolUse();
         }
 
-        // Fallback: some reasoning models emit tool-call-like markup inside
-        // thinking content instead of native tool_use blocks. Extract those
-        // calls so the route can execute them and get a real answer.
-        if (toolCalls.length === 0 && (rawReasoning || rawContent)) {
-          const dsmlCalls = extractDsmlToolCalls(`${rawReasoning}\n${rawContent}`);
-          for (let index = 0; index < dsmlCalls.length; index += 1) {
-            const call = dsmlCalls[index];
-            const mappedName = call.name === "web_search" ? "web.search" : call.name;
-            const toolUseBlock: ToolUseBlock = {
-              id: `dsml-${mappedName}-${index + 1}`,
-              name: mappedName,
-              input: call.input,
-            };
-            toolCalls.push(toolUseBlock);
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ tool_call: toolUseBlock })}\n\n`
-              )
-            );
-          }
-        }
-
         usage = {
           prompt_tokens: promptTokens,
           completion_tokens: completionTokens,
@@ -415,15 +391,6 @@ export async function streamChat(
           encoder.encode(`data: ${JSON.stringify({ usage })}\n\n`)
         );
 
-        // Emit tool calls summary
-        if (toolCalls.length > 0) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ tool_calls: toolCalls.map(tc => ({ id: tc.id, name: tc.name })) })}\n\n`
-            )
-          );
-        }
-
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       } catch (error) {
@@ -432,5 +399,11 @@ export async function streamChat(
     },
   });
 
-  return { stream, getUsage: () => usage, getToolCalls: () => toolCalls };
+  return {
+    stream,
+    getUsage: () => usage,
+    getToolCalls: () => toolCalls,
+    getRawContent: () => rawContent,
+    getRawReasoning: () => rawReasoning,
+  };
 }

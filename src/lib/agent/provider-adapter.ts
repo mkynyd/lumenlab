@@ -23,6 +23,9 @@ export interface AdapterStreamResult {
   stream: ReadableStream<Uint8Array>;
   getUsage: () => AdapterUsage | null;
   getToolCalls: () => ToolUseBlock[];
+  /** Optional unsanitized raw text for route-level XML/DSML fallback parsing. */
+  getRawContent?: () => string;
+  getRawReasoning?: () => string;
 }
 
 export interface AdapterStreamParams {
