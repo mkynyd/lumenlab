@@ -2,9 +2,10 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import DOMPurify from "dompurify";
-import { Download, Maximize } from "lucide-react";
+import { Check, Copy, Download, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MermaidViewer } from "@/components/chat/mermaid-viewer";
+import { copyText } from "@/lib/browser/copy-text";
 import { logger } from "@/lib/logger";
 
 interface MermaidBlockProps {
@@ -144,6 +145,7 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
   const [failed, setFailed] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [copiedSource, setCopiedSource] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -246,6 +248,18 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
     URL.revokeObjectURL(url);
   }
 
+  async function copySourceCode() {
+    try {
+      await copyText(code);
+      setCopiedSource(true);
+      window.setTimeout(() => setCopiedSource(false), 1_500);
+    } catch (err) {
+      logger.error("Mermaid 源码复制失败", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   if (isStreaming) {
     return (
       <pre data-render-state="pending" className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
@@ -258,8 +272,24 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
     return (
       <div
         data-render-state={failed ? "failed" : "pending"}
-        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+        className="relative rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
       >
+        <Button
+          type="button"
+          onClick={copySourceCode}
+          variant="ghost"
+          size="xs"
+          className="absolute right-2 top-2 bg-[var(--color-surface)]"
+          title={copiedSource ? "Mermaid 源码已复制" : "复制 Mermaid 源码"}
+          aria-label={copiedSource ? "Mermaid 源码已复制" : "复制 Mermaid 源码"}
+        >
+          {copiedSource ? (
+            <Check size={12} strokeWidth={2} />
+          ) : (
+            <Copy size={12} strokeWidth={2} />
+          )}
+          源码
+        </Button>
         <pre className="overflow-x-auto text-xs">
           <code className="language-mermaid">{code}</code>
         </pre>
@@ -290,6 +320,22 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
         aria-label="点击放大查看 Mermaid 图表"
       />
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <Button
+          type="button"
+          onClick={copySourceCode}
+          variant="ghost"
+          size="xs"
+          className="bg-[var(--color-surface)]"
+          title={copiedSource ? "Mermaid 源码已复制" : "复制 Mermaid 源码"}
+          aria-label={copiedSource ? "Mermaid 源码已复制" : "复制 Mermaid 源码"}
+        >
+          {copiedSource ? (
+            <Check size={12} strokeWidth={2} />
+          ) : (
+            <Copy size={12} strokeWidth={2} />
+          )}
+          源码
+        </Button>
         <Button
           type="button"
           onClick={() => setViewerOpen(true)}

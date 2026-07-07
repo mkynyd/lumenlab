@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import DOMPurify from "dompurify";
-import { Download, Maximize, Minus, Plus } from "lucide-react";
+import { Check, Copy, Download, Maximize, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
+import { copyText } from "@/lib/browser/copy-text";
 import { logger } from "@/lib/logger";
 
 interface MermaidViewerProps {
@@ -153,6 +154,7 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
+  const [copiedSource, setCopiedSource] = useState(false);
   // 用 state 记录上一次 open，避免在 render 中读取 ref 而触发 lint。
   const [prevOpen, setPrevOpen] = useState(open);
   const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
@@ -354,6 +356,18 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
     URL.revokeObjectURL(url);
   }
 
+  async function copySourceCode() {
+    try {
+      await copyText(code);
+      setCopiedSource(true);
+      window.setTimeout(() => setCopiedSource(false), 1_500);
+    } catch (err) {
+      logger.error("Mermaid 查看器源码复制失败", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
 
 
   return (
@@ -422,6 +436,22 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
           </Button>
 
           <div className="ml-auto flex items-center gap-1">
+            <Button
+              type="button"
+              onClick={copySourceCode}
+              variant="ghost"
+              size="sm"
+              className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              aria-label={copiedSource ? "Mermaid 源码已复制" : "复制 Mermaid 源码"}
+              title={copiedSource ? "Mermaid 源码已复制" : "复制 Mermaid 源码"}
+            >
+              {copiedSource ? (
+                <Check size={14} strokeWidth={2} className="mr-1.5" />
+              ) : (
+                <Copy size={14} strokeWidth={2} className="mr-1.5" />
+              )}
+              源码
+            </Button>
             <Button
               type="button"
               onClick={downloadPNG}
