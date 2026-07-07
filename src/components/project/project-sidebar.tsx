@@ -308,7 +308,7 @@ export function ProjectSidebar({
       {/* Tab: Files */}
       {sidebarTab === "files" && (
       <SidebarContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3">
-        <SidebarGroup className="flex min-h-0 shrink-0 flex-col px-0 py-1">
+        <SidebarGroup className="flex min-h-0 flex-1 flex-col px-0 py-1">
           <TooltipProvider delayDuration={500}>
             <ButtonGroup className="mb-2 grid w-full grid-cols-3 gap-1 [&>*]:rounded-[var(--radius-sm)]! [&>*]:border-0!">
               <ToolbarButton
@@ -424,7 +424,7 @@ export function ProjectSidebar({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <ScrollArea className="max-h-[44vh] min-h-0 w-full overflow-x-hidden">
+          <ScrollArea className="h-full min-h-0 w-full overflow-x-hidden">
             <div className="mb-2 px-0.5">
               <div className="flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--color-project-control)] px-2 h-7">
                 <Search width={12} height={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
