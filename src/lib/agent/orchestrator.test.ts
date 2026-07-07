@@ -141,6 +141,7 @@ describe("agent orchestrator loop controls", () => {
         profile: "rag",
         round: 4,
         history: [],
+        recentFailures: [],
       })
     ).toEqual({ stop: true, reason: "round_limit" });
   });
@@ -156,6 +157,7 @@ describe("agent orchestrator loop controls", () => {
         profile: "research",
         round: 2,
         history,
+        recentFailures: [],
       })
     ).toEqual({ stop: true, reason: "duplicate_tool_call" });
   });
@@ -171,6 +173,7 @@ describe("agent orchestrator loop controls", () => {
         profile: "workflow",
         round: 2,
         history,
+        recentFailures: [],
       })
     ).toEqual({ stop: true, reason: "no_progress" });
   });

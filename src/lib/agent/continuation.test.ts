@@ -55,7 +55,7 @@ describe("agent continuation loop", () => {
     expect(result.finalMessages.at(-1)?.content).toBe("B+ trees are balanced search trees.");
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0].title).toBe("第1章-绪论.pptx");
-    expect(result.stopReason).toBeNull();
+    expect(result.stopReason).toBe("model_ceased_calling_tools");
   });
 
   it("stops when the model returns no tool calls", async () => {
@@ -80,7 +80,7 @@ describe("agent continuation loop", () => {
     });
 
     expect(result.finalMessages.at(-1)?.content).toBe("Plain answer without tools.");
-    expect(result.stopReason).toBeNull();
+    expect(result.stopReason).toBe("model_ceased_calling_tools");
   });
 
   it("stops at the profile round limit", async () => {
