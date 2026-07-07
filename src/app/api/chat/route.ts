@@ -43,6 +43,7 @@ import { effectiveWebSearchActive } from "@/lib/chat/model-capabilities";
 import {
   buildPlannedToolCalls,
   executePlannedToolCalls,
+  toolResultProducedNewContent,
   type PlannedToolCall,
 } from "@/lib/agent/orchestrator";
 import { formatAgentEvent } from "@/lib/agent/event-stream";
@@ -413,6 +414,46 @@ function filterToolCallsByWhitelist(
     }
   }
   return { executable, blocked };
+}
+
+function toolCallKey(name: string, input: Record<string, unknown>) {
+  return `${name}:${JSON.stringify(input, Object.keys(input).sort())}`;
+}
+
+function addWrapUpInstruction(
+  messages: DeepSeekMessage[],
+  reason: string
+): DeepSeekMessage[] {
+  return [
+    ...messages,
+    {
+      role: "user",
+      content: [
+        `工具循环因以下原因提前终止：${reason}。`,
+        "请基于已经获得的工具结果，直接输出最终回答：",
+        "1. 当前已完成结果；",
+        "2. 未完成项（如果有）；",
+        "3. 被阻断或重复调用的原因（如果有）。",
+        "不要再调用新工具。",
+      ].join("\n"),
+    },
+  ];
+}
+
+function addRoundLimitInstruction(messages: DeepSeekMessage[]): DeepSeekMessage[] {
+  return [
+    ...messages,
+    {
+      role: "user",
+      content: [
+        "已达到工具调用上限。请基于已经获得的工具结果，输出最终回答：",
+        "1. 当前已完成结果；",
+        "2. 未完成项（如果有）；",
+        "3. 被阻断、重复调用或导致无法继续的原因（如果有）。",
+        "不要再调用新工具。",
+      ].join("\n"),
+    },
+  ];
 }
 
 function buildToolFollowUpMessages(
@@ -1169,22 +1210,28 @@ async function handlePost(request: NextRequest) {
     );
   }
 
-  // 11.5 Provider-agnostic streaming tool loop (max 2 rounds).
+  // 11.5 Provider-agnostic streaming tool loop (max 8 rounds).
   // Each round is fully buffered server-side so that pseudo tool markup never
   // leaks to the client. Native tool_use blocks are merged with XML/DSML
   // fallback parsing. Only whitelisted, structurally valid calls are executed;
   // malformed markup is sanitized away before replay/persistence.
+  // Duplicate tool calls are blocked; two consecutive no-progress rounds stop
+  // the loop early; at the round limit the model is asked to summarize
+  // completed results, pending items, and blockers.
   if (activeTools.length > 0) {
-    const MAX_TOOL_ROUNDS = 2;
+    const MAX_TOOL_ROUNDS = 8;
     const allowedToolNames = new Set(activeTools.map((t) => t.toolId));
-    let executedInLastRound = false;
+
+    const executedKeys = new Set<string>();
+    let previousRoundProducedNewContent = true;
+    let stopReason: string | null = null;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const buffered = await bufferSSEStream(streamResult.stream);
       streamResult = { ...streamResult, stream: buffered.stream };
 
-      const rawContent = streamResult.getRawContent?.() ?? "";
-      const rawReasoning = streamResult.getRawReasoning?.() ?? "";
+      const rawContent = streamResult.getRawContent();
+      const rawReasoning = streamResult.getRawReasoning();
       const nativeCalls = streamResult.getToolCalls();
       const parsedCalls = parseToolCalls(`${rawReasoning}\n${rawContent}`);
       const merged = mergeToolCalls(nativeCalls, parsedCalls);
@@ -1192,6 +1239,37 @@ async function handlePost(request: NextRequest) {
         merged,
         allowedToolNames
       );
+
+      // Block duplicate tool calls with the same arguments.
+      const dedupedExecutable: MergedToolCall[] = [];
+      for (const tc of executable) {
+        const key = toolCallKey(tc.name, tc.input);
+        if (executedKeys.has(key)) {
+          const executionId = tc.id.startsWith("parsed-")
+            ? `dup-${tc.name}`
+            : tc.id;
+          emitAgentEvent({
+            type: "tool_blocked",
+            executionId,
+            reasonCode: "DUPLICATE_CALL",
+            reason: `Tool ${tc.name} 重复调用已被阻断`,
+          });
+          recordAuditEvent({
+            userId,
+            conversationId: conversation.id,
+            toolId: tc.name,
+            eventType: "tool_blocked",
+            severity: "warn",
+            payload: {
+              reason: "duplicate_call",
+              input: tc.input,
+              source: tc.id.startsWith("parsed-") ? "parsed_fallback" : "native",
+            },
+          }).catch(() => {});
+        } else {
+          dedupedExecutable.push(tc);
+        }
+      }
 
       for (let i = 0; i < blocked.length; i++) {
         const tc = blocked[i];
@@ -1218,7 +1296,10 @@ async function handlePost(request: NextRequest) {
         }).catch(() => {});
       }
 
-      if (executable.length === 0) {
+      if (dedupedExecutable.length === 0) {
+        if (!previousRoundProducedNewContent) {
+          stopReason = "no_progress";
+        }
         break;
       }
 
@@ -1227,7 +1308,8 @@ async function handlePost(request: NextRequest) {
       });
 
       const toolResults: Array<{ toolUseId: string; content: string }> = [];
-      for (const tc of executable) {
+      let roundProducedNewContent = false;
+      for (const tc of dedupedExecutable) {
         const autoRun = await safeRunAutoTool(
           {
             userId,
@@ -1250,6 +1332,10 @@ async function handlePost(request: NextRequest) {
             toolUseId: tc.id,
             content: JSON.stringify(autoRun.summary),
           });
+          if (toolResultProducedNewContent(autoRun.summary)) {
+            roundProducedNewContent = true;
+          }
+          executedKeys.add(toolCallKey(tc.name, tc.input));
         } else if (autoRun.error && autoRun.error !== "approval_pending") {
           toolResults.push({
             toolUseId: tc.id,
@@ -1266,7 +1352,7 @@ async function handlePost(request: NextRequest) {
 
       messages = buildToolFollowUpMessages(
         messages,
-        executable,
+        dedupedExecutable,
         toolResults,
         rawContent
       );
@@ -1274,18 +1360,32 @@ async function handlePost(request: NextRequest) {
       try {
         if (!adapter) break;
 
-        if (round === MAX_TOOL_ROUNDS - 1) {
-          // Round limit reached: force a final no-tool completion.
+        if (!roundProducedNewContent && !previousRoundProducedNewContent) {
+          stopReason = "no_progress";
           streamResult = await adapter.stream({
             model,
-            messages,
+            messages: addWrapUpInstruction(
+              messages,
+              "连续两轮工具调用未产生新信息"
+            ),
             thinkingEnabled,
             reasoningEffort,
           });
-          executedInLastRound = true;
           break;
         }
 
+        if (round === MAX_TOOL_ROUNDS - 1) {
+          stopReason = "round_limit";
+          streamResult = await adapter.stream({
+            model,
+            messages: addRoundLimitInstruction(messages),
+            thinkingEnabled,
+            reasoningEffort,
+          });
+          break;
+        }
+
+        previousRoundProducedNewContent = roundProducedNewContent;
         streamResult = await adapter.stream({
           model,
           messages,
@@ -1299,11 +1399,8 @@ async function handlePost(request: NextRequest) {
       }
     }
 
-    if (executedInLastRound) {
-      // The final no-tool stream may still contain pseudo tool markup from a
-      // hallucinating model; deepseek.ts sanitizes content/reasoning, so we
-      // simply stream it without executing further tools.
-      void streamResult.getToolCalls;
+    if (stopReason && process.env.AGENT_DEBUG_EVENTS === "1") {
+      emitAgentEvent({ type: "tool_loop_stop_reason", reason: stopReason });
     }
   }
 

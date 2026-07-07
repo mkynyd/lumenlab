@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   projectFindFirst: vi.fn(),
+  projectFindUnique: vi.fn(),
+  fileFindFirst: vi.fn(),
   fileFindMany: vi.fn(),
   conversationFindFirst: vi.fn(),
   conversationCreate: vi.fn(),
@@ -37,8 +39,8 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/db", () => ({
   prisma: {
-    project: { findFirst: mocks.projectFindFirst },
-    fileAsset: { findMany: mocks.fileFindMany },
+    project: { findFirst: mocks.projectFindFirst, findUnique: mocks.projectFindUnique },
+    fileAsset: { findFirst: mocks.fileFindFirst, findMany: mocks.fileFindMany },
     conversation: {
       findFirst: mocks.conversationFindFirst,
       create: mocks.conversationCreate,
@@ -105,10 +107,14 @@ vi.mock("@/lib/tools/web/search-engine", () => ({
 }));
 
 import { accumulateAndSave, POST } from "@/app/api/chat/route";
+import { _internalForTesting as agentLoopInternal } from "@/lib/agent/conversation-loop";
 
 describe("POST /api/chat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.streamChat.mockReset();
+    mocks.streamMiniMaxChat.mockReset();
+    mocks.completeChat.mockReset();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
     mocks.projectFindFirst.mockResolvedValue({
       id: "project-1",
@@ -117,6 +123,14 @@ describe("POST /api/chat", () => {
       type: "experiment",
       description: null,
     });
+    mocks.projectFindUnique.mockResolvedValue({
+      id: "project-1",
+      userId: "user-1",
+      name: "实验项目",
+      type: "experiment",
+      description: null,
+    });
+    mocks.fileFindFirst.mockResolvedValue(null);
     mocks.fileFindMany.mockResolvedValue([]);
     mocks.getProviderApiKey.mockRejectedValue(
       new Error("当前账户没有可用的 Alpha 访问配置")
@@ -265,21 +279,9 @@ describe("POST /api/chat", () => {
       content: "你好",
       usage: null,
     });
-    mocks.streamChat.mockResolvedValue({
-      stream: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(
-            new TextEncoder().encode(
-              `data: ${JSON.stringify({ choices: [{ delta: { content: "你好" } }] })}\n\n`
-            )
-          );
-          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
-          controller.close();
-        },
-      }),
-      getUsage: () => ({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
-      getToolCalls: () => [],
-    });
+    mocks.streamChat.mockResolvedValue(
+      makeStreamResult({ deltas: [{ content: "你好" }] })
+    );
 
     try {
       const request = new NextRequest("http://localhost/api/chat", {
@@ -419,63 +421,31 @@ describe("POST /api/chat", () => {
       .mockResolvedValueOnce({ id: "user-message-1" })
       .mockResolvedValueOnce({ id: "assistant-message-1" });
 
-    let firstStreamConsumed = false;
-    const firstStream = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        firstStreamConsumed = true;
-        controller.enqueue(
-          new TextEncoder().encode(
-            `data: ${JSON.stringify({
-              choices: [
-                {
-                  delta: {
-                    content:
-                      "我先检查项目资料。\\n<tool_calls><invoke name=\"project_files.list\"><parameter name=\"projectId\">project-1</parameter></invoke></tool_calls>",
-                  },
-                },
-              ],
-            })}\n\n`
-          )
-        );
-        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
-        controller.close();
-      },
-    });
-
-    const finalStream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(
-          new TextEncoder().encode(
-            `data: ${JSON.stringify({
-              choices: [{ delta: { content: "最终论文提纲" } }],
-            })}\n\n`
-          )
-        );
-        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
-        controller.close();
-      },
-    });
-
     mocks.streamChat
-      .mockResolvedValueOnce({
-        stream: firstStream,
-        getUsage: () => ({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
-        getToolCalls: () =>
-          firstStreamConsumed
-            ? [
-                {
-                  id: "xml-project-files-list-1",
-                  name: "project_files.list",
-                  input: { projectId: "project-1" },
-                },
-              ]
-            : [],
-      })
-      .mockResolvedValueOnce({
-        stream: finalStream,
-        getUsage: () => ({ prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 }),
-        getToolCalls: () => [],
-      });
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [
+            {
+              content:
+                "我先检查项目资料。\n<tool_calls><invoke name=\"project_files.list\"><parameter name=\"projectId\">project-1</parameter></invoke></tool_calls>",
+            },
+          ],
+          rawContent:
+            "我先检查项目资料。\n<tool_calls><invoke name=\"project_files.list\"><parameter name=\"projectId\">project-1</parameter></invoke></tool_calls>",
+          toolCalls: [
+            {
+              id: "xml-project-files-list-1",
+              name: "project_files.list",
+              input: { projectId: "project-1" },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "最终论文提纲" }],
+        })
+      );
 
     try {
       const request = new NextRequest("http://localhost/api/chat", {
@@ -644,6 +614,10 @@ function makeSSEStream(
   });
 }
 
+function flushPromises(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 function makeStreamResult(options: {
   deltas: Array<{ content?: string; reasoning_content?: string }>;
   toolCalls?: { id: string; name: string; input: Record<string, unknown> }[];
@@ -668,6 +642,8 @@ function makeStreamResult(options: {
 describe("Streaming tool loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.streamChat.mockReset();
+    mocks.streamMiniMaxChat.mockReset();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
     mocks.projectFindFirst.mockResolvedValue({
       id: "project-1",
@@ -676,6 +652,14 @@ describe("Streaming tool loop", () => {
       type: "academic",
       description: null,
     });
+    mocks.projectFindUnique.mockResolvedValue({
+      id: "project-1",
+      userId: "user-1",
+      name: "实验项目",
+      type: "academic",
+      description: null,
+    });
+    mocks.fileFindFirst.mockResolvedValue(null);
     mocks.fileFindMany.mockResolvedValue([]);
     mocks.conversationCreate.mockResolvedValue({
       id: "conversation-1",
@@ -968,6 +952,7 @@ describe("Streaming tool loop", () => {
 
       expect(response.status).toBe(200);
       expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+      await flushPromises();
       expect(mocks.agentAuditLogCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -986,40 +971,39 @@ describe("Streaming tool loop", () => {
     }
   });
 
-  it("stops after 2 tool rounds and still produces a final answer", async () => {
+  it("stops at the 8-round tool limit and asks for a wrap-up answer", async () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    mocks.streamChat
-      .mockResolvedValueOnce(
+    mocks.fileFindFirst.mockResolvedValue({
+      id: "file-1",
+      originalName: "示例.md",
+      mimeType: "text/markdown",
+      status: "ready",
+      textContent: "示例内容",
+      enhancedContent: "",
+    });
+
+    const chain = mocks.streamChat;
+    for (let i = 0; i < 8; i++) {
+      chain.mockResolvedValueOnce(
         makeStreamResult({
-          deltas: [{ content: "第1轮：列出文件。" }],
+          deltas: [{ content: `第${i + 1}轮：读取文件。` }],
           toolCalls: [
             {
-              id: "tu-list",
-              name: "project_files.list",
-              input: { projectId: "project-1" },
-            },
-          ],
-        })
-      )
-      .mockResolvedValueOnce(
-        makeStreamResult({
-          deltas: [{ content: "第2轮：读取文件。" }],
-          toolCalls: [
-            {
-              id: "tu-read",
+              id: `tu-read-${i}`,
               name: "project_files.read",
-              input: { projectId: "project-1", fileId: "file-1" },
+              input: { projectId: "project-1", fileId: `file-${i}` },
             },
           ],
-        })
-      )
-      .mockResolvedValueOnce(
-        makeStreamResult({
-          deltas: [{ content: "最终回答" }],
         })
       );
+    }
+    chain.mockResolvedValueOnce(
+      makeStreamResult({
+        deltas: [{ content: "已输出总结" }],
+      })
+    );
 
     try {
       const response = await POST(
@@ -1040,10 +1024,180 @@ describe("Streaming tool loop", () => {
 
       expect(response.status).toBe(200);
       const body = await response.text();
+      expect(body).toContain("已输出总结");
+      expect(mocks.streamChat).toHaveBeenCalledTimes(9);
+      expect(mocks.toolExecutionCreate).toHaveBeenCalledTimes(8);
+
+      const lastCall = mocks.streamChat.mock.calls[8];
+      const lastRequest = lastCall[1] as { messages: Array<{ role: string; content: string | unknown }> };
+      const messagesText = JSON.stringify(lastRequest.messages);
+      expect(messagesText).toContain("已达到工具调用上限");
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("blocks duplicate tool calls with the same arguments", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    mocks.fileFindMany.mockResolvedValue([
+      {
+        id: "file-1",
+        originalName: "示例.md",
+        mimeType: "text/markdown",
+        size: 2048,
+        status: "ready",
+        category: "document",
+        createdAt: new Date("2026-07-07T00:00:00.000Z"),
+      },
+    ]);
+
+    mocks.streamChat
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "第1轮：列出文件。" }],
+          toolCalls: [
+            {
+              id: "tu-list",
+              name: "project_files.list",
+              input: { projectId: "project-1" },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "最终回答" }],
+          toolCalls: [
+            {
+              id: "tu-list-dup",
+              name: "project_files.list",
+              input: { projectId: "project-1" },
+            },
+          ],
+        })
+      );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "列出项目资料",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain("最终回答");
+      expect(body).toContain("tool_blocked");
+      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.toolExecutionCreate).toHaveBeenCalledTimes(1);
+
+      await flushPromises();
+      expect(mocks.agentAuditLogCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            eventType: "tool_blocked",
+            toolId: "project_files.list",
+            payload: expect.objectContaining({ reason: "duplicate_call" }),
+          }),
+        })
+      );
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("stops early when two consecutive rounds produce no new content", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    const runAutoToolSpy = vi
+      .spyOn(agentLoopInternal, "runAutoTool")
+      .mockResolvedValue({
+        status: "succeeded",
+        summary: { error: "NO_RESULTS" },
+      });
+
+    mocks.streamChat
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "第1轮：列出文件。" }],
+          toolCalls: [
+            {
+              id: "tu-list-1",
+              name: "project_files.list",
+              input: { projectId: "project-1", round: 1 },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "第2轮：再次列出文件。" }],
+          toolCalls: [
+            {
+              id: "tu-list-2",
+              name: "project_files.list",
+              input: { projectId: "project-1", round: 2 },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "最终回答" }],
+        })
+      );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "列出项目资料",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
       expect(body).toContain("最终回答");
       expect(mocks.streamChat).toHaveBeenCalledTimes(3);
-      expect(mocks.toolExecutionCreate).toHaveBeenCalledTimes(2);
+
+      const wrapUpCall = mocks.streamChat.mock.calls[2];
+      const wrapUpRequest = wrapUpCall[1] as {
+        messages: Array<{ role: string; content: string | unknown }>;
+      };
+      const messagesText = JSON.stringify(wrapUpRequest.messages);
+      expect(messagesText).toContain("连续两轮工具调用未产生新信息");
     } finally {
+      runAutoToolSpy.mockRestore();
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;
       } else {
