@@ -141,6 +141,7 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
           startOnLoad: false,
           securityLevel: "antiscript",
           suppressErrorRendering: true,
+          flowchart: { htmlLabels: false },
           ...resolveMermaidTheme(),
         });
         const { svg: renderedSvg } = await mermaid.render(id, code);
