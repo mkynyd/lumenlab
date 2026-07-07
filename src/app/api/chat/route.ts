@@ -46,6 +46,7 @@ import {
   toolResultProducedNewContent,
   type PlannedToolCall,
 } from "@/lib/agent/orchestrator";
+import { prefetchProjectMaterialForQuickTask } from "@/lib/rag/project-material-prefetch";
 import { formatAgentEvent } from "@/lib/agent/event-stream";
 import { skillRegistry } from "@/lib/agent/skill-registry";
 import { toolRegistry } from "@/lib/agent/tool-registry";
@@ -550,6 +551,7 @@ async function handlePost(request: NextRequest) {
     manualSkillId,
     skillOff,
     isQuickTask,
+    materialScope,
   } = body;
   const attachmentText = await textAttachmentContext(attachments);
   const effectivePrompt = [
@@ -619,8 +621,44 @@ async function handlePost(request: NextRequest) {
   let retrievedContext = "";
   let contextNotice: string | null = null;
   let legacySources: AgentSource[] = [];
+  let quickTaskMaterialContext = "";
+  let quickTaskMaterialSources: AgentSource[] = [];
+  const projectMaterialQuickTask = Boolean(
+    project && isQuickTask && materialScope !== "none"
+  );
 
-  if (project && !agentOrchestratorEnabled) {
+  if (projectMaterialQuickTask && project) {
+    const prefetch = await prefetchProjectMaterialForQuickTask({
+      userId,
+      projectId: project.id,
+      selectedFileIds: uniqueFileIds,
+      prompt: effectivePrompt,
+    });
+    if (prefetch.status !== "ok") {
+      return NextResponse.json({ error: prefetch.message }, { status: 400 });
+    }
+    quickTaskMaterialContext = prefetch.context;
+    quickTaskMaterialSources = prefetch.sources.map((source) => ({
+      type: "project_file" as const,
+      title: source.title,
+      fileId: source.fileAssetId,
+      snippet: source.snippet,
+      metadata: {
+        mode: "quick-task-prefetch",
+        selectedOnly: prefetch.selectedOnly,
+        readableFileCount: prefetch.readableFileCount,
+        totalCandidateFileCount: prefetch.totalCandidateFileCount,
+      },
+    }));
+    logger.debug("quick task material prefetch", {
+      projectId: project.id,
+      selectedOnly: prefetch.selectedOnly,
+      readableFileCount: prefetch.readableFileCount,
+      totalCandidateFileCount: prefetch.totalCandidateFileCount,
+    });
+  }
+
+  if (project && !agentOrchestratorEnabled && !projectMaterialQuickTask) {
 
     if (shouldUseProjectContext(effectivePrompt, uniqueFileIds, isQuickTask)) {
       const retrieval = await retrieveProjectContext({
@@ -745,7 +783,9 @@ async function handlePost(request: NextRequest) {
     webSearchActive: manualWebSearchActive,
     manualSkillId: manualSkillId || null,
     skillOff: skillOff || false,
-    skillDisabled: conversation.skillDisabled || false,
+    skillDisabled: projectMaterialQuickTask
+      ? true
+      : conversation.skillDisabled || false,
     isQuickTask: isQuickTask || false,
   });
   webSearchActive =
@@ -790,11 +830,17 @@ async function handlePost(request: NextRequest) {
   });
 
   // Build the active tool allowlist from the real tool registry.
-  const activeTools = buildAllowedTools({
-    projectId: project?.id,
-    webSearchActive,
-    activeSkillId: skillRoute.activeSkillId,
-  });
+  const activeTools = projectMaterialQuickTask
+    ? buildAllowedTools({
+        projectId: undefined,
+        webSearchActive,
+        activeSkillId: null,
+      }).filter((tool) => tool.toolId === "web.search" || tool.toolId === "web.fetch")
+    : buildAllowedTools({
+        projectId: project?.id,
+        webSearchActive,
+        activeSkillId: skillRoute.activeSkillId,
+      });
 
   // Some providers only support a subset of tools natively. The rest are
   // exposed via XML/DSML instructions in the system prompt.
@@ -977,8 +1023,17 @@ async function handlePost(request: NextRequest) {
   });
 
   let orchestratorToolContext = "";
-  let orchestratorSources: AgentSource[] = manualWebSources;
-  if (agentOrchestratorEnabled) {
+  let orchestratorSources: AgentSource[] = [
+    ...quickTaskMaterialSources,
+    ...manualWebSources,
+  ];
+  if (agentOrchestratorEnabled && quickTaskMaterialSources.length > 0) {
+    emitAgentEvent({
+      type: "sources_updated",
+      sources: quickTaskMaterialSources,
+    });
+  }
+  if (agentOrchestratorEnabled && !projectMaterialQuickTask) {
     const plannedCalls = buildPlannedToolCalls({
       prompt: effectivePrompt,
       profile: skillRoute.profile,
@@ -1039,7 +1094,10 @@ async function handlePost(request: NextRequest) {
   }
 
   // 10. 构建 DeepSeek 消息数组（system prompt 在最前）
-  const toolContext = [manualWebContext, orchestratorToolContext]
+  const materialContext = quickTaskMaterialContext
+    ? `# 项目资料\n\n${quickTaskMaterialContext}`
+    : "";
+  const toolContext = [materialContext, manualWebContext, orchestratorToolContext]
     .filter(Boolean)
     .join("\n\n");
   const userPromptWithTools = toolContext

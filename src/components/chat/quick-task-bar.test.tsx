@@ -15,10 +15,13 @@ describe("QuickTaskBar", () => {
     );
 
     expect(onSend).toHaveBeenCalledOnce();
-    expect(onSend).toHaveBeenCalledWith({
-      label: "快捷任务：生成实验报告",
-      prompt: expect.stringContaining("基于我选中的资料"),
-    });
+    expect(onSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "快捷任务：生成实验报告",
+        materialScope: "project-corpus",
+        prompt: expect.stringContaining("基于我选中的资料"),
+      })
+    );
   });
 
   it("includes the report code explanation task for coding projects", () => {

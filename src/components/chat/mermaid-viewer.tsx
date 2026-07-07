@@ -93,6 +93,20 @@ function parseSvgLength(value: string | null) {
   return Number.parseFloat(trimmed);
 }
 
+function normalizeExportSize(width: number, height: number) {
+  const aspectRatio = width / Math.max(height, 1);
+  if (aspectRatio <= 8) return { width, height };
+
+  const minReadableHeight = 320;
+  const maxCanvasWidth = 12_000;
+  const targetHeight = Math.max(height, minReadableHeight);
+  const targetWidth = Math.min(Math.ceil(targetHeight * aspectRatio), maxCanvasWidth);
+  return {
+    width: targetWidth,
+    height: Math.ceil(targetWidth / aspectRatio),
+  };
+}
+
 function getSvgExportSource(svgText: string, container: HTMLDivElement | null) {
   const renderedSvg = container?.querySelector("svg");
   if (!renderedSvg) {
@@ -104,19 +118,20 @@ function getSvgExportSource(svgText: string, container: HTMLDivElement | null) {
 
   const viewBoxSize = getViewBoxSize(clone);
   const rect = renderedSvg.getBoundingClientRect();
-  const width =
+  const naturalWidth =
+    viewBoxSize?.width ||
     parseSvgLength(clone.getAttribute("width")) ||
     Math.ceil(rect.width) ||
-    viewBoxSize?.width ||
     800;
-  const height =
+  const naturalHeight =
+    viewBoxSize?.height ||
     parseSvgLength(clone.getAttribute("height")) ||
     Math.ceil(rect.height) ||
-    viewBoxSize?.height ||
     600;
+  const { width, height } = normalizeExportSize(naturalWidth, naturalHeight);
 
   if (!clone.getAttribute("viewBox")) {
-    clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    clone.setAttribute("viewBox", `0 0 ${naturalWidth} ${naturalHeight}`);
   }
   clone.setAttribute("width", String(width));
   clone.setAttribute("height", String(height));
@@ -443,7 +458,7 @@ export function MermaidViewer({ code, open, onOpenChange }: MermaidViewerProps) 
           {svg ? (
             <div
               ref={containerRef}
-              className="flex h-full w-full items-center justify-center p-4"
+              className="flex h-full w-full items-center justify-center p-4 [&_svg]:h-auto [&_svg]:max-w-none [&_svg]:min-h-[320px]"
               style={{
                 transform: `scale(${scale}) translate(${position.x / scale}px, ${position.y / scale}px)`,
                 transformOrigin: "center center",

@@ -179,6 +179,9 @@ export default function ProjectDetailPage() {
   }, [agentSession.activeSkill?.skillId]);
 
   function withSkillSelection(input: SendMessageInput): SendMessageInput {
+    if (input.isQuickTask && input.materialScope !== "none") {
+      return { ...input, skillOff: true, materialScope: "project-corpus" };
+    }
     if (skillValue === "off") {
       return { ...input, skillOff: true };
     }
@@ -445,6 +448,7 @@ export default function ProjectDetailPage() {
         content: input.label,
         hiddenPrompt: input.prompt,
         isQuickTask: true,
+        materialScope: input.materialScope ?? "project-corpus",
       })
     );
   }

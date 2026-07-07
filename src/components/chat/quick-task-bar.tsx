@@ -16,12 +16,14 @@ export interface QuickTaskAction {
   prompt: string;
   isSystem?: boolean;
   sortOrder?: number;
+  materialScope?: "project-corpus" | "none";
 }
 
 export interface QuickTaskSendInput {
   label: string;
   prompt: string;
   quickActionId?: string;
+  materialScope?: "project-corpus" | "none";
 }
 
 interface QuickTaskBarProps {
@@ -58,6 +60,7 @@ function ActionButton({
           label: `快捷任务：${action.title}`,
           prompt: action.prompt,
           quickActionId: action.id,
+          materialScope: action.materialScope ?? "project-corpus",
         })
       }
       disabled={disabled}

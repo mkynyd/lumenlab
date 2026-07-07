@@ -315,6 +315,91 @@ describe("POST /api/chat", () => {
     }
   });
 
+  it("prefetches the full project corpus for quick tasks even when no files are selected", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "1";
+    mocks.getProviderApiKey.mockResolvedValue("sk-test");
+    mocks.fileFindMany.mockResolvedValueOnce([
+      {
+        id: "file-1",
+        originalName: "网络安全实习指导书.md",
+        category: "讲义",
+        categoryConfidence: 1,
+        status: "parsed",
+        textContent: "实验一 使用 Nmap 进行端口扫描并记录开放端口。",
+        enhancedContent: null,
+        processingMetadata: {
+          summary: "Nmap 端口扫描实验",
+          keywords: ["Nmap", "端口扫描"],
+        },
+      },
+    ]);
+    mocks.conversationCreate.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      projectId: "project-1",
+      model: "deepseek-v4-pro",
+      modelLock: null,
+      thinkingEnabled: true,
+      activeSkillId: "code-reader",
+      skillDisabled: false,
+    });
+    mocks.messageCreate
+      .mockResolvedValueOnce({ id: "user-message-1" })
+      .mockResolvedValueOnce({ id: "assistant-message-1" });
+    mocks.streamChat.mockResolvedValue(
+      makeStreamResult({ deltas: [{ content: "已生成逻辑图" }] })
+    );
+
+    try {
+      const request = new NextRequest("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "快捷任务：生成 Mermaid 逻辑图",
+          hiddenPrompt: "请基于项目资料生成 Mermaid flowchart LR",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: true,
+          reasoningEffort: "max",
+          projectId: "project-1",
+          selectedFileIds: [],
+          mode: "review",
+          isQuickTask: true,
+          materialScope: "project-corpus",
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(body).toContain("sources_updated");
+      expect(mocks.retrieveProjectContext).not.toHaveBeenCalled();
+      expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+
+      const firstCall = mocks.streamChat.mock.calls[0];
+      const streamRequest = firstCall[1] as {
+        messages: Array<{ role: string; content: string }>;
+        tools?: Array<{ function?: { name?: string }; name?: string }>;
+      };
+      const userMessage = streamRequest.messages.find((m) => m.role === "user");
+      expect(userMessage?.content).toContain("项目资料预取结果");
+      expect(userMessage?.content).toContain("当前项目内全部 1 份可读资料");
+      expect(userMessage?.content).toContain("实验一 使用 Nmap");
+      const toolNames = (streamRequest.tools ?? []).map(
+        (tool) => tool.function?.name ?? tool.name
+      );
+      expect(toolNames).not.toContain("project_rag.search");
+      expect(toolNames).not.toContain("project_files.read");
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
   it("prefetches web search context for MiniMax manual web search", async () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";

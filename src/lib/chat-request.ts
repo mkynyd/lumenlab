@@ -14,6 +14,7 @@ export interface ChatRequestInput {
   manualSkillId?: string;
   skillOff?: boolean;
   isQuickTask?: boolean;
+  materialScope?: "project-corpus" | "none";
 }
 
 export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput {
@@ -51,6 +52,10 @@ export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput 
 
   if (input.isQuickTask) {
     body.isQuickTask = true;
+  }
+
+  if (input.materialScope) {
+    body.materialScope = input.materialScope;
   }
 
   return body;

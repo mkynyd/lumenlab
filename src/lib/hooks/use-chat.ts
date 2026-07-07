@@ -64,6 +64,7 @@ export interface SendMessageInput {
   manualSkillId?: string;
   skillOff?: boolean;
   isQuickTask?: boolean;
+  materialScope?: "project-corpus" | "none";
 }
 
 interface UseChatOptions {
@@ -222,6 +223,7 @@ export function useChat(options: UseChatOptions = {}) {
           manualSkillId: input.manualSkillId,
           skillOff: input.skillOff,
           isQuickTask: input.isQuickTask,
+          materialScope: input.materialScope,
         });
         const fetchOptions: RequestInit = {
           method: "POST",
