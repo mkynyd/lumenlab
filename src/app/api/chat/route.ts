@@ -18,7 +18,10 @@ import {
 } from "@/lib/chat/router";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { assembleSystemPrompt } from "@/lib/classification";
-import { ensureDiscovery } from "@/lib/skills/registry";
+import {
+  ensureDiscovery,
+  DEEPSEEK_WEB_SEARCH_TYPE,
+} from "@/lib/skills/registry";
 import {
   retrieveProjectContext,
   shouldUseProjectContext,
@@ -298,17 +301,21 @@ function buildDeepSeekAllowedTools(input: {
 function toAnthropicToolPayload(
   tools: ToolMetadata[]
 ): Array<{
-  type: "tool";
+  type: string;
   name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
+  description?: string;
+  input_schema?: Record<string, unknown>;
 }> {
-  return tools.map((tool) => ({
-    type: "tool",
-    name: tool.toolId,
-    description: tool.description,
-    input_schema: tool.inputSchema,
-  }));
+  // DeepSeek 的 Anthropic 兼容层目前只接受内置的 web_search 工具；
+  // 其它工具通过 XML/DSML fallback 在 route 层解析执行，不在这里发送。
+  return tools
+    .filter((tool) => tool.toolId === "web.search")
+    .map((tool) => ({
+      type: DEEPSEEK_WEB_SEARCH_TYPE,
+      name: "web_search",
+      description: tool.description,
+      input_schema: tool.inputSchema,
+    }));
 }
 
 function mergeToolCalls(
