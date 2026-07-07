@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  isArtifactContentSavable,
+  suggestArtifactTitle,
+} from "@/lib/artifacts/content";
 
 const ARTIFACT_TYPES = [
   "experiment_report",
@@ -114,6 +118,7 @@ export async function POST(
   }
 
   let messageSources: unknown = null;
+  let messageContent: string | null = null;
   if (parsed.data.messageId) {
     const message = await prisma.message.findFirst({
       where: {
@@ -121,13 +126,26 @@ export async function POST(
         role: "assistant",
         conversation: { userId, projectId },
       },
-      select: { sources: true },
+      select: { content: true, sources: true },
     });
     if (!message) {
       return NextResponse.json({ error: "关联消息无效" }, { status: 400 });
     }
+    messageContent = message.content;
     messageSources = message.sources;
   }
+
+  const content = messageContent ?? parsed.data.content;
+  if (!isArtifactContentSavable(content)) {
+    return NextResponse.json(
+      { error: "这条回复还不是可保存成果，请等待 Skill 输出完成后再保存" },
+      { status: 400 }
+    );
+  }
+
+  const title =
+    parsed.data.title?.trim() ||
+    suggestArtifactTitle(content, defaultTitle(parsed.data.type));
 
   const artifact = await prisma.artifact.create({
     data: {
@@ -135,9 +153,9 @@ export async function POST(
       projectId,
       conversationId: parsed.data.conversationId || null,
       messageId: parsed.data.messageId || null,
-      title: parsed.data.title || defaultTitle(parsed.data.type),
+      title,
       type: parsed.data.type,
-      content: parsed.data.content,
+      content,
       metadata: messageSources ? { sources: messageSources } : undefined,
     },
   });

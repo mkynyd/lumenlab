@@ -14,9 +14,17 @@ const qiniuImageSource = cspImageSourceFromDomain(process.env.QINIU_PRIVATE_DOMA
 const imageSources = ["'self'", "data:", "blob:", qiniuImageSource]
   .filter(Boolean)
   .join(" ");
+const scriptSources = [
+  "'self'",
+  "'unsafe-inline'",
+  process.env.NODE_ENV === "development" ? "'unsafe-eval'" : "",
+]
+  .filter(Boolean)
+  .join(" ");
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  devIndicators: false,
 
   // Allow the 300MB project file batch upload plus multipart overhead through the proxy.
   experimental: {
@@ -63,7 +71,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src ${imageSources}; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests`,
+              `default-src 'self'; script-src ${scriptSources}; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src ${imageSources}; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests`,
           },
         ],
       },

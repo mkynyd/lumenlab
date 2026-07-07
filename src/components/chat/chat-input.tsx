@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { SkillSelector, type SkillSelectorValue } from "@/components/chat/skill-selector";
 import { useMeasuredTextareaHeight } from "@/lib/hooks/use-measured-textarea-height";
+import { modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
 import {
   Tooltip,
   TooltipContent,
@@ -60,6 +61,7 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const currentValue = value ?? internalValue;
   const hasSendableContent = currentValue.trim().length > 0 || attachments.length > 0;
+  const webSearchSupported = modelSupportsWebSearch(model);
   const { ref: textareaRef, style: textareaStyle } = useMeasuredTextareaHeight({
     value: currentValue,
     minHeight: 36,
@@ -221,7 +223,7 @@ export function ChatInput({
                 compact
               />
             )}
-            {onWebSearchToggle && (
+            {onWebSearchToggle && webSearchSupported && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

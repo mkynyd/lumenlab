@@ -147,6 +147,42 @@ function ToolbarButton({
   );
 }
 
+function ProjectToolButton({
+  label,
+  meta,
+  children,
+  className,
+  ...props
+}: ComponentProps<typeof Button> & {
+  label: string;
+  meta?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      className={cn(
+        "h-9 min-w-0 justify-start gap-2 rounded-[var(--radius-sm)] border-0 px-2",
+        "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
+        "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]",
+        className
+      )}
+      aria-label={meta ? `${label}，${meta}` : label}
+      {...props}
+    >
+      <span className="shrink-0">{children}</span>
+      <span className="min-w-0 truncate text-xs font-medium">{label}</span>
+      {meta && (
+        <span className="ml-auto shrink-0 rounded-[var(--radius-xs)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">
+          {meta}
+        </span>
+      )}
+    </Button>
+  );
+}
+
 export function ProjectSidebar({
   project,
   selectedFileIds,
@@ -274,7 +310,7 @@ export function ProjectSidebar({
       <SidebarContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3">
         <SidebarGroup className="flex min-h-0 shrink-0 flex-col px-0 py-1">
           <TooltipProvider delayDuration={500}>
-            <ButtonGroup className="mb-2 grid w-full grid-cols-5 gap-1 [&>*]:rounded-[var(--radius-sm)]! [&>*]:border-0!">
+            <ButtonGroup className="mb-2 grid w-full grid-cols-3 gap-1 [&>*]:rounded-[var(--radius-sm)]! [&>*]:border-0!">
               <ToolbarButton
                 label={allSelected ? "取消全选" : "全选"}
                 onClick={allSelected ? onClearFileSelection : onSelectAllFiles}
@@ -296,40 +332,6 @@ export function ProjectSidebar({
                 onUploaded={onFileUploaded}
                 triggerClassName="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
               />
-              {onShowArtifacts && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="icon-sm"
-                      onClick={onShowArtifacts}
-                      className="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
-                      aria-label="成果库"
-                    >
-                      <Box3dCenter strokeWidth={2} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">成果库</TooltipContent>
-                </Tooltip>
-              )}
-              {onShowVectorLibrary && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="icon-sm"
-                      onClick={onShowVectorLibrary}
-                      className="h-8 w-full rounded-[var(--radius-sm)] border-0 bg-[var(--color-project-control)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]"
-                      aria-label="资料图谱"
-                    >
-                      <Network strokeWidth={2} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">资料图谱</TooltipContent>
-                </Tooltip>
-              )}
               <DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -381,6 +383,24 @@ export function ProjectSidebar({
                 </DropdownMenuContent>
               </DropdownMenu>
             </ButtonGroup>
+            {(onShowArtifacts || onShowVectorLibrary) && (
+              <div className="mb-2 grid grid-cols-2 gap-1">
+                {onShowArtifacts && (
+                  <ProjectToolButton
+                    label="成果库"
+                    meta={artifactCount > 0 ? String(artifactCount) : undefined}
+                    onClick={onShowArtifacts}
+                  >
+                    <Box3dCenter width={15} height={15} strokeWidth={2} />
+                  </ProjectToolButton>
+                )}
+                {onShowVectorLibrary && (
+                  <ProjectToolButton label="资料图谱" onClick={onShowVectorLibrary}>
+                    <Network width={15} height={15} strokeWidth={2} />
+                  </ProjectToolButton>
+                )}
+              </div>
+            )}
           </TooltipProvider>
           <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
             <AlertDialogContent>

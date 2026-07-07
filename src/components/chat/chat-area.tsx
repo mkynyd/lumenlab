@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useChat } from "@/lib/hooks/use-chat";
 import { useWebSearch } from "@/lib/hooks/use-web-search";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -17,6 +17,7 @@ import type { AgentEvent } from "@/lib/agent/types";
 import type { AgentSource } from "@/lib/agent/sources";
 import type { SkillSelectorValue } from "@/components/chat/skill-selector";
 import { cn } from "@/lib/utils";
+import { effectiveWebSearchActive, modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
 
 interface ChatAreaProps {
   initialConversationId?: string;
@@ -75,6 +76,14 @@ export function ChatArea({
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [userSkillValue, setUserSkillValue] = useState<SkillSelectorValue>("auto");
   const { webSearchActive, toggle: toggleWebSearch } = useWebSearch();
+  const canUseWebSearch = modelSupportsWebSearch(model);
+  const sendWithWebSearch = effectiveWebSearchActive(model, webSearchActive);
+
+  useEffect(() => {
+    if (!canUseWebSearch && webSearchActive) {
+      toggleWebSearch();
+    }
+  }, [canUseWebSearch, toggleWebSearch, webSearchActive]);
 
   // The selector reflects the user's manual choice when they picked one;
   // otherwise it tracks the skill the server reported as active.
@@ -92,7 +101,7 @@ export function ChatArea({
     const input: Parameters<typeof sendMessage>[0] = {
       content,
       attachments: files,
-      webSearchActive,
+      webSearchActive: sendWithWebSearch,
     };
     if (skillValue === "off") {
       input.skillOff = true;
@@ -107,7 +116,7 @@ export function ChatArea({
     void sendMessage({
       content: "继续",
       manualSkillId: skillId,
-      webSearchActive,
+      webSearchActive: sendWithWebSearch,
     });
   };
 
@@ -355,7 +364,7 @@ export function ChatArea({
         onModelChange={setModel}
         reasoningEffort={reasoningEffort}
         onReasoningEffortChange={setReasoningEffort}
-        webSearchActive={webSearchActive}
+        webSearchActive={sendWithWebSearch}
         onWebSearchToggle={toggleWebSearch}
         skillValue={skillValue}
         onSkillChange={handleSkillChange}

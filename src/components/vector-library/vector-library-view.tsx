@@ -36,7 +36,7 @@ const NODE_COLORS: Record<
   file: {
     fill: "var(--color-text-secondary)",
     stroke: "var(--color-text-secondary)",
-    text: "var(--color-bg)",
+    text: "var(--color-text-primary)",
   },
   chunk: {
     fill: "var(--color-border)",
@@ -119,11 +119,13 @@ export function VectorLibraryView({
       });
     svg.call(zoom as never);
 
-    const filteredNodes = graph.nodes.filter((n) => {
-      if (n.type === "chunk" && !showChunks) return false;
-      if (n.type === "topic" && !showTopics) return false;
-      return true;
-    });
+    const filteredNodes = graph.nodes
+      .filter((n) => {
+        if (n.type === "chunk" && !showChunks) return false;
+        if (n.type === "topic" && !showTopics) return false;
+        return true;
+      })
+      .map((n) => ({ ...n }));
 
     // Adaptive node scale based on viewport area and node count.
     // Larger viewports / fewer nodes -> bigger nodes; dense graphs -> smaller nodes.
@@ -152,6 +154,56 @@ export function VectorLibraryView({
     function labelMaxChars(d: VectorLibraryNode): number {
       if (d.type === "topic") return Math.max(4, Math.round(8 * Math.min(nodeScale * 1.2, 1.4)));
       return Math.max(6, Math.round(16 * Math.min(nodeScale * 1.15, 1.3)));
+    }
+
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const shortestSide = Math.max(1, Math.min(width, height));
+    const fileRingRadius = Math.max(96, Math.min(shortestSide * 0.24, 230));
+    const topicRingRadius = Math.max(
+      fileRingRadius + 150,
+      Math.min(shortestSide * 0.42, 390)
+    );
+    const chunkOrbitRadius = Math.max(44, Math.min(shortestSide * 0.08, 82));
+
+    const fileNodes = filteredNodes.filter((nodeData) => nodeData.type === "file");
+    const topicNodes = filteredNodes.filter((nodeData) => nodeData.type === "topic");
+    const fileNodeById = new Map(fileNodes.map((nodeData) => [nodeData.id, nodeData]));
+
+    function placeOnRing(
+      nodesToPlace: VectorLibraryNode[],
+      radius: number,
+      startAngle: number
+    ) {
+      const count = Math.max(1, nodesToPlace.length);
+      nodesToPlace.forEach((nodeData, index) => {
+        const angle = startAngle + (Math.PI * 2 * index) / count;
+        nodeData.x = centerX + Math.cos(angle) * radius;
+        nodeData.y = centerY + Math.sin(angle) * radius * 0.78;
+      });
+    }
+
+    placeOnRing(fileNodes, fileRingRadius, -Math.PI / 2);
+    placeOnRing(topicNodes, topicRingRadius, -Math.PI / 2 + Math.PI / Math.max(1, topicNodes.length));
+
+    filteredNodes
+      .filter((nodeData) => nodeData.type === "chunk")
+      .forEach((nodeData, index) => {
+        const parent = nodeData.fileId ? fileNodeById.get(nodeData.fileId) : null;
+        const angle = (nodeData.chunkIndex ?? index) * 1.618;
+        nodeData.x = (parent?.x ?? centerX) + Math.cos(angle) * chunkOrbitRadius;
+        nodeData.y = (parent?.y ?? centerY) + Math.sin(angle) * chunkOrbitRadius;
+      });
+
+    function collisionRadius(d: VectorLibraryNode): number {
+      const radius = scaledRadius(d);
+      if (d.type === "file") {
+        return radius + Math.max(40, fontSizeFor(d) * 3.2);
+      }
+      if (d.type === "topic") {
+        return radius + Math.max(34, fontSizeFor(d) * 2.8);
+      }
+      return radius + 6 + densityFactor * 7;
     }
 
     interface SimLink extends d3.SimulationLinkDatum<VectorLibraryNode> {
@@ -209,17 +261,32 @@ export function VectorLibraryView({
             d.type === "chunk" ? -16 * nodeScale : d.type === "file" ? chargeStrength : chargeStrength * 0.75
           )
       )
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("x", d3.forceX(width / 2).strength(0.035))
-      .force("y", d3.forceY(height / 2).strength(0.045))
+      .force("center", d3.forceCenter(centerX, centerY))
+      .force("x", d3.forceX(centerX).strength(0.028))
+      .force("y", d3.forceY(centerY).strength(0.032))
+      .force(
+        "radial",
+        d3
+          .forceRadial<VectorLibraryNode>(
+            (d) =>
+              d.type === "topic"
+                ? topicRingRadius
+                : d.type === "file"
+                  ? fileRingRadius
+                  : fileRingRadius + chunkOrbitRadius,
+            centerX,
+            centerY
+          )
+          .strength((d) => (d.type === "file" ? 0.16 : d.type === "topic" ? 0.1 : 0.035))
+      )
       .force(
         "collide",
         d3
           .forceCollide<VectorLibraryNode>()
-          .radius((d) => scaledRadius(d) + (d.type === "chunk" ? 5 : 12) + densityFactor * 7)
-          .iterations(3)
+          .radius(collisionRadius)
+          .iterations(5)
       )
-      .alphaDecay(0.018);
+      .alphaDecay(0.014);
 
     const defs = svg.append("defs");
     const nodeFilter = defs
@@ -359,7 +426,7 @@ export function VectorLibraryView({
       .style("pointer-events", "none")
       .text((d: VectorLibraryNode) => truncateLabel(d.label, labelMaxChars(d)));
 
-    simulation.on("tick", () => {
+    function renderTick() {
       link
         .attr("x1", (d: SimLink) => (d.source as VectorLibraryNode).x ?? 0)
         .attr("y1", (d: SimLink) => (d.source as VectorLibraryNode).y ?? 0)
@@ -370,7 +437,9 @@ export function VectorLibraryView({
         "transform",
         (d: VectorLibraryNode) => `translate(${(d.x ?? 0).toFixed(1)},${(d.y ?? 0).toFixed(1)})`
       );
-    });
+    }
+
+    simulation.on("tick", renderTick);
 
     simulation.on("end", () => {
       fitToView();
@@ -430,7 +499,7 @@ export function VectorLibraryView({
 
     // Fit the graph into the viewport with padding, avoiding the empty-right-edge
     // issue when the simulation drifts or the viewport is wide.
-    function fitToView(padding = 48) {
+    function fitToView(padding = 80) {
       const bounds = g.node()?.getBBox();
       if (!bounds || bounds.width === 0 || bounds.height === 0) return;
 
@@ -441,7 +510,7 @@ export function VectorLibraryView({
       const scale = Math.min(
         availableWidth / bounds.width,
         availableHeight / bounds.height,
-        1.6
+        1.15
       );
       const translateX = fullWidth / 2 - scale * (bounds.x + bounds.width / 2);
       const translateY = fullHeight / 2 - scale * (bounds.y + bounds.height / 2);
@@ -455,6 +524,10 @@ export function VectorLibraryView({
           d3.zoomIdentity.translate(translateX, translateY).scale(scale)
         );
     }
+
+    simulation.tick(Math.min(220, 80 + nodeCount));
+    renderTick();
+    fitToView();
 
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {

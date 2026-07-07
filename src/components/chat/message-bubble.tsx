@@ -27,6 +27,10 @@ import { Input } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import {
+  isArtifactContentSavable,
+  suggestArtifactTitle,
+} from "@/lib/artifacts/content";
 import type { AgentSource } from "@/lib/agent/sources";
 
 interface MessageBubbleProps {
@@ -158,13 +162,15 @@ function MessageBubbleComponent({
 }: MessageBubbleProps) {
   const [showReasoning, setShowReasoning] = useState(false);
   const [showSave, setShowSave] = useState(false);
-  const [title, setTitle] = useState("AI 成果");
+  const [title, setTitle] = useState(() => suggestArtifactTitle(content));
   const [type, setType] = useState("general");
   const [saving, setSaving] = useState(false);
   const isUser = role === "user";
   const isAssistant = role === "assistant";
   const hasReasoning = Boolean(reasoningContent?.trim());
   const shouldShowReasoning = isAssistant && (hasReasoning || isStreaming);
+  const canSaveArtifact =
+    isAssistant && !isStreaming && isArtifactContentSavable(content);
 
   if (!isUser && !isAssistant) return null;
 
@@ -268,7 +274,7 @@ function MessageBubbleComponent({
           <SkillFollowUpButtons onSkillFollowUp={onSkillFollowUp} />
         )}
 
-        {isAssistant && onSaveArtifact && id && !isStreaming && content && (
+        {canSaveArtifact && onSaveArtifact && id && (
           <div className="mt-2">
             <button
               type="button"

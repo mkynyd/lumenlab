@@ -32,6 +32,7 @@ import {
   recordTokenUsage,
 } from "@/lib/tokens";
 import { compressHistory, buildCompressedMessages } from "@/lib/chat/compression";
+import { effectiveWebSearchActive } from "@/lib/chat/model-capabilities";
 import {
   buildPlannedToolCalls,
   executePlannedToolCalls,
@@ -41,6 +42,7 @@ import { formatAgentEvent } from "@/lib/agent/event-stream";
 import { skillRegistry } from "@/lib/agent/skill-registry";
 import { runContinuationLoop } from "@/lib/agent/continuation";
 import type { AgentSource } from "@/lib/agent/sources";
+import { runWebSearch } from "@/lib/tools/web/search-engine";
 import type { Prisma } from "@/generated/prisma/client";
 import { validateUploadBatch } from "@/lib/files/file-upload-policy";
 import "@/lib/tools/registry";
@@ -65,6 +67,34 @@ function shouldPreInject(route: { source: string; confidence: number }): boolean
   if (route.source === "manual") return true;
   if (route.source === "rule" && route.confidence >= 0.85) return true;
   return false;
+}
+
+function formatManualWebContext(input: {
+  query: string;
+  summary: string;
+  sources: Array<{ url: string; title?: string }>;
+}) {
+  const sourceLines = input.sources.length
+    ? input.sources
+        .map((source, index) => {
+          const title = source.title || source.url;
+          return `${index + 1}. ${title}\n   ${source.url}`;
+        })
+        .join("\n")
+    : "无可用来源 URL";
+
+  return [
+    "# 联网搜索结果",
+    "",
+    `查询: ${input.query}`,
+    "",
+    input.summary || "未获得可用联网摘要。",
+    "",
+    "## 来源",
+    sourceLines,
+    "",
+    "请基于以上联网搜索结果回答。不要声称自己没有联网能力；如果联网结果不足，请明确说明不足之处。",
+  ].join("\n");
 }
 
 async function parseRequest(request: NextRequest): Promise<{
@@ -259,7 +289,11 @@ async function handlePost(request: NextRequest) {
   }
 
   const agentOrchestratorEnabled = isAgentOrchestratorEnabled();
-  let webSearchActive = body.webSearchActive === true;
+  const manualWebSearchActive = effectiveWebSearchActive(
+    model,
+    body.webSearchActive
+  );
+  let webSearchActive = manualWebSearchActive;
   const projectMode = mode || project?.type || "general";
 
   let systemPrompt = "";
@@ -390,14 +424,14 @@ async function handlePost(request: NextRequest) {
       name: file.originalName,
       mimeType: file.mimeType,
     })),
-    webSearchActive: body.webSearchActive,
+    webSearchActive: manualWebSearchActive,
     manualSkillId: manualSkillId || null,
     skillOff: skillOff || false,
     skillDisabled: conversation.skillDisabled || false,
     isQuickTask: isQuickTask || false,
   });
   webSearchActive =
-    body.webSearchActive === true ||
+    manualWebSearchActive ||
     (agentOrchestratorEnabled && skillRoute.webAccessRecommended);
 
   try {
@@ -450,6 +484,8 @@ async function handlePost(request: NextRequest) {
   const emitAgentEvent = (event: Parameters<typeof formatAgentEvent>[0]) => {
     agentEvents.push(formatAgentEvent(event));
   };
+  let manualWebContext = "";
+  let manualWebSources: AgentSource[] = [];
 
   if (agentOrchestratorEnabled) {
     emitAgentEvent({
@@ -462,13 +498,6 @@ async function handlePost(request: NextRequest) {
       emitAgentEvent({
         type: "skill_suggested",
         suggestions: skillRoute.suggestions,
-      });
-    }
-    if (webSearchActive && skillRoute.webAccessRecommended) {
-      emitAgentEvent({
-        type: "web_access_enabled",
-        mode: body.webSearchActive === true ? "manual" : "auto",
-        reason: skillRoute.reason,
       });
     }
     const skillData: Prisma.ConversationUpdateInput = {
@@ -525,6 +554,14 @@ async function handlePost(request: NextRequest) {
     }
   }
 
+  if (webSearchActive) {
+    emitAgentEvent({
+      type: "web_access_enabled",
+      mode: manualWebSearchActive ? "manual" : "auto",
+      reason: manualWebSearchActive ? "用户手动开启联网搜索" : skillRoute.reason,
+    });
+  }
+
   let apiKey = preflightRoute?.provider === modelRoute.provider
     ? preflightApiKey
     : null;
@@ -541,6 +578,43 @@ async function handlePost(request: NextRequest) {
         },
         { status: 403 }
       );
+    }
+  }
+
+  if (modelRoute.provider === "minimax" && manualWebSearchActive) {
+    let searchApiKey: string;
+    try {
+      searchApiKey = await getProviderApiKey(userId, "deepseek");
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof ProviderAccessError
+              ? error.message
+              : "联网搜索服务密钥暂时不可用",
+        },
+        { status: 403 }
+      );
+    }
+
+    const webResult = await runWebSearch(effectivePrompt, searchApiKey);
+    manualWebContext = formatManualWebContext(webResult);
+    manualWebSources = webResult.sources.map((source) => ({
+      type: "web",
+      title: source.title || source.url,
+      url: source.url,
+      snippet: webResult.summary.slice(0, 240),
+      metadata: {
+        query: webResult.query,
+        mode: "manual-prefetch",
+        provider: "deepseek-web-search",
+      },
+    }));
+    if (manualWebSources.length > 0) {
+      emitAgentEvent({
+        type: "sources_updated",
+        sources: manualWebSources,
+      });
     }
   }
 
@@ -561,7 +635,7 @@ async function handlePost(request: NextRequest) {
   });
 
   let orchestratorToolContext = "";
-  let orchestratorSources: AgentSource[] = [];
+  let orchestratorSources: AgentSource[] = manualWebSources;
   if (agentOrchestratorEnabled) {
     const plannedCalls = buildPlannedToolCalls({
       prompt: effectivePrompt,
@@ -606,7 +680,7 @@ async function handlePost(request: NextRequest) {
         },
       });
       orchestratorToolContext = toolRun.contextMessage;
-      orchestratorSources = toolRun.sources;
+      orchestratorSources = [...orchestratorSources, ...toolRun.sources];
       if (orchestratorSources.length > 0) {
         emitAgentEvent({
           type: "sources_updated",
@@ -623,8 +697,11 @@ async function handlePost(request: NextRequest) {
   }
 
   // 10. 构建 DeepSeek 消息数组（system prompt 在最前）
-  const userPromptWithTools = orchestratorToolContext
-    ? `${orchestratorToolContext}\n\n# 用户问题\n\n${effectivePrompt}`
+  const toolContext = [manualWebContext, orchestratorToolContext]
+    .filter(Boolean)
+    .join("\n\n");
+  const userPromptWithTools = toolContext
+    ? `${toolContext}\n\n# 用户问题\n\n${effectivePrompt}`
     : effectivePrompt;
   const contextualUserMessage = retrievedContext
     ? `# 项目资料\n\n${retrievedContext}\n\n# 用户问题\n\n${effectivePrompt}`

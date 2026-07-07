@@ -23,7 +23,9 @@ const mocks = vi.hoisted(() => ({
   shouldUseProjectContext: vi.fn(),
   embedQuery: vi.fn(),
   streamChat: vi.fn(),
+  streamMiniMaxChat: vi.fn(),
   completeChat: vi.fn(),
+  runWebSearch: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -79,6 +81,19 @@ vi.mock("@/lib/deepseek", () => ({
   DeepSeekError: class DeepSeekError extends Error {},
   streamChat: mocks.streamChat,
   completeChat: mocks.completeChat,
+}));
+
+vi.mock("@/lib/chat/minimax-chat", () => ({
+  MiniMaxChatError: class MiniMaxChatError extends Error {
+    constructor(public status: number, message: string) {
+      super(message);
+    }
+  },
+  streamMiniMaxChat: mocks.streamMiniMaxChat,
+}));
+
+vi.mock("@/lib/tools/web/search-engine", () => ({
+  runWebSearch: mocks.runWebSearch,
 }));
 
 import { accumulateAndSave, POST } from "@/app/api/chat/route";
@@ -147,6 +162,24 @@ describe("POST /api/chat", () => {
       thinkingEnabled: false,
       activeSkillId: null,
       skillDisabled: false,
+    });
+    mocks.streamMiniMaxChat.mockResolvedValue({
+      stream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `data: ${JSON.stringify({ choices: [{ delta: { content: "MiniMax 回复" } }] })}\n\n`
+            )
+          );
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      }),
+      getUsage: () => ({
+        prompt_tokens: 1,
+        completion_tokens: 1,
+        total_tokens: 2,
+      }),
     });
   });
 
@@ -257,6 +290,74 @@ describe("POST /api/chat", () => {
       const body = await response.text();
       expect(body).toContain("model_adapter_selected");
       expect(body).toContain("你好");
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("prefetches web search context for MiniMax manual web search", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+    mocks.getProviderApiKey.mockResolvedValue("sk-test");
+    mocks.projectFindFirst.mockResolvedValue(null);
+    mocks.conversationCreate.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      projectId: null,
+      model: "minimax-m3",
+      modelLock: null,
+      thinkingEnabled: true,
+      activeSkillId: null,
+      skillDisabled: false,
+    });
+    mocks.runWebSearch.mockResolvedValue({
+      query: "今天有什么 AI 新闻",
+      summary: "联网摘要：AI 新闻更新。",
+      sources: [{ title: "AI News", url: "https://example.com/ai" }],
+    });
+    mocks.messageCreate
+      .mockResolvedValueOnce({ id: "user-message-1" })
+      .mockResolvedValueOnce({ id: "assistant-message-1" });
+
+    try {
+      const request = new NextRequest("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "今天有什么 AI 新闻",
+          model: "minimax-m3",
+          thinkingEnabled: true,
+          reasoningEffort: "max",
+          webSearchActive: true,
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+      expect(mocks.runWebSearch).toHaveBeenCalledWith(
+        "今天有什么 AI 新闻",
+        "sk-test"
+      );
+      expect(mocks.streamMiniMaxChat).toHaveBeenCalledWith(
+        "sk-test",
+        expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              role: "user",
+              content: expect.stringContaining("# 联网搜索结果"),
+            }),
+          ]),
+        })
+      );
+
+      const body = await response.text();
+      expect(body).toContain("web_access_enabled");
+      expect(body).toContain("sources_updated");
+      expect(body).toContain("MiniMax 回复");
     } finally {
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;
