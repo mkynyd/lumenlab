@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { sendMessageSchema, type SendMessageInput } from "@/lib/validators";
-import { DeepSeekError, DeepSeekMessage } from "@/lib/deepseek";
+import { DeepSeekError, DeepSeekMessage, ToolUseBlock } from "@/lib/deepseek";
 import { MiniMaxChatError } from "@/lib/chat/minimax-chat";
 import { filterThinkingForMiniMax } from "@/lib/chat/history-adapter";
 import { createProviderAdapter } from "@/lib/agent/adapters";
@@ -13,7 +13,7 @@ import {
 } from "@/lib/chat/router";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { assembleSystemPrompt } from "@/lib/classification";
-import { getSkillSet, buildToolsPayloadForProvider } from "@/lib/skills/registry";
+import { getSkillSet, buildToolsPayloadForProvider, ensureDiscovery } from "@/lib/skills/registry";
 import type { SkillDefinition } from "@/lib/skills/registry";
 import {
   retrieveProjectContext,
@@ -174,6 +174,59 @@ function summarizeHistoryForMiniMax(
     : "";
 }
 
+function replaySSEChunks(chunks: Uint8Array[]) {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    },
+  });
+}
+
+async function bufferSSEStream(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      chunks.push(value.slice());
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return {
+    stream: replaySSEChunks(chunks),
+  };
+}
+
+/**
+ * 包装 runAutoTool，捕获未注册工具等同步抛错，避免单个工具失败导致整个 SSE 流 500。
+ */
+async function safeRunAutoTool(
+  inputs: Parameters<typeof agentLoopInternal.runAutoTool>[0],
+  toolUse: ToolUseBlock,
+  eventTap: InstanceType<typeof agentLoopInternal.EventTap>
+): ReturnType<typeof agentLoopInternal.runAutoTool> {
+  try {
+    return await agentLoopInternal.runAutoTool(inputs, toolUse, eventTap);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    eventTap.emit({
+      type: "tool_failed",
+      executionId: toolUse.id,
+      errorCode: "RUN_ERROR",
+      error: message,
+    });
+    return { status: "failed", error: message };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     return await handlePost(request);
@@ -287,6 +340,9 @@ async function handlePost(request: NextRequest) {
       { status: 400 }
     );
   }
+
+  // 确保 Skill discovery 已完成；catalog / instructions / activate_skill enum 都依赖 skillRegistry。
+  await ensureDiscovery();
 
   const agentOrchestratorEnabled = isAgentOrchestratorEnabled();
   const manualWebSearchActive = effectiveWebSearchActive(
@@ -653,7 +709,7 @@ async function handlePost(request: NextRequest) {
         profile: skillRoute.profile,
         plannedCalls,
         runTool: async (call: PlannedToolCall) => {
-          const result = await agentLoopInternal.runAutoTool(
+          const result = await safeRunAutoTool(
             {
               userId,
               conversationId: conversation.id,
@@ -822,7 +878,7 @@ async function handlePost(request: NextRequest) {
         thinkingEnabled,
         reasoningEffort,
         runTool: async (call: PlannedToolCall) => {
-          const result = await agentLoopInternal.runAutoTool(
+          const result = await safeRunAutoTool(
             {
               userId,
               conversationId: conversation.id,
@@ -949,22 +1005,33 @@ async function handlePost(request: NextRequest) {
   // Runs for:
   //   - native client tool_use blocks (legacy path, orchestrator disabled)
   //   - DSML-derived tool calls from reasoning content (fallback, always)
-  if (modelRoute.provider === "deepseek" && "getToolCalls" in streamResult) {
+  const shouldResolveStreamingToolCalls =
+    Boolean(project) ||
+    webSearchActive ||
+    activeSkills.some((skill) => skill.type === "server");
+  if (
+    modelRoute.provider === "deepseek" &&
+    "getToolCalls" in streamResult &&
+    shouldResolveStreamingToolCalls
+  ) {
     const MAX_TOOL_ROUNDS = 2;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const buffered = await bufferSSEStream(streamResult.stream);
+      streamResult = { ...streamResult, stream: buffered.stream };
       const toolCalls = (streamResult as unknown as { getToolCalls: () => Array<{ id: string; name: string; input: Record<string, unknown> }> }).getToolCalls();
       const executableToolCalls = toolCalls.filter((tc) => {
         const isDsml = tc.id.startsWith("dsml-");
+        const isXmlFallback = tc.id.startsWith("xml-");
         if (agentOrchestratorEnabled) {
           // When the orchestrator is on, native client tools are handled by
           // prefetch/continuation; only DSML-derived calls need recovery.
-          return isDsml;
+          return isDsml || isXmlFallback;
         }
         const skill = activeSkills?.find((s) => s.name === tc.name);
         if (skill && skill.type === "client") return true;
         // DSML-derived tool calls from reasoning content may not be in the
         // active skill set, but the model clearly intended to invoke them.
-        return isDsml;
+        return isDsml || isXmlFallback || tc.name.includes(".");
       });
 
       if (executableToolCalls.length === 0) break;
@@ -976,7 +1043,7 @@ async function handlePost(request: NextRequest) {
       // Execute client-side / DSML-derived tools
       const toolResults: Array<{ toolUseId: string; content: string }> = [];
       for (const tc of executableToolCalls) {
-        const autoRun = await agentLoopInternal.runAutoTool(
+        const autoRun = await safeRunAutoTool(
           {
             userId,
             conversationId: conversation.id,

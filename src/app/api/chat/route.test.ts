@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   userFindUnique: vi.fn(),
   userUpdate: vi.fn(),
   tokenUsageCreate: vi.fn(),
+  toolExecutionCreate: vi.fn(),
+  toolExecutionUpdate: vi.fn(),
+  agentAuditLogCreate: vi.fn(),
   transaction: vi.fn(),
   getProviderApiKey: vi.fn(),
   retrieveProjectContext: vi.fn(),
@@ -53,6 +56,11 @@ vi.mock("@/lib/db", () => ({
     },
     user: { findUnique: mocks.userFindUnique, update: mocks.userUpdate },
     tokenUsage: { create: mocks.tokenUsageCreate },
+    toolExecution: {
+      create: mocks.toolExecutionCreate,
+      update: mocks.toolExecutionUpdate,
+    },
+    agentAuditLog: { create: mocks.agentAuditLogCreate },
     $transaction: mocks.transaction,
   },
 }));
@@ -150,6 +158,9 @@ describe("POST /api/chat", () => {
     });
     mocks.userUpdate.mockResolvedValue({});
     mocks.tokenUsageCreate.mockResolvedValue({ id: "usage-1" });
+    mocks.toolExecutionCreate.mockResolvedValue({ id: "tool-execution-1" });
+    mocks.toolExecutionUpdate.mockResolvedValue({});
+    mocks.agentAuditLogCreate.mockResolvedValue({ id: "audit-1" });
     mocks.transaction.mockImplementation((ops: Array<Promise<unknown>>) =>
       Promise.all(ops)
     );
@@ -358,6 +369,142 @@ describe("POST /api/chat", () => {
       expect(body).toContain("web_access_enabled");
       expect(body).toContain("sources_updated");
       expect(body).toContain("MiniMax 回复");
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("executes delayed XML tool calls before streaming the final DeepSeek answer", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+    mocks.getProviderApiKey.mockResolvedValue("sk-test");
+    mocks.projectFindFirst.mockResolvedValue({
+      id: "project-1",
+      userId: "user-1",
+      name: "实验项目",
+      type: "academic",
+      description: null,
+    });
+    mocks.fileFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "file-1",
+          originalName: "等级保护资料.md",
+          mimeType: "text/markdown",
+          size: 2048,
+          status: "ready",
+          category: "document",
+          createdAt: new Date("2026-07-07T00:00:00.000Z"),
+        },
+      ]);
+    mocks.conversationCreate.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      projectId: "project-1",
+      model: "deepseek-v4-pro",
+      modelLock: null,
+      thinkingEnabled: true,
+      activeSkillId: null,
+      skillDisabled: false,
+    });
+    mocks.messageCreate
+      .mockResolvedValueOnce({ id: "user-message-1" })
+      .mockResolvedValueOnce({ id: "assistant-message-1" });
+
+    let firstStreamConsumed = false;
+    const firstStream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        firstStreamConsumed = true;
+        controller.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    content:
+                      "我先检查项目资料。\\n<tool_calls><invoke name=\"project_files.list\"><parameter name=\"projectId\">project-1</parameter></invoke></tool_calls>",
+                  },
+                },
+              ],
+            })}\n\n`
+          )
+        );
+        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+
+    const finalStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({
+              choices: [{ delta: { content: "最终论文提纲" } }],
+            })}\n\n`
+          )
+        );
+        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+
+    mocks.streamChat
+      .mockResolvedValueOnce({
+        stream: firstStream,
+        getUsage: () => ({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
+        getToolCalls: () =>
+          firstStreamConsumed
+            ? [
+                {
+                  id: "xml-project-files-list-1",
+                  name: "project_files.list",
+                  input: { projectId: "project-1" },
+                },
+              ]
+            : [],
+      })
+      .mockResolvedValueOnce({
+        stream: finalStream,
+        getUsage: () => ({ prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 }),
+        getToolCalls: () => [],
+      });
+
+    try {
+      const request = new NextRequest("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "基于项目资料写一篇关于等级保护的论文提纲",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: true,
+          reasoningEffort: "max",
+          projectId: "project-1",
+          selectedFileIds: [],
+          mode: "review",
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toolId: "project_files.list",
+            status: "proposed",
+          }),
+        })
+      );
+      expect(body).toContain("最终论文提纲");
+      expect(body).not.toContain("<tool_calls>");
+      expect(body).not.toContain("invoke name");
     } finally {
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;

@@ -10,15 +10,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { skillRegistry } from "@/lib/agent/skill-registry";
-import { registerFromDiscovery } from "@/lib/skills/registry";
-
-let discoveryStarted = false;
-
-async function ensureDiscovery() {
-  if (discoveryStarted) return;
-  discoveryStarted = true;
-  await registerFromDiscovery();
-}
+import { ensureDiscovery } from "@/lib/skills/registry";
 
 export async function GET() {
   const session = await auth();

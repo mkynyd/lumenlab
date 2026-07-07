@@ -8,6 +8,8 @@
 import { skillRegistry } from "../agent/skill-registry";
 
 let registered = false;
+let discoveryStarted = false;
+let discoveryPromise: Promise<void> | null = null;
 
 /**
  * 从 discovery 注册 skill（异步，应在服务启动时调用）。
@@ -53,14 +55,28 @@ export async function registerFromDiscovery(): Promise<number> {
 }
 
 /**
+ * 确保 discovery 已执行，且每个进程只执行一次。
+ * chat route 和 catalog route 共享此入口。
+ */
+export async function ensureDiscovery(): Promise<void> {
+  if (discoveryStarted) {
+    await discoveryPromise;
+    return;
+  }
+  discoveryStarted = true;
+  discoveryPromise = registerFromDiscovery().then(() => {});
+  await discoveryPromise;
+}
+
+/**
  * 同步注册入口（模块加载时调用）。
  * 当 discovery 尚未执行时，无 skill 注册。
- * 真正的注册由 registerFromDiscovery() 在运行时完成。
+ * 真正的注册由 registerFromDiscovery() / ensureDiscovery() 在运行时完成。
  */
 export function registerBuiltinSkills(): void {
   if (registered) return;
   registered = true;
-  // discovery 将在首次 API 调用或启动时通过 registerFromDiscovery() 完成
+  // discovery 将在首次 API 调用或启动时通过 ensureDiscovery() 完成
 }
 
 /**

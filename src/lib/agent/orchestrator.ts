@@ -323,7 +323,7 @@ export async function executePlannedToolCalls(
     .filter((item) => item.status === "succeeded" && item.summary)
     .map((item) => summarizeToolResult(item.call, item.summary ?? {}));
   const contextMessage = contextSections.length
-    ? `# Agent 工具结果\n\n${contextSections.join("\n\n")}\n\n请基于这些工具结果回答用户问题。正文不要插入引用标记；来源会在回答底部单独展示。`
+    ? `# Agent 工具结果\n\n${contextSections.join("\n\n")}\n\n请直接基于以上工具结果回答用户问题。工具已经执行完毕，不要重复描述“我将调用/获取”等计划；正文不要插入引用标记；来源会在回答底部单独展示。`
     : "";
 
   return {

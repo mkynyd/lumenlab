@@ -261,6 +261,8 @@ export async function streamChat(
   // and recover any implied tool calls at the end of the stream.
   let rawReasoning = "";
   let cleanedReasoningStreamed = "";
+  let rawContent = "";
+  let cleanedContentStreamed = "";
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -337,13 +339,19 @@ export async function streamChat(
             if (delta.type === "input_json_delta" && delta.partial_json && currentToolUse) {
               currentToolUse.inputJson += delta.partial_json;
             } else if (delta.type === "text_delta") {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    choices: [{ delta: { content: delta.text || "" } }],
-                  })}\n\n`
-                )
-              );
+              rawContent += delta.text || "";
+              const cleanedContent = stripDsmlToolCalls(rawContent);
+              const newCleaned = cleanedContent.slice(cleanedContentStreamed.length);
+              cleanedContentStreamed = cleanedContent;
+              if (newCleaned) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      choices: [{ delta: { content: newCleaned } }],
+                    })}\n\n`
+                  )
+                );
+              }
             } else if (delta.type === "thinking_delta") {
               rawReasoning += delta.thinking || "";
               const cleanedReasoning = stripDsmlToolCalls(rawReasoning);
@@ -377,8 +385,8 @@ export async function streamChat(
         // Fallback: some reasoning models emit tool-call-like markup inside
         // thinking content instead of native tool_use blocks. Extract those
         // calls so the route can execute them and get a real answer.
-        if (toolCalls.length === 0 && rawReasoning) {
-          const dsmlCalls = extractDsmlToolCalls(rawReasoning);
+        if (toolCalls.length === 0 && (rawReasoning || rawContent)) {
+          const dsmlCalls = extractDsmlToolCalls(`${rawReasoning}\n${rawContent}`);
           for (let index = 0; index < dsmlCalls.length; index += 1) {
             const call = dsmlCalls[index];
             const mappedName = call.name === "web_search" ? "web.search" : call.name;
