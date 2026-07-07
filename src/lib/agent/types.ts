@@ -202,7 +202,7 @@ export type AgentEvent =
       type: "model_adapter_selected";
       provider: "deepseek" | "minimax";
       model: string;
-      fallback: "native_tools" | "json_action" | "prefetch_tools" | "none";
+      fallback: "native_tools" | "xml_dsml_fallback" | "json_action" | "prefetch_tools" | "none";
     }
   | { type: "profile_changed"; from: string; to: string; reason: string }
   | { type: "tool_loop_stop_reason"; reason: string }

@@ -240,7 +240,7 @@ interface MergedToolCall {
   input: Record<string, unknown>;
 }
 
-function buildDeepSeekAllowedTools(input: {
+function buildAllowedTools(input: {
   projectId?: string | null;
   webSearchActive: boolean;
   activeSkillId?: string | null;
@@ -298,16 +298,31 @@ function buildDeepSeekAllowedTools(input: {
   return [...allowed.values()];
 }
 
-function toAnthropicToolPayload(
+function supportsNativeTool(
+  provider: "deepseek" | "minimax",
+  toolId: string
+): boolean {
+  if (provider === "minimax") return true;
+  // DeepSeek 的 Anthropic 兼容层目前只接受内置的 web_search 工具。
+  return toolId === "web.search";
+}
+
+function buildNativeToolPayload(
+  provider: "deepseek" | "minimax",
   tools: ToolMetadata[]
 ): Array<{
-  type: string;
+  type?: string;
   name: string;
   description?: string;
   input_schema?: Record<string, unknown>;
 }> {
-  // DeepSeek 的 Anthropic 兼容层目前只接受内置的 web_search 工具；
-  // 其它工具通过 XML/DSML fallback 在 route 层解析执行，不在这里发送。
+  if (provider === "minimax") {
+    return tools.map((tool) => ({
+      name: tool.toolId,
+      description: tool.description,
+      input_schema: tool.inputSchema,
+    }));
+  }
   return tools
     .filter((tool) => tool.toolId === "web.search")
     .map((tool) => ({
@@ -319,22 +334,31 @@ function toAnthropicToolPayload(
 }
 
 function formatToolInstructions(tools: ToolMetadata[]): string {
-  const instructionTools = tools.filter((tool) => tool.toolId !== "web.search");
-  if (instructionTools.length === 0) return "";
+  if (tools.length === 0) return "";
+
+  const exampleTool = tools.find((t) => t.toolId !== "skill.activate") ?? tools[0];
+  const exampleSchema = exampleTool.inputSchema as {
+    properties?: Record<string, { description?: string }>;
+    required?: string[];
+  };
+  const exampleRequired = exampleSchema.required?.[0];
+  const exampleParameter = exampleRequired
+    ? `    <parameter name="${exampleRequired}">值</parameter>\n`
+    : "";
 
   const lines = [
     "你可以调用以下工具获取信息或执行操作。需要调用时，请严格使用如下 XML 格式（可包含多个 invoke）：",
     "",
     "<tool_calls>",
-    '  <invoke name="tool.id">',
-    '    <parameter name="key">value</parameter>',
+    `  <invoke name="${exampleTool.toolId}">`,
+    exampleParameter,
     "  </invoke>",
     "</tool_calls>",
     "",
     "可用工具：",
   ];
 
-  for (const tool of instructionTools) {
+  for (const tool of tools) {
     const schema = tool.inputSchema as {
       properties?: Record<string, { description?: string }>;
       required?: string[];
@@ -723,6 +747,27 @@ async function handlePost(request: NextRequest) {
     requiresVisionModel,
     requestedModel: model,
   });
+
+  // Build the active tool allowlist from the real tool registry.
+  const activeTools = buildAllowedTools({
+    projectId: project?.id,
+    webSearchActive,
+    activeSkillId: skillRoute.activeSkillId,
+  });
+
+  // Some providers only support a subset of tools natively. The rest are
+  // exposed via XML/DSML instructions in the system prompt.
+  const nativeTools = activeTools.filter((tool) =>
+    supportsNativeTool(modelRoute.provider, tool.toolId)
+  );
+  const fallbackTools = activeTools.filter(
+    (tool) => !supportsNativeTool(modelRoute.provider, tool.toolId)
+  );
+  const fallbackInstructions = formatToolInstructions(fallbackTools);
+  if (fallbackInstructions) {
+    systemPrompt = `${systemPrompt}\n\n${fallbackInstructions}`;
+  }
+
   const shouldCompressDeepSeekHistory =
     modelRoute.provider === "minimax" && conversation.modelLock !== "minimax";
   if (modelRoute.shouldLock) {
@@ -745,7 +790,10 @@ async function handlePost(request: NextRequest) {
       type: "model_adapter_selected",
       provider: modelRoute.provider,
       model,
-      fallback: modelRoute.provider === "minimax" ? "prefetch_tools" : "native_tools",
+      fallback:
+        fallbackTools.length > 0
+          ? "xml_dsml_fallback"
+          : "native_tools",
     });
     if (skillRoute.suggestions.length > 0) {
       emitAgentEvent({
@@ -1076,23 +1124,12 @@ async function handlePost(request: NextRequest) {
   // 11. 调用模型
   let streamResult;
   let adapter: ReturnType<typeof createProviderAdapter> | undefined;
-  let activeTools: ToolMetadata[] = [];
-  let toolsPayload:
-    | ReturnType<typeof toAnthropicToolPayload>
-    | undefined;
+  const toolsPayload =
+    nativeTools.length > 0
+      ? buildNativeToolPayload(modelRoute.provider, nativeTools)
+      : undefined;
   try {
     adapter = createProviderAdapter(modelRoute.provider, apiKey);
-
-    // Build the active tool allowlist from the real tool registry.
-    activeTools = buildDeepSeekAllowedTools({
-      projectId: project?.id,
-      webSearchActive,
-      activeSkillId: skillRoute.activeSkillId,
-    });
-    toolsPayload =
-      modelRoute.provider === "deepseek" && activeTools.length > 0
-        ? toAnthropicToolPayload(activeTools)
-        : undefined;
 
     const adapterMessages =
       modelRoute.provider === "minimax"
@@ -1132,20 +1169,12 @@ async function handlePost(request: NextRequest) {
     );
   }
 
-  // DeepSeek 只能下发内置 web_search，其它工具靠 XML/DSML fallback。
-  // 把允许的工具清单注入 system prompt，让模型知道可以调用哪些工具以及如何输出。
-  if (modelRoute.provider === "deepseek" && activeTools.length > 0) {
-    const toolInstructions = formatToolInstructions(activeTools);
-    if (toolInstructions) {
-      systemPrompt = `${systemPrompt}\n\n${toolInstructions}`;
-    }
-  }
-
-  // 11.5 DeepSeek streaming tool loop (max 2 rounds).
+  // 11.5 Provider-agnostic streaming tool loop (max 2 rounds).
   // Each round is fully buffered server-side so that pseudo tool markup never
-  // leaks to the client. Only whitelisted, structurally valid tool calls are
-  // executed; malformed markup is sanitized away before replay/persistence.
-  if (modelRoute.provider === "deepseek" && activeTools.length > 0) {
+  // leaks to the client. Native tool_use blocks are merged with XML/DSML
+  // fallback parsing. Only whitelisted, structurally valid calls are executed;
+  // malformed markup is sanitized away before replay/persistence.
+  if (activeTools.length > 0) {
     const MAX_TOOL_ROUNDS = 2;
     const allowedToolNames = new Set(activeTools.map((t) => t.toolId));
     let executedInLastRound = false;

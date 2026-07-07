@@ -191,6 +191,9 @@ describe("POST /api/chat", () => {
         completion_tokens: 1,
         total_tokens: 2,
       }),
+      getToolCalls: () => [],
+      getRawContent: () => "MiniMax 回复",
+      getRawReasoning: () => "",
     });
   });
 
@@ -662,7 +665,7 @@ function makeStreamResult(options: {
   };
 }
 
-describe("DeepSeek streaming tool loop", () => {
+describe("Streaming tool loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
@@ -718,6 +721,50 @@ describe("DeepSeek streaming tool loop", () => {
     mocks.transaction.mockImplementation((ops: Array<Promise<unknown>>) =>
       Promise.all(ops)
     );
+  });
+
+  it("injects XML tool instructions into the system prompt before the first DeepSeek stream", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    mocks.streamChat.mockResolvedValueOnce(
+      makeStreamResult({
+        deltas: [{ content: "好的。" }],
+      })
+    );
+
+    try {
+      await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "基于项目资料写论文提纲",
+            model: "deepseek-v4-pro",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      const firstCall = mocks.streamChat.mock.calls[0];
+      const request = firstCall[1] as { messages: Array<{ role: string; content: string | unknown[] }> };
+      const systemMessage = request.messages.find((m) => m.role === "system");
+      expect(systemMessage).toBeDefined();
+      const systemText = typeof systemMessage!.content === "string" ? systemMessage!.content : "";
+      expect(systemText).toContain("<tool_calls>");
+      expect(systemText).toContain("project_files.list");
+      expect(systemText).toContain("严格使用如下 XML 格式");
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
   });
 
   it("executes native tool_use blocks and streams the final answer", async () => {
@@ -1056,6 +1103,78 @@ describe("DeepSeek streaming tool loop", () => {
           }),
         })
       );
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+    }
+  });
+
+  it("executes MiniMax native tool_use blocks and streams the final answer", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+
+    mocks.streamMiniMaxChat
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "我先" }, { content: "查看资料。" }],
+          toolCalls: [
+            {
+              id: "tu-1",
+              name: "project_files.list",
+              input: { projectId: "project-1" },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        makeStreamResult({
+          deltas: [{ content: "最终" }, { content: "论文提纲" }],
+        })
+      );
+
+    try {
+      const response = await POST(
+        new NextRequest("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "基于项目资料写论文提纲",
+            model: "minimax-m3",
+            thinkingEnabled: true,
+            reasoningEffort: "max",
+            projectId: "project-1",
+            selectedFileIds: [],
+            mode: "review",
+          }),
+        })
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain("最终");
+      expect(body).toContain("论文提纲");
+      expect(body).not.toContain("<tool_calls>");
+      expect(mocks.streamMiniMaxChat).toHaveBeenCalledTimes(2);
+      expect(mocks.streamMiniMaxChat).toHaveBeenCalledWith(
+        "sk-test",
+        expect.objectContaining({
+          tools: expect.arrayContaining([
+            expect.objectContaining({ name: "project_files.list" }),
+          ]),
+        })
+      );
+      expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toolId: "project_files.list",
+            status: "proposed",
+          }),
+        })
+      );
+      expect(body.match(/data:/g)?.length).toBeGreaterThan(2);
     } finally {
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;

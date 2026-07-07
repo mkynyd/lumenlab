@@ -40,6 +40,7 @@ const PROVIDER_LABELS = {
 
 const FALLBACK_LABELS = {
   native_tools: "Native tools",
+  xml_dsml_fallback: "XML/DSML fallback",
   json_action: "JSON actions",
   prefetch_tools: "Prefetch tools",
   none: "Direct",

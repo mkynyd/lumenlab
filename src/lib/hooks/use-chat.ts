@@ -38,7 +38,7 @@ export interface AgentSessionState {
   modelAdapter?: {
     provider: "deepseek" | "minimax";
     model: string;
-    fallback: "native_tools" | "json_action" | "prefetch_tools" | "none";
+    fallback: "native_tools" | "xml_dsml_fallback" | "json_action" | "prefetch_tools" | "none";
   };
 }
 

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { DeepSeekMessage, DeepSeekUsage } from "@/lib/deepseek";
+import type { DeepSeekMessage, DeepSeekUsage, ToolUseBlock } from "@/lib/deepseek";
 import type { ServerFileAttachment } from "@/lib/chat/router";
+import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
 
 const MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic";
 
@@ -118,10 +119,15 @@ export async function streamMiniMaxChat(
     attachments?: ServerFileAttachment[];
     thinking?: boolean;
     maxTokens?: number;
+    tools?: Array<{ type?: string; name: string; description?: string; input_schema?: Record<string, unknown> }>;
+    toolChoice?: { type: "auto" | "any" | "none" };
   }
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
   getUsage: () => DeepSeekUsage | null;
+  getToolCalls: () => ToolUseBlock[];
+  getRawContent: () => string;
+  getRawReasoning: () => string;
 }> {
   const { system, history } = splitMessages(params.messages);
   let anthropicStream;
@@ -140,13 +146,37 @@ export async function streamMiniMaxChat(
         params.attachments || []
       ) as unknown as Anthropic.Messages.MessageParam[],
       stream: true,
+      ...(params.tools?.length ? { tools: params.tools as Anthropic.Messages.Tool[] } : {}),
+      ...(params.toolChoice ? { tool_choice: params.toolChoice as Anthropic.Messages.ToolChoice } : {}),
     });
   } catch (error) {
     throw toMiniMaxError(error);
   }
 
   let usage: DeepSeekUsage | null = null;
+  const toolCalls: ToolUseBlock[] = [];
   const encoder = new TextEncoder();
+
+  let currentToolUse: { id: string; name: string; inputJson: string } | null = null;
+  let rawContent = "";
+  let cleanedContentStreamed = "";
+  let rawReasoning = "";
+  let cleanedReasoningStreamed = "";
+
+  function flushToolUse() {
+    if (!currentToolUse) return;
+    try {
+      const input = currentToolUse.inputJson ? JSON.parse(currentToolUse.inputJson) : {};
+      toolCalls.push({
+        id: currentToolUse.id,
+        name: currentToolUse.name,
+        input,
+      });
+    } catch {
+      // Invalid JSON — skip this tool call
+    }
+    currentToolUse = null;
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -157,24 +187,60 @@ export async function streamMiniMaxChat(
         for await (const event of anthropicStream) {
           if (event.type === "message_start") {
             promptTokens = event.message.usage.input_tokens || 0;
+          } else if (event.type === "content_block_start") {
+            const block = event.content_block as unknown as { type: string; id?: string; name?: string };
+            if (currentToolUse && block.type !== "tool_use") {
+              flushToolUse();
+            }
+            if (block.type === "tool_use" && block.id) {
+              currentToolUse = { id: block.id, name: block.name || "unknown", inputJson: "" };
+            }
           } else if (event.type === "content_block_delta") {
             const delta = event.delta as unknown as {
               type: string;
               text?: string;
+              thinking?: string;
+              partial_json?: string;
             };
-            if (delta.type === "text_delta") {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    choices: [{ delta: { content: delta.text || "" } }],
-                  })}\n\n`
-                )
-              );
+            if (delta.type === "input_json_delta" && delta.partial_json && currentToolUse) {
+              currentToolUse.inputJson += delta.partial_json;
+            } else if (delta.type === "text_delta") {
+              rawContent += delta.text || "";
+              const cleanedContent = sanitizeModelText(rawContent);
+              const newCleaned = cleanedContent.slice(cleanedContentStreamed.length);
+              cleanedContentStreamed = cleanedContent;
+              if (newCleaned) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      choices: [{ delta: { content: newCleaned } }],
+                    })}\n\n`
+                  )
+                );
+              }
+            } else if (delta.type === "thinking_delta") {
+              rawReasoning += delta.thinking || "";
+              const cleanedReasoning = sanitizeModelText(rawReasoning);
+              const newCleaned = cleanedReasoning.slice(cleanedReasoningStreamed.length);
+              cleanedReasoningStreamed = cleanedReasoning;
+              if (newCleaned) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      choices: [{ delta: { reasoning_content: newCleaned } }],
+                    })}\n\n`
+                  )
+                );
+              }
             }
+          } else if (event.type === "content_block_stop") {
+            flushToolUse();
           } else if (event.type === "message_delta") {
             completionTokens = event.usage.output_tokens || 0;
           }
         }
+
+        flushToolUse();
 
         usage = {
           prompt_tokens: promptTokens,
@@ -192,5 +258,11 @@ export async function streamMiniMaxChat(
     },
   });
 
-  return { stream, getUsage: () => usage };
+  return {
+    stream,
+    getUsage: () => usage,
+    getToolCalls: () => toolCalls,
+    getRawContent: () => rawContent,
+    getRawReasoning: () => rawReasoning,
+  };
 }

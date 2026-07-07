@@ -23,9 +23,10 @@ export interface AdapterStreamResult {
   stream: ReadableStream<Uint8Array>;
   getUsage: () => AdapterUsage | null;
   getToolCalls: () => ToolUseBlock[];
-  /** Optional unsanitized raw text for route-level XML/DSML fallback parsing. */
-  getRawContent?: () => string;
-  getRawReasoning?: () => string;
+  /** Unsanitized raw assistant text for route-level XML/DSML fallback parsing. */
+  getRawContent: () => string;
+  /** Unsanitized raw reasoning text for route-level XML/DSML fallback parsing. */
+  getRawReasoning: () => string;
 }
 
 export interface AdapterStreamParams {
@@ -33,7 +34,7 @@ export interface AdapterStreamParams {
   messages: DeepSeekMessage[];
   thinkingEnabled: boolean;
   reasoningEffort: "high" | "max";
-  tools?: Array<{ type: string; [key: string]: unknown }>;
+  tools?: Array<{ type?: string; name: string; description?: string; input_schema?: Record<string, unknown>; [key: string]: unknown }>;
   attachments?: ServerFileAttachment[];
 }
 

@@ -11,7 +11,7 @@ vi.mock("@/lib/chat/minimax-chat", async (importOriginal) => {
 });
 
 describe("MiniMaxAdapter", () => {
-  it("forwards messages and attachments and exposes a no-op getToolCalls", async () => {
+  it("forwards messages and attachments and exposes raw text / tool calls", async () => {
     vi.mocked(minimax.streamMiniMaxChat).mockResolvedValue({
       stream: new ReadableStream(),
       getUsage: () => ({
@@ -19,6 +19,9 @@ describe("MiniMaxAdapter", () => {
         completion_tokens: 4,
         total_tokens: 12,
       }),
+      getToolCalls: () => [],
+      getRawContent: () => "",
+      getRawReasoning: () => "",
     });
 
     const attachment = {
@@ -50,6 +53,47 @@ describe("MiniMaxAdapter", () => {
       maxTokens: 8192,
     });
     expect(result.getToolCalls()).toEqual([]);
+    expect(result.getRawContent()).toBe("");
+    expect(result.getRawReasoning()).toBe("");
     expect(result.getUsage()?.total_tokens).toBe(12);
+  });
+
+  it("forwards native tools to MiniMax", async () => {
+    vi.mocked(minimax.streamMiniMaxChat).mockResolvedValue({
+      stream: new ReadableStream(),
+      getUsage: () => null,
+      getToolCalls: () => [],
+      getRawContent: () => "",
+      getRawReasoning: () => "",
+    });
+
+    const adapter = new MiniMaxAdapter("sk-test");
+    await adapter.stream({
+      model: "minimax-m3",
+      messages: [{ role: "user", content: "hi" }],
+      thinkingEnabled: false,
+      reasoningEffort: "high",
+      tools: [
+        {
+          name: "project_files.list",
+          description: "列出项目文件",
+          input_schema: { type: "object", properties: {} },
+        },
+      ],
+    });
+
+    expect(minimax.streamMiniMaxChat).toHaveBeenCalledWith(
+      "sk-test",
+      expect.objectContaining({
+        tools: [
+          {
+            name: "project_files.list",
+            description: "列出项目文件",
+            input_schema: { type: "object", properties: {} },
+          },
+        ],
+        toolChoice: { type: "auto" },
+      })
+    );
   });
 });

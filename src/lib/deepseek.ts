@@ -20,7 +20,7 @@ export interface DeepSeekRequest {
   thinking?: { type: "enabled" | "disabled" };
   reasoning_effort?: "high" | "max";
   max_tokens?: number;
-  tools?: Array<{ type: string; [key: string]: unknown }>;
+  tools?: Array<{ type?: string; name: string; description?: string; input_schema?: Record<string, unknown>; [key: string]: unknown }>;
   tool_choice?: { type: "auto" | "any" | "tool" | "none"; name?: string };
 }
 
