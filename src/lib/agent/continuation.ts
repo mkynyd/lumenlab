@@ -24,8 +24,11 @@ import {
   shouldStopToolLoop,
   toolResultProducedNewContent,
   getToolRoundLimit,
+  classifyFailure,
   type PlannedToolCall,
   type PlannedToolRunResult,
+  type FailureCategory,
+  type FailureRecord,
 } from "./orchestrator";
 
 export interface ContinuationInputs {
@@ -57,23 +60,57 @@ const JSON_ACTION_INSTRUCTION = `
 }
 \`\`\`
 
-可用工具：
-- project_files.list: 列出当前项目资料。输入 { projectId?: string }
-- project_files.read: 读取当前项目资料。输入 { projectId?: string, fileId: string, maxChars?: number }
-- project_rag.search: 在当前项目资料中搜索。输入 { projectId?: string, query: string, maxResults?: number }
-- web.search: 联网搜索。输入 { query: string, maxResults?: number }
-- web.fetch: 抓取公开网页。输入 { url: string }
-- arxiv.search: arXiv 搜索。输入 { query: string, maxResults?: number }
-- arxiv.read: 读取 arXiv 论文元数据。输入 { arxivId: string }
-- arxiv.fetch: 抓取 arXiv 页面。输入 { url: string }
-- artifact.save: 保存为成果。输入 { title: string, content: string, type?: string }
-- artifact.list: 列出成果。输入 { projectId?: string, conversationId?: string }
-- reference.add: 添加参考文献。输入 { projectId?: string, title: string, ... }
-- reference.list: 列出参考文献。输入 { projectId?: string, conversationId?: string }
-- reference.attach: 挂载引用到成果。输入 { artifactId: string, referenceId: string }
-- reference.format: 格式化引用。输入 { artifactId: string, format: string }
+## 工具列表与决策规则
 
-如果不需调用工具，直接回答用户问题即可。不要在没有工具结果的情况下虚构数据。
+### project_files.list
+- 使用条件：需要确认项目中有哪些可用资料；用户要求列出或浏览资料；不确定目标文件名时先列出再读取。
+- 不使用条件：已明确知道要读取的文件名；用户问题不涉及项目资料；上一轮刚列过且文件列表未变化。
+- 失败后：不重试。告知用户资料列表暂时不可用，询问是否手动提供文件名。
+
+### project_files.read
+- 使用条件：回答需要某个项目文件的具体内容；用户引用或提及了项目中的文件；project_rag 搜索结果需要核对原文细节。
+- 不使用条件：用户已粘贴了文件全部内容；问题只需要文件的标题或元信息；RAG 片段已充分覆盖问题。
+- 失败后：参数错误（如 fileId 不存在）可换用 project_files.list 确认正确 ID；读取超时可减小 maxChars 重试一次；权限错误不得重试，告知用户该文件不可读。
+
+### project_rag.search
+- 使用条件：回答依赖项目资料且当前上下文未包含原文；需要在多个文件中定位相关信息；用户问题涉及跨文件的知识点。
+- 不使用条件：用户已粘贴足够回答的内容；问题只需要通用解释而非项目特定信息；已知目标文件且文件较短时直接用 project_files.read。
+- 失败后：换用 project_files.list + project_files.read 逐文件查找；如项目无资料，明确告知并建议上传。
+
+### web.search
+- 使用条件：用户询问时事、最新政策、近期发布、实时数据；需要核实外部事实或数据；项目资料没有相关信息且超出训练数据范围。
+- 不使用条件：问题属于稳定的基础知识（数学定义、编程语法、学科教科书内容）；用户已提供完整材料；纯观点讨论、创意写作、格式改写。
+- 失败后：网络暂时失败可尝试 web.fetch 替代；持续失败则明确告知搜索结果不可用，基于已有知识给出标注了不确定性的回答。
+
+### web.fetch
+- 使用条件：需要读取特定网页的完整内容；web.search 返回了摘要但需要原文细节。
+- 不使用条件：URL 不确定或来自不可信来源；web.search 摘要已足够回答问题。
+- 失败后：不重试同一 URL。尝试 web.search 找替代来源；持续失败则告知该网页不可访问。
+
+### arxiv.search / arxiv.read / arxiv.fetch
+- 使用条件：用户明确涉及学术论文或 arXiv 文献；需要论文摘要、作者、发表信息。
+- 不使用条件：用户未提及论文；可以通过 web.search 获取的信息不需要走 arXiv 专用通道。
+- 失败后：降级到 web.search 搜索同一论文；告知用户 arXiv 接口不可用。
+
+### artifact.save
+- 使用条件：用户明确要求保存或导出内容；对话产生了有价值的分析结果且用户可能后续引用。
+- 不使用条件：用户没有保存意图；内容是临时性的聊天草稿。此操作涉及写入，确认用户意图后再调用。
+- 失败后：告知保存失败及原因，询问是否重试。不得反复重试同一保存操作。
+
+### artifact.list / reference.list
+- 使用条件：用户询问已保存了哪些成果或参考文献；需要关联已有成果到当前讨论。
+- 不使用条件：对话刚开始且显然没有已保存内容；用户问题与成果无关。
+- 失败后：不重试。告知列表暂不可用。
+
+### reference.add / reference.attach / reference.format
+- 使用条件：用户明确要求管理参考文献；生成的内容需要格式化引用。
+- 不使用条件：用户未提及引文管理。涉及写入，确认意图后再调用。
+- 失败后：告知操作失败及原因，不自动重试。
+
+## 通用规则
+- 工具调用失败不要原样重复。参数错误修正后最多重试一次；网络错误换来源或降级；权限/不存在类错误放弃该路径，用已有信息继续。
+- 同一工具用相同参数调用两次即为冗余。如果第二次没有新的参数信息，停止调用该工具。
+- 如果不需调用工具，直接回答用户问题。不要在没有工具结果的情况下虚构数据。
 `;
 
 const JSON_ACTION_BLOCK = /```json\s*\n?([\s\S]*?)\n?```/;
@@ -112,11 +149,41 @@ function summarizeToolResult(call: PlannedToolCall, result: Record<string, unkno
   return `## ${call.name}\n\n参数：${JSON.stringify(call.input)}\n\n结果：\n${compact.slice(0, 8000)}`;
 }
 
+/** 根据失败类别生成结构化的错误提示，包含恢复指导 */
+function formatFailureMessage(
+  call: PlannedToolCall,
+  error: string,
+  category: FailureCategory
+): string {
+  const guidance: Record<FailureCategory, string> = {
+    invalid_params:
+      "此错误可能是参数格式问题。请检查输入参数后重试一次，不要再用相同的错误参数调用此工具。",
+    transient:
+      "此错误由网络或服务暂时不可用引起。可以尝试换用替代工具或来源，不需要用相同参数重试。",
+    permission:
+      "此错误表示没有权限执行该操作。不要重试此调用。请告知用户权限不足，改用已有信息继续回答。",
+    not_found:
+      "请求的资源不存在。不要重试此调用。请告知用户资源不可用，基于已有信息继续回答。",
+    rate_limited:
+      "请求频率过高被限制。可以在几秒后重试一次，或用替代工具。",
+    internal_error:
+      "服务端错误。不要立即重试。可以尝试降级路径或用已有信息继续。",
+  };
+
+  return `## 工具调用失败：${call.name}
+
+- 参数：${JSON.stringify(call.input)}
+- 错误信息：${error}
+- 失败类别：${category}
+- 恢复指导：${guidance[category]}`;
+}
+
 export async function runContinuationLoop(
   inputs: ContinuationInputs
 ): Promise<ContinuationResult> {
   const sources: AgentSource[] = [];
   const history: Array<{ toolId: string; args: Record<string, unknown>; producedNewContent: boolean }> = [];
+  const recentFailures: FailureRecord[] = [];
   let messages = [...inputs.messages];
   let stopReason: string | null = null;
 
@@ -150,7 +217,7 @@ export async function runContinuationLoop(
           },
         ],
         sources: aggregateSources(sources),
-        stopReason,
+        stopReason: stopReason ?? "model_ceased_calling_tools",
       };
     }
 
@@ -170,6 +237,7 @@ export async function runContinuationLoop(
         profile: inputs.profile,
         round,
         history,
+        recentFailures,
       });
       if (stop.stop) {
         stopReason = stop.reason;
@@ -186,14 +254,16 @@ export async function runContinuationLoop(
           producedNewContent: toolResultProducedNewContent(result.summary),
         });
       } else if (result.status === "failed") {
+        const category = classifyFailure(result.error);
         toolResultSummaries.push(
-          `## ${call.name}\n\n参数：${JSON.stringify(call.input)}\n\n结果：工具执行失败：${result.error}`
+          formatFailureMessage(call, result.error, category)
         );
         history.push({
           toolId: call.name,
           args: call.input,
           producedNewContent: false,
         });
+        recentFailures.push({ toolId: call.name, category, round });
       }
     }
 

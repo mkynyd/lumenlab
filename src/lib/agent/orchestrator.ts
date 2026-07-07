@@ -11,7 +11,48 @@ export type { TaskProfile };
 export type ToolLoopStopReason =
   | "round_limit"
   | "duplicate_tool_call"
-  | "no_progress";
+  | "no_progress"
+  | "consecutive_failures"
+  | "model_ceased_calling_tools"
+  | "tool_budget_exhausted";
+
+/** 工具调用失败的分类，决定模型和编排器如何恢复 */
+export type FailureCategory =
+  | "invalid_params"    // 参数错误 — 可修正后重试一次
+  | "transient"          // 网络/超时 — 可换来源或降级
+  | "permission"         // 权限拒绝 — 不得原样重试
+  | "not_found"          // 资源不存在 — 放弃该路径
+  | "rate_limited"       // 频率限制 — 等待后可重试
+  | "internal_error";    // 服务端内部错误 — 降级处理
+
+export function classifyFailure(error: string): FailureCategory {
+  const normalized = error.toLowerCase();
+  if (normalized.includes("rate") && (normalized.includes("limit") || normalized.includes("throttle"))) {
+    return "rate_limited";
+  }
+  if (normalized.includes("permission") || normalized.includes("unauthorized") || normalized.includes("forbidden") || normalized.includes("401") || normalized.includes("403")) {
+    return "permission";
+  }
+  if (normalized.includes("not found") || normalized.includes("不存在") || normalized.includes("404") || normalized.includes("does not exist")) {
+    return "not_found";
+  }
+  if (normalized.includes("invalid") || normalized.includes("parameter") || normalized.includes("bad request") || normalized.includes("400") || normalized.includes("422")) {
+    return "invalid_params";
+  }
+  if (normalized.includes("timeout") || normalized.includes("network") || normalized.includes("econnrefused") || normalized.includes("econnreset") || normalized.includes("dns")) {
+    return "transient";
+  }
+  return "internal_error";
+}
+
+/** 用于追踪的连续失败检测 */
+export const CONSECUTIVE_FAILURE_THRESHOLD = 3; // 连续失败超过此次数则强制停止
+
+export interface FailureRecord {
+  toolId: string;
+  category: FailureCategory;
+  round: number;
+}
 
 export interface ToolLoopRecord {
   toolId: string;
@@ -77,6 +118,8 @@ export interface ToolLoopState {
   profile: TaskProfile;
   round: number;
   history: ToolLoopRecord[];
+  /** 最近连续失败记录（用于检测是否达到阈值） */
+  recentFailures: FailureRecord[];
 }
 
 const TOOL_ROUND_LIMITS: Record<TaskProfile, number> = {
@@ -244,6 +287,16 @@ function hasConsecutiveNoProgress(history: ToolLoopRecord[]) {
   return history.slice(-2).every((item) => !item.producedNewContent);
 }
 
+function hasConsecutiveFailures(failures: FailureRecord[]): boolean {
+  if (failures.length < CONSECUTIVE_FAILURE_THRESHOLD) return false;
+  // 检查最近 N 条是否连续（按 round 连续）
+  const recent = failures.slice(-CONSECUTIVE_FAILURE_THRESHOLD);
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i].round !== recent[i - 1].round + 1) return false;
+  }
+  return true;
+}
+
 export function shouldStopToolLoop(
   state: ToolLoopState
 ): { stop: true; reason: ToolLoopStopReason } | { stop: false } {
@@ -255,6 +308,9 @@ export function shouldStopToolLoop(
   }
   if (hasConsecutiveNoProgress(state.history)) {
     return { stop: true, reason: "no_progress" };
+  }
+  if (hasConsecutiveFailures(state.recentFailures)) {
+    return { stop: true, reason: "consecutive_failures" };
   }
   return { stop: false };
 }
@@ -281,6 +337,7 @@ export async function executePlannedToolCalls(
   const results: ExecutePlannedToolCallsResult["results"] = [];
   const sources: AgentSource[] = [];
   const history: ToolLoopRecord[] = [];
+  const recentFailures: FailureRecord[] = [];
   let stopReason: ToolLoopStopReason | null = null;
 
   for (let index = 0; index < input.plannedCalls.length; index += 1) {
@@ -288,6 +345,7 @@ export async function executePlannedToolCalls(
       profile: input.profile,
       round: index,
       history,
+      recentFailures,
     });
     if (stop.stop) {
       stopReason = stop.reason;
@@ -305,6 +363,7 @@ export async function executePlannedToolCalls(
         producedNewContent: toolResultProducedNewContent(executed.summary),
       });
     } else {
+      const category = classifyFailure(executed.error);
       results.push({
         call,
         status: "failed",
@@ -316,6 +375,7 @@ export async function executePlannedToolCalls(
         args: call.input,
         producedNewContent: false,
       });
+      recentFailures.push({ toolId: call.name, category, round: index });
     }
   }
 
