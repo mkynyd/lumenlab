@@ -506,10 +506,10 @@ export function ProjectSidebar({
             </button>
           </div>
           <SidebarGroupContent
-            className={cn("min-h-0", conversationsOpen && "flex-1")}
+            className={cn("min-h-0", conversationsOpen && "flex flex-1 flex-col")}
           >
-            <CollapsibleContent>
-                <ScrollArea className="h-full min-h-0 w-full overflow-x-hidden">
+            <CollapsibleContent className="min-h-0 flex-1">
+              <ScrollArea className="h-full min-h-0 w-full overflow-x-hidden">
                 {project.conversations && project.conversations.length > 0 ? (
                   <div className="flex w-full flex-col gap-1 overflow-hidden">
                     {project.conversations.map((conv, i) => {
@@ -569,7 +569,7 @@ export function ProjectSidebar({
                   </p>
                 )}
               </ScrollArea>
-              </CollapsibleContent>
+            </CollapsibleContent>
           </SidebarGroupContent>
           </Collapsible>
           <AlertDialog
