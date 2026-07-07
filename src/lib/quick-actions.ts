@@ -8,6 +8,112 @@ export interface QuickActionDefinition {
   materialScope?: "project-corpus" | "none";
 }
 
+export const MERMAID_LOGIC_PROMPT = `请基于项目资料生成可读的 Mermaid flowchart LR 总览图，按逻辑依赖排列主干层级，同级并列，子级递进。
+
+目标：
+- 图中只放主干结构和关键依赖，不要把所有细节挤进一张巨型图。
+- 完整覆盖范围、文件清单、未展开细节放在图后说明中，必要时再给分组子图建议。
+- 同时给出可直接复制的 Mermaid 代码块。
+
+Mermaid 语法硬约束：
+1. 只输出 flowchart LR、subgraph、direction、节点定义、箭头和 end；不要输出 classDef、class、style、linkStyle 或 init 配置。
+2. 节点标签只使用纯中文或英文文字；绝对禁止在标签内使用半角括号 ()、大括号 {}、尖括号 <>、脱字符 ^、竖线 |。
+3. 所有节点标签用方括号 [标签] 或圆角方括号 (标签) 包裹。
+4. 每个节点定义和每条连线独占一行。
+5. subgraph 只能作为分组容器；禁止把箭头连到 subgraph ID，例如禁止 A5 --> L2、L2 --> L3、C3 --> L4。
+6. 跨分组依赖必须连接到具体节点，例如 A5 --> B1、B5 --> C1、C3 --> D1。
+7. 优先控制节点数量和文字长度，让图表可阅读。
+
+<example>
+错误示例：不要把边连到 subgraph ID。
+
+\`\`\`mermaid
+flowchart LR
+    subgraph L1 [法律基础]
+        A1[网络安全法]
+    end
+    subgraph L2 [技术基础]
+        B1[网络安全属性]
+    end
+    A1 --> L2
+\`\`\`
+
+问题：L2 是分组 ID，不是具体知识节点，渲染器可能产生空标签或异常布局。
+</example>
+
+<example>
+正确示例：跨组连接到具体节点。
+
+\`\`\`mermaid
+flowchart LR
+    subgraph L1 [法律基础]
+        direction LR
+        A1[网络安全法]
+        A2[等级保护]
+    end
+    subgraph L2 [技术基础]
+        direction LR
+        B1[网络安全属性]
+        B2[攻击流程]
+    end
+    A1 --> A2
+    A2 --> B1
+    B1 --> B2
+\`\`\`
+</example>
+
+<example>
+正确示例：节点标签保持纯文本，不使用危险符号。
+
+\`\`\`mermaid
+flowchart LR
+    C1[大语言模型]
+    C2[安全智能体]
+    C3[威胁狩猎]
+    C1 --> C2
+    C2 --> C3
+\`\`\`
+
+说明：不要写 C1[大语言模型(LLM)]、C2[AI安全|智能体] 或 C3[威胁<狩猎>]。
+</example>
+
+<example>
+正确示例：复杂资料先做可读主图，细节放到图后说明。
+
+\`\`\`mermaid
+flowchart LR
+    A[法律基础] --> B[网络技术]
+    B --> C[AI安全技术]
+    C --> D[安全运营]
+    C --> E[安全挑战]
+\`\`\`
+
+图后说明：
+- 覆盖资料：共覆盖若干份可读资料。
+- 未展开细节：法律条文、协议字段、具体工具和案例可拆成子图。
+</example>
+
+<example>
+正确示例：分组内部可以并列，但主干仍要清晰。
+
+\`\`\`mermaid
+flowchart LR
+    subgraph S1 [安全基础]
+        direction LR
+        A1[法律制度]
+        A2[网络协议]
+    end
+    subgraph S2 [智能安全]
+        direction LR
+        B1[安全模型]
+        B2[智能研判]
+    end
+    A1 --> B1
+    A2 --> B1
+    B1 --> B2
+\`\`\`
+</example>`;
+
 export const DEFAULT_QUICK_ACTIONS: Record<ProjectType, QuickActionDefinition[]> = {
   experiment: [
     { title: "生成实验报告", prompt: "请基于我选中的资料生成一份可直接复制的实验报告，包含实验目的、实验环境、实验原理、实验步骤、数据处理、结果分析、误差分析和实验结论。如果资料中缺少数据，请明确标注缺失项，不要编造。" },
@@ -23,7 +129,7 @@ export const DEFAULT_QUICK_ACTIONS: Record<ProjectType, QuickActionDefinition[]>
     { title: "分析试卷覆盖度", prompt: "请基于我选中的试卷和复习资料分析知识点覆盖度，统计题型、章节、分值和难度分布。无法确认的分值或对应关系请明确标注，不要编造。" },
     { title: "生成速记版", prompt: "请基于我选中的资料生成可直接复制的考前速记版，使用紧凑的 Markdown 表格和列表，突出定义、公式、步骤、易错点和高频考点。" },
     { title: "整理错题解析", prompt: "请基于我选中的资料整理错题解析，包含错误原因、涉及知识点、正确解法、关键步骤和同类题识别方法。信息不足时请明确说明。" },
-    { title: "生成 Mermaid 逻辑图", prompt: "请基于项目资料生成可读的 Mermaid flowchart LR 总览图，按逻辑依赖排列主干层级，同级并列，子级递进。不要把所有细节挤进一张巨型图；图中只放主干结构和关键依赖，完整覆盖范围、文件清单、未展开细节放在图后说明中，必要时再给分组子图建议。严格遵守：1）节点标签只使用纯中文或英文文字，绝对禁止在标签内使用半角括号 ()、大括号 {}、尖括号 <>、脱字符 ^、竖线 |，这些符号会直接导致渲染崩溃；2）所有标签用方括号 [标签] 或圆角方括号 (标签) 包裹；3）每个节点语句独占一行；4）优先控制节点数量和文字长度，让图表可阅读。同时给出可直接复制的 Mermaid 代码块。" },
+    { title: "生成 Mermaid 逻辑图", prompt: MERMAID_LOGIC_PROMPT },
   ],
   coding: [
     { title: "解释代码", prompt: "请基于我选中的代码资料解释整体结构和关键逻辑，说明主要函数、数据结构、算法流程和输入输出。引用具体文件名，不要假设不存在的实现。" },
