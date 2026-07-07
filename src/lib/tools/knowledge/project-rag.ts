@@ -23,6 +23,15 @@ export function extractSearchKeywords(query: string) {
   return [...new Set(keywords)].slice(0, 80);
 }
 
+function isBroadProjectMaterialQuery(query: string) {
+  const lower = query.toLowerCase();
+  return /资料|材料|文档|文件|内容|知识点|考点|速记|整理|总结|复习|选中|生成|逻辑图|思维导图|mermaid|flowchart/.test(lower);
+}
+
+function representativeSnippet(text: string) {
+  return text.replace(/\s+/g, " ").trim().slice(0, 1000);
+}
+
 export async function ragSearch(
   userId: string,
   projectId: string,
@@ -37,7 +46,7 @@ export async function ragSearch(
     where: {
       userId,
       projectId,
-      status: "parsed",
+      status: { in: ["parsed", "partial"] },
       textContent: { not: null },
     },
     select: { id: true, originalName: true, textContent: true },
@@ -67,6 +76,25 @@ export async function ragSearch(
     });
   }
   results.sort((a, b) => b.score - a.score);
+  if (results.length === 0 && isBroadProjectMaterialQuery(query)) {
+    const fallbackHits = files
+      .map((file) => ({
+        file: file.originalName,
+        fileId: file.id,
+        snippet: representativeSnippet(file.textContent || ""),
+        score: 0,
+      }))
+      .filter((hit) => hit.snippet.length > 0)
+      .slice(0, maxResults);
+
+    return {
+      query,
+      hits: fallbackHits,
+      totalMatched: fallbackHits.length,
+      fallback: "representative_project_material",
+    };
+  }
+
   return {
     query,
     hits: results.slice(0, maxResults),
