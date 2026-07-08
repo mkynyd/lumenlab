@@ -115,7 +115,19 @@ async function callSearchWithToolChoice(
     messages: buildSearchMessages(query),
     thinking: { type: "disabled" },
     max_tokens: SEARCH_MAX_TOKENS,
-    tools: [{ type: "web_search_20250305", name: "web_search" }],
+    // DeepSeek Anthropic 兼容层通过标准 tools 字段暴露内置 web_search，
+    // 使用标准 name + description + input_schema 格式触发。
+    tools: [{
+      name: "web_search",
+      description: "联网搜索关键词并返回摘要与来源",
+      input_schema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "搜索关键词" },
+        },
+        required: ["query"],
+      },
+    }],
     tool_choice: { type: "tool", name: "web_search" },
   });
 

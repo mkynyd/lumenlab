@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
@@ -100,6 +100,8 @@ export function Sidebar({
   const deleteProjectMutation = useDeleteProject();
   const deleteConversionMutation = useDeleteConversion();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountPointerHandledRef = useRef(false);
   const [conversationDeleteTarget, setConversationDeleteTarget] = useState<{
     id: string;
     title: string;
@@ -513,7 +515,7 @@ export function Sidebar({
             collapsed ? "lg:px-2" : "lg:px-3"
           )}
         >
-          <DropdownMenu>
+          <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
@@ -525,6 +527,20 @@ export function Sidebar({
                 aria-label="打开账户菜单"
                 aria-haspopup="menu"
                 data-dropdown-menu-trigger
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  accountPointerHandledRef.current = true;
+                  setAccountMenuOpen((prev) => !prev);
+                  event.currentTarget.focus();
+                }}
+                onClick={() => {
+                  if (accountPointerHandledRef.current) {
+                    accountPointerHandledRef.current = false;
+                    return;
+                  }
+                  setAccountMenuOpen((prev) => !prev);
+                }}
               >
                 <AvatarMark
                   presetId={accountAvatarPreset}

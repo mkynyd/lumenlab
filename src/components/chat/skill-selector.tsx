@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, createElement } from "react";
+import { useState, useEffect, useMemo, useRef, createElement } from "react";
 import {
   Brain,
   ChatBubbleQuestion,
@@ -131,8 +131,29 @@ export function SkillSelector({
   const isOff = value === "off";
   const TriggerIcon = isOff ? Xmark : getSkillIcon(value);
 
+  const [open, setOpen] = useState(false);
+  const pointerHandledRef = useRef(false);
+
+  function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+    // 完全接管鼠标/指针触发，确保合成 click（如自动化测试）和真实指针都能稳定开关菜单，
+    // 同时避免 Radix 默认 pointerdown 与自定义 click 双重触发。
+    event.preventDefault();
+    event.stopPropagation();
+    pointerHandledRef.current = true;
+    setOpen((prev) => !prev);
+    event.currentTarget.focus();
+  }
+
+  function handleClick() {
+    if (pointerHandledRef.current) {
+      pointerHandledRef.current = false;
+      return;
+    }
+    setOpen((prev) => !prev);
+  }
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
           type="button"
@@ -147,6 +168,8 @@ export function SkillSelector({
             isOff && "text-[var(--color-text-tertiary)]",
             value !== "auto" && !isOff && "bg-[var(--color-surface-active)] text-[var(--color-accent)]"
           )}
+          onPointerDown={handlePointerDown}
+          onClick={handleClick}
         >
           {createElement(TriggerIcon, { className: "size-[17px]", strokeWidth: 2 })}
           {!compact && selected && (

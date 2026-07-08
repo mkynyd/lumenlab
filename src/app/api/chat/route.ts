@@ -18,10 +18,7 @@ import {
 } from "@/lib/chat/router";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { assembleSystemPrompt } from "@/lib/classification";
-import {
-  ensureDiscovery,
-  DEEPSEEK_WEB_SEARCH_TYPE,
-} from "@/lib/skills/registry";
+import { ensureDiscovery } from "@/lib/skills/registry";
 import {
   retrieveProjectContext,
   shouldUseProjectContext,
@@ -309,6 +306,32 @@ function supportsNativeTool(
   return toolId === "web.search";
 }
 
+// DeepSeek Anthropic 兼容层对 tool name 的字符集限制为 ^[a-zA-Z0-9_-]+$。
+// 将内部 toolId（含点号）映射为合法名称；模型返回后再反向映射回内部 toolId。
+const DEEPSEEK_NATIVE_TOOL_NAME_MAP: Record<string, string> = {
+  "web.search": "web_search",
+};
+const REVERSE_DEEPSEEK_NATIVE_TOOL_NAME_MAP = Object.fromEntries(
+  Object.entries(DEEPSEEK_NATIVE_TOOL_NAME_MAP).map(([toolId, nativeName]) => [
+    nativeName,
+    toolId,
+  ])
+) as Record<string, string>;
+
+function toNativeToolName(provider: "deepseek" | "minimax", toolId: string): string {
+  if (provider === "deepseek") {
+    return DEEPSEEK_NATIVE_TOOL_NAME_MAP[toolId] ?? toolId;
+  }
+  return toolId;
+}
+
+function fromNativeToolName(provider: "deepseek" | "minimax", nativeName: string): string {
+  if (provider === "deepseek") {
+    return REVERSE_DEEPSEEK_NATIVE_TOOL_NAME_MAP[nativeName] ?? nativeName;
+  }
+  return nativeName;
+}
+
 function buildNativeToolPayload(
   provider: "deepseek" | "minimax",
   tools: ToolMetadata[]
@@ -328,8 +351,9 @@ function buildNativeToolPayload(
   return tools
     .filter((tool) => tool.toolId === "web.search")
     .map((tool) => ({
-      type: DEEPSEEK_WEB_SEARCH_TYPE,
-      name: "web_search",
+      // DeepSeek Anthropic 兼容层通过标准 tools 字段暴露内置 web_search。
+      // 使用合法 name，并附带标准 input_schema，让模型正确触发。
+      name: toNativeToolName(provider, tool.toolId),
       description: tool.description,
       input_schema: tool.inputSchema,
     }));
@@ -461,7 +485,8 @@ function buildToolFollowUpMessages(
   messages: DeepSeekMessage[],
   toolCalls: MergedToolCall[],
   toolResults: Array<{ toolUseId: string; content: string }>,
-  rawContent: string
+  rawContent: string,
+  provider: "deepseek" | "minimax"
 ): DeepSeekMessage[] {
   const assistantContent: DeepSeekContentBlock[] = [];
   const sanitizedText = sanitizeModelText(rawContent);
@@ -472,7 +497,8 @@ function buildToolFollowUpMessages(
     assistantContent.push({
       type: "tool_use",
       id: tc.id,
-      name: tc.name,
+      // 下发给模型的 tool_use name 必须和 tools 定义中的 native name 一致。
+      name: toNativeToolName(provider, tc.name),
       input: tc.input,
     });
   }
@@ -1290,7 +1316,10 @@ async function handlePost(request: NextRequest) {
 
       const rawContent = streamResult.getRawContent();
       const rawReasoning = streamResult.getRawReasoning();
-      const nativeCalls = streamResult.getToolCalls();
+      const nativeCalls = streamResult.getToolCalls().map((tc) => ({
+        ...tc,
+        name: fromNativeToolName(modelRoute.provider, tc.name),
+      }));
       const parsedCalls = parseToolCalls(`${rawReasoning}\n${rawContent}`);
       const merged = mergeToolCalls(nativeCalls, parsedCalls);
       const { executable, blocked } = filterToolCallsByWhitelist(
@@ -1412,7 +1441,8 @@ async function handlePost(request: NextRequest) {
         messages,
         dedupedExecutable,
         toolResults,
-        rawContent
+        rawContent,
+        modelRoute.provider
       );
 
       try {
