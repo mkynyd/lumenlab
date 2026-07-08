@@ -133,13 +133,15 @@ export function SkillSelector({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
           type="button"
           variant="ghost"
           size={compact ? "icon-sm" : "md"}
           disabled={disabled}
           aria-label="选择 Skill"
+          aria-haspopup="menu"
+          data-dropdown-menu-trigger
           className={cn(
             "shrink-0 rounded-md",
             isOff && "text-[var(--color-text-tertiary)]",

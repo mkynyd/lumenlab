@@ -518,11 +518,13 @@ export function Sidebar({
               <button
                 type="button"
                 className={cn(
-                  "flex h-11 w-full min-w-0 items-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-surface)] px-2 text-left",
+                  "relative z-10 flex h-11 w-full min-w-0 items-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-surface)] px-2 text-left",
                   "text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
                   collapsed && "lg:justify-center lg:px-0"
                 )}
                 aria-label="打开账户菜单"
+                aria-haspopup="menu"
+                data-dropdown-menu-trigger
               >
                 <AvatarMark
                   presetId={accountAvatarPreset}

@@ -46,6 +46,19 @@ describe("sanitizeModelText", () => {
     const cleaned = sanitizeModelText(text);
     expect(cleaned).toBe("内容结尾");
   });
+
+  it("removes trailing incomplete XML/DSML fragments", () => {
+    expect(sanitizeModelText("回答：<tool_calls")).toBe("回答：");
+    expect(sanitizeModelText("回答：<tool_calls<invoke name=\"project_rag.search\"")).toBe("回答：");
+    expect(sanitizeModelText("回答：<| | DSML | | tool_calls")).toBe("回答：");
+    expect(sanitizeModelText("回答：<invoke name=\"foo\"")).toBe("回答：");
+  });
+
+  it("removes malformed merged opening tags", () => {
+    const text = '计划。<tool_calls<invoke name="project_files.list"><parameter name="projectId">p1</parameter></invoke></tool_calls>继续。';
+    const cleaned = sanitizeModelText(text);
+    expect(cleaned).toBe("计划。继续。");
+  });
 });
 
 describe("parseToolCalls", () => {
@@ -130,5 +143,21 @@ describe("parseToolCalls", () => {
       name: "project_files.list",
       input: { projectId: "p1" },
     });
+  });
+
+  it("parses malformed merged XML opening tags", () => {
+    const text = '<tool_calls<invoke name="project_rag.search"><parameter name="query">等级保护</parameter></invoke></tool_calls>';
+    const calls = parseToolCalls(text);
+    expect(calls).toEqual([
+      { name: "project_rag.search", input: { query: "等级保护" } },
+    ]);
+  });
+
+  it("parses DSML web_search markup as observed from DeepSeek", () => {
+    const text = '<| | DSML | | tool_calls> <| | DSML | | invoke name="web_search"> <| | DSML | | parameter name="query" string="true">网络信息安全风险评估</| | DSML | | parameter> </| | DSML | | invoke> </| | DSML | | tool_calls>';
+    const calls = parseToolCalls(text);
+    expect(calls).toEqual([
+      { name: "web.search", input: { query: "网络信息安全风险评估" } },
+    ]);
   });
 });

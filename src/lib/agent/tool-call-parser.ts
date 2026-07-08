@@ -21,6 +21,40 @@ const DSML_CLOSE_TAG = /<\/!?\|\s*\|\s*DSML\s*\|\s*\|/i;
 
 const XML_TOOL_CALLS_OPEN = /<tool_calls\b[^>]*>/i;
 
+/**
+ * DeepSeek / other reasoning models sometimes emit malformed markup where the
+ * opening tag of a container is merged with the next tag, e.g.
+ * `<tool_calls<invoke name="...">`. Normalize these common patterns so the
+ * strict parser below can still execute the intended tool call.
+ */
+function normalizeMalformedToolMarkup(text: string): string {
+  let normalized = text;
+  // <tool_calls<invoke ...> -> <tool_calls><invoke ...>
+  normalized = normalized.replace(/<tool_calls\s*</gi, "<tool_calls><");
+  // <invoke<parameter ...> -> <invoke><parameter ...>
+  normalized = normalized.replace(/<invoke\s*</gi, "<invoke><");
+  // <parameter<invoke ...> -> <parameter><invoke ...>
+  normalized = normalized.replace(/<parameter\s*</gi, "<parameter><");
+  // <function_calls<invoke ...> -> <function_calls><invoke ...>
+  normalized = normalized.replace(/<function_calls\s*</gi, "<function_calls><");
+  return normalized;
+}
+
+/**
+ * Strip trailing incomplete tool-call-like tag fragments. This is important for
+ * streaming sanitizer: a chunk may end with `<tool_calls` or a DSML marker, and
+ * we must not leak that partial markup to the UI before the next chunk completes
+ * (or fails to complete) the block.
+ */
+function stripTrailingToolFragments(text: string): string {
+  return text
+    .replace(/<tool_calls\b[^>]*>?\s*$/gim, "")
+    .replace(/<invoke\b[^>]*>?\s*$/gim, "")
+    .replace(/<parameter\b[^>]*>?\s*$/gim, "")
+    .replace(/<function_calls\b[^>]*>?\s*$/gim, "")
+    .replace(/<!?\|\s*\|\s*DSML[\s\S]*$/gim, "");
+}
+
 const TOOL_NAME_ALIASES: Record<string, string> = {
   web_search: "web.search",
   search_project_files: "project_rag.search",
@@ -129,8 +163,6 @@ export function sanitizeModelText(text: string): string {
     ),
     ""
   );
-  cleaned = cleaned.replace(/<!?\|\s*\|\s*DSML\s*\|\s*\|/gi, "");
-  cleaned = cleaned.replace(/<\/!?\|\s*\|\s*DSML\s*\|\s*\|/gi, "");
   // 2. Remove complete XML tool_calls / invoke / parameter blocks.
   cleaned = cleaned.replace(
     /<tool_calls\b[^>]*>[\s\S]*?<\/tool_calls>/gi,
@@ -145,13 +177,22 @@ export function sanitizeModelText(text: string): string {
     ""
   );
 
-  // 3. Remove any leftover standalone tags (including malformed / unclosed).
+  // 3. Remove any trailing incomplete tag fragments that may have been split
+  //    across stream chunks (e.g. "...<tool_calls" at end of a chunk). Do this
+  //    before stripping leftover markers so DSML markers take their trailing
+  //    content with them instead of leaving orphan tag names behind.
+  cleaned = stripTrailingToolFragments(cleaned);
+
+  // 4. Remove any leftover standalone tags (including malformed / unclosed) and
+  //    stray DSML markers.
+  cleaned = cleaned.replace(/<!?\|\s*\|\s*DSML\s*\|\s*\|/gi, "");
+  cleaned = cleaned.replace(/<\/!?\|\s*\|\s*DSML\s*\|\s*\|/gi, "");
   cleaned = cleaned.replace(/<\/?tool_calls\b[^>]*>/gi, "");
   cleaned = cleaned.replace(/<\/?invoke\b[^>]*>/gi, "");
   cleaned = cleaned.replace(/<\/?parameter\b[^>]*>/gi, "");
   cleaned = cleaned.replace(/<\/?function_calls\b[^>]*>/gi, "");
 
-  // 4. Collapse excessive whitespace left behind.
+  // 5. Collapse excessive whitespace left behind.
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
 
   return cleaned.trim();
@@ -251,8 +292,9 @@ function parseDsmlToolCalls(text: string): ParsedToolCall[] {
  */
 export function parseToolCalls(text: string): ParsedToolCall[] {
   if (!text) return [];
-  const xmlCalls = parseXmlToolCalls(text);
-  const dsmlCalls = parseDsmlToolCalls(text);
+  const normalized = normalizeMalformedToolMarkup(text);
+  const xmlCalls = parseXmlToolCalls(normalized);
+  const dsmlCalls = parseDsmlToolCalls(normalized);
 
   // Deduplicate by a stable key (name + sorted input) to avoid double execution
   // when the same call appears in both XML and DSML forms.

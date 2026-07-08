@@ -38,14 +38,6 @@ const PROVIDER_LABELS = {
   minimax: "MiniMax",
 } as const;
 
-const FALLBACK_LABELS = {
-  native_tools: "Native tools",
-  xml_dsml_fallback: "XML/DSML fallback",
-  json_action: "JSON actions",
-  prefetch_tools: "Prefetch tools",
-  none: "Direct",
-} as const;
-
 export function ChatArea({
   initialConversationId,
   initialMessages,
@@ -177,8 +169,7 @@ export function ChatArea({
           {agentSession.modelAdapter && (
             <span className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 text-xs text-[var(--color-text-secondary)]">
               <Cpu size={12} />
-              {PROVIDER_LABELS[agentSession.modelAdapter.provider]} ·{" "}
-              {FALLBACK_LABELS[agentSession.modelAdapter.fallback]}
+              {PROVIDER_LABELS[agentSession.modelAdapter.provider]}
             </span>
           )}
         </div>
