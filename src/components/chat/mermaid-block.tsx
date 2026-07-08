@@ -73,6 +73,68 @@ function parseSvgLength(value: string | null) {
   return Number.parseFloat(trimmed);
 }
 
+/**
+ * Mermaid 在某些配置或模型输出下会生成空节点标签（甚至不创建 <text> 元素）。
+ * 此兜底函数把空标签填充为节点 ID，保证图表始终可读。
+ */
+function ensureNodeLabels(svgText: string): string {
+  if (typeof document === "undefined" || !svgText) return svgText;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, "image/svg+xml");
+  const svg = doc.querySelector("svg");
+  if (!svg) return svgText;
+
+  let changed = false;
+  svg.querySelectorAll(".node").forEach((node) => {
+    const nodeId = node.id;
+    const match = /flowchart-([^-]+(?:-[^-]+)*)-\d+$/.exec(nodeId);
+    const label = match?.[1] ?? "";
+    if (!label) return;
+
+    const labelGroup = node.querySelector(".label");
+    if (!labelGroup) return;
+
+    const textEls = labelGroup.querySelectorAll("text");
+    if (textEls.length === 0) {
+      // Mermaid 未生成 text 元素，主动创建一个居中的 text
+      const text = doc.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("y", "-10.1");
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "middle");
+      text.style.fill = "currentColor";
+      const tspan = doc.createElementNS("http://www.w3.org/2000/svg", "tspan");
+      tspan.setAttribute("class", "text-outer-tspan row");
+      tspan.setAttribute("x", "0");
+      tspan.setAttribute("y", "-0.1em");
+      tspan.setAttribute("dy", "1.1em");
+      tspan.setAttribute("text-anchor", "middle");
+      tspan.textContent = label;
+      text.appendChild(tspan);
+      labelGroup.appendChild(text);
+      changed = true;
+      return;
+    }
+
+    const allEmpty = Array.from(textEls).every((t) =>
+      Array.from(t.querySelectorAll("tspan")).every(
+        (s) => !s.textContent?.trim()
+      )
+    );
+    if (!allEmpty) return;
+
+    textEls.forEach((text, index) => {
+      const tspan = text.querySelector("tspan");
+      if (index === 0 && tspan) {
+        tspan.textContent = label;
+        changed = true;
+      }
+    });
+  });
+
+  if (!changed) return svgText;
+  return new XMLSerializer().serializeToString(svg);
+}
+
 function getViewBoxSize(svgElement: SVGSVGElement) {
   const viewBox = svgElement.getAttribute("viewBox");
   if (!viewBox) return null;
@@ -163,10 +225,11 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
         });
         const { svg: renderedSvg } = await mermaid.render(id, code);
         const cleanSvg = DOMPurify.sanitize(renderedSvg, {
-          USE_PROFILES: { svg: true, svgFilters: true },
+          USE_PROFILES: { svg: true, html: true },
         });
+        const labeledSvg = ensureNodeLabels(cleanSvg);
         if (!cancelled) {
-          setSvg(cleanSvg);
+          setSvg(labeledSvg);
           setFailed(false);
           setErrorMsg("");
         }
