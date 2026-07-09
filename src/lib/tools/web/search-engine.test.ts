@@ -124,7 +124,19 @@ describe("runWebSearch", () => {
 
     const lastCall = vi.mocked(deepseek.completeChat).mock.calls[0];
     expect(lastCall[1].tool_choice).toEqual({ type: "tool", name: "web_search" });
-    expect(lastCall[1].tools).toEqual([{ type: "web_search_20250305", name: "web_search" }]);
+    expect(lastCall[1].tools).toEqual([
+      {
+        name: "web_search",
+        description: "联网搜索关键词并返回摘要与来源",
+        input_schema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "搜索关键词" },
+          },
+          required: ["query"],
+        },
+      },
+    ]);
     expect(lastCall[1].thinking).toEqual({ type: "disabled" });
   });
 });
