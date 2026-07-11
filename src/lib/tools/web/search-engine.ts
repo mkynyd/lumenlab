@@ -18,6 +18,9 @@ import { logger } from "@/lib/logger";
 const SEARCH_MODEL = "deepseek-v4-pro";
 const SEARCH_MAX_TOKENS = 4096;
 const CACHE_TTL_SECONDS = 60;
+const SEARCH_TIMEOUT_MS = 10_000;
+const DUCKDUCKGO_HTML_SEARCH = "https://html.duckduckgo.com/html/";
+const BING_RSS_SEARCH = "https://www.bing.com/search";
 
 export interface WebSearchResult {
   summary: string;
@@ -28,7 +31,74 @@ export interface WebSearchResult {
 
 function buildCacheKey(query: string, maxResults: number): string {
   const normalized = query.trim().replace(/\s+/g, " ").toLowerCase().slice(0, 200);
-  return `websearch:v1:${maxResults}:${normalized}`;
+  return `websearch:v2:${maxResults}:${normalized}`;
+}
+
+function decodeHtml(value: string) {
+  return value
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([.,!?;:])/g, "$1")
+    .trim();
+}
+
+function resultUrl(rawHref: string) {
+  try {
+    const absolute = new URL(rawHref, "https://duckduckgo.com");
+    const redirected = absolute.searchParams.get("uddg");
+    const url = new URL(redirected ? decodeURIComponent(redirected) : absolute.toString());
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function parseDuckDuckGoResults(html: string, maxResults: number) {
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  const titlePattern = /class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const matches = [...html.matchAll(titlePattern)];
+  for (let index = 0; index < matches.length && results.length < maxResults; index += 1) {
+    const titleMatch = matches[index];
+    const url = resultUrl(decodeHtml(titleMatch[1]));
+    if (!url) continue;
+    const regionStart = (titleMatch.index ?? 0) + titleMatch[0].length;
+    const regionEnd = matches[index + 1]?.index ?? html.length;
+    const snippetMatch = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i.exec(
+      html.slice(regionStart, regionEnd)
+    );
+    results.push({
+      title: decodeHtml(titleMatch[2]) || url,
+      url,
+      snippet: decodeHtml(snippetMatch?.[1] ?? "").slice(0, 500),
+    });
+  }
+  return results;
+}
+
+export function parseBingRssResults(xml: string, maxResults: number) {
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  const itemPattern = /<item>([\s\S]*?)<\/item>/gi;
+  let item: RegExpExecArray | null;
+  while ((item = itemPattern.exec(xml)) !== null && results.length < maxResults) {
+    const title = /<title>([\s\S]*?)<\/title>/i.exec(item[1])?.[1];
+    const link = /<link>([\s\S]*?)<\/link>/i.exec(item[1])?.[1];
+    const description = /<description>([\s\S]*?)<\/description>/i.exec(item[1])?.[1];
+    if (!link) continue;
+    const url = resultUrl(decodeHtml(link));
+    if (!url) continue;
+    results.push({
+      title: decodeHtml(title ?? "") || url,
+      url,
+      snippet: decodeHtml(description ?? "").slice(0, 500),
+    });
+  }
+  return results;
 }
 
 function extractUrlsFromText(text: string): string[] {
@@ -142,23 +212,61 @@ async function callSearchWithToolChoice(
   };
 }
 
-async function callSearchFallback(
-  apiKey: string,
-  query: string
-): Promise<WebSearchResult> {
-  const response = await completeChat(apiKey, {
-    model: SEARCH_MODEL,
-    messages: buildSearchMessages(query),
-    thinking: { type: "disabled" },
-    max_tokens: SEARCH_MAX_TOKENS,
-  });
-
-  const summary = response.content || "未能获取到搜索结果。";
-  return {
-    summary,
-    sources: normalizeSources([], extractUrlsFromText(summary)),
-    query,
-  };
+async function callSearchFallback(query: string, maxResults: number): Promise<WebSearchResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+  try {
+    const url = new URL(DUCKDUCKGO_HTML_SEARCH);
+    url.searchParams.set("q", query);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { "user-agent": "LumenLab-Agent/1.0" },
+    });
+    if (!response.ok) throw new Error(`HTTP_${response.status}`);
+    const results = parseDuckDuckGoResults(await response.text(), maxResults);
+    if (results.length === 0) {
+      throw new Error("NO_DUCKDUCKGO_RESULTS");
+    }
+    return {
+      summary: results
+        .map((item, index) => `[^${index + 1}^] ${item.title}${item.snippet ? `\n${item.snippet}` : ""}\n${item.url}`)
+        .join("\n\n"),
+      sources: results.map(({ url: sourceUrl, title }) => ({ url: sourceUrl, title })),
+      query,
+    };
+  } catch (primaryError) {
+    logger.warn("web.search primary provider failed", {
+      error: primaryError instanceof Error ? primaryError.message : String(primaryError),
+    });
+    try {
+      const url = new URL(BING_RSS_SEARCH);
+      url.searchParams.set("format", "rss");
+      url.searchParams.set("q", query);
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { "user-agent": "LumenLab-Agent/1.0" },
+      });
+      if (!response.ok) throw new Error(`HTTP_${response.status}`);
+      const results = parseBingRssResults(await response.text(), maxResults);
+      if (results.length === 0) {
+        return { summary: "联网搜索未找到可验证结果。", sources: [], query };
+      }
+      return {
+        summary: results
+          .map((item, index) => `[^${index + 1}^] ${item.title}${item.snippet ? `\n${item.snippet}` : ""}\n${item.url}`)
+          .join("\n\n"),
+        sources: results.map(({ url: sourceUrl, title }) => ({ url: sourceUrl, title })),
+        query,
+      };
+    } catch (error) {
+      logger.warn("web.search verified fallback failed", {
+      error: error instanceof Error ? error.message : String(error),
+      });
+      return { summary: "联网搜索暂不可用，未获取到可验证来源。", sources: [], query };
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function runWebSearch(
@@ -166,7 +274,17 @@ export async function runWebSearch(
   apiKey: string,
   maxResults = 5
 ): Promise<WebSearchResult> {
-  const trimmed = query.trim().slice(0, 500);
+  const userQuestionMarker = "# 用户问题";
+  const userQuestionIndex = query.lastIndexOf(userQuestionMarker);
+  const searchQuery = userQuestionIndex >= 0
+    ? query.slice(userQuestionIndex + userQuestionMarker.length)
+    : query;
+  const trimmed = searchQuery
+    .trim()
+    .replace(/^(?:(?:最终回归|再次(?:联网)?查询|请(?:联网)?查询|联网(?:查询|查找))\s*[：:,，]?\s*)+/i, "")
+    .replace(/[，,。;；]?\s*(?:并|以及)?(?:请)?(?:给出|附上|提供).*?(?:可点击)?(?:的)?来源(?:链接)?[。.]?$/i, "")
+    .trim()
+    .slice(0, 500);
   if (!trimmed) {
     return { summary: "", sources: [], query: "" };
   }
@@ -178,7 +296,7 @@ export async function runWebSearch(
       const parsed = JSON.parse(cached) as WebSearchResult;
       if (parsed && typeof parsed.summary === "string" && Array.isArray(parsed.sources)) {
         logger.debug("web.search cache hit", { query: trimmed });
-        return parsed;
+            if (parsed.sources.length > 0) return parsed;
       }
     }
   } catch {
@@ -188,13 +306,15 @@ export async function runWebSearch(
   let result: WebSearchResult;
   try {
     const forced = await callSearchWithToolChoice(apiKey, trimmed);
-    result = forced ?? (await callSearchFallback(apiKey, trimmed));
+    result = forced?.sources.length
+      ? forced
+      : await callSearchFallback(trimmed, maxResults);
   } catch (error) {
     logger.warn("web.search forced tool_choice failed, falling back", {
       query: trimmed,
       error: error instanceof Error ? error.message : String(error),
     });
-    result = await callSearchFallback(apiKey, trimmed);
+    result = await callSearchFallback(trimmed, maxResults);
   }
 
   try {

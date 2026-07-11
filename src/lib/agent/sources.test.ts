@@ -73,4 +73,21 @@ describe("agent sources", () => {
       },
     ]);
   });
+
+  it("builds persistent web sources from web.search results", () => {
+    expect(
+      extractSourcesFromToolResult("web.search", {
+        query: "hidden query context",
+        sources: [
+          { url: "https://example.com/post", title: "Verified result" },
+        ],
+      })
+    ).toEqual([
+      {
+        type: "web",
+        title: "Verified result",
+        url: "https://example.com/post",
+      },
+    ]);
+  });
 });

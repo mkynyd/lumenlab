@@ -79,6 +79,19 @@ function providerForModel(model: string): "deepseek" | "minimax" {
   return model.toLowerCase().includes("minimax") ? "minimax" : "deepseek";
 }
 
+const PRODUCT_TIME_ZONE = process.env.LUMENLAB_TIME_ZONE || "Asia/Shanghai";
+
+export function productDateKey(date: Date, timeZone = PRODUCT_TIME_ZONE) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
 export function aggregateCacheRows(rows: CacheMetricRow[]) {
   const overall = emptySummary();
   const dailyMap = new Map<string, CacheMetricSummary>();
@@ -90,7 +103,7 @@ export function aggregateCacheRows(rows: CacheMetricRow[]) {
 
   for (const row of rows) {
     addRow(overall, row);
-    const date = row.createdAt.toISOString().slice(0, 10);
+    const date = productDateKey(row.createdAt);
     const daily = dailyMap.get(date) || emptySummary();
     addRow(daily, row);
     dailyMap.set(date, daily);
@@ -118,7 +131,7 @@ export function aggregateCacheRows(rows: CacheMetricRow[]) {
 
 export function aggregateTokenUsageRows(
   rows: TokenUsageRow[],
-  todayDate = new Date().toISOString().slice(0, 10)
+  todayDate = productDateKey(new Date())
 ): TokenUsageSummary {
   const summary: TokenUsageSummary = {
     totalTokens: 0,
@@ -183,7 +196,7 @@ export function aggregateTokenUsageRows(
     summary.estimatedCostCny += estimatedCostCny;
     summary.requestCount += 1;
 
-    const date = row.createdAt.toISOString().slice(0, 10);
+    const date = productDateKey(row.createdAt);
     if (date === todayDate) {
       summary.todayTokens += totalTokens;
     }

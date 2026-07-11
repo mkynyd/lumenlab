@@ -369,7 +369,7 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
     <div className="group relative" data-render-state="ready">
       <div
         ref={containerRef}
-        className="mermaid cursor-zoom-in overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 [&_svg]:h-auto [&_svg]:max-w-none [&_svg]:min-h-[180px]"
+        className="mermaid cursor-zoom-in overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 [&_svg]:h-auto [&_svg]:max-w-none [&_svg]:min-h-[180px] [&_svg]:min-w-[720px]"
         dangerouslySetInnerHTML={{ __html: svg }}
         onClick={() => setViewerOpen(true)}
         role="button"
@@ -382,7 +382,10 @@ export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
         }}
         aria-label="点击放大查看 Mermaid 图表"
       />
-      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <span className="pointer-events-none absolute bottom-2 left-3 rounded bg-[var(--color-surface)]/90 px-2 py-1 text-[10px] text-[var(--color-text-tertiary)]">
+        横向滚动 · 点击放大
+      </span>
+      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         <Button
           type="button"
           onClick={copySourceCode}

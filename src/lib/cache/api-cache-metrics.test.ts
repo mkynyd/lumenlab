@@ -42,7 +42,7 @@ describe("aggregateCacheRows", () => {
 });
 
 describe("aggregateTokenUsageRows", () => {
-  it("aggregates measured tokens by UTC day and actual provider", () => {
+  it("aggregates measured tokens by the product timezone and actual provider", () => {
     const result = aggregateTokenUsageRows(
       [
         {
@@ -70,7 +70,7 @@ describe("aggregateTokenUsageRows", () => {
 
     expect(result).toEqual({
       totalTokens: 420,
-      todayTokens: 300,
+      todayTokens: 420,
       requestCount: 3,
       unattributedTokens: 120,
       estimatedCostCny: 0.0009,
@@ -80,17 +80,10 @@ describe("aggregateTokenUsageRows", () => {
       inputCacheMissTokens: 320,
       daily: [
         {
-          date: "2026-06-19",
-          totalTokens: 120,
-          inputCacheHitTokens: 0,
-          inputCacheMissTokens: 120,
-          outputTokens: 0,
-        },
-        {
           date: "2026-06-20",
-          totalTokens: 300,
+          totalTokens: 420,
           inputCacheHitTokens: 0,
-          inputCacheMissTokens: 200,
+          inputCacheMissTokens: 320,
           outputTokens: 100,
         },
       ],
@@ -103,6 +96,20 @@ describe("aggregateTokenUsageRows", () => {
         minimax: { totalTokens: 100, requestCount: 1, estimatedCostCny: 0 },
       },
     });
+  });
+
+  it("counts post-midnight Asia/Shanghai usage as today", () => {
+    const result = aggregateTokenUsageRows(
+      [{
+        createdAt: new Date("2026-07-10T18:30:00Z"),
+        tokenCount: 100,
+        provider: "deepseek",
+      }],
+      "2026-07-11"
+    );
+
+    expect(result.todayTokens).toBe(100);
+    expect(result.daily[0].date).toBe("2026-07-11");
   });
 
   it("excludes messages without measured token usage", () => {

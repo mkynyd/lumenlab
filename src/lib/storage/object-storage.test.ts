@@ -15,7 +15,10 @@ const ENV_KEYS = [
   "QINIU_BUCKET",
   "QINIU_REGION",
   "QINIU_UPLOAD_HOST",
+  "QINIU_RS_HOST",
   "QINIU_PRIVATE_DOMAIN",
+  "URLLIB_ENABLE_PROXY",
+  "URLLIB_PROXY",
 ] as const;
 
 function setEnv(key: string, value: string | undefined) {
@@ -43,6 +46,7 @@ describe("object storage adapter", () => {
       setEnv(key, value);
     }
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("falls back to local storage outside production when Qiniu is not configured", async () => {
@@ -136,5 +140,46 @@ describe("object storage adapter", () => {
     );
     expect(url).toContain("e=1781827800");
     expect(url).toContain("token=ak:");
+  });
+
+  it("uploads and deletes Qiniu objects with signed HTTP requests", async () => {
+    setEnv("QINIU_ACCESS_KEY", "ak");
+    setEnv("QINIU_SECRET_KEY", "sk");
+    setEnv("QINIU_BUCKET", "course-ai-lab");
+    setEnv("QINIU_UPLOAD_HOST", "https://up-z2.qiniup.com");
+    setEnv("QINIU_RS_HOST", "https://rs.qiniuapi.com");
+    setEnv("QINIU_PRIVATE_DOMAIN", "coursecdn.mkynstudio.top");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const stored = await uploadObjectBuffer({
+      key: "users/user-1/test.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("hello"),
+    });
+    await deleteStoredObject(stored);
+
+    const uploadCall = fetchMock.mock.calls[0];
+    expect(String(uploadCall[0])).toBe("https://up-z2.qiniup.com");
+    expect(uploadCall[1]).toMatchObject({ method: "POST" });
+    expect(uploadCall[1].body).toBeInstanceOf(FormData);
+    expect((uploadCall[1].body as FormData).get("token")).toMatch(/^ak:/);
+    expect((uploadCall[1].body as FormData).get("key")).toBe("users/user-1/test.txt");
+
+    const deleteCall = fetchMock.mock.calls[1];
+    expect(String(deleteCall[0])).toContain("https://rs.qiniuapi.com/delete/");
+    expect(deleteCall[1].headers.Authorization).toMatch(/^QBox ak:/);
+  });
+
+  it("rejects the vulnerable legacy urllib proxy path", () => {
+    setEnv("QINIU_ACCESS_KEY", "ak");
+    setEnv("QINIU_SECRET_KEY", "sk");
+    setEnv("QINIU_BUCKET", "course-ai-lab");
+    setEnv("QINIU_PRIVATE_DOMAIN", "coursecdn.mkynstudio.top");
+    setEnv("URLLIB_ENABLE_PROXY", "1");
+
+    expect(() => activeStorageProvider()).toThrow("禁止启用 URLLIB 代理");
   });
 });

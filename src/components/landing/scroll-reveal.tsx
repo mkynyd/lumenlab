@@ -26,7 +26,6 @@ interface ScrollRevealProps {
  */
 export function ScrollReveal({
   children,
-  yOffset = 24,
   className,
 }: ScrollRevealProps) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -44,7 +43,7 @@ export function ScrollReveal({
     <motion.div
       ref={ref}
       className={className}
-      initial={{ opacity: 0, y: yOffset }}
+      initial={false}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: false, amount: 0.4 }}
       transition={{ duration: 0.6, ease: "easeOut" }}

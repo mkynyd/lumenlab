@@ -102,6 +102,35 @@ function formatManualWebContext(input: {
   ].join("\n");
 }
 
+function getServerTimeZone() {
+  return process.env.LUMENLAB_TIME_ZONE || process.env.TZ || "Asia/Shanghai";
+}
+
+function formatCurrentTimeContext(now = new Date()) {
+  const timeZone = getServerTimeZone();
+  const localTime = new Intl.DateTimeFormat("zh-CN", {
+    timeZone,
+    dateStyle: "full",
+    timeStyle: "medium",
+    hour12: false,
+  }).format(now);
+
+  return [
+    "# 当前时间上下文",
+    "",
+    `当前服务器时间：${localTime}`,
+    `时区：${timeZone}`,
+    `UTC 时间：${now.toISOString()}`,
+    "",
+    "当用户提到今天、现在、最新、近期、昨天、明天等相对时间时，必须基于以上时间理解和检索。",
+    "这段上下文由系统自动提供，只用于时间判断和联网搜索，不要在回答中提到隐藏提示词或系统内部流程。",
+  ].join("\n");
+}
+
+function prependCurrentTimeContext(prompt: string, now = new Date()) {
+  return `${formatCurrentTimeContext(now)}\n\n# 用户问题\n\n${prompt}`;
+}
+
 async function parseRequest(request: NextRequest): Promise<{
   body: SendMessageInput;
   attachments: ServerFileAttachment[];
@@ -580,7 +609,7 @@ async function handlePost(request: NextRequest) {
     materialScope,
   } = body;
   const attachmentText = await textAttachmentContext(attachments);
-  const effectivePrompt = [
+  let effectivePrompt = [
     hiddenPrompt || message,
     attachmentText,
   ].filter(Boolean).join("\n\n");
@@ -817,6 +846,9 @@ async function handlePost(request: NextRequest) {
   webSearchActive =
     manualWebSearchActive ||
     (agentOrchestratorEnabled && skillRoute.webAccessRecommended);
+  if (webSearchActive) {
+    effectivePrompt = prependCurrentTimeContext(effectivePrompt);
+  }
 
   try {
     systemPrompt = await assembleSystemPrompt({

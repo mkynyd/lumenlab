@@ -40,7 +40,7 @@ export function MarkdownContent({
           rehypeSanitize,
           // KaTeX 走宽松模式:遇到中英混排等 strict 警告时只在控制台 warn,
           // 不抛错、不影响 markdown 渲染,让前端始终拿到可读内容。
-          [rehypeKatex, { strict: false, throwOnError: false, output: "html" }],
+          [rehypeKatex, { strict: "ignore", throwOnError: false, output: "html" }],
           rehypeHighlight,
         ]}
         components={{

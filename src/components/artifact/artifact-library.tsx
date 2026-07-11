@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Download, Eye, Trash2, X } from "lucide-react";
+import { Copy, Download, Trash2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -173,20 +173,6 @@ export function ArtifactLibrary({
                   <div className="mt-1.5 flex gap-1" onClick={(e) => e.stopPropagation()}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => setSelectedId(artifact.id)}
-                          aria-label={`查看成果 ${artifact.title}`}
-                        >
-                          <Eye size={14} />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">查看</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
                         <Button asChild variant="ghost" size="icon-xs">
                           <a
                             href={`/api/artifacts/${artifact.id}/export?format=markdown`}
@@ -267,7 +253,7 @@ export function ArtifactLibrary({
                 <div className="workbench-readable markdown-body break-words rounded-[var(--radius-lg)] bg-[var(--color-panel)] p-4">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                    rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false }], rehypeHighlight]}
                     components={{
                       code(props) {
                         const { className, children, ...rest } = props;

@@ -7,12 +7,23 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateProjectPrompt, generateQuickActions } from "@/lib/classification";
+import { getDefaultQuickActions } from "@/lib/quick-actions";
 import { z } from "zod";
 
 const reqSchema = z.object({
   userInput: z.string().min(2).max(500),
   mode: z.enum(["experiment", "review", "coding", "general"]),
 });
+
+function fallbackProjectPrompt(userInput: string, mode: string) {
+  const modeLabel = mode === "experiment" ? "实验/实践" : mode === "review" ? "复习/资料整理" : mode === "coding" ? "编程/开发" : "通用";
+  return [
+    `你正在协助用户完成一个${modeLabel}项目。`,
+    `项目目标：${userInput.trim()}`,
+    "回答必须基于用户提供的资料和可验证信息；资料不足时明确说明，不得编造数据、引用或运行结果。",
+    "优先给出结构清晰、可直接使用的 Markdown，并在必要时列出下一步所需资料。",
+  ].join("\n");
+}
 
 export async function POST(
   request: Request,
@@ -49,10 +60,14 @@ export async function POST(
   }
 
   try {
-    const [systemPrompt, quickActions] = await Promise.all([
+    const [generatedPrompt, generatedActions] = await Promise.all([
       generateProjectPrompt(userInput, mode, apiKey),
       generateQuickActions(userInput, mode, apiKey),
     ]);
+    const systemPrompt = generatedPrompt.trim() || fallbackProjectPrompt(userInput, mode);
+    const quickActions = generatedActions.length > 0
+      ? generatedActions
+      : getDefaultQuickActions(mode).slice(0, 6).map(({ title, prompt }) => ({ title, prompt }));
 
     // Update project
     await prisma.project.update({

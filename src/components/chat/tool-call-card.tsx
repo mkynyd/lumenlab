@@ -14,6 +14,18 @@ interface ToolCallCardProps {
   error?: string;
 }
 
+const SENSITIVE_RESULT_KEYS = /(?:^|_)(?:query|prompt|system|system_?prompt|hidden_?prompt|context|instruction|instructions|api_?key|authorization|token|headers|cookie)(?:$|_)/i;
+
+export function sanitizeToolResult(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeToolResult);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !SENSITIVE_RESULT_KEYS.test(key.replace(/([a-z])([A-Z])/g, "$1_$2")))
+      .map(([key, entry]) => [key, sanitizeToolResult(entry)])
+  );
+}
+
 export function ToolCallCard({
   preview,
   status,
@@ -77,7 +89,7 @@ export function ToolCallCard({
       )}
       {expandable && expanded && (
         <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-[var(--color-surface)] p-2 text-xs whitespace-pre-wrap break-words text-[var(--color-text-secondary)]">
-          {error ?? JSON.stringify(resultSummary, null, 2)}
+          {error ?? JSON.stringify(sanitizeToolResult(resultSummary), null, 2)}
         </pre>
       )}
       {preview.sendsToExternal && (

@@ -403,6 +403,8 @@ describe("POST /api/chat", () => {
   it("prefetches web search context for MiniMax manual web search", async () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-10T15:44:17.000Z"));
     mocks.getProviderApiKey.mockResolvedValue("sk-test");
     mocks.projectFindFirst.mockResolvedValue(null);
     mocks.conversationCreate.mockResolvedValue({
@@ -440,7 +442,15 @@ describe("POST /api/chat", () => {
       const response = await POST(request);
       expect(response.status).toBe(200);
       expect(mocks.runWebSearch).toHaveBeenCalledWith(
-        "今天有什么 AI 新闻",
+        expect.stringContaining("当前服务器时间"),
+        "sk-test"
+      );
+      expect(mocks.runWebSearch).toHaveBeenCalledWith(
+        expect.stringContaining("2026-07-10T15:44:17.000Z"),
+        "sk-test"
+      );
+      expect(mocks.runWebSearch).toHaveBeenCalledWith(
+        expect.stringContaining("今天有什么 AI 新闻"),
         "sk-test"
       );
       expect(mocks.streamMiniMaxChat).toHaveBeenCalledWith(
@@ -451,9 +461,20 @@ describe("POST /api/chat", () => {
               role: "user",
               content: expect.stringContaining("# 联网搜索结果"),
             }),
+            expect.objectContaining({
+              role: "user",
+              content: expect.stringContaining("# 当前时间上下文"),
+            }),
           ]),
         })
       );
+      expect(mocks.messageCreate).toHaveBeenNthCalledWith(1, {
+        data: {
+          conversationId: "conversation-1",
+          role: "user",
+          content: "今天有什么 AI 新闻",
+        },
+      });
 
       const body = await response.text();
       expect(body).toContain("web_access_enabled");
@@ -465,6 +486,72 @@ describe("POST /api/chat", () => {
       } else {
         process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
       }
+      vi.useRealTimers();
+    }
+  });
+
+  it("adds current server time context for DeepSeek web search without persisting it", async () => {
+    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
+    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-10T15:44:17.000Z"));
+    mocks.getProviderApiKey.mockResolvedValue("sk-test");
+    mocks.projectFindFirst.mockResolvedValue(null);
+    mocks.conversationCreate.mockResolvedValue({
+      id: "conversation-1",
+      userId: "user-1",
+      projectId: null,
+      model: "deepseek-v4-pro",
+      modelLock: null,
+      thinkingEnabled: false,
+      activeSkillId: null,
+      skillDisabled: false,
+    });
+    mocks.messageCreate
+      .mockResolvedValueOnce({ id: "user-message-1" })
+      .mockResolvedValueOnce({ id: "assistant-message-1" });
+    mocks.streamChat.mockResolvedValue(
+      makeStreamResult({ deltas: [{ content: "联网回答" }] })
+    );
+
+    try {
+      const request = new NextRequest("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "今天有什么科技新闻？",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: false,
+          reasoningEffort: "high",
+          webSearchActive: true,
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+      expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+
+      const streamRequest = mocks.streamChat.mock.calls[0][1] as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      const userMessage = streamRequest.messages.find((m) => m.role === "user");
+      expect(userMessage?.content).toContain("# 当前时间上下文");
+      expect(userMessage?.content).toContain("2026-07-10T15:44:17.000Z");
+      expect(userMessage?.content).toContain("今天有什么科技新闻？");
+      expect(mocks.messageCreate).toHaveBeenNthCalledWith(1, {
+        data: {
+          conversationId: "conversation-1",
+          role: "user",
+          content: "今天有什么科技新闻？",
+        },
+      });
+    } finally {
+      if (originalFlag === undefined) {
+        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
+      } else {
+        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
+      }
+      vi.useRealTimers();
     }
   });
 

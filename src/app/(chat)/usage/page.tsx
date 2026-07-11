@@ -77,6 +77,13 @@ export default function UsagePage() {
       month: "2-digit",
       day: "2-digit",
     });
+  const tierLabel = data.tier === "premium" ? "A 测用户" : data.tier;
+  const modelLabel = (model: string) => {
+    if (model === "deepseek-v4-flash") return "DeepSeek · 快速";
+    if (model === "deepseek-v4-pro") return "DeepSeek · 深度";
+    if (model === "minimax-m3") return "MiniMax";
+    return model;
+  };
 
   return (
     <div className="mx-auto h-full w-full max-w-3xl overflow-y-auto p-6 pb-12">
@@ -88,7 +95,7 @@ export default function UsagePage() {
         <div className="rounded-[var(--radius-lg)] bg-[var(--color-panel)] p-4">
           <div className="text-sm text-[var(--color-text-secondary)]">当前等级</div>
           <div className="mt-1 text-lg font-medium text-[var(--color-text-primary)] uppercase">
-            {data.tier}
+            {tierLabel}
           </div>
         </div>
         <div className="rounded-[var(--radius-lg)] bg-[var(--color-panel)] p-4">
@@ -116,7 +123,7 @@ export default function UsagePage() {
         </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
-            <div className="text-xs text-[var(--color-text-secondary)]">周期Credits</div>
+            <div className="text-xs text-[var(--color-text-secondary)]">周期 Credits</div>
             <div className="text-lg font-medium text-[var(--color-text-primary)]">
               {data.usage.currentCycleCredits.toLocaleString()}
             </div>
@@ -128,13 +135,13 @@ export default function UsagePage() {
             </div>
           </div>
           <div>
-            <div className="text-xs text-[var(--color-text-secondary)]">24 小时</div>
+            <div className="text-xs text-[var(--color-text-secondary)]">24 小时 Credits</div>
             <div className="text-lg font-medium text-[var(--color-text-primary)]">
               {data.usage.last24hCredits.toLocaleString()}
             </div>
           </div>
           <div>
-            <div className="text-xs text-[var(--color-text-secondary)]">7 天</div>
+            <div className="text-xs text-[var(--color-text-secondary)]">7 天 Credits</div>
             <div className="text-lg font-medium text-[var(--color-text-primary)]">
               {data.usage.last7dCredits.toLocaleString()}
             </div>
@@ -160,7 +167,7 @@ export default function UsagePage() {
                 className="flex items-center justify-between rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-2"
               >
                 <span className="text-sm text-[var(--color-text-primary)]">
-                  {item.model}
+                  {modelLabel(item.model)}
                 </span>
                 <div className="text-right text-sm text-[var(--color-text-secondary)]">
                   <div>{item.credits.toLocaleString()} Credits</div>
@@ -196,7 +203,7 @@ export default function UsagePage() {
                     <td className="py-2">
                       {new Date(record.createdAt).toLocaleString("zh-CN")}
                     </td>
-                    <td className="py-2">{record.model}</td>
+                    <td className="py-2">{modelLabel(record.model)}</td>
                     <td className="py-2">{record.totalTokens.toLocaleString()}</td>
                     <td className="py-2">{record.creditsConsumed.toLocaleString()}</td>
                   </tr>

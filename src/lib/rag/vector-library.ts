@@ -40,6 +40,21 @@ const STOPWORDS = new Set([
   "自己",
   "这",
   "那",
+  "使用",
+  "信息",
+  "内容",
+  "提供",
+  "中的",
+  "进行",
+  "不同",
+  "相关",
+  "可以",
+  "以及",
+  "通过",
+  "主要",
+  "包括",
+  "需要",
+  "对于",
   // 英文
   "the",
   "a",
@@ -106,13 +121,24 @@ export interface RawChunkMap {
 
 function tokenize(text: string): string[] {
   const terms: string[] = [];
-  // Chinese sequences: sliding window 2..4 chars
-  const chinese = text.match(/[\u4e00-\u9fa5]{2,}/g) || [];
-  for (const seq of chinese) {
-    for (let len = MIN_TERM_LENGTH; len <= Math.min(4, seq.length); len++) {
-      for (let i = 0; i <= seq.length - len; i++) {
-        terms.push(seq.slice(i, i + len));
-      }
+  // Use language-aware word segmentation instead of arbitrary overlapping n-grams.
+  // Adjacent meaningful words also form a phrase candidate (e.g. 网络 + 安全).
+  const segmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
+  const chineseWords = [...segmenter.segment(text)]
+    .filter((item) => item.isWordLike && /^[\u4e00-\u9fa5]+$/.test(item.segment))
+    .map((item) => item.segment);
+  for (let index = 0; index < chineseWords.length; index += 1) {
+    const word = chineseWords[index];
+    if (word.length >= MIN_TERM_LENGTH && !STOPWORDS.has(word)) terms.push(word);
+    const next = chineseWords[index + 1];
+    if (
+      next &&
+      !STOPWORDS.has(word) &&
+      !STOPWORDS.has(next) &&
+      word.length + next.length >= MIN_TERM_LENGTH &&
+      word.length + next.length <= 8
+    ) {
+      terms.push(`${word}${next}`);
     }
   }
   // English words
@@ -189,7 +215,9 @@ export function buildVectorLibraryGraph(
 
   const topicTerms = Array.from(termFiles.entries())
     .filter(([, set]) => set.size >= MIN_FILES_PER_TOPIC)
-    .sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]))
+    .sort((a, b) =>
+      b[1].size - a[1].size || b[0].length - a[0].length || a[0].localeCompare(b[0])
+    )
     .slice(0, MAX_TOPICS)
     .map(([term]) => term);
 

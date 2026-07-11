@@ -120,6 +120,21 @@ export function extractSourcesFromToolResult(
     }];
   }
 
+  if (toolId === "web.search") {
+    const sources = Array.isArray(result.sources) ? result.sources : [];
+    return sources.flatMap((source) => {
+      const record = asRecord(source);
+      if (!record) return [];
+      const url = asString(record.url);
+      if (!url) return [];
+      return [{
+        type: "web" as const,
+        title: asString(record.title) ?? url,
+        url,
+      }];
+    });
+  }
+
   if (toolId === "artifact.save") {
     const artifactId = asString(result.id);
     const title = asString(result.title);

@@ -1,9 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { runWebSearch } from "./search-engine";
+import { parseBingRssResults, parseDuckDuckGoResults, runWebSearch } from "./search-engine";
 import * as deepseek from "@/lib/deepseek";
 
 const mockRedisGet = vi.fn();
 const mockRedisSetex = vi.fn();
+const verifiedSearchHtml = `<div class="result results_links results_links_deep web-result">
+  <div class="links_main links_deep result__body">
+    <h2><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Farticle&amp;rut=x">Example &amp; Article</a></h2>
+    <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Farticle&amp;rut=x">Verified <b>snippet</b>.</a>
+  </div>
+</div>`;
 
 vi.mock("@/lib/redis", () => ({
   getRedis: () => ({
@@ -33,6 +39,10 @@ describe("runWebSearch", () => {
     vi.mocked(deepseek.completeChat).mockReset();
     mockRedisGet.mockReset();
     mockRedisSetex.mockReset();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => verifiedSearchHtml,
+    }));
   });
 
   it("returns empty result for empty query", async () => {
@@ -96,20 +106,74 @@ describe("runWebSearch", () => {
     expect(result.sources.map((s) => s.url)).toContain("https://example.com/bar");
   });
 
-  it("falls back to normal chat when forced tool_choice throws", async () => {
+  it("falls back to verified HTTP search when forced tool_choice throws", async () => {
     mockRedisGet.mockResolvedValue(null);
     vi.mocked(deepseek.completeChat)
-      .mockRejectedValueOnce(new Error("tool_choice not supported"))
-      .mockResolvedValueOnce({
-        content: "Fallback answer based on knowledge.",
-        usage: null,
-        rawContentBlocks: [makeTextBlock("Fallback answer based on knowledge.")],
-      });
+      .mockRejectedValueOnce(new Error("tool_choice not supported"));
 
     const result = await runWebSearch("test", "sk-test");
 
-    expect(result.summary).toBe("Fallback answer based on knowledge.");
-    expect(deepseek.completeChat).toHaveBeenCalledTimes(2);
+    expect(result.summary).toContain("Verified snippet");
+    expect(result.sources).toEqual([
+      { url: "https://example.com/article", title: "Example & Article" },
+    ]);
+    expect(deepseek.completeChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an honest failure instead of a knowledge-only answer when no source exists", async () => {
+    mockRedisGet.mockResolvedValue(null);
+    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
+    vi.mocked(fetch).mockResolvedValue({ ok: true, text: async () => "no results" } as Response);
+
+    const result = await runWebSearch("test", "sk-test");
+
+    expect(result.sources).toEqual([]);
+    expect(result.summary).toContain("未找到可验证结果");
+  });
+
+  it("parses and limits verified DuckDuckGo results", () => {
+    expect(parseDuckDuckGoResults(verifiedSearchHtml, 1)).toEqual([
+      {
+        title: "Example & Article",
+        url: "https://example.com/article",
+        snippet: "Verified snippet.",
+      },
+    ]);
+  });
+
+  it("does not send hidden time context to the external search provider", async () => {
+    mockRedisGet.mockResolvedValue(null);
+    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
+
+    const result = await runWebSearch(
+      "# 当前时间上下文\nsecret internal instruction\n\n# 用户问题\n\nOpenAI 官网",
+      "sk-test"
+    );
+
+    expect(result.query).toBe("OpenAI 官网");
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain("OpenAI+%E5%AE%98%E7%BD%91");
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).not.toContain("secret");
+  });
+
+  it("removes interaction framing from the search query", async () => {
+    mockRedisGet.mockResolvedValue(null);
+    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
+
+    const result = await runWebSearch(
+      "最终回归：联网查找 OpenAI 官方网站首页并附上来源。",
+      "sk-test"
+    );
+
+    expect(result.query).toBe("OpenAI 官方网站首页");
+  });
+
+  it("parses verified Bing RSS results", () => {
+    expect(parseBingRssResults(
+      "<rss><channel><item><title>Official Site</title><link>https://example.com/</link><description>Verified result</description></item></channel></rss>",
+      1
+    )).toEqual([
+      { title: "Official Site", url: "https://example.com/", snippet: "Verified result" },
+    ]);
   });
 
   it("uses completeChat with tool_choice forced to web_search", async () => {

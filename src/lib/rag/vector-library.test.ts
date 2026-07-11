@@ -54,6 +54,18 @@ describe("buildVectorLibraryGraph", () => {
     expect(chunkLinks.length).toBe(2);
   });
 
+  it("filters generic Chinese topic words and prefers more specific phrases", () => {
+    const graph = buildVectorLibraryGraph(files, {
+      f1: [{ id: "g1", content: "使用信息内容进行网络安全防护", chunkIndex: 0 }],
+      f2: [{ id: "g2", content: "使用信息内容进行网络安全防护", chunkIndex: 0 }],
+    });
+
+    expect(graph.topics).not.toContain("使用");
+    expect(graph.topics).not.toContain("信息");
+    expect(graph.topics).not.toContain("内容");
+    expect(graph.topics.indexOf("网络安全")).toBeLessThan(graph.topics.indexOf("网络"));
+  });
+
   it("marks failed files and preserves processing error", () => {
     const failed: ProjectFile[] = [
       {

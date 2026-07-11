@@ -26,14 +26,14 @@ export function HeroSection() {
       />
 
       <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 pb-24 pt-14 sm:px-6 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:gap-14 md:pb-36 md:pt-24">
-        <ScrollReveal className="flex flex-col justify-center" yOffset={20}>
+        <ScrollReveal className="min-w-0 flex flex-col justify-center" yOffset={20}>
           <p data-dot-avoid className="text-[15px] font-medium leading-snug text-[var(--color-accent)]">
             面向大学生的 AI 学习工作台
           </p>
 
           <h1
             data-dot-avoid
-            className="mt-5 text-[clamp(2.25rem,6vw,4.5rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-[var(--color-text-primary)] break-keep"
+            className="mt-5 text-[clamp(2.25rem,6vw,4.5rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-[var(--color-text-primary)] md:break-keep"
             style={{ textWrap: "pretty" }}
           >
             把讲义、AI 对话和 PDF 解析
@@ -83,7 +83,7 @@ export function HeroSection() {
         </ScrollReveal>
 
         <ScrollReveal
-          className="relative flex items-center"
+          className="relative min-w-0 flex items-center"
           yOffset={32}
           delay={0.1}
         >

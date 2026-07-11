@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
-import qiniu from "qiniu";
 
 export type StorageProvider = "local" | "qiniu";
 
@@ -35,6 +34,9 @@ function normalizeDomain(domain: string) {
 }
 
 function qiniuConfig() {
+  if (process.env.URLLIB_ENABLE_PROXY || process.env.URLLIB_PROXY) {
+    throw new Error("七牛存储禁止启用 URLLIB 代理；请移除 URLLIB_ENABLE_PROXY/URLLIB_PROXY");
+  }
   const accessKey = process.env.QINIU_ACCESS_KEY;
   const secretKey = process.env.QINIU_SECRET_KEY;
   const bucket = process.env.QINIU_BUCKET;
@@ -51,6 +53,7 @@ function qiniuConfig() {
     privateDomain: normalizeDomain(privateDomain),
     region,
     uploadHost,
+    rsHost: process.env.QINIU_RS_HOST || "https://rs.qiniuapi.com",
   };
 }
 
@@ -105,48 +108,42 @@ function normalizeObjectKey(key: string) {
   return normalized;
 }
 
-function createQiniuClients() {
+function urlSafeBase64(value: string | Buffer) {
+  return Buffer.from(value).toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function qiniuAccessToken(accessKey: string, secretKey: string, data: string) {
+  const digest = crypto.createHmac("sha1", secretKey).update(data).digest();
+  return `${accessKey}:${urlSafeBase64(digest)}`;
+}
+
+function qiniuUploadToken(config: NonNullable<ReturnType<typeof qiniuConfig>>, key: string) {
+  const policy = urlSafeBase64(JSON.stringify({
+    scope: `${config.bucket}:${key}`,
+    insertOnly: 1,
+    deadline: Math.floor(Date.now() / 1000) + 600,
+  }));
+  return `${qiniuAccessToken(config.accessKey, config.secretKey, policy)}:${policy}`;
+}
+
+async function uploadQiniuBuffer(input: {
+  key: string;
+  filename: string;
+  mimeType: string;
+  buffer: Buffer;
+}) {
   const config = qiniuConfig();
-  if (!config) {
-    throw new Error("缺少七牛对象存储配置");
-  }
-  const mac = new qiniu.auth.digest.Mac(config.accessKey, config.secretKey);
-  const sdkConfig = new qiniu.conf.Config({
-    useHttpsDomain: true,
-    zone: qiniuZone(config.region, config.uploadHost),
-  });
-  return {
-    config,
-    mac,
-    formUploader: new qiniu.form_up.FormUploader(sdkConfig),
-    bucketManager: new qiniu.rs.BucketManager(mac, sdkConfig),
-  };
-}
-
-function hostWithoutScheme(value: string) {
-  return value.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-}
-
-function qiniuZone(region: string, uploadHost: string) {
-  const normalizedRegion = region.trim().toLowerCase();
-  if (normalizedRegion === "z2") {
-    return new qiniu.conf.Zone(
-      [hostWithoutScheme(uploadHost)],
-      [hostWithoutScheme(uploadHost)],
-      "iovip-z2.qiniuio.com",
-      "rs-z2.qiniuapi.com",
-      "rsf-z2.qiniuapi.com",
-      "api.qiniuapi.com"
-    );
-  }
-  const zones: Record<string, qiniu.conf.Zone> = {
-    z0: qiniu.zone.Zone_z0,
-    "cn-east-2": qiniu.zone.Zone_cn_east_2,
-    z1: qiniu.zone.Zone_z1,
-    na0: qiniu.zone.Zone_na0,
-    as0: qiniu.zone.Zone_as0,
-  };
-  return zones[normalizedRegion] || qiniu.zone.Zone_z2;
+  if (!config) throw new Error("缺少七牛对象存储配置");
+  const form = new FormData();
+  form.set("token", qiniuUploadToken(config, input.key));
+  form.set("key", input.key);
+  form.set(
+    "file",
+    new Blob([new Uint8Array(input.buffer)], { type: input.mimeType }),
+    input.filename
+  );
+  const response = await fetch(config.uploadHost, { method: "POST", body: form });
+  if (!response.ok) throw new Error(`七牛上传失败：${response.status}`);
 }
 
 export async function uploadFileBuffer(input: UploadFileBufferInput): Promise<StoredUpload> {
@@ -159,23 +156,12 @@ export async function uploadFileBuffer(input: UploadFileBufferInput): Promise<St
     return { provider, key: filename, filename };
   }
 
-  const { config, mac, formUploader } = createQiniuClients();
-  const putPolicy = new qiniu.rs.PutPolicy({
-    scope: `${config.bucket}:${key}`,
-    insertOnly: 1,
-    expires: 600,
+  await uploadQiniuBuffer({
+    key,
+    filename: input.originalName,
+    mimeType: input.mimeType,
+    buffer: input.buffer,
   });
-  const uploadToken = putPolicy.uploadToken(mac);
-  const putExtra = new qiniu.form_up.PutExtra(
-    input.originalName,
-    {},
-    input.mimeType
-  );
-  const result = await formUploader.put(uploadToken, key, input.buffer, putExtra);
-  const statusCode = result.resp.statusCode ?? 0;
-  if (statusCode < 200 || statusCode >= 300) {
-    throw new Error(`七牛上传失败：${statusCode}`);
-  }
 
   return { provider, key, filename };
 }
@@ -195,23 +181,12 @@ export async function uploadObjectBuffer(input: {
     return { provider, key };
   }
 
-  const { config, mac, formUploader } = createQiniuClients();
-  const putPolicy = new qiniu.rs.PutPolicy({
-    scope: `${config.bucket}:${key}`,
-    insertOnly: 1,
-    expires: 600,
+  await uploadQiniuBuffer({
+    key,
+    filename: path.posix.basename(key),
+    mimeType: input.mimeType,
+    buffer: input.buffer,
   });
-  const uploadToken = putPolicy.uploadToken(mac);
-  const putExtra = new qiniu.form_up.PutExtra(
-    path.posix.basename(key),
-    {},
-    input.mimeType
-  );
-  const result = await formUploader.put(uploadToken, key, input.buffer, putExtra);
-  const statusCode = result.resp.statusCode ?? 0;
-  if (statusCode < 200 || statusCode >= 300) {
-    throw new Error(`七牛上传失败：${statusCode}`);
-  }
 
   return { provider, key };
 }
@@ -240,13 +215,18 @@ export async function deleteStoredObject(input: StoredObjectRef): Promise<void> 
     return;
   }
 
-  const { config, bucketManager } = createQiniuClients();
-  const result = await bucketManager.delete(config.bucket, input.key);
-  const statusCode = result.resp.statusCode ?? 0;
-  if (statusCode === 612) return;
-  if (statusCode < 200 || statusCode >= 300) {
-    throw new Error(`七牛删除失败：${statusCode}`);
-  }
+  const config = qiniuConfig();
+  if (!config) throw new Error("缺少七牛对象存储配置");
+  const entry = urlSafeBase64(`${config.bucket}:${input.key}`);
+  const pathToSign = `/delete/${entry}`;
+  const response = await fetch(new URL(pathToSign, config.rsHost), {
+    method: "POST",
+    headers: {
+      Authorization: `QBox ${qiniuAccessToken(config.accessKey, config.secretKey, `${pathToSign}\n`)}`,
+    },
+  });
+  if (response.status === 612) return;
+  if (!response.ok) throw new Error(`七牛删除失败：${response.status}`);
 }
 
 export function createSignedDownloadUrl(input: {
@@ -259,7 +239,8 @@ export function createSignedDownloadUrl(input: {
   if (input.provider !== "qiniu") {
     throw new Error("本地文件不支持签名下载链接");
   }
-  const { config, bucketManager } = createQiniuClients();
+  const config = qiniuConfig();
+  if (!config) throw new Error("缺少七牛对象存储配置");
   const deadline =
     Math.floor(Date.now() / 1000) +
     (input.expiresInSeconds ?? DEFAULT_SIGNED_URL_TTL_SECONDS);
@@ -269,9 +250,8 @@ export function createSignedDownloadUrl(input: {
   const objectKey = input.styleName
     ? `${input.key}-${input.styleName}`
     : input.key;
-  return bucketManager.privateDownloadUrl(
-    config.privateDomain,
-    `${objectKey}${query}`,
-    deadline
-  );
+  const baseUrl = `${config.privateDomain}/${objectKey}${query}`;
+  const urlToSign = `${baseUrl}${query ? "&" : "?"}e=${deadline}`;
+  const token = qiniuAccessToken(config.accessKey, config.secretKey, urlToSign);
+  return `${urlToSign}&token=${token}`;
 }

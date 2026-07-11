@@ -45,12 +45,14 @@ export function LandingNav({ showBrand = true }: LandingNavProps) {
         )}
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
+          <div className="hidden sm:block">
+            <ThemeToggle />
+          </div>
           <Button
             asChild
             variant="ghost"
             size="sm"
-            className="h-9 rounded-[var(--radius-md)] px-3 text-[14px]"
+            className="hidden h-9 rounded-[var(--radius-md)] px-3 text-[14px] sm:inline-flex"
           >
             <Link href="/docs">文档</Link>
           </Button>

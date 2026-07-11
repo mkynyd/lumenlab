@@ -66,7 +66,7 @@ export function DocsMarkdown({ content, className }: DocsMarkdownProps) {
         rehypePlugins={[
           rehypeRaw,
           rehypeSanitize,
-          [rehypeKatex, { strict: false, throwOnError: false, output: "html" }],
+          [rehypeKatex, { strict: "ignore", throwOnError: false, output: "html" }],
           rehypeHighlight,
         ]}
         components={{
