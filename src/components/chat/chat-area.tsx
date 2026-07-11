@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@/lib/hooks/use-chat";
 import { useWebSearch } from "@/lib/hooks/use-web-search";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -37,6 +37,14 @@ const PROVIDER_LABELS = {
   deepseek: "DeepSeek",
   minimax: "MiniMax",
 } as const;
+
+const AUTO_DISMISS_STATUSES = new Set<AgentEvent["type"]>([
+  "tool_completed",
+  "tool_failed",
+  "tool_blocked",
+  "approval_denied",
+  "approval_expired",
+]);
 
 export function ChatArea({
   initialConversationId,
@@ -114,7 +122,7 @@ export function ChatArea({
   };
 
   // Render the most recent awaiting/executing entry as a visible approval card.
-  // Completed/failed entries briefly remain visible, then are replaced by the next.
+  // Completed/failed entries briefly remain visible, then fade out and disappear.
   const visibleAgentEntries = Object.values(agentTimeline)
     .filter((entry) => entry.latestEvent.type !== "approval_granted")
     .sort((a, b) => {
@@ -135,6 +143,37 @@ export function ChatArea({
       return (order[a.latestEvent.type] ?? 99) - (order[b.latestEvent.type] ?? 99);
     })
     .slice(-3);
+
+  const [fadingAgentIds, setFadingAgentIds] = useState<Set<string>>(new Set());
+  const [dismissedAgentIds, setDismissedAgentIds] = useState<Set<string>>(new Set());
+  const scheduledDismissIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const timers: NodeJS.Timeout[] = [];
+
+    visibleAgentEntries.forEach((entry) => {
+      if (!AUTO_DISMISS_STATUSES.has(entry.latestEvent.type)) return;
+      if (scheduledDismissIds.current.has(entry.executionId)) return;
+
+      scheduledDismissIds.current.add(entry.executionId);
+      timers.push(
+        setTimeout(() => {
+          setFadingAgentIds((prev) => new Set([...prev, entry.executionId]));
+        }, 3000),
+        setTimeout(() => {
+          setDismissedAgentIds((prev) => new Set([...prev, entry.executionId]));
+        }, 3300)
+      );
+    });
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [visibleAgentEntries]);
+
+  const displayedAgentEntries = visibleAgentEntries.filter(
+    (entry) => !dismissedAgentIds.has(entry.executionId)
+  );
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)]">
@@ -241,103 +280,153 @@ export function ChatArea({
       )}
 
       {/* Agent timeline：当前未完成 / 最近 3 条工具调用 */}
-      {visibleAgentEntries.length > 0 && (
+      {displayedAgentEntries.length > 0 && (
         <div className="px-4 pt-2 pb-1 space-y-1.5 max-h-72 overflow-y-auto">
-          {visibleAgentEntries.map((entry) => {
+          {displayedAgentEntries.map((entry) => {
             const event = entry.latestEvent;
+            const isFading = fadingAgentIds.has(entry.executionId);
             if (event.type === "approval_required") {
               return (
-                <AgentTimeline
+                <div
                   key={entry.executionId}
-                  state={{
-                    kind: "awaiting_user",
-                    executionId: entry.executionId,
-                    preview: event.preview,
-                    token: entry.approvalToken ?? "",
-                    expiresAt: entry.approvalExpiresAt ?? 0,
-                    canApproveSession: event.preview.isReversible,
-                  }}
-                  onApprove={async (executionId, token, scope) => {
-                    await approveExecution(executionId, token, scope);
-                  }}
-                  onDeny={async (executionId) => {
-                    await rejectExecution(executionId);
-                  }}
-                />
+                  className={cn(
+                    "transition-opacity duration-300",
+                    isFading && "opacity-0"
+                  )}
+                >
+                  <AgentTimeline
+                    state={{
+                      kind: "awaiting_user",
+                      executionId: entry.executionId,
+                      preview: event.preview,
+                      token: entry.approvalToken ?? "",
+                      expiresAt: entry.approvalExpiresAt ?? 0,
+                      canApproveSession: event.preview.isReversible,
+                    }}
+                    onApprove={async (executionId, token, scope) => {
+                      await approveExecution(executionId, token, scope);
+                    }}
+                    onDeny={async (executionId) => {
+                      await rejectExecution(executionId);
+                    }}
+                  />
+                </div>
               );
             }
             if (event.type === "tool_proposed") {
               return (
-                <AgentTimeline
+                <div
                   key={entry.executionId}
-                  state={{
-                    kind: "proposed",
-                    executionId: entry.executionId,
-                    preview: event.preview,
-                  }}
-                />
+                  className={cn(
+                    "transition-opacity duration-300",
+                    isFading && "opacity-0"
+                  )}
+                >
+                  <AgentTimeline
+                    state={{
+                      kind: "proposed",
+                      executionId: entry.executionId,
+                      preview: event.preview,
+                    }}
+                  />
+                </div>
               );
             }
             if (event.type === "tool_started") {
               return (
-                <AgentTimeline
+                <div
                   key={entry.executionId}
-                  state={{
-                    kind: "executing",
-                    executionId: entry.executionId,
-                  }}
-                />
+                  className={cn(
+                    "transition-opacity duration-300",
+                    isFading && "opacity-0"
+                  )}
+                >
+                  <AgentTimeline
+                    state={{
+                      kind: "executing",
+                      executionId: entry.executionId,
+                    }}
+                  />
+                </div>
               );
             }
             if (event.type === "tool_completed") {
               return (
-                <AgentTimeline
+                <div
                   key={entry.executionId}
-                  state={{
-                    kind: "completed",
-                    executionId: entry.executionId,
-                    resultSummary: event.resultSummary,
-                  }}
-                />
+                  className={cn(
+                    "transition-opacity duration-300",
+                    isFading && "opacity-0"
+                  )}
+                >
+                  <AgentTimeline
+                    state={{
+                      kind: "completed",
+                      executionId: entry.executionId,
+                      resultSummary: event.resultSummary,
+                    }}
+                  />
+                </div>
               );
             }
             if (event.type === "tool_failed") {
               return (
-                <AgentTimeline
+                <div
                   key={entry.executionId}
-                  state={{
-                    kind: "failed",
-                    executionId: entry.executionId,
-                    error: event.error,
-                  }}
-                />
+                  className={cn(
+                    "transition-opacity duration-300",
+                    isFading && "opacity-0"
+                  )}
+                >
+                  <AgentTimeline
+                    state={{
+                      kind: "failed",
+                      executionId: entry.executionId,
+                      error: event.error,
+                    }}
+                  />
+                </div>
               );
             }
             if (event.type === "tool_blocked") {
               return (
-                <AgentTimeline
+                <div
                   key={entry.executionId}
-                  state={{
-                    kind: "failed",
-                    executionId: entry.executionId,
-                    error: event.reason,
-                  }}
-                />
+                  className={cn(
+                    "transition-opacity duration-300",
+                    isFading && "opacity-0"
+                  )}
+                >
+                  <AgentTimeline
+                    state={{
+                      kind: "failed",
+                      executionId: entry.executionId,
+                      error: event.reason,
+                    }}
+                  />
+                </div>
               );
             }
             if (event.type === "approval_denied" || event.type === "approval_expired") {
               return (
-                <AgentTimeline
+                <div
                   key={entry.executionId}
-                  state={{
-                    kind: "denied",
-                    executionId: entry.executionId,
-                    reason:
-                      event.type === "approval_expired"
-                        ? "审批已过期"
-                        : "用户拒绝",
-                  }}
-                />
+                  className={cn(
+                    "transition-opacity duration-300",
+                    isFading && "opacity-0"
+                  )}
+                >
+                  <AgentTimeline
+                    state={{
+                      kind: "denied",
+                      executionId: entry.executionId,
+                      reason:
+                        event.type === "approval_expired"
+                          ? "审批已过期"
+                          : "用户拒绝",
+                    }}
+                  />
+                </div>
               );
             }
             return null;
