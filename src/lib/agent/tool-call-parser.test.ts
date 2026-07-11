@@ -54,6 +54,14 @@ describe("sanitizeModelText", () => {
     expect(sanitizeModelText("回答：<invoke name=\"foo\"")).toBe("回答：");
   });
 
+  it("removes split tag-name prefixes emitted by streaming models", () => {
+    expect(sanitizeModelText("回答：\n\n<")).toBe("回答：");
+    expect(sanitizeModelText("回答：\n\n</")).toBe("回答：");
+    expect(sanitizeModelText("回答：\n\n<tool_c")).toBe("回答：");
+    expect(sanitizeModelText("回答：\n\n<inv")).toBe("回答：");
+    expect(sanitizeModelText("回答：\n\n</invoke\n\n</tool_calls")).toBe("回答：");
+  });
+
   it("removes malformed merged opening tags", () => {
     const text = '计划。<tool_calls<invoke name="project_files.list"><parameter name="projectId">p1</parameter></invoke></tool_calls>继续。';
     const cleaned = sanitizeModelText(text);

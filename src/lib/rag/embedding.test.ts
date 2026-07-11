@@ -13,13 +13,7 @@ const mockPrismaFileAssetFindUnique = vi.hoisted(() => vi.fn());
 const mockPrismaExecuteRawUnsafe = vi.hoisted(() => vi.fn());
 const mockRedisGet = vi.hoisted(() => vi.fn());
 const mockRedisSetex = vi.hoisted(() => vi.fn());
-
-vi.mock("dashscope-sdk-official", () => ({
-  Configuration: class {},
-  DashscopeApi: class {
-    createMultiModalEmbedding = mockCreateMultiModalEmbedding;
-  },
-}));
+const mockFetch = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -43,6 +37,38 @@ describe("embedding", () => {
     mockPrismaExecuteRawUnsafe.mockReset();
     mockRedisGet.mockReset();
     mockRedisSetex.mockReset();
+    vi.stubGlobal("fetch", mockFetch);
+    mockFetch.mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const result = await mockCreateMultiModalEmbedding({
+        model: request.model,
+        input: request.input.contents,
+        ...request.parameters,
+      });
+      const { status_code = 200, ...payload } = result ?? {};
+      return new Response(JSON.stringify(payload), {
+        status: status_code,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  });
+
+  it("uses the qwen3-vl multimodal-embedding endpoint instead of the legacy one-peace route", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({
+        output: {
+          embeddings: [{ text_index: 0, embedding: Array(EMBEDDING_DIM).fill(0.1) }],
+        },
+        request_id: "request-1",
+      }), { status: 200, headers: { "Content-Type": "application/json" } })
+    );
+
+    await embedTexts(["hello"], "sk-test");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 
   it("embedQuery returns a 1024-dim vector", async () => {
@@ -172,6 +198,34 @@ describe("embedding", () => {
     expect(call.input.slice(1)).toEqual(
       mediaUrls.slice(0, 5).map((url) => ({ image: url }))
     );
+  });
+
+  it("skips local media URLs that the cloud embedding service cannot fetch", async () => {
+    mockPrismaFileAssetFindUnique.mockResolvedValue({ textContent: "text content" });
+    mockPrismaExecuteRawUnsafe.mockResolvedValueOnce([
+      {
+        id: "chunk-local",
+        content: "text content",
+        contentHash: "different-hash",
+        mediaUrls: ["http://localhost:3000/api/files/image.png", "/api/files/relative.png"],
+        embedding: null,
+      },
+    ]);
+    mockCreateMultiModalEmbedding.mockResolvedValue({
+      status_code: 200,
+      output: {
+        embeddings: [{ embedding: Array(EMBEDDING_DIM).fill(0.3) }],
+      },
+    });
+
+    await embedChunksForFile({ fileAssetId: "file-1", apiKey: "sk-test" });
+
+    expect(mockCreateMultiModalEmbedding).toHaveBeenCalledWith({
+      model: EMBEDDING_MODEL,
+      input: [{ text: "text content" }],
+      enable_fusion: false,
+      dimension: EMBEDDING_DIM,
+    });
   });
 
   it("embedChunksForFile short-circuits when contentHash is unchanged and embeddings exist", async () => {

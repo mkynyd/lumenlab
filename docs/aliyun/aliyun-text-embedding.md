@@ -17,9 +17,9 @@
 
 | 地域 | Endpoint |
 |---|---|
-| 华北2（北京） | `https://dashscope.aliyuncs.com/api/v1/services/embeddings/multi-modal-embedding/multi-modal-embedding` |
+| 华北2（北京） | `https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` |
 
-本项目使用 DashScope Node.js SDK 原生接口调用 `qwen3-vl-embedding` 多模态融合 Embedding。
+本项目直接调用 DashScope 原生 HTTP 接口使用 `qwen3-vl-embedding`。不要使用 Node.js SDK 当前硬编码的旧 `one-peace` 路由。
 
 ---
 
@@ -50,21 +50,27 @@ API Key 获取：https://help.aliyun.com/zh/model-studio/get-api-key
 
 ## 四、调用示例
 
-### Node.js（DashScope SDK，本项目使用）
+### Node.js（原生 HTTP，本项目使用）
 
 ```typescript
-import { Configuration, DashscopeApi } from "dashscope-sdk-official";
+const response = await fetch(
+  "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "qwen3-vl-embedding",
+      input: { contents: [{ text: "文本内容" }] },
+      parameters: { enable_fusion: false, dimension: 1024 },
+    }),
+  }
+);
+const result = await response.json();
 
-const api = new DashscopeApi(new Configuration({ apiKey: process.env.DASHSCOPE_API_KEY }));
-
-const result = await api.createMultiModalEmbedding({
-  model: "qwen3-vl-embedding",
-  input: [{ text: "文本内容" }],
-  enable_fusion: true,
-  dimension: 1024,
-});
-
-if (result.status_code !== 200 || !result.output?.embeddings) {
+if (!response.ok || !result.output?.embeddings) {
   throw new Error(`Embedding failed: ${result.code ?? "unknown"} ${result.message ?? ""}`);
 }
 
@@ -74,16 +80,17 @@ const embedding = result.output.embeddings[0].embedding;
 ### 多模态输入（文本 + 图片 + 视频）
 
 ```typescript
-const result = await api.createMultiModalEmbedding({
+const requestBody = {
   model: "qwen3-vl-embedding",
-  input: [
-    { text: "请描述下图中的实验装置" },
-    { image: "https://example.com/experiment.jpg" },
-    { video: "https://example.com/experiment.mp4" },
-  ],
-  enable_fusion: true,
-  dimension: 1024,
-});
+  input: {
+    contents: [
+      { text: "请描述下图中的实验装置" },
+      { image: "https://example.com/experiment.jpg" },
+      { video: "https://example.com/experiment.mp4" },
+    ],
+  },
+  parameters: { enable_fusion: true, dimension: 1024 },
+};
 ```
 
 输入项支持 `text`、`image`（图片 URL 或 base64）和 `video`（视频 URL）。开启 `enable_fusion: true` 后，模型会对多种模态进行统一融合，生成单一向量。
@@ -92,13 +99,23 @@ const result = await api.createMultiModalEmbedding({
 
 ```typescript
 const texts = ["文本一", "文本二", "文本三"];
-
-const result = await api.createMultiModalEmbedding({
+const requestBody = {
   model: "qwen3-vl-embedding",
-  input: texts.map((text) => ({ text })),
-  enable_fusion: true,
-  dimension: 1024,
-});
+  input: { contents: texts.map((text) => ({ text })) },
+  parameters: { enable_fusion: false, dimension: 1024 },
+};
+const response = await fetch(
+  "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  }
+);
+const result = await response.json();
 
 const vectors = result.output.embeddings
   .slice()

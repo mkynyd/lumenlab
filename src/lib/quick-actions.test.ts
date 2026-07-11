@@ -14,4 +14,11 @@ describe("quick actions", () => {
     expect(MERMAID_LOGIC_PROMPT).toContain("A5 --> B1");
     expect(MERMAID_LOGIC_PROMPT).toContain("不要输出 classDef");
   });
+
+  it("keeps the universal project-material tasks for general projects", () => {
+    const titles = getDefaultQuickActions("general").map((action) => action.title);
+
+    expect(titles).toContain("总结要点");
+    expect(titles).toContain("生成 Mermaid 逻辑图");
+  });
 });

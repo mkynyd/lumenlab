@@ -43,6 +43,24 @@ function sortActions(actions: QuickTaskAction[]) {
   );
 }
 
+function resolveQuickActions(projectType: ProjectType, actions?: QuickTaskAction[]) {
+  const defaults = getDefaultQuickActions(projectType);
+  if (!actions?.length) return defaults;
+
+  const suppliedByTitle = new Map(actions.map((action) => [action.title, action]));
+  const defaultTitles = new Set(defaults.map((action) => action.title));
+  const systemActions = defaults.map((action) => ({
+    ...action,
+    ...suppliedByTitle.get(action.title),
+    isSystem: true,
+  }));
+  const personalizedActions = actions
+    .filter((action) => !defaultTitles.has(action.title))
+    .map((action) => ({ ...action, isSystem: false }));
+
+  return sortActions([...systemActions, ...personalizedActions]);
+}
+
 function ActionButton({
   action,
   onSend,
@@ -88,10 +106,7 @@ export function QuickTaskBar({
 }: QuickTaskBarProps) {
   const [customOpen, setCustomOpen] = useState(false);
   const [systemExpanded, setSystemExpanded] = useState(true);
-  const resolvedActions: QuickTaskAction[] =
-    actions && actions.length > 0
-      ? sortActions(actions)
-      : getDefaultQuickActions(projectType).map((action) => ({ ...action }));
+  const resolvedActions: QuickTaskAction[] = resolveQuickActions(projectType, actions);
   const systemActions = resolvedActions.filter((action) => action.isSystem !== false);
   const customActions = resolvedActions.filter((action) => action.isSystem === false);
   // Show all when expanded, show up to 6 when collapsed (more natural threshold)
@@ -154,7 +169,7 @@ export function QuickTaskBar({
             aria-expanded={customOpen}
           >
             {customOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            {customActions[0].title}
+            个性化任务 ({customActions.length})
           </button>
           {customOpen &&
             customActions.map((action) => (

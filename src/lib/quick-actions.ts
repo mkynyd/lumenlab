@@ -145,6 +145,7 @@ export const DEFAULT_QUICK_ACTIONS: Record<ProjectType, QuickActionDefinition[]>
     { title: "总结要点", prompt: "请总结以下内容的核心要点。" },
     { title: "深入分析", prompt: "请对以下内容进行深入分析和讨论。" },
     { title: "格式化", prompt: "请将以下内容整理为结构清晰的 Markdown 格式。" },
+    { title: "生成 Mermaid 逻辑图", prompt: MERMAID_LOGIC_PROMPT },
   ],
 };
 

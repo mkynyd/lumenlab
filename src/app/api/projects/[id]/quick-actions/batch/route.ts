@@ -66,7 +66,7 @@ export async function POST(
       projectId,
       title: action.title,
       prompt: action.prompt,
-      isSystem: true,
+      isSystem: false,
       sortOrder: baseSortOrder + index,
     })),
   });

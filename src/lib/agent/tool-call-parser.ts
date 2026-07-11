@@ -47,7 +47,26 @@ function normalizeMalformedToolMarkup(text: string): string {
  * (or fails to complete) the block.
  */
 function stripTrailingToolFragments(text: string): string {
-  return text
+  const possibleTags = [
+    "<tool_calls",
+    "</tool_calls",
+    "<invoke",
+    "</invoke",
+    "<parameter",
+    "</parameter",
+    "<function_calls",
+    "</function_calls",
+  ];
+  let withoutPrefix = text;
+  while (true) {
+    const lastOpen = withoutPrefix.lastIndexOf("<");
+    const suffix =
+      lastOpen >= 0 ? withoutPrefix.slice(lastOpen).trim().toLowerCase() : "";
+    if (!suffix || !possibleTags.some((tag) => tag.startsWith(suffix))) break;
+    withoutPrefix = withoutPrefix.slice(0, lastOpen);
+  }
+
+  return withoutPrefix
     .replace(/<tool_calls\b[^>]*>?\s*$/gim, "")
     .replace(/<invoke\b[^>]*>?\s*$/gim, "")
     .replace(/<parameter\b[^>]*>?\s*$/gim, "")

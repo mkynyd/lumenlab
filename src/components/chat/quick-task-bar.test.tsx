@@ -32,6 +32,20 @@ describe("QuickTaskBar", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps built-in actions when personalized actions are provided", () => {
+    render(
+      <QuickTaskBar
+        projectType="general"
+        actions={[{ id: "custom-1", title: "漏洞分析", prompt: "分析漏洞", isSystem: true }]}
+        onSend={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "总结要点" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成 Mermaid 逻辑图" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "个性化任务 (1)" })).toBeInTheDocument();
+  });
+
   it("uses neutral project controls and hover states", () => {
     render(<QuickTaskBar projectType="review" onSend={vi.fn()} />);
 

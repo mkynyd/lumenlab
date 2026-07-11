@@ -1,4 +1,3 @@
-import { Configuration, DashscopeApi } from "dashscope-sdk-official";
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
 import {
@@ -11,9 +10,56 @@ export const EMBEDDING_DIM = 1024;
 const BATCH_SIZE = 10;
 const CHUNK_EMBED_CONCURRENCY = 5;
 const MAX_MEDIA_PER_FUSION = 5; // qwen3-vl-embedding limit per fusion request
+export const EMBEDDING_ENDPOINT =
+  "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding";
+
+interface EmbeddingResult {
+  status_code: number;
+  code?: string;
+  message?: string;
+  output?: {
+    embeddings?: Array<{
+      text_index?: number;
+      embedding: number[];
+    }>;
+  };
+}
+
+interface EmbeddingApi {
+  createMultiModalEmbedding(options: {
+    model: string;
+    input: { text?: string; image?: string; video?: string }[];
+    enable_fusion: boolean;
+    dimension: number;
+  }): Promise<EmbeddingResult>;
+}
 
 function getApi(apiKey: string) {
-  return new DashscopeApi(new Configuration({ apiKey }));
+  return {
+    async createMultiModalEmbedding(options): Promise<EmbeddingResult> {
+      const { model, input, ...parameters } = options;
+      const response = await fetch(
+        process.env.DASHSCOPE_EMBEDDING_ENDPOINT?.trim() || EMBEDDING_ENDPOINT,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            input: { contents: input },
+            parameters,
+          }),
+          signal: AbortSignal.timeout(30_000),
+        }
+      );
+      const payload = (await response.json()) as Omit<EmbeddingResult, "status_code"> & {
+        status_code?: number;
+      };
+      return { ...payload, status_code: payload.status_code ?? response.status };
+    },
+  } satisfies EmbeddingApi;
 }
 
 function normalizeEmbeddingInput(items: { text?: string; image?: string; video?: string }[]) {
@@ -24,6 +70,37 @@ function normalizeEmbeddingInput(items: { text?: string; image?: string; video?:
   });
 }
 
+function isCloudReachableMediaUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") ||
+      hostname === "::1" ||
+      hostname === "0.0.0.0" ||
+      hostname.startsWith("127.") ||
+      hostname.startsWith("10.") ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("169.254.") ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      /^(?:fc|fd|fe8|fe9|fea|feb)/i.test(hostname)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function cloudReachableMediaUrls(urls: string[]): string[] {
+  return (urls ?? []).filter(isCloudReachableMediaUrl).slice(0, MAX_MEDIA_PER_FUSION);
+}
+
 interface EmbeddingCallOptions {
   enableFusion?: boolean;
   expectCount?: number;
@@ -31,7 +108,7 @@ interface EmbeddingCallOptions {
 }
 
 async function callMultiModalEmbedding(
-  api: DashscopeApi,
+  api: EmbeddingApi,
   input: { text?: string; image?: string; video?: string }[],
   options: EmbeddingCallOptions = {}
 ): Promise<number[][]> {
@@ -108,10 +185,10 @@ export async function embedQuery(query: string, apiKey: string): Promise<number[
 
 export async function embedChunkWithFallback(options: {
   chunk: { id: string; content: string; mediaUrls: string[] };
-  api: DashscopeApi;
+  api: EmbeddingApi;
 }): Promise<number[]> {
   const { chunk, api } = options;
-  const mediaUrls = (chunk.mediaUrls ?? []).slice(0, MAX_MEDIA_PER_FUSION);
+  const mediaUrls = cloudReachableMediaUrls(chunk.mediaUrls);
   const multimediaInput: { text?: string; image?: string; video?: string }[] = [
     { text: chunk.content },
   ];
@@ -121,6 +198,15 @@ export async function embedChunkWithFallback(options: {
     } else {
       multimediaInput.push({ image: url });
     }
+  }
+
+  if (mediaUrls.length === 0) {
+    const embeddings = await callMultiModalEmbedding(api, [{ text: chunk.content }], {
+      enableFusion: false,
+      expectCount: 1,
+      context: `chunk ${chunk.id} text`,
+    });
+    return embeddings[0];
   }
 
   try {
@@ -179,18 +265,49 @@ export async function embedChunksForFile(options: {
 
   const api = getApi(options.apiKey);
 
-  for (let i = 0; i < existingChunks.length; i += CHUNK_EMBED_CONCURRENCY) {
-    const batch = existingChunks.slice(i, i + CHUNK_EMBED_CONCURRENCY);
+  async function persistEmbedding(chunkId: string, embedding: number[]) {
+    const vector = `[${embedding.join(",")}]`;
+    await prisma.$executeRawUnsafe(
+      `UPDATE "DocumentChunk" SET embedding = $1::vector WHERE id = $2`,
+      vector,
+      chunkId
+    );
+  }
+
+  const textOnlyChunks = existingChunks.filter(
+    (chunk) => cloudReachableMediaUrls(chunk.mediaUrls).length === 0
+  );
+  const multimodalChunks = existingChunks.filter(
+    (chunk) => cloudReachableMediaUrls(chunk.mediaUrls).length > 0
+  );
+
+  for (let i = 0; i < textOnlyChunks.length; i += BATCH_SIZE) {
+    const batch = textOnlyChunks.slice(i, i + BATCH_SIZE);
+    try {
+      const embeddings = await callMultiModalEmbedding(
+        api,
+        batch.map((chunk) => ({ text: chunk.content })),
+        {
+          enableFusion: false,
+          expectCount: batch.length,
+          context: `file ${options.fileAssetId} text batch ${i / BATCH_SIZE + 1}`,
+        }
+      );
+      await Promise.all(
+        batch.map((chunk, index) => persistEmbedding(chunk.id, embeddings[index]))
+      );
+    } catch (error) {
+      console.error(`Failed to embed text batch for file ${options.fileAssetId}:`, error);
+    }
+  }
+
+  for (let i = 0; i < multimodalChunks.length; i += CHUNK_EMBED_CONCURRENCY) {
+    const batch = multimodalChunks.slice(i, i + CHUNK_EMBED_CONCURRENCY);
     await Promise.all(
       batch.map(async (chunk) => {
         try {
           const embedding = await embedChunkWithFallback({ chunk, api });
-          const vector = `[${embedding.join(",")}]`;
-          await prisma.$executeRawUnsafe(
-            `UPDATE "DocumentChunk" SET embedding = $1::vector WHERE id = $2`,
-            vector,
-            chunk.id
-          );
+          await persistEmbedding(chunk.id, embedding);
         } catch (error) {
           console.error(`Failed to embed chunk ${chunk.id}:`, error);
         }
