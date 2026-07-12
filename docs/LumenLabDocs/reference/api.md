@@ -81,10 +81,12 @@
 
 ### `POST /api/chat`
 
-- 描述：主聊天接口，支持 SSE 流式返回。根据配置选择 DeepSeek 或 MiniMax 模型，并执行检索、工具调用与 Agent 审批流程。
+- 描述：主聊天接口。薄 Route 完成鉴权、限流和 JSON / multipart 解析后，把框架无关输入交给 `AgentRuntime.run()`；Runtime 负责上下文、模型、ProviderAdapter、Tool loop 与持久化，最后由 SSE adapter 恢复既有聊天协议。
 - 认证：需登录。
-- 请求：`{ messages, conversationId?, projectId?, model?, options? }`
-- 响应：`text/event-stream`，每条消息为一个 SSE 数据帧。
+- JSON 请求：`{ message, model, conversationId?, projectId?, hiddenPrompt?, selectedFileIds?, mode?, thinkingEnabled?, reasoningEffort?, webSearchActive?, manualSkillId?, skillOff?, isQuickTask?, materialScope? }`。
+- multipart 请求：`message` 字段放置上述 JSON 字符串，`attachments` 字段可重复提交文件。
+- 响应：`text/event-stream`。模型增量保持 OpenAI-compatible `data:` 帧；Agent 状态使用 `event: agent`；结束帧为 `data: [DONE]`。
+- 响应头：`X-Conversation-Id`、`X-Message-Id`、`X-Model-Provider`、`X-Agent-Runtime-Version`、`X-Agent-Tool-Protocol`；兼容头 `X-Agent-Orchestrator` 在 `new` 模式为 `enabled`。
 
 ### `POST /api/chat/compact`
 
@@ -320,35 +322,18 @@
 
 ### `POST /api/agent/approve`
 
-- 描述：消费一次性审批 token，授权当前待执行 Tool。
+- 描述：校验待审批执行的归属与状态，使用落库的规范化参数消费一次性 token，然后立即调用统一 Tool handler 并落为成功或失败终态。
 - 认证：需登录。
-- 请求：`{ executionId, approvalToken, argumentsHash?, sessionApprove? }`
-- 响应：审批后的 ToolExecution 状态。
+- 请求：`{ executionId, token, scope?: 'once' | 'session' }`。L3 / L4 仅允许 `once`。
+- 成功响应：`{ ok: true, status: 'succeeded', scope, executionId, resultSummary }`。
+- 执行失败响应：`{ ok: false, status: 'failed', scope, executionId, error }`。审批成功后的执行结果会成为前端 Timeline 终态，但不会自动恢复此前暂停的 Provider continuation。
 
 ### `POST /api/agent/reject`
 
-- 描述：拒绝一次待执行 Tool，并把对应 `ToolExecution` 标记为失败或拒绝。
+- 描述：拒绝一次 `pending_approval` ToolExecution，落库为 `rejected` 并写入审计；不会自动恢复暂停的 Provider continuation。
 - 认证：需登录。
-- 请求：`{ executionId }`
-- 响应：更新后的 ToolExecution 状态。
-
----
-
-## Agent
-
-### `POST /api/agent/approve`
-
-- 描述：批准 Agent 提出的工具调用或文件操作。
-- 认证：需登录。
-- 请求：`{ requestId, params? }`
-- 响应：操作执行结果。
-
-### `POST /api/agent/reject`
-
-- 描述：拒绝 Agent 提出的操作请求，AI 将继续后续步骤。
-- 认证：需登录。
-- 请求：`{ requestId }`
-- 响应：`{ success: true }`
+- 请求：`{ executionId, reason? }`
+- 响应：`{ ok: true, executionId }`。
 
 ---
 

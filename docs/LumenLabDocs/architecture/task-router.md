@@ -4,10 +4,12 @@
 
 ## 模型路由入口
 
-模型选择逻辑集中在 `src/lib/chat/router.ts` 的 `routeModel()` 函数。该函数在以下两个位置被调用：
+模型选择规则仍集中在 `src/lib/chat/router.ts` 的 `routeModel()`，但调用者已经收敛到 `AgentRuntime`，而不是 HTTP Route：
 
-1. **Preflight 校验**：`src/app/api/chat/route.ts` 在创建新对话前，先根据附件与显式模型选择确定目标 provider，并校验该用户是否有可用 API Key。
+1. **Preflight 校验**：`src/lib/agent/runtime.ts` 在创建新对话前，根据附件、显式模型与 `ContextAssembler` 的视觉需求判定目标 provider，并校验该用户是否有可用 API Key。
 2. **对话内路由**：后续消息若 `conversation.modelLock` 已设置，则沿用锁定 provider。
+
+`src/app/api/chat/route.ts` 不感知 DeepSeek、MiniMax、模型锁或凭证，只负责鉴权、限流、请求映射、调用 `AgentRuntime.run()` 和返回 SSE。
 
 ## 路由规则（按优先级）
 
@@ -26,7 +28,7 @@
 
 ## Preflight API Key 校验
 
-在创建新对话前，`route.ts` 会调用 `getProviderApiKey(userId, provider)`：
+在创建新对话前，`AgentRuntime` 会调用 `getProviderApiKey(userId, provider)`：
 
 - 若系统处于自托管模式（`USER_API_KEYS_ENABLED=1`），优先查找 `ApiKey` 表中该 provider 的密钥。
 - 否则使用中央凭证模式，通过 `CredentialProfile` / `ProviderCredential` 获取对应 provider 的加密切片。
@@ -44,7 +46,7 @@
 
 ## Skill Router
 
-`src/lib/agent/skill-router.ts` 会在 `/api/chat` 入口处根据用户输入、隐藏快捷任务提示、手动 Skill、历史 active Skill、项目上下文、选中文件和联网意图返回：
+`src/lib/agent/skill-router.ts` 由 `AgentRuntime` 调用，根据用户输入、隐藏快捷任务提示、手动 Skill、历史 active Skill、项目上下文、选中文件和联网意图返回：
 
 - `activeSkillId`：当前激活的 Skill。
 - `status`：`none` / `active` / `awaiting_context`。
@@ -62,26 +64,32 @@
 
 ## Tool 分发
 
-不同模型对 Tool 的支持能力不同，系统做了显式分层：
+不同模型的 Tool 协议差异被限制在 `src/lib/agent/adapters/`。`AgentLoop` 只接收统一的 `NormalizedToolCall`，不会解析厂商原生 block、工具别名或 fallback 标记。
 
 ### DeepSeek
 
-- 仅发送**服务端工具** `web_search_20250305`。
-- 客户端工具（如项目文件管理、成果保存、导出等）不进入 DeepSeek 的 tools payload，而是在收到模型返回的 `tool_use` 后，由 `src/lib/agent/conversation-loop.ts` 在服务端执行并回填结果。
-- Tool 元数据构建在 `src/lib/skills/registry.ts` 的 `buildToolsPayloadForProvider()` 中完成。
-- Agent Orchestrator 可在最终模型回答前执行确定性预取工具，如 `project_files.read`、`project_rag.search`、`web.fetch`。
+- `DeepSeekAdapter` 把内部 `web.search` 映射为厂商原生 `web_search`，并把返回名称映射回内部 Tool ID。
+- 其他当前不支持原生调用的 Tool 由 Adapter 注入 XML/DSML 指令、解析 fallback 调用，并以文本工具结果构造 continuation；XML/DSML 标记不会泄漏到用户正文。
+- 原生 Tool 与 XML/DSML fallback 可在同一轮归一化、按 Tool 名称与参数去重，然后交给统一 `AgentLoop`。
+- `new` 模式还可在首轮模型回答前执行确定性工具前奏，如 `project_files.read`、`project_rag.search`、`web.fetch`；前奏和模型触发调用共用 `ToolRunner` 与去重记录。
 
 ### MiniMax
 
-- 当前 MiniMax 路径**不注入任何工具**，仅用于多模态理解与视觉任务。
+- `MiniMaxAdapter` 将当前允许的 Tool 作为原生 Tool 注入，解析原生 `tool_use`，并用原生 `tool_result` transcript 续跑。
+- continuation 不重复携带首轮图片/PDF 等附件，历史中的 DeepSeek reasoning 也会在 Adapter 边界过滤。
+- XML/DSML fallback 是 DeepSeek 兼容策略，MiniMax 不解析这种文本标记。
+
+### 统一 Tool loop
+
+`src/lib/agent/loop/agent-loop.ts` 负责 allowlist、跨前奏去重、无进展检测、最多轮次、取消信号和 Provider continuation；具体 Policy、审批、执行、审计与 `ToolExecution` 状态转换由 `ToolRunner` 负责。审批出现时 loop 进入 `awaiting_approval`，不会向 Provider 伪造“已跳过”结果。
 
 ### 百炼（Bailian）
 
 - **仅用于 RAG embedding**，不用于聊天。
 - 入口在 `src/lib/rag/embedding.ts`，调用 `embedQuery()` 把查询文本转成 1024 维向量。
-- `src/app/api/chat/route.ts` 中通过 `getProviderApiKey(userId, "bailian")` 获取百炼密钥；如果 embedding 失败，系统会降级为纯关键词检索，不会阻塞对话。
+- `AgentRuntime` 通过 `getProviderApiKey(userId, "bailian")` 获取百炼密钥；如果 embedding 失败，系统会降级为纯关键词检索，不会阻塞对话。
 
 ## 相关文档
 
-- 模型路由后如何调用 API：见 `src/lib/deepseek.ts` 与 `src/lib/chat/minimax-chat.ts`
+- Provider 适配边界：见 `src/lib/agent/provider-adapter.ts` 与 `src/lib/agent/adapters/`
 - Tool 调用后的审批与执行：见 [Policy Engine](./policy-engine.md)

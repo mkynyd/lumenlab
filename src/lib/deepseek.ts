@@ -232,13 +232,14 @@ export async function completeChat(
 
 export async function streamChat(
   apiKey: string,
-  params: DeepSeekRequest
+  params: DeepSeekRequest,
+  signal?: AbortSignal
 ): Promise<StreamResult> {
   const { system, history } = splitMessages(params.messages);
-  let anthropicStream;
+  let anthropicStream: AsyncIterable<Anthropic.Messages.RawMessageStreamEvent>;
 
   try {
-    anthropicStream = await createClient(apiKey).messages.create({
+    const request = {
       model: mapDeepSeekModel(params.model),
       max_tokens: params.max_tokens || 8192,
       system,
@@ -254,7 +255,10 @@ export async function streamChat(
         : {}),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(params.tools?.length ? { tools: params.tools as any } : {}),
-    });
+    } as unknown as Anthropic.Messages.MessageCreateParamsStreaming;
+    anthropicStream = signal
+      ? (await createClient(apiKey).messages.create(request, { signal }))
+      : (await createClient(apiKey).messages.create(request));
   } catch (error) {
     throw toDeepSeekError(error);
   }
@@ -269,7 +273,7 @@ export async function streamChat(
   // Reasoning models may emit tool-call-like markup inside thinking/content.
   // We accumulate the raw text so we can sanitize it before streaming to the UI.
   // Actual tool calls come from native tool_use blocks; pseudo markup is handled
-  // and cleaned by the route-level parser.
+  // and cleaned by the DeepSeek provider adapter.
   let rawReasoning = "";
   let cleanedReasoningStreamed = "";
   let rawContent = "";

@@ -25,8 +25,8 @@
 | `QINIU_PRIVATE_DOMAIN` | 必需 | `coursecdn.mkynstudio.top` | 七牛云私有下载域名 |
 | `NEXT_PUBLIC_APP_NAME` | 必需 | `LumenLab` | 前端展示的应用名称 |
 | `USER_API_KEYS_ENABLED` | 可选 | `false` | 自托管开关；设为 `1` 或 `true` 时优先读取用户自行配置的 API Key |
-| `AGENT_ORCHESTRATOR_ENABLED` | 可选 | `false` | 是否启用 Agent Orchestrator 确定性工具预取 |
-| `AGENT_CONTINUATION_ENABLED` | 可选 | `false` | 是否启用模型驱动的多轮 JSON action 续跑 |
+| `AGENT_RUNTIME_MODE` | 可选 | `legacy` | Agent Runtime 发布模式：`legacy` / `shadow` / `new` |
+| `AGENT_ORCHESTRATOR_ENABLED` | 已弃用 | — | 仅在未设置 `AGENT_RUNTIME_MODE` 时兼容旧部署：`0` → `legacy`，`1` → `new` |
 | `AGENT_DEBUG_EVENTS` | 可选 | `false` | 是否在 SSE 中发送 router/debug 事件 |
 | `WEB_FETCH_ALLOWLIST` | 可选 | — | 允许 `web.fetch` 抓取的域名列表，建议生产环境显式配置 |
 | `CACHE_EXPERIMENT_PROMPT_REORDER` | 可选 | `false` | 是否启用提示词重排实验 |
@@ -65,8 +65,10 @@
 
 ### Agent 与联网
 
-- `AGENT_ORCHESTRATOR_ENABLED=1` 会在最终模型回答前运行确定性工具计划，例如项目文件读取、项目 RAG 和网页抓取。
-- `AGENT_CONTINUATION_ENABLED=1` 会启用模型驱动的多轮 JSON action 续跑，适合验证新 Tool loop。
+- `AGENT_RUNTIME_MODE=legacy` 是固定默认值，保持兼容响应，不启用确定性工具前奏。
+- `AGENT_RUNTIME_MODE=shadow` 仍返回 legacy 结果，只比较 Skill、联网与计划 Tool ID 并记录日志；不会为候选方案额外调用 Provider 或执行 Tool，因此没有重复费用和副作用。
+- `AGENT_RUNTIME_MODE=new` 启用确定性工具前奏、Skill 状态事件与统一 Tool loop。Provider continuation 由 Adapter 根据原生 Tool block 或 DeepSeek XML/DSML fallback 自动处理，不再需要独立 continuation 开关。
+- 旧变量 `AGENT_ORCHESTRATOR_ENABLED` 只用于迁移兼容；两者同时存在时 `AGENT_RUNTIME_MODE` 优先。新部署不要再配置旧变量。
 - `AGENT_DEBUG_EVENTS=1` 会把 router candidates、confidence、stop reason 等调试事件写入 SSE，生产环境默认关闭。
 - `WEB_FETCH_ALLOWLIST` 控制 `web.fetch` 可抓取的域名。即使域名在 allowlist 中，服务端仍会做公开 URL、DNS、重定向和 SSRF 校验。
 

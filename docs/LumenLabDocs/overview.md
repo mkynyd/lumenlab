@@ -69,7 +69,7 @@ LumenLab 是一个**项目化**的 AI 学习工作台。它把以下能力整合
 - 支持 DeepSeek V4 Pro / Flash，复杂推理可开启深度推理模式。
 - MiniMax M3 负责图片 OCR、PDF 文档解析等多模态任务。
 - 流式输出，Markdown、公式、流程图、代码高亮实时渲染。
-- 通过 provider adapter 统一不同厂商接口；DeepSeek 流式输出支持 continuation 续传，并在 JSON action 解析失败时自动 fallback 到文本回复。
+- 通过 ProviderAdapter 统一不同厂商接口；DeepSeek 使用原生 Tool 与 XML/DSML fallback，MiniMax 使用原生 Tool，两者的 continuation 都进入同一 AgentLoop。
 
 ### 文档解析与转换
 
@@ -108,7 +108,7 @@ LumenLab 是在线 Web 应用，无需安装，浏览器打开即可使用。
 ## 与同类产品的差异
 
 - **项目化而非纯聊天**：每个项目独立配置系统提示词、默认模型与文件上下文，学习资料不会散在对话里。
-- **可控 Agent 而非裸工具调用**：AI 调用工具前需要你的审批，操作透明、可撤销。
+- **可控 Agent 而非裸工具调用**：每次 Tool 调用都经过 Policy Engine；需审批的操作会暂停并展示影响范围，执行结果可审计。
 - **资料沉淀而非一次性回答**：优质回答可以保存为 Artifact，长期沉淀并可导出多格式。
 - **集中凭据而非每用户 Key**（中央凭证模式）：由管理员统一发布凭证，密钥不落到客户端，用户无需关心配置；自托管模式下也可由用户自行管理 API Key。
 

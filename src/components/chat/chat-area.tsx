@@ -301,7 +301,7 @@ export function ChatArea({
                       preview: event.preview,
                       token: entry.approvalToken ?? "",
                       expiresAt: entry.approvalExpiresAt ?? 0,
-                      canApproveSession: event.preview.isReversible,
+                      canApproveSession: event.canApproveSession,
                     }}
                     onApprove={async (executionId, token, scope) => {
                       await approveExecution(executionId, token, scope);

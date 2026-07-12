@@ -46,7 +46,7 @@ LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目
 
 ### 受控 Agent 模式
 
-入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续由 DeepSeek / MiniMax 的 Anthropic-compatible 流式接口输出，DeepSeek 在模型未返回 native tool call 时可通过 JSON action fallback 继续多轮工具调用。
+入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek 使用 native `web.search` 并在其他工具上保留 adapter 内部 XML/DSML fallback，MiniMax 使用 native `tool_use`；两者共享同一套工具循环、Policy、审批、审计与结构化事件。
 
 服务端 Policy Engine 拦截所有 `tool_use`，按 L0–L4 风险等级决定执行、预批准或逐次确认。
 
@@ -54,8 +54,8 @@ LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目
 - L2 首次询问：保存 Artifact、新增或挂载参考文献。
 - L3 每次询问：删除项目资料、导出 Artifact DOCX。
 - Skill 只能收紧权限，不能放宽。
-- L3/L4 通过一次性审批令牌（sha256 存储 + `argumentsHash` 校验）授权，模型在 `proposed` 与 `approved` 之间替换参数会被拒绝。
-- 拒绝不中止整个任务，只标记当前 `ToolExecution` 失败，模型继续后续步骤。
+- 需要确认的工具通过一次性审批令牌（sha256 存储 + `argumentsHash` + user/conversation/tool/request 绑定）授权，模型或客户端在等待期间替换参数会被拒绝。
+- 审批端点原子抢占待执行记录，恢复原项目上下文并真实执行 handler；成功或失败终态会直接回写 UI。拒绝只终结当前 `ToolExecution`，不会执行该工具。
 
 ### 内置 Skills
 
@@ -178,7 +178,10 @@ src/
 │   │   ├── settings/page.tsx           # 用户设置
 │   │   └── tools/page.tsx              # 文档工具
 │   └── api/                            # REST API
-│       ├── chat/route.ts               # SSE 流式聊天（核心路由 + Agent 事件流）
+│       ├── chat/                        # 薄 HTTP/SSE 适配层
+│       │   ├── route.ts                # Auth、限流、错误映射与 Runtime 调用
+│       │   ├── request-mapper.ts       # JSON/multipart → AgentRunInput
+│       │   └── response-stream.ts      # AgentEvent → 兼容 SSE
 │       ├── agent/
 │       │   ├── approve/route.ts        # 一次性审批令牌兑换
 │       │   └── reject/route.ts         # 显式拒绝待执行 ToolExecution
@@ -196,14 +199,25 @@ src/
 ├── lib/
 │   ├── deepseek.ts                     # DeepSeek API 客户端 (Anthropic SDK 流式)
 │   ├── agent/                          # Agent 模式核心
+│   │   ├── contracts.ts                # AgentRuntime / AgentRun 输入输出合同
+│   │   ├── runtime.ts                  # 唯一 Runtime 编排入口
+│   │   ├── runtime-events.ts           # 结构化 Runtime 事件
+│   │   ├── runtime-mode.ts             # legacy / shadow / new 显式策略
+│   │   ├── context/                    # 项目/文件归属与视觉上下文组装
+│   │   ├── adapters/                   # DeepSeek / MiniMax Provider Adapter
+│   │   ├── providers/                  # Provider delta/usage 规范化
+│   │   ├── loop/agent-loop.ts          # 唯一模型工具循环
+│   │   ├── tools/tool-runner.ts        # Policy/审批/执行/审计状态机
+│   │   ├── persistence/                # Conversation / ToolExecution Adapter
+│   │   ├── observability/              # shadow 决策差异
 │   │   ├── types.ts                    # RiskLevel / ToolMetadata / SkillMetadata / ...
 │   │   ├── tool-registry.ts            # 工具注册中心
 │   │   ├── skill-registry.ts           # Skill 注册中心
 │   │   ├── policy-engine.ts            # L0–L4 策略 + 范围 + 风险上限 + 参数校验
 │   │   ├── approval-token.ts           # 一次性 sha256 令牌
-│   │   ├── tool-executor.ts            # 处理器分发 + 持久化
+│   │   ├── tool-executor.ts            # 处理器分发
 │   │   ├── event-stream.ts             # AgentEvent ↔ SSE 序列化
-│   │   ├── conversation-loop.ts        # 单次 tool_use 的事件流 + DB 写入
+│   │   ├── conversation-loop.ts        # agent-loop 兼容导出
 │   │   ├── preview-builder.ts          # 脱敏 ToolCallPreview
 │   │   └── audit-log.ts                # AgentAuditLog 写入器
 │   ├── skills/                         # Skill discovery / migration / Provider-aware tools
@@ -276,21 +290,23 @@ src/
 普通聊天：
 
 ```
-用户输入 → chat/router（文本/多模态分类 + 模型锁）
-         → Skill Router（选择 Skill、任务画像、联网建议）
-         → prompts（组装系统提示词与 Skill 指令）
-         → RAG 检索（选中文件 / 关键词 / 向量）
-         → deepseek.ts 或 minimax-chat.ts 流式调用
-         → SSE Stream（文本 delta + Agent events）
+用户输入 → /api/chat HTTP Adapter（Auth / 限流 / 请求映射）
+         → AgentRuntime.run(AgentRunInput)
+         → ContextAssembler + ConversationPersistence
+         → Skill Router / RAG / 确定性 prelude
+         → ProviderAdapter（DeepSeek native + XML fallback / MiniMax native）
+         → Agent Loop（规范化调用、Policy、ToolRunner、continuation）
+         → 结构化 AgentEvent
+         → SSE Adapter（保持既有 data/event 格式与响应头）
          → 前端实时渲染 Markdown / 来源 / 时间线
-         → Message 异步持久化
+         → ConversationPersistence 异步完成 Message
          → 可选保存为 Artifact → 导出 MD/DOCX/PDF
 ```
 
 Agent 聊天：
 
 ```
-Skill Router / Orchestrator 规划工具，或模型发出 tool_use
+Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
   → AgentEvent: tool_proposed
   → policy-engine 校验：风险等级 + Skill 白名单 + 范围 + 参数 + 会话预批准
   ├─ blocked    → AgentEvent: tool_blocked
@@ -298,11 +314,13 @@ Skill Router / Orchestrator 规划工具，或模型发出 tool_use
   ├─ L2 session → 检查会话预批准，否则进入 L3 路径
   └─ L3/L4 ask  → AgentEvent: approval_required
                  → 用户通过 approval-card 触发 /api/agent/approve
-                 → approval-token 兑换（sha256 + argumentsHash）
-                 → tool-executor 执行
+                 → approval-token 兑换（sha256 + argumentsHash + 绑定校验）
+                 → 原子 claim → 恢复执行上下文 → tool-executor 执行
   → AgentEvent: tool_started / tool_progress / tool_completed / tool_failed
   → audit-log 写入 AgentAuditLog
 ```
+
+`AGENT_RUNTIME_MODE` 在开发和生产中使用同一默认值 `legacy`。`shadow` 只比较 Skill、联网和预规划工具等无副作用决策并记录结构化差异；`new` 启用 Runtime-owned Skill 状态与确定性 prelude。旧 `AGENT_ORCHESTRATOR_ENABLED=0/1` 仅作为未配置新变量时的兼容桥。
 
 ### 四层缓存
 
@@ -320,7 +338,7 @@ Skill Router / Orchestrator 规划工具，或模型发出 tool_use
 | `SkillPackage` | 声明式 Skill 包（skillId + version, 允许工具, 风险上限, 必需 scopes, 契约, 数据处理策略）。`(skillId, version)` 唯一。 |
 | `ConversationSkill` | 单次对话中的 Skill 激活日志。 |
 | `ToolDefinition` | 声明式 Tool 包（风险等级, 副作用标记, 默认审批模式, 审计级别, 允许的 Skill ID）。 |
-| `ToolExecution` | 每次 tool_use 一行：标准化参数、sha256 `argumentsHash`、状态、审批快照、令牌哈希、scope、时间戳、结果/错误摘要。 |
+| `ToolExecution` | 每次 tool_use 一行：标准化参数、sha256 `argumentsHash`、状态、审批快照、scope、执行上下文、时间戳、结果/错误摘要；一次性令牌哈希单独保存在绑定的 `ApprovalToken`。 |
 | `ApprovalToken` | 一次性审批令牌，只存 sha256；消费时重新校验 `argumentsHash`，阻止参数替换攻击。 |
 | `AgentAuditLog` | `tool_proposed` / `tool_blocked` / `approval_required` / `approval_granted` / `tool_started` / `tool_completed` / `tool_failed` / `user_rejected` / `token_consumed` 等事件。 |
 | `UserToolPreference` | 用户级 Tool 审批覆盖（L3/L4 不能存为 `auto`）。 |
@@ -368,6 +386,7 @@ cp .env.example .env
 | `REGISTRATION_CODE_PEPPER` | 注册码加盐, 与 regadmin 的 FINGERPRINT_SECRET 独立 |
 | `REGISTRATION_SYNC_SECRET` | 与 course-ai-regadmin 共享的同步密钥 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | RSA 私钥 (PEM base64) |
+| `AGENT_RUNTIME_MODE` | `legacy` / `shadow` / `new`，默认 `legacy` |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛云 Kodo 密钥（生产必填） |
 | `QINIU_BUCKET` | Kodo 空间名 |
 | `AUTH_URL` | 生产环境: `https://lab.mkynstudio.top` |

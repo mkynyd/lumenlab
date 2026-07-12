@@ -32,6 +32,18 @@ vi.mock("@/lib/db", () => {
           Object.assign(row, data);
           return row;
         }),
+        updateMany: vi.fn(async ({ where, data }: { where: { id: string; consumedAt?: null }; data: Partial<{ consumedAt: Date }> }) => {
+          const list = (globalThis as { __recorded?: unknown[] }).__recorded as Array<{
+            id: string;
+            consumedAt: Date | null;
+          }>;
+          const row = list.find((r) => r.id === where.id);
+          if (!row || (where.consumedAt === null && row.consumedAt !== null)) {
+            return { count: 0 };
+          }
+          Object.assign(row, data);
+          return { count: 1 };
+        }),
         findUnique: vi.fn(async ({ where }: { where: { tokenHash: string } }) => {
           const list = (globalThis as { __recorded?: unknown[] }).__recorded as Array<{ tokenHash: string }>;
           return list.find((r) => r.tokenHash === where.tokenHash) ?? null;

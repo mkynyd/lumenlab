@@ -48,28 +48,42 @@
   - tokenHash 是否存在且未被消费。
   - 是否过期。
   - 当前请求参数哈希是否与签发时一致（防止模型在等待期间替换参数）。
+  - user / conversation / tool / request 是否与待执行记录完全绑定。
 
-## Tool 执行注册表
+## ToolRunner 与执行状态机
 
-`src/lib/agent/tool-executor.ts` 维护一个 `Map<string, ToolHandler>`：
+`src/lib/agent/tools/tool-runner.ts` 是确定性工具前奏与模型驱动 `AgentLoop` 共用的执行入口。一次调用按固定顺序经过：
+
+1. 解析 Tool / Skill 元数据并调用 Policy Engine。
+2. 通过 `ToolExecutionPersistence` 创建 `proposed` 记录，再写审计并发出事件。
+3. 拒绝时转为 `blocked`；需审批时签发 token 并转为 `pending_approval`。
+4. 自动放行时先转为 `executing`，再调用 handler，最终转为 `succeeded` 或 `failed`。
+
+持久化与审计先于对应 UI 事件完成，避免客户端看到数据库中尚不存在的状态。`src/lib/agent/tool-executor.ts` 仍维护实际 handler 注册表：
 
 - `registerToolHandler(toolId, handler)`：注册工具实现。
 - `executeTool(toolId, ctx, args)`：根据 `userId`、`conversationId`、`projectId` 等上下文执行工具。
-- `persistExecution()`：把执行结果（成功 / 失败）写入 `ToolExecution` 表。
+- Prisma 状态转换由 `src/lib/agent/persistence/prisma-tool-execution-adapter.ts` 统一完成。
 
 工具实现需自行处理：参数归一化、跨租户校验、超时、错误码。
 
 ## 事件流与前端渲染
 
-`src/lib/agent/conversation-loop.ts` 中的 `runAutoTool()` 负责把一次 tool_use 转换成事件流：
+`src/lib/agent/loop/agent-loop.ts` 接收 ProviderAdapter 归一化后的 Tool call，并调用 `ToolRunner` 转换为事件流：
 
 1. 创建 `ToolExecution` 记录，状态为 `proposed`。
 2. 调用 Policy Engine 决策。
-3. 若被拒绝，发出 `tool_blocked` 事件并落库失败。
+3. 若被策略拒绝，落库为 `blocked` 并发出 `tool_blocked`。
 4. 若需要审批，签发 token，发出 `approval_required` 事件，前端 `AgentTimeline` 渲染审批卡片。
 5. 若自动放行，发出 `tool_started` → `tool_progress`（可选）→ `tool_completed` / `tool_failed`。
 
 事件通过 SSE 以 `event: agent` 的形式注入主聊天流，前端解析后展示在消息旁边的 Timeline 中。
+
+## 批准、拒绝与暂停边界
+
+`POST /api/agent/approve` 不再只修改审批状态。服务端会先检查 `ToolExecution` 的用户归属与 `pending_approval` 状态，再用数据库中保存的规范化参数消费 token，校验 user / conversation / tool / request 绑定；随后原子抢占执行、调用同一 Tool handler，并把记录落为 `succeeded` 或 `failed`。L3 / L4 不允许会话级批准。前端把该返回值映射为 `tool_completed` 或 `tool_failed` 终态。
+
+`POST /api/agent/reject` 也通过带 `pending_approval` 条件的原子更新抢占记录，再将其落为 `rejected`，因此不会覆盖一个并发批准后已经进入 `executing` 的执行。前端显示拒绝终态。批准或拒绝都**不会自动恢复**原请求中已暂停的 Provider continuation；用户需要发送下一条消息继续对话。这样避免在缺少可持久化 Provider continuation token 的情况下伪造工具结果或重复模型调用。
 
 ## 典型 Tool 风险分配
 

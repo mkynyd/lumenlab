@@ -119,6 +119,7 @@ export async function streamMiniMaxChat(
     attachments?: ServerFileAttachment[];
     thinking?: boolean;
     maxTokens?: number;
+    signal?: AbortSignal;
     tools?: Array<{ type?: string; name: string; description?: string; input_schema?: Record<string, unknown> }>;
     toolChoice?: { type: "auto" | "any" | "none" };
   }
@@ -130,10 +131,10 @@ export async function streamMiniMaxChat(
   getRawReasoning: () => string;
 }> {
   const { system, history } = splitMessages(params.messages);
-  let anthropicStream;
+  let anthropicStream: AsyncIterable<Anthropic.Messages.RawMessageStreamEvent>;
 
   try {
-    anthropicStream = await createClient(apiKey).messages.create({
+    const request = {
       model: "MiniMax-M3",
       max_tokens: params.maxTokens || 8192,
       temperature: 0.7,
@@ -148,7 +149,12 @@ export async function streamMiniMaxChat(
       stream: true,
       ...(params.tools?.length ? { tools: params.tools as Anthropic.Messages.Tool[] } : {}),
       ...(params.toolChoice ? { tool_choice: params.toolChoice as Anthropic.Messages.ToolChoice } : {}),
-    });
+    } as Anthropic.Messages.MessageCreateParamsStreaming;
+    anthropicStream = params.signal
+      ? await createClient(apiKey).messages.create(request, {
+          signal: params.signal,
+        })
+      : await createClient(apiKey).messages.create(request);
   } catch (error) {
     throw toMiniMaxError(error);
   }

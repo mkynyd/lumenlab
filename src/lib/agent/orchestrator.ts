@@ -94,7 +94,8 @@ export interface ToolPlanningInput {
 
 export type PlannedToolRunResult =
   | { status: "succeeded"; summary: Record<string, unknown> }
-  | { status: "failed"; error: string; summary?: Record<string, unknown> };
+  | { status: "failed"; error: string; summary?: Record<string, unknown> }
+  | { status: "pending_approval"; executionId: string };
 
 export interface ExecutePlannedToolCallsInput {
   profile: TaskProfile;
@@ -112,6 +113,7 @@ export interface ExecutePlannedToolCallsResult {
     error?: string;
   }>;
   stopReason: ToolLoopStopReason | null;
+  pendingExecutionIds: string[];
 }
 
 export interface ToolLoopState {
@@ -339,6 +341,7 @@ export async function executePlannedToolCalls(
   const history: ToolLoopRecord[] = [];
   const recentFailures: FailureRecord[] = [];
   let stopReason: ToolLoopStopReason | null = null;
+  const pendingExecutionIds: string[] = [];
 
   for (let index = 0; index < input.plannedCalls.length; index += 1) {
     const stop = shouldStopToolLoop({
@@ -362,6 +365,9 @@ export async function executePlannedToolCalls(
         args: call.input,
         producedNewContent: toolResultProducedNewContent(executed.summary),
       });
+    } else if (executed.status === "pending_approval") {
+      pendingExecutionIds.push(executed.executionId);
+      break;
     } else {
       const category = classifyFailure(executed.error);
       results.push({
@@ -391,5 +397,6 @@ export async function executePlannedToolCalls(
     sources: aggregateSources(sources),
     results,
     stopReason,
+    pendingExecutionIds,
   };
 }

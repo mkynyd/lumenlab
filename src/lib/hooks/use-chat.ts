@@ -89,13 +89,68 @@ export async function readChatError(response: Response) {
   const text = await response.text().catch(() => "");
   if (!text.trim()) return fallback;
   try {
-    const data = JSON.parse(text) as { error?: unknown };
-    return typeof data.error === "string" && data.error.trim()
-      ? data.error
+    const data = JSON.parse(text) as { error?: unknown; reason?: unknown };
+    if (typeof data.error === "string" && data.error.trim()) return data.error;
+    return typeof data.reason === "string" && data.reason.trim()
+      ? data.reason
       : fallback;
   } catch {
     return text.slice(0, 500) || fallback;
   }
+}
+
+export type ToolApprovalResponse =
+  | {
+      ok: true;
+      status: "succeeded";
+      scope: ApprovalScope;
+      executionId: string;
+      resultSummary: Record<string, unknown>;
+    }
+  | {
+      ok: false;
+      status: "failed";
+      scope: ApprovalScope;
+      executionId: string;
+      error: { code: string; message: string };
+    };
+
+export async function requestToolApproval(input: {
+  executionId: string;
+  token: string;
+  scope: ApprovalScope;
+}): Promise<ToolApprovalResponse> {
+  const response = await fetch("/api/agent/approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await readChatError(response));
+  }
+  const payload = (await response.json()) as Partial<ToolApprovalResponse>;
+  if (
+    (payload.status !== "succeeded" && payload.status !== "failed") ||
+    payload.executionId !== input.executionId
+  ) {
+    throw new Error("审批响应格式无效");
+  }
+  return payload as ToolApprovalResponse;
+}
+
+export function toolApprovalEvent(result: ToolApprovalResponse): AgentEvent {
+  return result.status === "succeeded"
+    ? {
+        type: "tool_completed",
+        executionId: result.executionId,
+        resultSummary: result.resultSummary,
+      }
+    : {
+        type: "tool_failed",
+        executionId: result.executionId,
+        errorCode: result.error.code,
+        error: result.error.message,
+      };
 }
 
 export function useChat(options: UseChatOptions = {}) {
@@ -536,32 +591,30 @@ export function useChat(options: UseChatOptions = {}) {
   const approveExecution = useCallback(
     async (executionId: string, token: string, scope: ApprovalScope) => {
       const entry = agentTimeline[executionId];
-      if (!entry) return;
-      const response = await fetch("/api/agent/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token,
-          executionId,
-          scope,
-        }),
-      });
-      if (!response.ok) {
-        setError(`审批失败 (${response.status})`);
-        return;
+      if (!entry) {
+        const missing = new Error("审批项不在当前时间线中");
+        setError(missing.message);
+        throw missing;
       }
+      let result: ToolApprovalResponse;
+      try {
+        result = await requestToolApproval({ executionId, token, scope });
+      } catch (approvalError) {
+        const message =
+          approvalError instanceof Error ? approvalError.message : "审批失败";
+        setError(message);
+        throw approvalError;
+      }
+      setError(null);
       setAgentTimeline((prev) => {
         const existing = prev[executionId];
         if (!existing) return prev;
+        const latestEvent = toolApprovalEvent(result);
         return {
           ...prev,
           [executionId]: {
             ...existing,
-            latestEvent: {
-              type: "approval_granted",
-              executionId,
-              scope,
-            },
+            latestEvent,
             approvedScope: scope,
             approvalToken: undefined,
             approvalExpiresAt: undefined,

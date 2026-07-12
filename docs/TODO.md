@@ -1,12 +1,22 @@
 # TODO
 
-> Last updated: 2026-07-07
+> Last updated: 2026-07-12
 
-This document tracks completed first-slice Agent Orchestrator work plus deferred Skill, Tool, and follow-up action work.
+This document tracks the completed Agent Runtime consolidation plus deferred Skill, Tool, and production-hardening work.
 
-## Completed First Slice
+## Completed Runtime Consolidation
 
-- Added the `AGENT_ORCHESTRATOR_ENABLED` feature flag. Development defaults to enabled; production defaults to disabled unless explicitly set.
+- Reduced `/api/chat` to authentication, rate limiting, request mapping, `AgentRuntime.run()`, and SSE response adaptation.
+- Added a transport-independent `AgentRuntime` contract with explicit context assembly, provider adapters, persistence ports, and structured runtime events.
+- Replaced the provider-specific continuation path with one `AgentLoop` used by deterministic prelude tools and model-requested tools.
+- Added native DeepSeek and MiniMax round/continuation adapters. DeepSeek XML/DSML fallback parsing stays inside its adapter; MiniMax uses native tool-use/tool-result blocks.
+- Added durable approval execution with token binding, atomic single-use token and execution claims, restored tool context, and terminal tool audit state.
+- Added `AGENT_RUNTIME_MODE=legacy|shadow|new`; `shadow` compares side-effect-free planning decisions, while the old `AGENT_ORCHESTRATOR_ENABLED` variable remains only as a compatibility bridge.
+- Preserved the public `/api/chat` request shape and SSE event protocol while adding runtime/tool protocol version headers.
+
+## Completed First Slice (historical)
+
+- Added the original `AGENT_ORCHESTRATOR_ENABLED` feature flag. It has since been superseded by `AGENT_RUNTIME_MODE`; see the runtime consolidation above.
 - Added a deterministic Skill Router for all six built-in Skills, including `awaiting_context` for missing material and regular RAG behavior for ordinary summaries.
 - Added provider-neutral planned tool execution for `project_files.read`, `project_rag.search`, and `web.fetch`; `project_files.list` and `artifact.save` remain registered MVP tools for explicit follow-up actions.
 - Added `Message.sources`, `Artifact.metadata`, and source aggregation/dedup so references render at the bottom of assistant messages rather than inline in the answer.
@@ -58,8 +68,8 @@ This document tracks completed first-slice Agent Orchestrator work plus deferred
 - Extended `PlannedToolCall` to the full registered tool set.
 - `buildPlannedToolCalls()` now plans `arxiv.read`, `web.search`, `project_files.list`, and `reference.list` in addition to the original `web.fetch`, `project_files.read`, and `project_rag.search`.
 - Reused the existing policy/audit path via `runAutoTool` so L2/L3 planned tools emit `approval_required` events.
-- Added `src/lib/agent/continuation.ts` with a DeepSeek non-streaming completion loop that parses JSON action blocks, executes tools, and re-prompts until a final answer or a stop condition.
-- Wired the continuation loop into `/api/chat` for DeepSeek when `AGENT_ORCHESTRATOR_ENABLED` is on.
+- Consolidated deterministic and model-requested tool execution in `src/lib/agent/loop/agent-loop.ts`, including round limits, duplicate detection, no-progress detection, approval suspension, and abort propagation.
+- Wired the unified loop through `AgentRuntime`; `/api/chat` no longer owns provider or continuation logic.
 - Migrated legacy RAG sources: `retrieveProjectContext()` now returns per-file sources and `/api/chat` persists them on `Message.sources` so they render in the unified bottom sources UI.
 
 ## Provider-Neutral Tools
@@ -93,8 +103,8 @@ Add these after the MVP loop, approval UX, and tool-result continuation are stab
 
 - Harden approval UX for L2/L3 tools before enabling delete/export/reference operations broadly.
 - Migrate legacy non-Orchestrator RAG responses into the Agent Orchestrator path so project-file sources can be persisted and rendered through the same bottom `sources` UI as web/arXiv/artifact sources. DONE.
-- Add duplicate tool-call detection: stop when the same tool and same args repeat. DONE (framework exists and used by continuation loop).
-- Add no-progress detection: stop when two consecutive rounds produce no useful new tool result. DONE (framework exists and used by continuation loop).
+- Add duplicate tool-call detection: stop when the same tool and same args repeat. DONE (enforced by `AgentLoop`).
+- Add no-progress detection: stop when two consecutive rounds produce no useful new tool result. DONE (enforced by `AgentLoop`).
 - Add task-profile round limits:
   - `simple`: max 2 rounds
   - `rag`: max 4 rounds
@@ -102,25 +112,24 @@ Add these after the MVP loop, approval UX, and tool-result continuation are stab
   - `workflow`: max 10 rounds
   DONE.
 - Let the Router choose the initial task profile; let the Orchestrator adjust it at most once based on actual tool behavior. TODO.
-- Add multi-round model-driven continuation. First slice uses deterministic prefetch tools before the final model response; native tool-use continuation is deferred. DONE (JSON action fallback for DeepSeek).
+- Add multi-round model-driven continuation. DONE through provider-native round adapters and the unified `AgentLoop`.
 
 ## Completed Stage 3 — Provider Adapters
 
 - Moved provider-specific streaming logic out of `src/app/api/chat/route.ts` into `src/lib/agent/adapters/`.
 - Added `ProviderAdapter` interface and `createProviderAdapter` factory.
-- Added `DeepSeekAdapter` (wraps `streamChat`, exposes native `getToolCalls`).
-- Added `MiniMaxAdapter` (wraps `streamMiniMaxChat`, currently no-op `getToolCalls`).
-- `/api/chat` now selects the adapter by `modelRoute.provider` and calls `adapter.stream()` uniformly.
-- Native tool calling is available through the adapter's `getToolCalls()` for DeepSeek; the legacy non-Orchestrator tool loop has been updated to use it.
-- JSON action fallback is implemented in `src/lib/agent/continuation.ts` for DeepSeek when additional model-driven tool rounds are needed.
+- Added `DeepSeekAdapter` with native tool normalization, XML/DSML fallback parsing, and continuation support.
+- Added `MiniMaxAdapter` with native tool-use/tool-result normalization and continuation support.
+- `AgentRuntime` selects the adapter by `modelRoute.provider` and drives it through `startRound()` / `continueRound()`.
+- Provider-specific stream parsing, tool protocol details, and fallback formats remain inside adapters rather than the Runtime or route.
 - `web.fetch` and `web.search` remain server-side product tools shared across providers.
 
 ## Model Provider Adapters
 
 - Move provider-specific logic out of `src/app/api/chat/route.ts`. DONE.
 - Add provider adapters that normalize DeepSeek and MiniMax streams into shared internal events. DONE.
-- Support native tool calling where the provider supports it. DONE (DeepSeek).
-- Add a JSON action fallback for models that do not support native tools reliably. DONE (DeepSeek continuation JSON actions).
+- Support native tool calling where the provider supports it. DONE (DeepSeek and MiniMax).
+- Keep provider-specific fallback parsing isolated behind adapters. DONE (DeepSeek XML/DSML fallback).
 - Keep DeepSeek built-in `web_search_20250305` only as an optimization path; do not make it the only web access path. DONE.
 - Make `web.fetch` and future `web.search` server-side product tools so DeepSeek, MiniMax, and future providers can share the same Agent capabilities. DONE.
 
@@ -150,6 +159,14 @@ Add these after the MVP loop, approval UX, and tool-result continuation are stab
 - A stuck-learning request activates `socratic-tutor`.
 - User manual Skill selection or off preference always outranks Router output. DONE.
 - Router can enable web access automatically when the task clearly requires public external information, but the UI must show that web access is active. DONE.
+
+## Remaining Runtime Hardening
+
+- Run real-provider smoke tests with DeepSeek and MiniMax credentials; the automated adapter and contract suites do not replace an authenticated provider regression.
+- Persist enough suspended-run state to resume provider continuation automatically after an approved tool finishes. The current approval endpoint executes and audits the tool, then the user continues with a new message.
+- Expand `shadow` from side-effect-free planning comparison to full candidate-output/latency comparison only after provider cost and tool side effects can be safely isolated.
+- Move more prompt/RAG/compression assembly behind focused context interfaces as the Runtime continues to shrink.
+- If approval claim and token consumption ever need crash-atomic recovery, combine them under a database transaction or add a reclaimable lease; current conditional claims prevent duplicate execution but leave a narrow interruption window between claims.
 
 ## Multimodal Document Parsing Pipeline — Complete
 

@@ -48,14 +48,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await prisma.toolExecution.update({
-    where: { id: body.executionId },
+  const claimed = await prisma.toolExecution.updateMany({
+    where: {
+      id: body.executionId,
+      userId,
+      status: "pending_approval",
+    },
     data: {
       status: "rejected",
       completedAt: new Date(),
       errorSummary: { code: "USER_REJECTED", message: body.reason ?? "用户拒绝" },
     },
   });
+  if (claimed.count !== 1) {
+    return NextResponse.json(
+      { error: "ToolExecution 已被其他请求处理" },
+      { status: 409 }
+    );
+  }
 
   await recordAuditEvent({
     userId,

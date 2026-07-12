@@ -25,13 +25,22 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 
 ```
 src/
-├── app/api/                  # Next.js API Routes（聊天、Agent、上传、导出、用户设置）
+├── app/api/                  # Next.js API Routes（HTTP 鉴权、限流、请求/响应适配）
+│   └── chat/                 # 薄聊天 Route、请求映射器与 SSE 响应适配器
 ├── components/chat/          # 聊天界面、消息卡片、附件、工具审批 UI
 ├── components/project/       # 项目详情、文件列表、快捷任务、成果库
 ├── lib/chat/                 # 模型路由、历史压缩
 ├── lib/rag/                  # 向量检索、全文检索、关键词检索、embedding
-├── lib/agent/                # Policy Engine、Tool 注册与执行、审批 token、事件流
-│   ├── orchestrator.ts       # 确定性预取工具规划与执行
+├── lib/agent/                # 与 HTTP 无关的 Agent Runtime 模块化单体
+│   ├── runtime.ts            # AgentRuntime.run(input) 唯一业务编排入口
+│   ├── context/              # ContextAssembler：项目与选中文件所有权校验
+│   ├── adapters/             # ProviderAdapter：厂商协议、Tool 映射与 continuation
+│   ├── loop/                 # AgentLoop：统一多轮工具循环、去重与停止条件
+│   ├── tools/                # ToolRunner：Policy、审批、执行、审计状态机
+│   ├── persistence/          # 对话与 ToolExecution 的 Prisma 适配器
+│   ├── providers/            # 上游流标准化为内部 ProviderStreamEvent
+│   ├── observability/        # shadow 模式的无副作用规划比较
+│   ├── orchestrator.ts       # new 模式的确定性工具前奏规划
 │   ├── skill-router.ts       # Skill 意图路由与任务画像推断
 │   └── sources.ts            # AgentSource 聚合与持久化
 ├── lib/skills/               # .lumenlab/skills discovery、metadata migration、legacy compat
@@ -44,7 +53,7 @@ src/
 
 ## 典型请求流
 
-以一次普通聊天请求为例，数据从浏览器到模型再回到客户端的完整路径如下：
+以一次普通聊天请求为例，数据从浏览器到模型再回到客户端的完整路径如下。HTTP 层只负责协议适配，业务编排统一从 `AgentRuntime.run(input)` 进入：
 
 ```
 浏览器
@@ -53,27 +62,39 @@ src/
 src/app/api/chat/route.ts
   ├─ auth() 身份验证
   ├─ checkRateLimit() 用户级速率限制
-  ├─ parseRequest() 解析消息与附件
-  ├─ 项目 / 文件权限校验
-  ├─ routeSkill() Skill Router 选择 Skill、推断任务画像
-  ├─ assembleSystemPrompt() 组装系统提示词
-  ├─ retrieveProjectContext() RAG / 全文 / 关键词检索项目资料
-  │        └─ 旧版 RAG sources 同步转换为 AgentSource 备用
-  ├─ routeModel() 选择 DeepSeek 或 MiniMax
-  ├─ getProviderApiKey() 获取 API Key（中央凭证或用户自托管 Key）
-  ├─ Agent Orchestrator 预取与续跑
-  │        ├─ buildPlannedToolCalls() 根据画像生成确定性工具计划
-  │        ├─ executePlannedToolCalls() 执行并聚合 AgentSource
-  │        └─ AGENT_CONTINUATION_ENABLED=1 时启用模型驱动多轮工具续跑
-  ├─ DeepSeek / MiniMax Anthropic-compatible stream 发起 SSE 流
-  │        ├─ 模型返回流式 token
-  │        ├─ DeepSeek 路径可触发服务端 Tool 审批 / 执行
-  │        └─ token 使用、缓存命中信息回传
-  ├─ 创建 assistant Message 行，sources 写入 Message.sources
-  └─ accumulateAndSave() 异步保存内容与来源到 PostgreSQL
+  ├─ parseChatRequest() 解析并校验 JSON / multipart 与附件
+  ├─ mapAgentRunInput() 映射为框架无关的 AgentRunInput
+  ▼
+AgentRuntime.run(input)
+  ├─ ContextAssembler 校验项目、文件与用户边界
+  ├─ Skill Router、系统提示词、检索上下文与模型路由
+  ├─ ProviderAdapter.startRound() 统一 DeepSeek / MiniMax 首轮调用
+  ├─ new 模式可先运行确定性工具前奏
+  ├─ AgentLoop 处理规范化 Tool call、去重、轮次与停止条件
+  │        └─ ToolRunner 统一执行 Policy → 审批 → handler → audit → persistence
+  ├─ ProviderAdapter.continueRound() 构造厂商正确的后续轮 transcript
+  ├─ ConversationPersistence 创建并异步完成 assistant Message
+  └─ 返回 AgentRun（metadata、内部事件流、completion）
+  ▼
+response-stream.ts
+  ├─ 把内部事件转换为既有 OpenAI-compatible SSE 与 event: agent
+  ├─ 保留 X-Conversation-Id / X-Message-Id / X-Model-Provider
+  └─ 浏览器 useChat 按原协议消费
 ```
 
-来源持久化由 `src/lib/agent/sources.ts` 统一处理。Agent Orchestrator 执行工具和续跑循环产生的 `AgentSource` 会聚合去重；当 Agent Orchestrator 关闭时，旧版 RAG 检索结果也会转换为 `AgentSource` 并写入同一条 `Message.sources` JSON 字段，保证前端来源展示接口一致。
+`AgentRuntime` 不依赖 `NextRequest`、`NextResponse` 或 SSE 文本格式，Provider 特有的工具名、原生 block、XML/DSML fallback 与 continuation transcript 也只存在于 `ProviderAdapter` 边界内。来源由 `src/lib/agent/sources.ts` 聚合去重，并通过 `ConversationPersistence` 写入同一条 `Message.sources` JSON 字段，前端来源展示协议保持不变。
+
+## Runtime 发布模式
+
+`AGENT_RUNTIME_MODE` 控制迁移阶段，默认值固定为 `legacy`：
+
+| 模式 | 行为 |
+|---|---|
+| `legacy` | 保持兼容路径与现有用户可见响应，不启用确定性工具前奏 |
+| `shadow` | 仍以 legacy 响应为准；只比较 Skill、联网与工具规划决策并写日志，不发起额外模型调用、不执行候选工具 |
+| `new` | 启用 Runtime 的确定性工具前奏、Skill 状态事件与统一 Tool loop |
+
+三种模式共用相同的薄 Route、`AgentRuntime` 接口、Provider/SSE 适配边界和持久化合同。`AGENT_ORCHESTRATOR_ENABLED` 仅保留为旧部署的兼容映射，新的部署应使用 `AGENT_RUNTIME_MODE`。
 
 ## 部署模式与 API Key
 

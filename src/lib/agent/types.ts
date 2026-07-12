@@ -223,6 +223,7 @@ export type AgentEvent =
       preview: ToolCallPreview;
       token: string;
       expiresAt: number;
+      canApproveSession: boolean;
     }
   | {
       type: "approval_granted";

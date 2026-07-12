@@ -88,7 +88,11 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 
 vi.mock("@/lib/deepseek", () => ({
-  DeepSeekError: class DeepSeekError extends Error {},
+  DeepSeekError: class DeepSeekError extends Error {
+    constructor(public status: number, message: string) {
+      super(message);
+    }
+  },
   streamChat: mocks.streamChat,
   completeChat: mocks.completeChat,
 }));
@@ -106,8 +110,8 @@ vi.mock("@/lib/tools/web/search-engine", () => ({
   runWebSearch: mocks.runWebSearch,
 }));
 
+import { DeepSeekError } from "@/lib/deepseek";
 import { accumulateAndSave, POST } from "@/app/api/chat/route";
-import { _internalForTesting as agentLoopInternal } from "@/lib/agent/conversation-loop";
 
 describe("POST /api/chat", () => {
   beforeEach(() => {
@@ -233,6 +237,33 @@ describe("POST /api/chat", () => {
       error: "服务密钥暂时不可用",
     });
     expect(mocks.conversationCreate).not.toHaveBeenCalled();
+  });
+
+  it("maps a provider request error through the thin HTTP adapter", async () => {
+    mocks.getProviderApiKey.mockResolvedValue("sk-test");
+    mocks.streamChat.mockRejectedValue(
+      new DeepSeekError(401, "DeepSeek API Key 无效")
+    );
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "hello",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: false,
+          reasoningEffort: "high",
+          selectedFileIds: [],
+        }),
+      })
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: "DeepSeek API Key 无效",
+      deepseekStatus: 401,
+    });
   });
 
   it("does not retrieve project context or embed query for ordinary project chat", async () => {
@@ -625,6 +656,7 @@ describe("POST /api/chat", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "基于项目资料写一篇关于等级保护的论文提纲",
+          skillOff: true,
           model: "deepseek-v4-pro",
           thinkingEnabled: true,
           reasoningEffort: "max",
@@ -756,6 +788,66 @@ describe("accumulateAndSave", () => {
         inputCacheMissTokens: 353,
         outputTokens: 1143,
       }),
+    });
+  });
+
+  it("persists partial text before propagating a provider stream failure", async () => {
+    const providerError = new Error("provider stream failed");
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { content: "部分回答" } }] })}\n\n`
+          )
+        );
+        setTimeout(() => controller.error(providerError), 0);
+      },
+    });
+
+    await expect(
+      accumulateAndSave(
+        stream,
+        "conversation-1",
+        "message-1",
+        "user-1",
+        "deepseek-v4-pro",
+        "deepseek",
+        () => null
+      )
+    ).rejects.toBe(providerError);
+
+    expect(mocks.messageUpdate).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: expect.objectContaining({ content: "部分回答" }),
+    });
+    expect(mocks.conversationUpdate).toHaveBeenCalledWith({
+      where: { id: "conversation-1" },
+      data: expect.objectContaining({ updatedAt: expect.any(Date) }),
+    });
+  });
+
+  it("deletes an empty assistant placeholder after a provider stream failure", async () => {
+    const providerError = new Error("provider stream failed");
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(providerError);
+      },
+    });
+
+    await expect(
+      accumulateAndSave(
+        stream,
+        "conversation-1",
+        "message-1",
+        "user-1",
+        "deepseek-v4-pro",
+        "deepseek",
+        () => null
+      )
+    ).rejects.toBe(providerError);
+
+    expect(mocks.messageDelete).toHaveBeenCalledWith({
+      where: { id: "message-1" },
     });
   });
 });
@@ -897,6 +989,7 @@ describe("Streaming tool loop", () => {
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
             model: "deepseek-v4-pro",
+            skillOff: true,
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -959,6 +1052,7 @@ describe("Streaming tool loop", () => {
             projectId: "project-1",
             selectedFileIds: [],
             mode: "review",
+            skillOff: true,
           }),
         })
       );
@@ -1019,6 +1113,7 @@ describe("Streaming tool loop", () => {
             projectId: "project-1",
             selectedFileIds: [],
             mode: "review",
+            skillOff: true,
           }),
         })
       );
@@ -1073,6 +1168,7 @@ describe("Streaming tool loop", () => {
             projectId: "project-1",
             selectedFileIds: [],
             mode: "review",
+            skillOff: true,
           }),
         })
       );
@@ -1302,13 +1398,6 @@ describe("Streaming tool loop", () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    const runAutoToolSpy = vi
-      .spyOn(agentLoopInternal, "runAutoTool")
-      .mockResolvedValue({
-        status: "succeeded",
-        summary: { error: "NO_RESULTS" },
-      });
-
     mocks.streamChat
       .mockResolvedValueOnce(
         makeStreamResult({
@@ -1369,7 +1458,6 @@ describe("Streaming tool loop", () => {
       const messagesText = JSON.stringify(wrapUpRequest.messages);
       expect(messagesText).toContain("连续两轮工具调用未产生新信息");
     } finally {
-      runAutoToolSpy.mockRestore();
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;
       } else {
@@ -1414,6 +1502,7 @@ describe("Streaming tool loop", () => {
             projectId: "project-1",
             selectedFileIds: [],
             mode: "review",
+            skillOff: true,
           }),
         })
       );
@@ -1469,6 +1558,7 @@ describe("Streaming tool loop", () => {
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
             model: "minimax-m3",
+            skillOff: true,
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",

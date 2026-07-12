@@ -66,6 +66,38 @@ describe("agent orchestrator loop controls", () => {
     expect(result.stopReason).toBeNull();
   });
 
+  it("suspends deterministic prelude immediately when approval is required", async () => {
+    const calls = [
+      {
+        id: "planned-project-file-read-1",
+        name: "project_files.read" as const,
+        input: { projectId: "project-1", fileId: "file-1" },
+      },
+      {
+        id: "planned-project-file-read-2",
+        name: "project_files.read" as const,
+        input: { projectId: "project-1", fileId: "file-2" },
+      },
+    ];
+    const invoked: string[] = [];
+
+    const result = await executePlannedToolCalls({
+      profile: "rag",
+      plannedCalls: calls,
+      runTool: async (call) => {
+        invoked.push(call.id);
+        return {
+          status: "pending_approval",
+          executionId: "execution-pending",
+        };
+      },
+    });
+
+    expect(invoked).toEqual(["planned-project-file-read-1"]);
+    expect(result.pendingExecutionIds).toEqual(["execution-pending"]);
+    expect(result.contextMessage).toBe("");
+  });
+
   it("plans no tools for simple ordinary chat", () => {
     expect(
       buildPlannedToolCalls({

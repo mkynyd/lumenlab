@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useReducer } from "react";
+import { memo } from "react";
 import type {
   ApprovalScope,
   ToolCallPreview,
@@ -109,7 +109,6 @@ interface AgentTimelineProps {
 }
 
 function AgentTimelineComponent({ state, onApprove, onDeny }: AgentTimelineProps) {
-  const [, dispatch] = useReducer(reduce, state);
   if (state.kind === "idle") return null;
 
   if (state.kind === "proposed" || state.kind === "executing" || state.kind === "completed" || state.kind === "failed") {
@@ -132,11 +131,9 @@ function AgentTimelineComponent({ state, onApprove, onDeny }: AgentTimelineProps
         canApproveSession={state.canApproveSession}
         onApprove={async (scope) => {
           if (onApprove) await onApprove(state.executionId, state.token, scope);
-          dispatch({ type: "APPROVE", executionId: state.executionId, scope });
         }}
         onDeny={async (reason) => {
           if (onDeny) await onDeny(state.executionId, reason);
-          dispatch({ type: "DENY", executionId: state.executionId, reason });
         }}
       />
     );

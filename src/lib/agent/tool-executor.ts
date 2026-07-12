@@ -16,6 +16,7 @@ export interface ToolExecutionContext {
   conversationId: string;
   projectId?: string;
   selectedFileIds?: string[];
+  signal?: AbortSignal;
 }
 
 export type ToolHandler = (

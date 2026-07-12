@@ -12,8 +12,8 @@ import { cn } from "@/lib/utils";
 interface ApprovalCardProps {
   preview: ToolCallPreview;
   canApproveSession: boolean;
-  onApprove: (scope: ApprovalScope) => void;
-  onDeny: (reason?: string) => void;
+  onApprove: (scope: ApprovalScope) => Promise<void> | void;
+  onDeny: (reason?: string) => Promise<void> | void;
 }
 
 export function ApprovalCard({
@@ -29,6 +29,8 @@ export function ApprovalCard({
     setBusy(true);
     try {
       await onApprove(scope);
+    } catch {
+      // The parent owns error presentation; keep this approval card pending.
     } finally {
       setBusy(false);
     }
@@ -39,6 +41,8 @@ export function ApprovalCard({
     setBusy(true);
     try {
       await onDeny();
+    } catch {
+      // The parent owns error presentation; keep this approval card pending.
     } finally {
       setBusy(false);
     }

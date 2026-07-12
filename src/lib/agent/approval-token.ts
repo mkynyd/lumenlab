@@ -49,9 +49,11 @@ export async function issueApprovalToken(params: {
   requestId: string;
 }): Promise<IssuedToken> {
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  const raw = crypto.randomBytes(32).toString("base64url");
+  const tokenHash = sha256(raw);
   const record = await prisma.approvalToken.create({
     data: {
-      tokenHash: "PENDING",
+      tokenHash,
       userId: params.userId,
       conversationId: params.conversationId,
       toolId: params.toolId,
@@ -59,12 +61,6 @@ export async function issueApprovalToken(params: {
       requestId: params.requestId,
       expiresAt,
     },
-  });
-  const raw = crypto.randomBytes(32).toString("base64url");
-  const tokenHash = sha256(raw);
-  await prisma.approvalToken.update({
-    where: { id: record.id },
-    data: { tokenHash },
   });
   return {
     token: `${record.id}.${raw}`,
@@ -89,12 +85,21 @@ export type ConsumeResult =
         | "NOT_FOUND"
         | "ALREADY_CONSUMED"
         | "EXPIRED"
-        | "ARGUMENTS_CHANGED";
+        | "ARGUMENTS_CHANGED"
+        | "BINDING_MISMATCH";
     };
+
+export interface ApprovalTokenBinding {
+  userId: string;
+  conversationId: string;
+  toolId: string;
+  requestId: string;
+}
 
 export async function consumeApprovalToken(
   token: string,
-  presentedArguments: Record<string, unknown>
+  presentedArguments: Record<string, unknown>,
+  expectedBinding?: ApprovalTokenBinding
 ): Promise<ConsumeResult> {
   const dot = token.indexOf(".");
   if (dot < 0) return { ok: false, reason: "MALFORMED" };
@@ -116,10 +121,22 @@ export async function consumeApprovalToken(
   if (presentedHash !== record.argumentsHash) {
     return { ok: false, reason: "ARGUMENTS_CHANGED" };
   }
-  await prisma.approvalToken.update({
-    where: { id: record.id },
+  if (
+    expectedBinding &&
+    (record.userId !== expectedBinding.userId ||
+      record.conversationId !== expectedBinding.conversationId ||
+      record.toolId !== expectedBinding.toolId ||
+      record.requestId !== expectedBinding.requestId)
+  ) {
+    return { ok: false, reason: "BINDING_MISMATCH" };
+  }
+  const claimed = await prisma.approvalToken.updateMany({
+    where: { id: record.id, consumedAt: null },
     data: { consumedAt: new Date() },
   });
+  if (claimed.count !== 1) {
+    return { ok: false, reason: "ALREADY_CONSUMED" };
+  }
   return {
     ok: true,
     recordId: record.id,
