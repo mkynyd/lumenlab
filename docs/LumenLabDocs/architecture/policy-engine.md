@@ -21,7 +21,7 @@
 `src/lib/agent/policy-engine.ts` 中的 `evaluatePolicy()` 按以下步骤执行：
 
 1. **Tool 注册检查**：确认 `toolRegistry` 中存在该 Tool。
-2. **用户 Scope 检查**：校验用户是否拥有 Tool 与当前 Skill 要求的 scope。
+2. **用户 Scope 检查**：`PrismaUserScopeAdapter` 读取 `User.scopes`，校验用户是否拥有 Tool 与当前 Skill 要求的全部 scope。读取结果按数据库原值执行；空数组或用户不存在时按无权限处理，不回退到默认全集。
 3. **Workspace Policy**：若管理员或配置对某个 Tool / Skill 设置了 `block`，直接拒绝。
 4. **Skill Allowlist**：
    - Skill 必须显式允许该 Tool。
@@ -48,13 +48,15 @@
   - tokenHash 是否存在且未被消费。
   - 是否过期。
   - 当前请求参数哈希是否与签发时一致（防止模型在等待期间替换参数）。
-  - user / conversation / tool / request 是否与待执行记录完全绑定。
+- user / conversation / tool / request 是否与待执行记录完全绑定。
+
+兑换 token 之前，批准路由还会重新读取当前 Tool/Skill 元数据和 `User.scopes`，并重做资源归属、参数与 Policy 校验。等待审批期间若权限被撤销、Tool/Skill 被移除或资源归属变化，路由只会通过带 `pending_approval` 条件的原子更新将记录标记为 `blocked`，且 token 不会被消费。若并发请求已抢占该执行，当前请求返回 `409`，不覆盖新终态。
 
 ## ToolRunner 与执行状态机
 
 `src/lib/agent/tools/tool-runner.ts` 是确定性工具前奏与模型驱动 `AgentLoop` 共用的执行入口。一次调用按固定顺序经过：
 
-1. 解析 Tool / Skill 元数据并调用 Policy Engine。
+1. 解析 Tool / Skill 元数据，通过用户 Scope 持久化 Adapter 加载精确权限集合，再调用 Policy Engine。
 2. 通过 `ToolExecutionPersistence` 创建 `proposed` 记录，再写审计并发出事件。
 3. 拒绝时转为 `blocked`；需审批时签发 token 并转为 `pending_approval`。
 4. 自动放行时先转为 `executing`，再调用 handler，最终转为 `succeeded` 或 `failed`。
@@ -64,8 +66,9 @@
 - `registerToolHandler(toolId, handler)`：注册工具实现。
 - `executeTool(toolId, ctx, args)`：根据 `userId`、`conversationId`、`projectId` 等上下文执行工具。
 - Prisma 状态转换由 `src/lib/agent/persistence/prisma-tool-execution-adapter.ts` 统一完成。
+- 用户 Scope 读取由 `src/lib/agent/persistence/prisma-user-scope-adapter.ts` 完成，`ToolRunner` 不直接访问 Prisma。
 
-工具实现需自行处理：参数归一化、跨租户校验、超时、错误码。
+工具实现需自行处理：参数归一化、跨租户校验、超时、错误码。`artifact.save` 在 Policy 预检之外还会在 handler 内再次确认目标项目属于当前用户。
 
 ## 事件流与前端渲染
 
@@ -81,7 +84,7 @@
 
 ## 批准、拒绝与暂停边界
 
-`POST /api/agent/approve` 不再只修改审批状态。服务端会先检查 `ToolExecution` 的用户归属与 `pending_approval` 状态，再用数据库中保存的规范化参数消费 token，校验 user / conversation / tool / request 绑定；随后原子抢占执行、调用同一 Tool handler，并把记录落为 `succeeded` 或 `failed`。L3 / L4 不允许会话级批准。前端把该返回值映射为 `tool_completed` 或 `tool_failed` 终态。
+`POST /api/agent/approve` 不再只修改审批状态。服务端会先检查 `ToolExecution` 的用户归属与 `pending_approval` 状态，使用落库的规范化参数和当前权限重新评估 Policy，再消费 token 并校验 user / conversation / tool / request 绑定；随后原子抢占执行、调用同一 Tool handler，并把记录落为 `succeeded` 或 `failed`。L3 / L4 不允许会话级批准。前端把该返回值映射为 `tool_completed` 或 `tool_failed` 终态。
 
 `POST /api/agent/reject` 也通过带 `pending_approval` 条件的原子更新抢占记录，再将其落为 `rejected`，因此不会覆盖一个并发批准后已经进入 `executing` 的执行。前端显示拒绝终态。批准或拒绝都**不会自动恢复**原请求中已暂停的 Provider continuation；用户需要发送下一条消息继续对话。这样避免在缺少可持久化 Provider continuation token 的情况下伪造工具结果或重复模型调用。
 

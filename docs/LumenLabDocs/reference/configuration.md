@@ -70,7 +70,7 @@
 - `AGENT_RUNTIME_MODE=new` 启用确定性工具前奏、Skill 状态事件与统一 Tool loop。Provider continuation 由 Adapter 根据原生 Tool block 或 DeepSeek XML/DSML fallback 自动处理，不再需要独立 continuation 开关。
 - 旧变量 `AGENT_ORCHESTRATOR_ENABLED` 只用于迁移兼容；两者同时存在时 `AGENT_RUNTIME_MODE` 优先。新部署不要再配置旧变量。
 - `AGENT_DEBUG_EVENTS=1` 会把 router candidates、confidence、stop reason 等调试事件写入 SSE，生产环境默认关闭。
-- `WEB_FETCH_ALLOWLIST` 控制 `web.fetch` 可抓取的域名。即使域名在 allowlist 中，服务端仍会做公开 URL、DNS、重定向和 SSRF 校验。
+- `WEB_FETCH_ALLOWLIST` 控制 `web.fetch` 可抓取的域名。即使主机在 allowlist 中，服务端仍会对 IPv4、IPv6、IPv4-mapped IPv6 做公开地址判断，并复核 DNS、重定向和 SSRF 边界。实际出站连接固定到复核通过的 DNS 地址，每个重定向目标都重新执行同样的校验。
 
 ### 缓存实验开关
 

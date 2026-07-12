@@ -49,6 +49,18 @@ describe("decryptSyncEnvelope", () => {
 
     expect(decryptSyncEnvelope(envelope, privateKey)).toBe(plaintext);
   });
+
+  it("rejects a snapshot with a truncated authentication tag", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+    });
+    const envelope = await createTestEnvelope("private snapshot", publicKey);
+    envelope.authTag = Buffer.from(envelope.authTag, "base64")
+      .subarray(0, 12)
+      .toString("base64");
+
+    expect(() => decryptSyncEnvelope(envelope, privateKey)).toThrow();
+  });
 });
 
 async function createTestEnvelope(

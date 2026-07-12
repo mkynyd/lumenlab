@@ -152,7 +152,7 @@ export async function evaluatePolicy(
   const requiredScopes = new Set<string>(tool.requiredScopes);
   if (skill) for (const s of skill.requiredScopes) requiredScopes.add(s);
   for (const scope of requiredScopes) {
-    if (!user.scopes.includes(scope) && scope !== "project.read") {
+    if (!user.scopes.includes(scope)) {
       return denyDecision(
         tool,
         "SCOPE_NOT_GRANTED",

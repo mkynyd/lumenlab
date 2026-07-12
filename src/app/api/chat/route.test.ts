@@ -173,6 +173,7 @@ describe("POST /api/chat", () => {
       cycleStartedAt: new Date("2026-07-01T00:00:00.000Z"),
       creditsUsed: 0,
       planCredits: 0,
+      scopes: ["project.read", "project.write", "artifact.read", "artifact.write"],
     });
     mocks.userUpdate.mockResolvedValue({});
     mocks.tokenUsageCreate.mockResolvedValue({ id: "usage-1" });
@@ -701,6 +702,7 @@ describe("accumulateAndSave", () => {
       cycleStartedAt: new Date("2026-07-01T00:00:00.000Z"),
       creditsUsed: 0,
       planCredits: 0,
+      scopes: ["project.read", "project.write", "artifact.read", "artifact.write"],
     });
     mocks.userUpdate.mockResolvedValue({});
     mocks.tokenUsageCreate.mockResolvedValue({ id: "usage-1" });
@@ -964,6 +966,7 @@ describe("Streaming tool loop", () => {
       cycleStartedAt: new Date("2026-07-01T00:00:00.000Z"),
       creditsUsed: 0,
       planCredits: 0,
+      scopes: ["project.read", "project.write", "artifact.read", "artifact.write"],
     });
     mocks.userUpdate.mockResolvedValue({});
     mocks.transaction.mockImplementation((ops: Array<Promise<unknown>>) =>

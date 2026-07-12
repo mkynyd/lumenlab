@@ -30,6 +30,7 @@ model User {
   planCredits         Int      @default(0)         // 当前周期总信用点额度；0 表示 A 测期间不限制
   creditsUsed         Int      @default(0)         // 当前周期已用信用点
   cycleStartedAt      DateTime @default(now())     // 当前 30 天周期开始时间
+  scopes              String[] @default(["project.read", "project.write", "artifact.read", "artifact.write"]) // Agent 工具权限作用域
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

@@ -60,7 +60,8 @@ export function decryptSyncEnvelope(
   const decipher = createDecipheriv(
     "aes-256-gcm",
     dataKey,
-    Buffer.from(envelope.iv, "base64")
+    Buffer.from(envelope.iv, "base64"),
+    { authTagLength: 16 }
   );
   decipher.setAuthTag(Buffer.from(envelope.authTag, "base64"));
 

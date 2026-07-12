@@ -1,12 +1,22 @@
-import { describe, expect, it, beforeAll } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   htmlToReadableMarkdown,
   isSafePublicHttpUrl,
 } from "./fetch";
 
 describe("web.fetch safety", () => {
+  const originalAllowlist = process.env.WEB_FETCH_ALLOWLIST;
+
   beforeAll(() => {
     process.env.WEB_FETCH_ALLOWLIST = "example.com,example.org";
+  });
+
+  afterAll(() => {
+    if (originalAllowlist === undefined) {
+      delete process.env.WEB_FETCH_ALLOWLIST;
+    } else {
+      process.env.WEB_FETCH_ALLOWLIST = originalAllowlist;
+    }
   });
 
   it("accepts public http(s) URLs on the configured allowlist", () => {
@@ -28,6 +38,42 @@ describe("web.fetch safety", () => {
     expect(isSafePublicHttpUrl("http://192.168.1.5/admin")).toBe(false);
     expect(isSafePublicHttpUrl("http://169.254.169.254/latest/meta-data")).toBe(false);
     expect(isSafePublicHttpUrl("file:///etc/passwd")).toBe(false);
+  });
+
+  it("blocks bracketed IPv6 private and loopback addresses", () => {
+    const privateUrls = [
+      "http://[::1]:8080/admin",
+      "http://[0:0:0:0:0:0:0:1]:8080/admin",
+      "http://[::ffff:127.0.0.1]:8080/admin",
+      "http://[::ffff:10.0.0.1]:8080/admin",
+      "http://[::ffff:172.16.0.10]:8080/admin",
+      "http://[::ffff:ac10:0001]:8080/admin",
+      "http://[::ffff:192.168.1.5]:8080/admin",
+      "http://[fe90::1]:8080/admin",
+      "http://[fc00::1]:8080/admin",
+      "http://[100::1]:8080/admin",
+      "http://[2001:2::1]:8080/admin",
+      "http://[2001:db8::1]:8080/admin",
+      "http://[64:ff9b::7f00:1]:8080/admin",
+    ];
+
+    for (const url of privateUrls) {
+      const explicitlyAllowedHost = new URL(url).hostname.toLowerCase();
+      expect(isSafePublicHttpUrl(url, [explicitlyAllowedHost]), url).toBe(false);
+    }
+  });
+
+  it("accepts allowlisted public IPv6 without overblocking mapped public IPv4", () => {
+    const urls = [
+      "http://[2606:4700:4700::1111]/dns-query",
+      "http://[::ffff:172.32.0.1]/public",
+      "http://[::ffff:192.0.1.1]/public",
+    ];
+
+    for (const url of urls) {
+      const explicitlyAllowedHost = new URL(url).hostname.toLowerCase();
+      expect(isSafePublicHttpUrl(url, [explicitlyAllowedHost]), url).toBe(true);
+    }
   });
 
   it("rejects everything when the allowlist is empty", () => {

@@ -5,7 +5,8 @@
  * Body: { token: string, executionId: string, scope?: "once" | "session" }
  *
  * 服务端先校验执行归属和状态，再使用落库的规范化参数校验一次性 token 的
- * user / conversation / tool / request 绑定。通过后原子抢占执行并立即走统一 handler、
+ * user / conversation / tool / request 绑定。兑换前还会用当前 Tool/Skill 元数据、
+ * 用户 scope 和资源归属重新评估策略；通过后原子抢占执行并走统一 handler、
  * persistence、audit 链，返回明确的 succeeded / failed 终态。
  */
 
@@ -16,6 +17,11 @@ import { consumeApprovalToken } from "@/lib/agent/approval-token";
 import { recordAuditEvent } from "@/lib/agent/audit-log";
 import { executeTool } from "@/lib/agent/tool-executor";
 import { PrismaToolExecutionAdapter } from "@/lib/agent/persistence/prisma-tool-execution-adapter";
+import { PrismaUserScopeAdapter } from "@/lib/agent/persistence/prisma-user-scope-adapter";
+import { evaluatePolicy } from "@/lib/agent/policy-engine";
+import { skillRegistry } from "@/lib/agent/skill-registry";
+import { toolRegistry } from "@/lib/agent/tool-registry";
+import { ensureDiscovery } from "@/lib/skills/registry";
 import "@/lib/tools/registry";
 
 interface ApproveBody {
@@ -58,9 +64,63 @@ export async function POST(request: NextRequest) {
   if (scope !== "once" && scope !== "session") {
     return NextResponse.json({ error: "无效的批准范围" }, { status: 400 });
   }
+  const normalizedArguments = asArguments(execution.normalizedArguments);
+  const auditMetadata = asArguments(execution.auditMetadata);
+  const executionContext = asArguments(auditMetadata.executionContext);
+  const projectId =
+    typeof executionContext.projectId === "string"
+      ? executionContext.projectId
+      : typeof normalizedArguments.projectId === "string"
+        ? normalizedArguments.projectId
+        : undefined;
+  const selectedFileIds = Array.isArray(executionContext.selectedFileIds)
+    ? executionContext.selectedFileIds.filter(
+        (value): value is string => typeof value === "string"
+      )
+    : Array.isArray(normalizedArguments.selectedFileIds)
+      ? normalizedArguments.selectedFileIds.filter(
+          (value): value is string => typeof value === "string"
+        )
+      : undefined;
+  const persistence = new PrismaToolExecutionAdapter();
+  const denyCurrentPolicy = async (reasonCode: string, message: string) => {
+    const claimed = await persistence.claimPendingAsBlocked(execution.id, {
+      code: reasonCode,
+      message,
+    });
+    if (!claimed) {
+      return NextResponse.json(
+        { ok: false, reason: "EXECUTION_ALREADY_CLAIMED" },
+        { status: 409 }
+      );
+    }
+    await recordAuditEvent({
+      userId,
+      conversationId: execution.conversationId,
+      toolExecutionId: execution.id,
+      skillId: execution.skillId ?? undefined,
+      toolId: execution.toolId,
+      eventType: "approval_denied",
+      severity: "warn",
+      payload: { reason: reasonCode, message, phase: "policy_revalidation" },
+      ip: request.headers.get("x-forwarded-for") ?? undefined,
+      userAgent: request.headers.get("user-agent") ?? undefined,
+    });
+    return NextResponse.json(
+      { ok: false, reason: reasonCode },
+      { status: 403 }
+    );
+  };
+
+  const currentTool = toolRegistry.get(execution.toolId);
+  if (!currentTool) {
+    return denyCurrentPolicy("TOOL_NOT_REGISTERED", "Tool 不再可用");
+  }
   if (
     scope === "session" &&
-    (execution.riskLevel === "L3" || execution.riskLevel === "L4")
+    [execution.riskLevel, currentTool.riskLevel].some(
+      (riskLevel) => riskLevel === "L3" || riskLevel === "L4"
+    )
   ) {
     return NextResponse.json(
       { error: "L3/L4 工具不支持会话级批准" },
@@ -68,9 +128,38 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const normalizedArguments = asArguments(execution.normalizedArguments);
-  const auditMetadata = asArguments(execution.auditMetadata);
-  const executionContext = asArguments(auditMetadata.executionContext);
+  let currentSkill;
+  if (execution.skillId) {
+    await ensureDiscovery();
+    currentSkill = skillRegistry.get(execution.skillId);
+    if (!currentSkill) {
+      return denyCurrentPolicy("SKILL_NOT_REGISTERED", "Skill 不再可用");
+    }
+  }
+  const currentScopes = await new PrismaUserScopeAdapter().load(userId);
+  const policyDecision = await evaluatePolicy({
+    user: { id: userId, scopes: currentScopes },
+    workspace: { id: projectId ?? "default", policies: [] },
+    conversation: {
+      id: execution.conversationId,
+      activeSkill:
+        execution.skillId && currentSkill
+          ? { skillId: execution.skillId, version: currentSkill.version }
+          : undefined,
+      sessionApprovals: new Map(),
+    },
+    skill: currentSkill,
+    tool: currentTool,
+    arguments: normalizedArguments,
+    resourceContext: { projectId, selectedFileIds },
+  });
+  if (policyDecision.decision === "deny") {
+    return denyCurrentPolicy(
+      policyDecision.reasonCode,
+      policyDecision.sanitizedPreview.summary
+    );
+  }
+
   const result = await consumeApprovalToken(body.token, normalizedArguments, {
     userId,
     conversationId: execution.conversationId,
@@ -105,7 +194,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, reason }, { status: 400 });
   }
 
-  const persistence = new PrismaToolExecutionAdapter();
   const claimedExecution = await persistence.claimApprovedExecution(
     body.executionId,
     { scope }
@@ -173,21 +261,8 @@ export async function POST(request: NextRequest) {
     {
       userId,
       conversationId: execution.conversationId,
-      projectId:
-        typeof executionContext.projectId === "string"
-          ? executionContext.projectId
-          : typeof normalizedArguments.projectId === "string"
-          ? normalizedArguments.projectId
-          : undefined,
-      selectedFileIds: Array.isArray(executionContext.selectedFileIds)
-        ? executionContext.selectedFileIds.filter(
-            (value): value is string => typeof value === "string"
-          )
-        : Array.isArray(normalizedArguments.selectedFileIds)
-        ? normalizedArguments.selectedFileIds.filter(
-            (value): value is string => typeof value === "string"
-          )
-        : undefined,
+      projectId,
+      selectedFileIds,
       signal: request.signal,
     },
     normalizedArguments

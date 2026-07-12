@@ -103,6 +103,19 @@ describe("policy-engine.evaluatePolicy", () => {
     expect(decision.reasonCode).toBe("AUTO_APPROVED_BY_POLICY");
   });
 
+  it("denies project reads when the user has no persisted scopes", async () => {
+    const { evaluatePolicy } = await import("./policy-engine");
+    const decision = await evaluatePolicy(
+      ctxWithTool(toolRegistry.require("project_files.list"), {
+        user: { id: "user-1", scopes: [] },
+        arguments: { projectId: "p1" },
+      })
+    );
+
+    expect(decision.decision).toBe("deny");
+    expect(decision.reasonCode).toBe("SCOPE_NOT_GRANTED");
+  });
+
   it("denies tool not in Skill allowlist", async () => {
     const { evaluatePolicy } = await import("./policy-engine");
     const skill = skillRegistry.require("paper-writer");

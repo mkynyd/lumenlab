@@ -14,6 +14,7 @@ describe("ToolRunner", () => {
       resolveTool: () => tool,
       resolveSkill: () => undefined,
       evaluatePolicy: async () => allow(tool),
+      loadUserScopes: async () => ["project.read", "project.write", "artifact.read", "artifact.write"],
       issueApproval: async () => {
         throw new Error("approval should not be issued");
       },
@@ -25,6 +26,7 @@ describe("ToolRunner", () => {
           return { id: "execution-1" };
         },
         markBlocked: async () => { operations.push("persist:blocked"); },
+        claimPendingAsBlocked: async () => true,
         markPendingApproval: async () => { operations.push("persist:pending_approval"); },
         claimApprovedExecution: async () => {
           operations.push("persist:approved");
@@ -93,6 +95,7 @@ describe("ToolRunner", () => {
       const runner = createToolRunner({
         resolveTool: () => tool,
         resolveSkill: () => undefined,
+        loadUserScopes: async () => ["project.read", "project.write", "artifact.read", "artifact.write"],
         evaluatePolicy: async () => requireApproval(tool),
         issueApproval: async () => ({
           token: "approval-token",
@@ -102,6 +105,7 @@ describe("ToolRunner", () => {
           loadSessionApprovals: async () => new Map(),
           propose: async () => ({ id: "execution-pending" }),
           markBlocked: async () => {},
+          claimPendingAsBlocked: async () => true,
           markPendingApproval: async () => {},
           claimApprovedExecution: async () => true,
           markExecuting: async () => {},
@@ -150,6 +154,7 @@ describe("ToolRunner", () => {
       resolveTool: () => tool,
       resolveSkill: () => undefined,
       evaluatePolicy: async () => allow(tool),
+      loadUserScopes: async () => ["project.read", "project.write", "artifact.read", "artifact.write"],
       issueApproval: async () => {
         throw new Error("approval should not be issued");
       },
@@ -160,6 +165,7 @@ describe("ToolRunner", () => {
           return { id: "execution-aborted" };
         },
         markBlocked: async () => {},
+        claimPendingAsBlocked: async () => true,
         markPendingApproval: async () => {},
         claimApprovedExecution: async () => true,
         markExecuting: async () => {

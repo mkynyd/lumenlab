@@ -87,7 +87,7 @@ LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目
 | L2 首次询问 | `artifact.save`、`reference.add`、`reference.attach` |
 | L3 每次询问 | `project_files.delete`、`artifact.export_docx` |
 
-`web.search` 与 `web.fetch` 走 host 白名单与 SSRF 校验，8 秒超时，1.5MB body 上限。所有 Tool 在执行前都要做跨租户预检和参数校验。
+`web.search` 与 `web.fetch` 走 host 白名单与 SSRF 校验，IPv4、IPv6 和 IPv4-mapped IPv6 都会先排除非公网地址；`web.fetch` 的实际连接会固定到已验证 DNS 地址，每次重定向都重新解析与固定，阻断 DNS rebinding。抓取设置 8 秒超时和 1.5MB body 上限。项目与成果 Tool 还会检查持久化的 `User.scopes`，空权限集合按无权限处理，不会回退到默认全集。所有 Tool 在执行前都要做跨租户预检和参数校验，`artifact.save` 的 handler 会再次确认目标项目归属。待审批记录在 token 兑换前还会用当前 Tool/Skill、scope 与资源归属重新评估，防止审批等待期的权限撤销被绕过。
 
 ### SSE Agent 事件流
 
@@ -335,6 +335,7 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 
 | 模型 | 用途 |
 |------|------|
+| `User.scopes` | 当前用户可授予 Agent 的精确权限集合；新用户默认拥有 project/artifact 的 read/write，持久化空数组表示全部撤销。 |
 | `SkillPackage` | 声明式 Skill 包（skillId + version, 允许工具, 风险上限, 必需 scopes, 契约, 数据处理策略）。`(skillId, version)` 唯一。 |
 | `ConversationSkill` | 单次对话中的 Skill 激活日志。 |
 | `ToolDefinition` | 声明式 Tool 包（风险等级, 副作用标记, 默认审批模式, 审计级别, 允许的 Skill ID）。 |
@@ -349,9 +350,9 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 请求 → NextAuth JWT 中间件 (proxy.ts)
      → 路由层 userId 归属校验
      → 数据层 projectId / conversationId 关联校验
-     → Agent 层 policy-engine 拦截 + 一次性审批令牌
-     → 密码 bcrypt 哈希, API Key AES-256-GCM 加密
-     → 同步协议: RSA-OAEP + AES-256-GCM + HMAC + nonce 防重放
+     → Agent 层 User.scopes + policy-engine 拦截 + 一次性审批令牌
+     → 密码 bcrypt 哈希, API Key AES-256-GCM 加密（16-byte auth tag）
+     → 同步协议: RSA-OAEP + AES-256-GCM（16-byte auth tag）+ HMAC + nonce 防重放
 ```
 
 ## 快速开始

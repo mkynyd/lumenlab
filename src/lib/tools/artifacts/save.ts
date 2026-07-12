@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
+import { assertProjectOwned } from "@/lib/tools/shared/sanitize";
 
 export async function saveArtifact(
   userId: string,
@@ -13,6 +14,10 @@ export async function saveArtifact(
     content: string;
   }
 ): Promise<Record<string, unknown>> {
+  if (projectId) {
+    await assertProjectOwned(userId, projectId);
+  }
+
   const message = messageId
     ? await prisma.message.findFirst({
         where: { id: messageId, conversationId },

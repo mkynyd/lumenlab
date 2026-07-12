@@ -65,6 +65,21 @@ export class PrismaToolExecutionAdapter implements ToolExecutionPersistence {
     });
   }
 
+  async claimPendingAsBlocked(
+    executionId: string,
+    error: { code: string; message: string }
+  ) {
+    const claimed = await prisma.toolExecution.updateMany({
+      where: { id: executionId, status: "pending_approval" },
+      data: {
+        status: "blocked",
+        completedAt: new Date(),
+        errorSummary: error as Prisma.InputJsonValue,
+      },
+    });
+    return claimed.count === 1;
+  }
+
   async markPendingApproval(
     executionId: string,
     input: { expiresAt: Date; approvalSnapshot: import("../types").PolicyDecision }

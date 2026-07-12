@@ -1,9 +1,12 @@
+import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import type { LookupFunction } from "node:net";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import { htmlToText } from "html-to-text";
+import ipaddr from "ipaddr.js";
+import { Agent, fetch as pinnedFetch } from "undici";
 import { logger } from "@/lib/logger";
 
 const FETCH_TIMEOUT_MS = 8000;
@@ -11,40 +14,26 @@ const MAX_BODY_BYTES = 1_500_000;
 const MAX_REDIRECTS = 3;
 const MAX_RETURN_CHARS = 20_000;
 
-function isPrivateIpv4(hostname: string) {
-  const parts = hostname.split(".").map((part) => Number.parseInt(part, 10));
-  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) return false;
-  const [a, b] = parts;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168)
-  );
+function stripIpv6Brackets(hostname: string) {
+  return hostname.replace(/^\[|\]$/g, "");
 }
 
-function isPrivateIpv6(hostname: string) {
-  const lower = hostname.toLowerCase();
-  return (
-    lower === "::1" ||
-    lower === "::" ||
-    lower.startsWith("fc") ||
-    lower.startsWith("fd") ||
-    lower.startsWith("fe80:") ||
-    lower.startsWith("::ffff:127.") ||
-    lower.startsWith("::ffff:10.") ||
-    lower.startsWith("::ffff:192.168.") ||
-    lower.startsWith("::ffff:169.254.")
-  );
+function isIpLiteral(hostname: string) {
+  return ipaddr.isValid(stripIpv6Brackets(hostname));
 }
 
-function isPrivateIp(hostname: string) {
-  const type = isIP(hostname);
-  if (type === 4) return isPrivateIpv4(hostname);
-  if (type === 6) return isPrivateIpv6(hostname);
-  return false;
+function isGloballyRoutableIp(hostname: string) {
+  const stripped = stripIpv6Brackets(hostname);
+  if (!ipaddr.isValid(stripped)) return false;
+  const parsed = ipaddr.parse(stripped);
+  if (parsed instanceof ipaddr.IPv6 && parsed.isIPv4MappedAddress()) {
+    return parsed.toIPv4Address().range() === "unicast";
+  }
+  return parsed.range() === "unicast";
+}
+
+function isNonPublicIp(hostname: string) {
+  return isIpLiteral(hostname) && !isGloballyRoutableIp(hostname);
 }
 
 function getFetchAllowlist(): string[] {
@@ -82,7 +71,7 @@ export function isSafePublicHttpUrl(
     ) {
       return false;
     }
-    if (isIP(host) && isPrivateIp(host)) return false;
+    if (isNonPublicIp(host)) return false;
     if (!hostMatchesAllowlist(host, allowlist)) return false;
     return true;
   } catch {
@@ -90,17 +79,44 @@ export function isSafePublicHttpUrl(
   }
 }
 
-async function assertPublicResolvedAddress(url: URL) {
-  if (isIP(url.hostname)) {
-    if (isPrivateIp(url.hostname)) {
-      throw new Error("URL_NOT_ALLOWED");
-    }
-    return;
+async function resolvePublicAddresses(url: URL): Promise<LookupAddress[]> {
+  const hostname = stripIpv6Brackets(url.hostname);
+  if (isIpLiteral(hostname)) {
+    if (!isGloballyRoutableIp(hostname)) throw new Error("URL_NOT_ALLOWED");
+    return [{
+      address: hostname,
+      family: ipaddr.parse(hostname).kind() === "ipv4" ? 4 : 6,
+    }];
   }
   const addresses = await lookup(url.hostname, { all: true, verbatim: true });
-  if (addresses.length === 0 || addresses.some((item) => isPrivateIp(item.address))) {
+  if (
+    addresses.length === 0 ||
+    addresses.some((item) => !isGloballyRoutableIp(item.address))
+  ) {
     throw new Error("URL_NOT_ALLOWED");
   }
+  return addresses;
+}
+
+function createPinnedLookup(addresses: LookupAddress[]): LookupFunction {
+  return (_hostname, options, callback) => {
+    const family = typeof options.family === "number" ? options.family : 0;
+    const candidates = family
+      ? addresses.filter((address) => address.family === family)
+      : addresses;
+    if (candidates.length === 0) {
+      const error = Object.assign(new Error("No validated address for family"), {
+        code: "ENOTFOUND",
+      });
+      callback(error, "", family || undefined);
+      return;
+    }
+    if (options.all) {
+      callback(null, candidates);
+      return;
+    }
+    callback(null, candidates[0].address, candidates[0].family);
+  };
 }
 
 function decodeBody(chunks: Uint8Array[]) {
@@ -153,23 +169,34 @@ async function safeFetchWithRedirects(rawUrl: string, signal: AbortSignal) {
     if (!isSafePublicHttpUrl(current.toString())) {
       return { error: "URL_NOT_ALLOWED", url: current.toString() } as const;
     }
+    let dispatcher: Agent | undefined;
+    let response: Awaited<ReturnType<typeof pinnedFetch>>;
     try {
-      await assertPublicResolvedAddress(current);
-    } catch {
-      return { error: "URL_NOT_ALLOWED", url: current.toString() } as const;
+      const addresses = await resolvePublicAddresses(current);
+      dispatcher = new Agent({
+        connect: { lookup: createPinnedLookup(addresses) },
+      });
+      response = await pinnedFetch(current, {
+        signal,
+        redirect: "manual",
+        headers: { "user-agent": "LumenLab-Agent/1.0" },
+        dispatcher,
+      });
+    } catch (error) {
+      await dispatcher?.destroy().catch(() => {});
+      if (error instanceof Error && error.message === "URL_NOT_ALLOWED") {
+        return { error: "URL_NOT_ALLOWED", url: current.toString() } as const;
+      }
+      throw error;
     }
-    const response = await fetch(current, {
-      signal,
-      redirect: "manual",
-      headers: { "user-agent": "LumenLab-Agent/1.0" },
-    });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
-      if (!location) return { response, url: current.toString() };
+      if (!location) return { response, url: current.toString(), dispatcher };
+      await dispatcher.destroy();
       current = new URL(location, current);
       continue;
     }
-    return { response, url: current.toString() };
+    return { response, url: current.toString(), dispatcher };
   }
   return { error: "TOO_MANY_REDIRECTS", url: current.toString() } as const;
 }
@@ -182,9 +209,11 @@ export async function webFetch(
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  let activeDispatcher: Agent | undefined;
   try {
     const fetched = await safeFetchWithRedirects(url, controller.signal);
     if ("error" in fetched) return fetched;
+    activeDispatcher = fetched.dispatcher;
     const { response } = fetched;
     if (!response.ok) {
       return { error: "FETCH_FAILED", status: response.status, url: fetched.url };
@@ -229,5 +258,6 @@ export async function webFetch(
     return { error: "FETCH_ERROR", url };
   } finally {
     clearTimeout(timeout);
+    await activeDispatcher?.destroy().catch(() => {});
   }
 }

@@ -15,15 +15,9 @@ import { evaluatePolicy, signAndAttachToken } from "../policy-engine";
 import { executeTool } from "../tool-executor";
 import { recordAuditEvent } from "../audit-log";
 import { PrismaToolExecutionAdapter } from "../persistence/prisma-tool-execution-adapter";
+import { PrismaUserScopeAdapter } from "../persistence/prisma-user-scope-adapter";
 import "@/lib/skills/registry";
 import "@/lib/tools/registry";
-
-const DEFAULT_USER_SCOPES = [
-  "project.read",
-  "project.write",
-  "artifact.read",
-  "artifact.write",
-];
 
 export interface ToolInvocationRequest {
   call: {
@@ -61,6 +55,7 @@ export interface ToolRunnerDependencies {
   resolveTool(toolId: string): ToolMetadata | undefined;
   resolveSkill(skillId: string): SkillMetadata | undefined;
   evaluatePolicy(context: AgentContext): Promise<PolicyDecision>;
+  loadUserScopes(userId: string): Promise<string[]>;
   issueApproval(input: {
     userId: string;
     conversationId: string;
@@ -107,7 +102,12 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
       const skill = request.context.skillId
         ? dependencies.resolveSkill(request.context.skillId)
         : undefined;
-      const policyContext = buildAgentContext(request, tool, skill);
+      const policyContext = await buildAgentContext(
+        request,
+        tool,
+        skill,
+        dependencies.loadUserScopes
+      );
       const decision = await dependencies.evaluatePolicy(policyContext);
       const execution = await dependencies.persistence.propose({
         userId: request.context.userId,
@@ -276,10 +276,12 @@ async function failAborted(
 }
 
 export function createPrismaToolRunner(): ToolRunner {
+  const userScopes = new PrismaUserScopeAdapter();
   return createToolRunner({
     resolveTool: (toolId) => toolRegistry.get(toolId),
     resolveSkill: (skillId) => skillRegistry.get(skillId),
     evaluatePolicy,
+    loadUserScopes: (userId) => userScopes.load(userId),
     issueApproval: signAndAttachToken,
     persistence: new PrismaToolExecutionAdapter(),
     execute: executeTool,
@@ -287,13 +289,15 @@ export function createPrismaToolRunner(): ToolRunner {
   });
 }
 
-function buildAgentContext(
+async function buildAgentContext(
   request: ToolInvocationRequest,
   tool: ToolMetadata,
-  skill: SkillMetadata | undefined
-): AgentContext {
+  skill: SkillMetadata | undefined,
+  loadUserScopes: (userId: string) => Promise<string[]>
+): Promise<AgentContext> {
+  const scopes = await loadUserScopes(request.context.userId);
   return {
-    user: { id: request.context.userId, scopes: DEFAULT_USER_SCOPES },
+    user: { id: request.context.userId, scopes },
     workspace: { id: request.context.projectId ?? "default", policies: [] },
     conversation: {
       id: request.context.conversationId,

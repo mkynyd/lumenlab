@@ -34,10 +34,17 @@ type TokenRow = {
 
 const state = vi.hoisted(() => ({
   authenticatedUserId: "user-1",
+  userScopes: [
+    "project.read",
+    "project.write",
+    "artifact.read",
+    "artifact.write",
+  ] as string[],
   executions: new Map<string, ExecutionRow>(),
   tokens: new Map<string, TokenRow>(),
   audits: [] as Array<Record<string, unknown>>,
   nextTokenId: 1,
+  scopeLoadHook: null as null | (() => Promise<void>),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -46,6 +53,29 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/db", () => ({
   prisma: {
+    user: {
+      findUnique: vi.fn(async () => {
+        await state.scopeLoadHook?.();
+        return { scopes: [...state.userScopes] };
+      }),
+    },
+    userToolPreference: {
+      findUnique: vi.fn(async () => null),
+    },
+    project: {
+      findFirst: vi.fn(async ({ where }: { where: { id?: string; userId?: string } }) =>
+        where.id && where.userId === state.authenticatedUserId
+          ? { id: where.id }
+          : null
+      ),
+    },
+    fileAsset: {
+      findFirst: vi.fn(async ({ where }: { where: { id?: string; userId?: string } }) =>
+        where.id && where.userId === state.authenticatedUserId
+          ? { id: where.id, originalName: "file.txt", mimeType: "text/plain" }
+          : null
+      ),
+    },
     toolExecution: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
         const row = state.executions.get(where.id);
@@ -152,15 +182,23 @@ vi.mock("@/lib/db", () => ({
 
 import { hashArguments, issueApprovalToken } from "@/lib/agent/approval-token";
 import { registerToolHandler } from "@/lib/agent/tool-executor";
+import { toolRegistry } from "@/lib/agent/tool-registry";
 import { POST } from "./route";
 
 describe("POST /api/agent/approve", () => {
   beforeEach(() => {
     state.authenticatedUserId = "user-1";
+    state.userScopes = [
+      "project.read",
+      "project.write",
+      "artifact.read",
+      "artifact.write",
+    ];
     state.executions.clear();
     state.tokens.clear();
     state.audits.length = 0;
     state.nextTokenId = 1;
+    state.scopeLoadHook = null;
   });
 
   it("does not consume a token before validating ToolExecution ownership", async () => {
@@ -208,6 +246,96 @@ describe("POST /api/agent/approve", () => {
     }));
 
     expect(response.status).toBe(409);
+    expect([...state.tokens.values()][0].consumedAt).toBeNull();
+  });
+
+  it("blocks an approved execution when its required scope was revoked", async () => {
+    const args = { projectId: "project-1" };
+    let invocationCount = 0;
+    registerToolHandler("approval_test.scoped", async () => {
+      invocationCount += 1;
+      return { ok: true };
+    });
+    const row = execution({
+      id: "execution-scope-revoked",
+      toolId: "approval_test.scoped",
+      riskLevel: "L2",
+      requiredScopes: ["project.read"],
+      args,
+    });
+    state.executions.set(row.id, row);
+    const issued = await issueApprovalToken({
+      userId: "user-1",
+      conversationId: row.conversationId,
+      toolId: row.toolId,
+      argumentsHash: hashArguments(args),
+      requestId: row.id,
+    });
+    state.userScopes = [];
+
+    const response = await POST(approveRequest({
+      token: issued.token,
+      executionId: row.id,
+      scope: "once",
+    }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      reason: "SCOPE_NOT_GRANTED",
+    });
+    expect(invocationCount).toBe(0);
+    expect([...state.tokens.values()][0].consumedAt).toBeNull();
+    expect(state.executions.get(row.id)?.status).toBe("blocked");
+  });
+
+  it("does not overwrite an execution claimed while policy is being revalidated", async () => {
+    const args = { projectId: "project-1" };
+    const row = execution({
+      id: "execution-revalidation-race",
+      toolId: "approval_test.revalidation_race",
+      riskLevel: "L2",
+      requiredScopes: ["project.read"],
+      args,
+    });
+    state.executions.set(row.id, row);
+    const issued = await issueApprovalToken({
+      userId: "user-1",
+      conversationId: row.conversationId,
+      toolId: row.toolId,
+      argumentsHash: hashArguments(args),
+      requestId: row.id,
+    });
+    state.userScopes = [];
+    let releaseScopeLoad!: () => void;
+    let signalScopeLoadStarted!: () => void;
+    const scopeLoadStarted = new Promise<void>((resolve) => {
+      signalScopeLoadStarted = resolve;
+    });
+    const scopeLoadGate = new Promise<void>((resolve) => {
+      releaseScopeLoad = resolve;
+    });
+    state.scopeLoadHook = async () => {
+      signalScopeLoadStarted();
+      await scopeLoadGate;
+    };
+
+    const responsePromise = POST(approveRequest({
+      token: issued.token,
+      executionId: row.id,
+      scope: "once",
+    }));
+    await scopeLoadStarted;
+    row.status = "executing";
+    releaseScopeLoad();
+    const response = await responsePromise;
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      reason: "EXECUTION_ALREADY_CLAIMED",
+    });
+    expect(row.status).toBe("executing");
     expect([...state.tokens.values()][0].consumedAt).toBeNull();
   });
 
@@ -533,18 +661,22 @@ function execution(input: {
   toolId?: string;
   riskLevel?: string;
   args?: Record<string, unknown>;
+  requiredScopes?: string[];
   contextSnapshot?: { projectId?: string; selectedFileIds?: string[] };
 }): ExecutionRow {
   const args = input.args ?? {};
+  const toolId = input.toolId ?? "project_files.delete";
+  const riskLevel = input.riskLevel ?? "L3";
+  ensureToolRegistered(toolId, riskLevel, input.requiredScopes ?? []);
   return {
     id: input.id,
     userId: input.userId ?? "user-1",
     conversationId: input.conversationId ?? "conversation-1",
     skillId: null,
-    toolId: input.toolId ?? "project_files.delete",
+    toolId,
     normalizedArguments: args,
     argumentsHash: hashArguments(args),
-    riskLevel: input.riskLevel ?? "L3",
+    riskLevel,
     status: "pending_approval",
     approvalScope: null,
     approvedAt: null,
@@ -556,6 +688,33 @@ function execution(input: {
       ? { executionContext: input.contextSnapshot }
       : null,
   };
+}
+
+function ensureToolRegistered(
+  toolId: string,
+  riskLevel: "L0" | "L1" | "L2" | "L3" | "L4" | string,
+  requiredScopes: string[]
+) {
+  if (toolRegistry.has(toolId)) return;
+  toolRegistry.register({
+    toolId,
+    name: toolId,
+    description: "Approval route test tool",
+    inputSchema: { type: "object", properties: {} },
+    outputSchema: { type: "object" },
+    riskLevel: riskLevel as "L0" | "L1" | "L2" | "L3" | "L4",
+    isReadOnly: riskLevel === "L0" || riskLevel === "L1",
+    hasExternalSideEffect: false,
+    isReversible: riskLevel !== "L3" && riskLevel !== "L4",
+    containsSensitiveData: false,
+    requiresNetwork: false,
+    defaultApprovalMode: riskLevel === "L3" || riskLevel === "L4"
+      ? "ask_each"
+      : "ask_first",
+    allowedSkillIds: [],
+    auditLevel: "standard",
+    requiredScopes,
+  });
 }
 
 function approveRequest(body: Record<string, unknown>): NextRequest {

@@ -24,6 +24,10 @@ export interface ToolExecutionPersistence {
     executionId: string,
     error: { code: string; message: string }
   ): Promise<void>;
+  claimPendingAsBlocked(
+    executionId: string,
+    error: { code: string; message: string }
+  ): Promise<boolean>;
   markPendingApproval(
     executionId: string,
     input: { expiresAt: Date; approvalSnapshot: PolicyDecision }
