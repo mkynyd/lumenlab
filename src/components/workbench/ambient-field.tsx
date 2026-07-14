@@ -71,6 +71,7 @@ export function AmbientField({
     const canvasEl = canvasRef.current;
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
     const pointer = {
       x: -1000,
       y: -1000,
@@ -79,6 +80,7 @@ export function AmbientField({
       pulseStartedAt: 0,
     };
     let rafId = 0;
+    let pointerInputEnabled = false;
     let dots: DotPosition[] = [];
     let width = 0;
     let height = 0;
@@ -156,6 +158,7 @@ export function AmbientField({
       const baseColor = readThemeColor("--dot-grid-base") || "rgba(100,116,139,0.16)";
       const activeColor = readThemeColor("--dot-grid-active") || "rgba(37,99,235,0.7)";
       const now = performance.now();
+      const pointerFeedbackEnabled = finePointer.matches && !reducedMotion.matches;
       ctx.clearRect(0, 0, width, height);
 
       for (const dot of dots) {
@@ -163,11 +166,11 @@ export function AmbientField({
         const drawY = dot.y;
         const dx = drawX - pointer.x;
         const dy = drawY - pointer.y;
-        const distance = Math.hypot(dx, dy);
+        const distance = pointerFeedbackEnabled ? Math.hypot(dx, dy) : Infinity;
         const t = Math.max(0, 1 - distance / proximity);
         const pulseAge = now - pointer.pulseStartedAt;
         const pulseDistance = Math.hypot(drawX - pointer.pulseX, drawY - pointer.pulseY);
-        const pulse = pulseAge < 640
+        const pulse = pointerFeedbackEnabled && pulseAge < 640
           ? Math.max(0, 1 - pulseAge / 640) * Math.max(0, 1 - pulseDistance / 220)
           : 0;
         const strength = Math.min(1, t + pulse * 0.8);
@@ -186,7 +189,7 @@ export function AmbientField({
       const continueFrame = shouldContinueAmbientFrame(
         pointer.pulseStartedAt,
         now,
-        reducedMotion.matches
+        !pointerFeedbackEnabled
       );
       if (continueFrame) {
         rafId = window.requestAnimationFrame(draw);
@@ -194,6 +197,7 @@ export function AmbientField({
     }
 
     function handlePointerMove(event: PointerEvent) {
+      if (!pointerInputEnabled) return;
       const rect = canvasEl.getBoundingClientRect();
       pointer.x = event.clientX - rect.left;
       pointer.y = event.clientY - rect.top;
@@ -202,12 +206,32 @@ export function AmbientField({
     }
 
     function handlePointerDown(event: PointerEvent) {
+      if (!pointerInputEnabled) return;
       const rect = canvasEl.getBoundingClientRect();
       pointer.pulseX = event.clientX - rect.left;
       pointer.pulseY = event.clientY - rect.top;
       pointer.pulseStartedAt = performance.now();
       window.cancelAnimationFrame(rafId);
       rafId = window.requestAnimationFrame(draw);
+    }
+
+    function syncPointerInput() {
+      const nextEnabled = finePointer.matches && !reducedMotion.matches;
+      if (nextEnabled === pointerInputEnabled) return;
+      pointerInputEnabled = nextEnabled;
+
+      if (nextEnabled) {
+        window.addEventListener("pointermove", handlePointerMove, { passive: true });
+        window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+      } else {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerdown", handlePointerDown);
+        pointer.x = -1000;
+        pointer.y = -1000;
+        pointer.pulseStartedAt = 0;
+        window.cancelAnimationFrame(rafId);
+        draw();
+      }
     }
 
     buildGrid();
@@ -232,16 +256,17 @@ export function AmbientField({
       attributes: true,
       attributeFilter: ["data-dot-avoid"],
     });
-    reducedMotion.addEventListener("change", draw);
-    window.addEventListener("pointermove", handlePointerMove, { passive: true });
-    window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    reducedMotion.addEventListener("change", syncPointerInput);
+    finePointer.addEventListener("change", syncPointerInput);
+    syncPointerInput();
 
     return () => {
       observer.disconnect();
       themeObserver.disconnect();
       obstacleObserver.disconnect();
       window.cancelAnimationFrame(rafId);
-      reducedMotion.removeEventListener("change", draw);
+      reducedMotion.removeEventListener("change", syncPointerInput);
+      finePointer.removeEventListener("change", syncPointerInput);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerdown", handlePointerDown);
     };

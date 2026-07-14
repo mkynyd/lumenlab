@@ -10,16 +10,16 @@ interface SectionRevealProps extends React.HTMLAttributes<HTMLElement> {
 }
 
 /**
- * 纵向 section reveal：内容进入视口时淡入并上滑，离开时淡出。
- * - viewport amount 0.4：元素进入 40% 时触发
- * - 过渡时长 0.6s，ease-out
+ * 纵向 section reveal：内容第一次进入视口时淡入并轻微上滑。
+ * - viewport amount 0.2：尽早显示，不重复播放
+ * - 过渡时长 0.24s，strong ease-out
  * - prefers-reduced-motion: 退化为直接可见
  */
 export function SectionReveal({
   children,
   className = "",
   innerClassName = "",
-  yOffset = 48,
+  yOffset = 24,
   ...rest
 }: SectionRevealProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -41,10 +41,10 @@ export function SectionReveal({
       <motion.div
         ref={innerRef}
         className={innerClassName}
-        initial={{ opacity: 0, y: yOffset }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: false, amount: 0.4 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
+        initial={{ opacity: 0, transform: `translateY(${yOffset}px)` }}
+        whileInView={{ opacity: 1, transform: "translateY(0px)" }}
+        viewport={{ once: true, amount: 0.2 }}
+        transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
       >
         {children}
       </motion.div>

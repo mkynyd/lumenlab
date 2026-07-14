@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import { useState, useCallback, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -41,33 +41,29 @@ export function Stepper({
 }: StepperProps) {
   const isFirst = currentStep === 0;
   const isLast = currentStep === steps.length - 1;
-  const [animating, setAnimating] = useState(false);
   const [direction, setDirection] = useState<"forward" | "backward">("forward");
-  const prevStep = useRef(currentStep);
+  const [hasNavigated, setHasNavigated] = useState(false);
 
-  useEffect(() => {
-    if (currentStep !== prevStep.current) {
-      setDirection(currentStep > prevStep.current ? "forward" : "backward");
-      setAnimating(true);
-      const timer = setTimeout(() => setAnimating(false), 300);
-      prevStep.current = currentStep;
-      return () => clearTimeout(timer);
-    }
-  }, [currentStep]);
+  const transitionTo = useCallback((nextStep: number) => {
+    if (nextStep === currentStep) return;
+    setDirection(nextStep > currentStep ? "forward" : "backward");
+    setHasNavigated(true);
+    onStepChange(nextStep);
+  }, [currentStep, onStepChange]);
 
   const handleNext = useCallback(() => {
     if (isLast) {
       onComplete?.();
     } else {
-      onStepChange(currentStep + 1);
+      transitionTo(currentStep + 1);
     }
-  }, [isLast, currentStep, onStepChange, onComplete]);
+  }, [isLast, currentStep, onComplete, transitionTo]);
 
   const handlePrev = useCallback(() => {
     if (!isFirst) {
-      onStepChange(currentStep - 1);
+      transitionTo(currentStep - 1);
     }
-  }, [isFirst, currentStep, onStepChange]);
+  }, [isFirst, currentStep, transitionTo]);
 
   return (
     <div className={cn("flex flex-col", className)}>
@@ -83,7 +79,7 @@ export function Stepper({
                 {index > 0 && (
                   <div
                     className={cn(
-                      "h-px flex-1 transition-colors duration-300",
+                      "h-px flex-1 transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
                       isComplete || isCurrent
                         ? "bg-[var(--color-accent)]"
                         : "bg-[var(--color-panel-muted)]"
@@ -92,10 +88,10 @@ export function Stepper({
                 )}
                 <button
                   type="button"
-                  onClick={() => { if (isComplete) onStepChange(index); }}
+                  onClick={() => { if (isComplete) transitionTo(index); }}
                   disabled={!isComplete && !isCurrent}
                   className={cn(
-                    "relative flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-all duration-300",
+                    "relative flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
                     isComplete && "text-[var(--color-accent)]",
                     isCurrent && "text-[var(--color-accent)]",
                     !isComplete && !isCurrent && "text-[var(--color-text-tertiary)]"
@@ -103,7 +99,7 @@ export function Stepper({
                 >
                   <span
                     className={cn(
-                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-all duration-300",
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-[background-color,color,box-shadow] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
                       isComplete && "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]",
                       isCurrent && "bg-[var(--color-accent)] text-[var(--color-accent-contrast)] ring-2 ring-[var(--color-accent-muted)]",
                       !isComplete && !isCurrent && "border border-[var(--color-text-tertiary)] text-[var(--color-text-tertiary)]"
@@ -119,13 +115,14 @@ export function Stepper({
         </ol>
       </nav>
 
-      {/* Animated step content */}
+      {/* Transitioning from the insertion state keeps successive steps responsive. */}
       <div className="relative min-h-[200px] px-0.5">
         <div
+          key={currentStep}
+          data-direction={direction}
           className={cn(
-            "transition-all duration-300 ease-out",
-            animating && direction === "forward" && "animate-in slide-in-from-right-4 fade-in",
-            animating && direction === "backward" && "animate-in slide-in-from-left-4 fade-in"
+            "stepper-content",
+            !hasNavigated && "stepper-content-static"
           )}
         >
           {steps[currentStep]?.content}
@@ -162,7 +159,7 @@ export function Stepper({
             type="button"
             onClick={handleNext}
             disabled={isCompleting || (steps[currentStep]?.isValid === false)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] px-4 text-sm font-medium bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:bg-[var(--color-accent-hover)] active:translate-y-px transition-all duration-150 disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] px-4 text-sm font-medium bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:bg-[var(--color-accent-hover)] active:translate-y-px transition-[background-color,transform] duration-150 disabled:opacity-50"
           >
             {isLast ? completeLabel : nextLabel}
             {!isLast && <ChevronRight size={16} strokeWidth={1.5} />}

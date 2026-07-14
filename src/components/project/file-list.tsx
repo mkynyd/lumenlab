@@ -198,7 +198,7 @@ export function FileList({
 
   return (
     <>
-      <div className={cn("workbench-animated-list flex flex-col gap-1", className)}>
+      <div className={cn("flex flex-col gap-1", className)}>
         {groupedFiles(filteredFiles).map((group) => {
           const open = isGroupOpen(group.category);
           const fileCount = group.files.length;

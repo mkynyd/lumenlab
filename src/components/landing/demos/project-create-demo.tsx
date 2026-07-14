@@ -63,10 +63,10 @@ export function ProjectCreateDemo({ className }: ProjectCreateDemoProps) {
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={step}
-            initial={reducedMotion ? false : { opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -12 }}
-            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            initial={reducedMotion ? false : { opacity: 0, transform: "translateX(12px)" }}
+            animate={{ opacity: 1, transform: "translateX(0px)" }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, transform: "translateX(-12px)" }}
+            transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
           >
             {step === 0 && <BasicsStep />}
             {step === 1 && <SceneStep />}

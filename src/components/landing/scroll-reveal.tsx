@@ -18,9 +18,9 @@ interface ScrollRevealProps {
 }
 
 /**
- * 滚动入场揭示：元素进入视口时淡入 + 轻微上移，离开视口时淡出。
- * - viewport amount 0.4：元素进入 40% 时触发
- * - 过渡时长 0.6s，ease-out
+ * 滚动入场揭示：元素第一次进入视口时快速淡入 + 轻微上移。
+ * - viewport amount 0.2：尽早显示，不重复播放
+ * - 过渡时长 0.24s，strong ease-out
  * - prefers-reduced-motion: 退化为直接可见
  * - 永远渲染 motion.div，需要不同语义的元素时由调用方在 children 里自行包裹
  */
@@ -43,10 +43,10 @@ export function ScrollReveal({
     <motion.div
       ref={ref}
       className={className}
-      initial={false}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: false, amount: 0.4 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
+      initial={{ opacity: 0, transform: "translateY(12px)" }}
+      whileInView={{ opacity: 1, transform: "translateY(0px)" }}
+      viewport={{ once: true, amount: 0.2 }}
+      transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
     >
       {children}
     </motion.div>

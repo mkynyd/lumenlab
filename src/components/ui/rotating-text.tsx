@@ -153,9 +153,10 @@ export const RotatingText = forwardRef<RotatingTextRef, RotatingTextProps>(
     ]);
 
     useEffect(() => {
+      if (prefersReducedMotion || texts.length < 2) return;
       const id = window.setInterval(next, interval);
       return () => window.clearInterval(id);
-    }, [next, interval]);
+    }, [next, interval, prefersReducedMotion, texts.length]);
 
     const currentText = texts[currentIndex] ?? "";
 

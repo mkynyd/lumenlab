@@ -115,7 +115,7 @@ export function QuickTaskBar({
   const visibleSystemActions = systemExpanded || !showExpandButton ? systemActions : systemActions.slice(0, PREVIEW_COUNT);
 
   return (
-    <div className={cn("workbench-animated-list flex flex-wrap items-center gap-1.5", className)}>
+    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       {visibleSystemActions.map((action) => (
         <ActionButton
           key={action.id || action.title}

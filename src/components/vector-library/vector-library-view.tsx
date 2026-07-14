@@ -517,7 +517,7 @@ export function VectorLibraryView({
 
       svg
         .transition()
-        .duration(350)
+        .duration(240)
         .ease(d3.easeCubicOut)
         .call(
           zoom.transform as never,
