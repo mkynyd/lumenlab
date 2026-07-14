@@ -129,6 +129,18 @@ describe("policy-engine.evaluatePolicy", () => {
     expect(decision.reasonCode).toBe("TOOL_NOT_IN_SKILL_ALLOWLIST");
   });
 
+  it("allows skill.activate regardless of Skill allowlist", async () => {
+    const { evaluatePolicy } = await import("./policy-engine");
+    const skill = skillRegistry.require("code-reader");
+    const decision = await evaluatePolicy(
+      ctxWithTool(toolRegistry.require("skill.activate"), {
+        skill,
+        arguments: { name: "web-search" },
+      })
+    );
+    expect(decision.decision).toBe("allow");
+  });
+
   it("denies tool whose risk exceeds Skill ceiling", async () => {
     const { evaluatePolicy } = await import("./policy-engine");
     const overrideSkill: SkillMetadata = {
