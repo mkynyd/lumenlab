@@ -71,7 +71,7 @@ ci_gate() {
 
 resolve_commit() {
   local input="${1:-}"
-  git -C "$REPO_ROOT" fetch origin main --quiet
+  git -C "$REPO_ROOT" fetch origin main --quiet 2>/dev/null || warn "git fetch 失败（可能是本地代理未运行），使用本地 origin/main 引用"
   if [ -n "$input" ]; then
     git -C "$REPO_ROOT" rev-parse --verify "$input^{commit}" 2>/dev/null || die "无法解析 commit: $input"
   else
@@ -127,7 +127,8 @@ npx prisma generate
 if command -v pg_dump >/dev/null 2>&1; then
   TS="$(date +%Y%m%d-%H%M%S)"
   set -a; . "$SHARED_ENV"; set +a
-  pg_dump -Fc "$DATABASE_URL" -f "$BACKUP_DIR/pre-deploy-$TS.dump"
+  PG_URL="${DATABASE_URL%%\?*}"
+  pg_dump -Fc "$PG_URL" -f "$BACKUP_DIR/pre-deploy-$TS.dump"
   chmod 600 "$BACKUP_DIR/pre-deploy-$TS.dump"
   ls -1t "$BACKUP_DIR"/pre-deploy-*.dump 2>/dev/null | tail -n +4 | xargs -r rm -f
   rlog "数据库快照完成"
