@@ -205,7 +205,7 @@ PREV="$(readlink -f "$APP_ROOT/current" 2>/dev/null || true)"
 ln -sfn "$REL" "$APP_ROOT/current"
 systemctl restart lumenlab
 ok=0
-for _ in $(seq 1 30); do
+for _ in $(seq 1 45); do
   if curl -sf "http://127.0.0.1:3000/api/health" 2>/dev/null | grep -q "$HEALTH_GREP"; then ok=1; break; fi
   sleep 1
 done
@@ -302,7 +302,7 @@ echo "[remote] 回滚: $CUR -> $TARGET"
 ln -sfn "$TARGET" "$APP_ROOT/current"
 systemctl restart lumenlab
 ok=0
-for _ in $(seq 1 30); do
+for _ in $(seq 1 45); do
   if curl -sf "http://127.0.0.1:3000/api/health" 2>/dev/null | grep -q '"status":"healthy"'; then ok=1; break; fi
   sleep 1
 done

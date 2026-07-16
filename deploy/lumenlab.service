@@ -14,6 +14,7 @@ Environment=PORT=3000
 ExecStart=/usr/bin/node /www/wwwroot/course-ai-lab/current/server.js
 Restart=always
 RestartSec=5
+TimeoutStopSec=20
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=lumenlab
