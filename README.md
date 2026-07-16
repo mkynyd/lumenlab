@@ -97,7 +97,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 - `skill_activated` / `skill_suggested` / `skill_deactivated` — Skill 状态变化。
 - `web_access_enabled` — 当前请求启用联网。
-- `model_adapter_selected` — 当前使用的模型 provider（DeepSeek / MiniMax）。
+- `model_adapter_selected` — 当前使用的模型 provider（DeepSeek / MiniMax / Bailian Qwen）。
 - `approval_required` — 等待用户授权。
 - `tool_started` / `tool_completed` / `tool_failed` — 工具执行生命周期。
 
@@ -111,6 +111,8 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 - 支持 DeepSeek V4 Pro / DeepSeek V4 Flash，深度推理模式可选。
 - MiniMax M3 负责多模态对话、图片 OCR 与 PDF 原生文档解析。
+- Qwen3.7-Plus 默认关闭，开启后可选；支持文本输出与图像/视频理解，由 DashScope 原生 `BailianQwenAdapter` 承接。
+- Provider 协议层默认为项目自有 legacy adapter；`AGENT_PROVIDER_ADAPTER=pi` 可切换为 `@earendil-works/pi-ai` 隔离适配（仅 DeepSeek / MiniMax）。
 - SSE 流式输出，Markdown / KaTeX / Mermaid / 代码高亮实时渲染。
 - 集中式 API Key 管理：用户不需要自行申请 Key，由管理员通过注册码体系统一配置。
 
@@ -204,7 +206,7 @@ src/
 │   │   ├── runtime-events.ts           # 结构化 Runtime 事件
 │   │   ├── runtime-mode.ts             # legacy / shadow / new 显式策略
 │   │   ├── context/                    # 项目/文件归属与视觉上下文组装
-│   │   ├── adapters/                   # DeepSeek / MiniMax Provider Adapter
+│   │   ├── adapters/                   # Provider Adapter（legacy / Pi POC / Bailian Qwen）
 │   │   ├── providers/                  # Provider delta/usage 规范化
 │   │   ├── loop/agent-loop.ts          # 唯一模型工具循环
 │   │   ├── tools/tool-runner.ts        # Policy/审批/执行/审计状态机
@@ -294,7 +296,7 @@ src/
          → AgentRuntime.run(AgentRunInput)
          → ContextAssembler + ConversationPersistence
          → Skill Router / RAG / 确定性 prelude
-         → ProviderAdapter（DeepSeek native + XML fallback / MiniMax native）
+         → ProviderAdapter（legacy：DeepSeek native + XML fallback / MiniMax native；可选 Pi 隔离适配；Qwen 走 DashScope 原生）
          → Agent Loop（规范化调用、Policy、ToolRunner、continuation）
          → 结构化 AgentEvent
          → SSE Adapter（保持既有 data/event 格式与响应头）
