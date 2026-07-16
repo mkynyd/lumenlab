@@ -4,8 +4,12 @@ import type { AgentSource } from "./sources";
 import type { AgentRuntimeEvent } from "./runtime-events";
 import type { AgentRuntimeMode } from "./runtime-mode";
 
-export type ProviderName = "deepseek" | "minimax";
-export type AgentModel = "deepseek-v4-pro" | "deepseek-v4-flash" | "minimax-m3";
+export type ProviderName = "deepseek" | "minimax" | "bailian";
+export type AgentModel =
+  | "deepseek-v4-pro"
+  | "deepseek-v4-flash"
+  | "minimax-m3"
+  | "qwen3.7-plus";
 export type MaterialScope = "project-corpus" | "none";
 
 export interface AgentRunInput {

@@ -11,6 +11,7 @@ describe("credits", () => {
     expect(getCreditWeights("deepseek-v4-flash")).toBeDefined();
     expect(getCreditWeights("deepseek-v4-pro")).toBeDefined();
     expect(getCreditWeights("minimax-m3")).toBeDefined();
+    expect(getCreditWeights("qwen3.7-plus")).toBeDefined();
     expect(getCreditWeights("unknown")).toBeUndefined();
   });
 
@@ -42,6 +43,19 @@ describe("credits", () => {
     });
     // 1000 * 2.1 + 1000 * 8.4 = 10500 raw / 1000 = 11 (ceil)
     expect(credits).toBe(11);
+  });
+
+  it("uses Qwen's documented higher price tier above 256K input tokens", () => {
+    expect(calculateCredits("qwen3.7-plus", {
+      inputCacheHitTokens: 0,
+      inputCacheMissTokens: 1_000,
+      outputTokens: 1_000,
+    })).toBe(10);
+    expect(calculateCredits("qwen3.7-plus", {
+      inputCacheHitTokens: 0,
+      inputCacheMissTokens: 300_000,
+      outputTokens: 1_000,
+    })).toBe(1_824);
   });
 
   it("rounds credits up", () => {

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getRedis } from "@/lib/redis";
-import { getCreditWeights } from "@/lib/tokens/credits";
+import { getCreditWeightsForUsage } from "@/lib/tokens/credits";
 import { getDisplayTotalTokens } from "@/lib/token-usage-display";
 
 export interface CacheMetricRow {
@@ -50,7 +50,7 @@ export interface TokenUsageSummary {
     outputTokens: number;
   }>;
   providers: Record<
-    "deepseek" | "minimax",
+    "deepseek" | "minimax" | "bailian",
     { totalTokens: number; requestCount: number; estimatedCostCny: number }
   >;
 }
@@ -75,7 +75,8 @@ function finalize(summary: CacheMetricSummary): CacheMetricSummary {
   return { ...summary, hitRate: total > 0 ? summary.totalHitTokens / total : 0 };
 }
 
-function providerForModel(model: string): "deepseek" | "minimax" {
+function providerForModel(model: string): "deepseek" | "minimax" | "bailian" {
+  if (model.toLowerCase().startsWith("qwen")) return "bailian";
   return model.toLowerCase().includes("minimax") ? "minimax" : "deepseek";
 }
 
@@ -98,6 +99,7 @@ export function aggregateCacheRows(rows: CacheMetricRow[]) {
   const providers = {
     deepseek: emptySummary(),
     minimax: emptySummary(),
+    bailian: emptySummary(),
   };
   const projects: Record<string, CacheMetricSummary> = {};
 
@@ -122,6 +124,7 @@ export function aggregateCacheRows(rows: CacheMetricRow[]) {
     providers: {
       deepseek: finalize(providers.deepseek),
       minimax: finalize(providers.minimax),
+      bailian: finalize(providers.bailian),
     },
     projects: Object.fromEntries(
       Object.entries(projects).map(([id, summary]) => [id, finalize(summary)])
@@ -147,6 +150,7 @@ export function aggregateTokenUsageRows(
     providers: {
       deepseek: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
       minimax: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
+      bailian: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
     },
   };
 
@@ -180,7 +184,9 @@ export function aggregateTokenUsageRows(
       inputCacheMissTokens,
       outputTokens,
     });
-    const weights = row.model ? getCreditWeights(row.model) : undefined;
+    const weights = row.model
+      ? getCreditWeightsForUsage(row.model, inputCacheHitTokens + inputCacheMissTokens)
+      : undefined;
     const estimatedCostCny = weights
       ? (inputCacheHitTokens * weights.hit +
           inputCacheMissTokens * weights.miss +
@@ -213,7 +219,11 @@ export function aggregateTokenUsageRows(
     daily.outputTokens += outputTokens;
     dailyMap.set(date, daily);
 
-    if (row.provider === "deepseek" || row.provider === "minimax") {
+    if (
+      row.provider === "deepseek" ||
+      row.provider === "minimax" ||
+      row.provider === "bailian"
+    ) {
       summary.providers[row.provider].totalTokens += totalTokens;
       summary.providers[row.provider].requestCount += 1;
       summary.providers[row.provider].estimatedCostCny += estimatedCostCny;

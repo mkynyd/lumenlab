@@ -32,6 +32,7 @@ interface ChatInputProps {
   onModelChange?: (model: string) => void;
   reasoningEffort?: "high" | "max";
   onReasoningEffortChange?: (effort: "high" | "max") => void;
+  availableModels?: readonly string[];
   webSearchActive?: boolean;
   onWebSearchToggle?: () => void;
   skillValue?: SkillSelectorValue;
@@ -52,6 +53,7 @@ export function ChatInput({
   onModelChange,
   reasoningEffort,
   onReasoningEffortChange,
+  availableModels,
   webSearchActive = false,
   onWebSearchToggle,
   skillValue = "auto",
@@ -211,6 +213,7 @@ export function ChatInput({
                 onChange={onModelChange}
                 reasoningEffort={reasoningEffort}
                 onReasoningEffortChange={onReasoningEffortChange}
+                availableModels={availableModels}
                 disabled={isStreaming || disabled}
                 compact
               />

@@ -36,6 +36,7 @@ interface ChatAreaProps {
 const PROVIDER_LABELS = {
   deepseek: "DeepSeek",
   minimax: "MiniMax",
+  bailian: "Qwen",
 } as const;
 
 const AUTO_DISMISS_STATUSES = new Set<AgentEvent["type"]>([
@@ -56,6 +57,7 @@ export function ChatArea({
     error,
     usage,
     model,
+    availableModels,
     reasoningEffort,
     setModel,
     setReasoningEffort,
@@ -443,6 +445,7 @@ export function ChatArea({
         onAttachmentsChange={setAttachments}
         model={model}
         onModelChange={setModel}
+        availableModels={availableModels}
         reasoningEffort={reasoningEffort}
         onReasoningEffortChange={setReasoningEffort}
         webSearchActive={sendWithWebSearch}

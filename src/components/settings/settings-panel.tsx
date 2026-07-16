@@ -349,13 +349,17 @@ function TokensSection() {
             <p className="mb-2 text-xs text-[var(--color-text-tertiary)]">
               服务拆分
             </p>
-            {(["deepseek", "minimax"] as const).map((provider) => (
+            {(["deepseek", "minimax", "bailian"] as const).map((provider) => (
               <div
                 key={provider}
                 className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-0.5 text-sm"
               >
                 <span className="min-w-0 text-[var(--color-text-secondary)]">
-                  {provider === "deepseek" ? "DeepSeek" : "MiniMax"}
+                  {provider === "deepseek"
+                    ? "DeepSeek"
+                    : provider === "minimax"
+                      ? "MiniMax"
+                      : "Qwen"}
                 </span>
                 <span className="min-w-0 text-right font-mono text-[var(--color-text-primary)]">
                   {cacheMetrics.data.tokenUsage.providers[provider].requestCount > 0 ? (

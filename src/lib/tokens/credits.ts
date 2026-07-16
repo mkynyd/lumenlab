@@ -34,10 +34,33 @@ export const CREDIT_WEIGHTS: Record<string, CreditWeights> = {
     miss: 2.1,
     out: 8.4,
   },
+  // Qwen3.7-Plus China (Beijing), 0-256K input tier. Cache hits are charged
+  // at 10% of the corresponding input rate; see the current Model Studio bill.
+  "qwen3.7-plus": {
+    hit: 0.2,
+    miss: 2,
+    out: 8,
+  },
+};
+
+const QWEN_LONG_CONTEXT_WEIGHTS: CreditWeights = {
+  hit: 0.6,
+  miss: 6,
+  out: 24,
 };
 
 export function getCreditWeights(model: string): CreditWeights | undefined {
   return CREDIT_WEIGHTS[model];
+}
+
+export function getCreditWeightsForUsage(
+  model: string,
+  inputTokens: number
+): CreditWeights | undefined {
+  if (model === "qwen3.7-plus" && inputTokens > 256_000) {
+    return QWEN_LONG_CONTEXT_WEIGHTS;
+  }
+  return getCreditWeights(model);
 }
 
 /**
@@ -48,7 +71,10 @@ export function calculateCredits(
   model: string,
   usage: TokenBreakdown
 ): number {
-  const weights = CREDIT_WEIGHTS[model];
+  const weights = getCreditWeightsForUsage(
+    model,
+    usage.inputCacheHitTokens + usage.inputCacheMissTokens
+  );
   if (!weights) return 0;
 
   const rawCredits =
@@ -68,7 +94,7 @@ export function estimateCreditsForBudget(
   estimatedInputTokens: number,
   estimatedOutputTokens: number
 ): number {
-  const weights = CREDIT_WEIGHTS[model];
+  const weights = getCreditWeightsForUsage(model, estimatedInputTokens);
   if (!weights) return 0;
 
   const rawCredits =

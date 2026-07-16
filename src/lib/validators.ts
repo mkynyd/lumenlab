@@ -1,10 +1,15 @@
 import { z } from "zod";
+import { ALL_CHAT_MODELS, isChatModelEnabled } from "@/lib/chat/model-catalog";
 
 export const sendMessageSchema = z.object({
   conversationId: z.string().optional(),
   message: z.string().min(1, "消息不能为空").max(200000),
   hiddenPrompt: z.string().min(1).max(200000).optional(),
-  model: z.enum(["deepseek-v4-pro", "deepseek-v4-flash", "minimax-m3"]),
+  model: z
+    .enum(ALL_CHAT_MODELS)
+    .refine((model) => isChatModelEnabled(model), {
+      message: "Qwen 模型暂未开放",
+    }),
   thinkingEnabled: z.boolean().default(true),
   reasoningEffort: z.enum(["high", "max"]).default("high"),
   // Project context (optional — preserves backward compatibility)

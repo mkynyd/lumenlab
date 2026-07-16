@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type Provider = "deepseek" | "minimax";
+type Provider = "deepseek" | "minimax" | "bailian";
 type Strength = "fast" | "advanced";
 type ReasoningEffort = "high" | "max";
 
@@ -31,6 +31,8 @@ interface ModelSelectorProps {
   disabled?: boolean;
   compact?: boolean;
   className?: string;
+  /** Authenticated server catalog; Qwen is omitted until its rollout is enabled. */
+  availableModels?: readonly string[];
 }
 
 const STRENGTHS: Array<{ value: Strength; label: string; effort: ReasoningEffort }> = [
@@ -41,9 +43,11 @@ const STRENGTHS: Array<{ value: Strength; label: string; effort: ReasoningEffort
 const PROVIDERS: Array<{ value: Provider; label: string }> = [
   { value: "deepseek", label: "DeepSeek" },
   { value: "minimax", label: "MiniMax" },
+  { value: "bailian", label: "Qwen3.7-Plus" },
 ];
 
 function providerFor(model: string): Provider {
+  if (model === "qwen3.7-plus") return "bailian";
   return model === "minimax-m3" ? "minimax" : "deepseek";
 }
 
@@ -55,6 +59,7 @@ function strengthFor(model: string, effort: ReasoningEffort): Strength {
 
 function modelFor(provider: Provider, strength: Strength) {
   if (provider === "minimax") return "minimax-m3";
+  if (provider === "bailian") return "qwen3.7-plus";
   return strength === "fast" ? "deepseek-v4-flash" : "deepseek-v4-pro";
 }
 
@@ -66,8 +71,16 @@ export function ModelSelector({
   disabled = false,
   compact = false,
   className,
+  availableModels = ["deepseek-v4-pro", "deepseek-v4-flash", "minimax-m3"],
 }: ModelSelectorProps) {
-  const provider = providerFor(model);
+  const availableProviders = PROVIDERS.filter((item) =>
+    availableModels.includes(modelFor(item.value, "advanced")) ||
+    availableModels.includes(modelFor(item.value, "fast"))
+  );
+  const requestedProvider = providerFor(model);
+  const provider = availableProviders.some((item) => item.value === requestedProvider)
+    ? requestedProvider
+    : availableProviders[0]?.value ?? "deepseek";
   const strength = strengthFor(model, reasoningEffort);
   const providerLabel = PROVIDERS.find((item) => item.value === provider)?.label ?? "DeepSeek";
   const strengthLabel = STRENGTHS.find((item) => item.value === strength)?.label ?? "高级";
@@ -138,14 +151,14 @@ export function ModelSelector({
                 {providerLabel}
               </span>
             </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-40 rounded-[var(--radius-xl)] p-2">
-              {PROVIDERS.map((item) => (
+            <DropdownMenuSubContent className="w-52 rounded-[var(--radius-xl)] p-2 max-md:data-[side=left]:translate-x-[calc(100%+0.25rem)]">
+              {availableProviders.map((item) => (
                 <DropdownMenuItem
                   key={item.value}
                   onSelect={() => setProvider(item.value)}
                   className="h-10 rounded-[var(--radius-md)] px-3 text-base"
                 >
-                  <span className="flex-1">{item.label}</span>
+                  <span className="flex-1 whitespace-nowrap">{item.label}</span>
                   {provider === item.value && <Check data-icon="inline-end" />}
                 </DropdownMenuItem>
               ))}

@@ -87,11 +87,17 @@ export function routeModel(
   attachments: Array<Pick<FileAttachment | ServerFileAttachment, "name" | "mimeType">>,
   options: { requiresVisionModel?: boolean; requestedModel?: string } = {}
 ): {
-  provider: "deepseek" | "minimax";
+  provider: "deepseek" | "minimax" | "bailian";
   shouldLock: boolean;
 } {
+  if (conversation?.modelLock === "qwen") {
+    return { provider: "bailian", shouldLock: false };
+  }
   if (conversation?.modelLock === "minimax") {
     return { provider: "minimax", shouldLock: false };
+  }
+  if (options.requestedModel === "qwen3.7-plus") {
+    return { provider: "bailian", shouldLock: hasMultimodalContent(attachments) };
   }
   if (options.requiresVisionModel) {
     return { provider: "minimax", shouldLock: true };

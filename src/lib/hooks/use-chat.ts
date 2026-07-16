@@ -36,7 +36,7 @@ export interface AgentSessionState {
   suggestions: Array<{ skillId: string; label: string; reason: string }>;
   webAccess?: { mode: "auto" | "manual"; reason: string };
   modelAdapter?: {
-    provider: "deepseek" | "minimax";
+    provider: "deepseek" | "minimax" | "bailian";
     model: string;
     fallback: "native_tools" | "xml_dsml_fallback" | "json_action" | "prefetch_tools" | "none";
   };
@@ -79,6 +79,12 @@ interface UseChatOptions {
 }
 
 type ReasoningEffort = NonNullable<UseChatOptions["reasoningEffort"]>;
+
+const FALLBACK_CHAT_MODELS = [
+  "deepseek-v4-pro",
+  "deepseek-v4-flash",
+  "minimax-m3",
+] as const;
 
 function hasStreamingMessage(messages: ChatMessage[]) {
   return messages.some((message) => message.isStreaming);
@@ -170,6 +176,7 @@ export function useChat(options: UseChatOptions = {}) {
     ratio: number;
   } | null>(null);
   const [model, setModel] = useState(options.model || "deepseek-v4-pro");
+  const [availableModels, setAvailableModels] = useState<readonly string[] | null>(null);
   const [thinkingEnabled, setThinkingEnabledState] = useState(true);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
     options.reasoningEffort ?? "max"
@@ -185,6 +192,41 @@ export function useChat(options: UseChatOptions = {}) {
     options.initialConversationId
   );
   const streamSessionRef = useRef(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/chat/models", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`model catalog ${response.status}`);
+        const payload = await response.json() as { models?: unknown };
+        if (!Array.isArray(payload.models) || !payload.models.every((model) => typeof model === "string")) {
+          throw new Error("invalid model catalog");
+        }
+        const nextModels = payload.models as string[];
+        setAvailableModels(nextModels);
+        setModel((current) =>
+          nextModels.includes(current)
+            ? current
+            : nextModels[0] ?? "deepseek-v4-pro"
+        );
+      })
+      .catch((catalogError: unknown) => {
+        if (controller.signal.aborted) return;
+        console.warn("Failed to load chat model catalog", catalogError);
+        setAvailableModels(FALLBACK_CHAT_MODELS);
+        setModel((current) =>
+          FALLBACK_CHAT_MODELS.includes(
+            current as (typeof FALLBACK_CHAT_MODELS)[number]
+          )
+            ? current
+            : FALLBACK_CHAT_MODELS[0]
+        );
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -663,6 +705,7 @@ export function useChat(options: UseChatOptions = {}) {
     conversationId,
     usage,
     model,
+    availableModels: availableModels ?? FALLBACK_CHAT_MODELS,
     thinkingEnabled,
     reasoningEffort,
     setModel,

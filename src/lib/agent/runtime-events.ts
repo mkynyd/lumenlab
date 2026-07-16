@@ -9,7 +9,7 @@ import type { AgentUsage } from "./contracts";
  */
 export type AgentRuntimeEvent =
   | OperationalAgentEvent
-  | { type: "model_started"; provider: "deepseek" | "minimax"; model: string }
+  | { type: "model_started"; provider: "deepseek" | "minimax" | "bailian"; model: string }
   | { type: "text_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
   | { type: "usage"; usage: AgentUsage }

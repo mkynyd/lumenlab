@@ -200,7 +200,7 @@ export type AgentEvent =
     }
   | {
       type: "model_adapter_selected";
-      provider: "deepseek" | "minimax";
+      provider: "deepseek" | "minimax" | "bailian";
       model: string;
       fallback: "native_tools" | "xml_dsml_fallback" | "json_action" | "prefetch_tools" | "none";
     }

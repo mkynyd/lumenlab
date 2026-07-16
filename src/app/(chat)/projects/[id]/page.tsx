@@ -116,6 +116,7 @@ export default function ProjectDetailPage() {
     error,
     usage,
     model,
+    availableModels,
     reasoningEffort,
     setModel,
     setReasoningEffort,
@@ -786,6 +787,7 @@ export default function ProjectDetailPage() {
           contextHint={selectedFileIds.size > 0 ? contextHint : undefined}
           model={model}
           onModelChange={setModel}
+          availableModels={availableModels}
           reasoningEffort={reasoningEffort}
           onReasoningEffortChange={setReasoningEffort}
           skillValue={skillValue}

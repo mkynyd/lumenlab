@@ -51,6 +51,7 @@ describe("SettingsPanel token usage", () => {
           providers: {
             deepseek: { totalTokens: 12_100, requestCount: 2, estimatedCostCny: 0.3 },
             minimax: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
+            bailian: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
           },
         },
         rag: {

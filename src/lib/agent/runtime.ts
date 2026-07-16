@@ -4,6 +4,8 @@ import {
 } from "@/lib/deepseek";
 import { MiniMaxChatError } from "@/lib/chat/minimax-chat";
 import { createProviderAdapter } from "@/lib/agent/adapters";
+import { PiAiProviderError } from "@/lib/agent/adapters/pi-ai-adapter";
+import { BailianQwenError } from "@/lib/agent/adapters/bailian-qwen-adapter";
 import type { ProviderRound, ProviderToolProtocol } from "@/lib/agent/provider-adapter";
 import {
   isTextAttachment,
@@ -532,7 +534,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   if (modelRoute.shouldLock) {
     conversation = await conversationPersistence.lockModel({
       conversationId: conversation.id,
-      provider: "minimax",
+      provider: modelRoute.provider === "bailian" ? "qwen" : "minimax",
     });
   }
 
@@ -1030,6 +1032,21 @@ export class DefaultAgentRuntime implements AgentRuntime {
 export const agentRuntime: AgentRuntime = new DefaultAgentRuntime();
 
 function mapProviderError(error: unknown): AgentRuntimeError | null {
+  if (error instanceof PiAiProviderError) {
+    const status =
+      error.status >= 400 && error.status < 500 ? error.status : 502;
+    return new AgentRuntimeError(status, error.message, {
+      piAiStatus: error.status,
+      piAiProvider: error.provider,
+    });
+  }
+  if (error instanceof BailianQwenError) {
+    const status =
+      error.status >= 400 && error.status < 500 ? error.status : 502;
+    return new AgentRuntimeError(status, error.message, {
+      bailianStatus: error.status,
+    });
+  }
   if (error instanceof DeepSeekError) {
     // 4xx are request-side errors; network/5xx failures map to bad gateway.
     const status =
@@ -1112,7 +1129,7 @@ export async function accumulateAndSave(
   messageId: string,
   userId: string,
   model: AgentRunInput["model"]["requestedModel"],
-  provider: "deepseek" | "minimax",
+  provider: AgentCompletion["provider"],
   getUsage: () => {
     prompt_tokens: number;
     completion_tokens: number;
@@ -1144,7 +1161,7 @@ async function accumulateAndSaveEvents(
   messageId: string,
   userId: string,
   model: AgentRunInput["model"]["requestedModel"],
-  provider: "deepseek" | "minimax",
+  provider: AgentCompletion["provider"],
   getUsage: () => {
     prompt_tokens: number;
     completion_tokens: number;

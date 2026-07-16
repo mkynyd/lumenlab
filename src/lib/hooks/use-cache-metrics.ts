@@ -14,7 +14,7 @@ export interface CacheMetricsResponse {
   cycle?: { start: string; end: string };
   overall: CacheMetricSummary;
   daily: DailyCacheMetric[];
-  providers: Record<"deepseek" | "minimax", CacheMetricSummary>;
+  providers: Record<"deepseek" | "minimax" | "bailian", CacheMetricSummary>;
   tokenUsage: TokenUsageSummary;
   exports: Record<
     "markdown" | "docx" | "pdf",

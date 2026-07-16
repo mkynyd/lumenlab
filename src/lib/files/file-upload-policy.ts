@@ -52,10 +52,18 @@ export const IMAGE_EXTENSIONS: Record<string, string> = {
   webp: "image/webp",
 };
 
+/** Qwen uses these only for multimodal understanding, never media generation. */
+export const VIDEO_EXTENSIONS: Record<string, string> = {
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+};
+
 export const ALLOWED_EXTENSIONS = new Set([
   ...Object.keys(CODE_EXTENSIONS),
   ...Object.keys(DOCUMENT_EXTENSIONS),
   ...Object.keys(IMAGE_EXTENSIONS),
+  ...Object.keys(VIDEO_EXTENSIONS),
 ]);
 
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -76,7 +84,8 @@ export function getMimeTypeForExtension(ext: string): string | undefined {
   return (
     CODE_EXTENSIONS[ext] ||
     DOCUMENT_EXTENSIONS[ext] ||
-    IMAGE_EXTENSIONS[ext]
+    IMAGE_EXTENSIONS[ext] ||
+    VIDEO_EXTENSIONS[ext]
   );
 }
 

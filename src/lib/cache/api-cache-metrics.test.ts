@@ -34,6 +34,23 @@ describe("aggregateCacheRows", () => {
     expect(result.overall.hitRate).toBeCloseTo(80 / 150);
   });
 
+  it("attributes Qwen cache tokens to Bailian instead of DeepSeek", () => {
+    const result = aggregateCacheRows([{
+      createdAt: new Date("2026-07-16T10:00:00Z"),
+      cacheHitTokens: 40,
+      cacheMissTokens: 60,
+      model: "qwen3.7-plus",
+      projectId: null,
+    }]);
+
+    expect(result.providers.bailian).toMatchObject({
+      totalHitTokens: 40,
+      totalMissTokens: 60,
+      requestCount: 1,
+    });
+    expect(result.providers.deepseek.requestCount).toBe(0);
+  });
+
   it("returns a zero hit rate when there are no cache tokens", () => {
     const result = aggregateCacheRows([]);
     expect(result.overall.hitRate).toBe(0);
@@ -42,6 +59,23 @@ describe("aggregateCacheRows", () => {
 });
 
 describe("aggregateTokenUsageRows", () => {
+  it("includes Qwen in the provider token summary", () => {
+    const result = aggregateTokenUsageRows([{
+      createdAt: new Date("2026-07-16T10:00:00Z"),
+      tokenCount: 100,
+      provider: "bailian",
+      model: "qwen3.7-plus",
+      inputCacheHitTokens: 20,
+      inputCacheMissTokens: 40,
+      outputTokens: 40,
+    }], "2026-07-16");
+
+    expect(result.providers.bailian).toMatchObject({
+      totalTokens: 100,
+      requestCount: 1,
+    });
+  });
+
   it("aggregates measured tokens by the product timezone and actual provider", () => {
     const result = aggregateTokenUsageRows(
       [
@@ -94,6 +128,7 @@ describe("aggregateTokenUsageRows", () => {
           estimatedCostCny: 0.0009,
         },
         minimax: { totalTokens: 100, requestCount: 1, estimatedCostCny: 0 },
+        bailian: { totalTokens: 0, requestCount: 0, estimatedCostCny: 0 },
       },
     });
   });
