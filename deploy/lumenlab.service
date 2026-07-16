@@ -1,0 +1,23 @@
+[Unit]
+Description=LumenLab Next.js App (lab.mkynstudio.top)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/www/wwwroot/course-ai-lab/current
+EnvironmentFile=/www/wwwroot/course-ai-lab/.env
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3000
+ExecStart=/usr/bin/node /www/wwwroot/course-ai-lab/current/server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lumenlab
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
