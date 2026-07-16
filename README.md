@@ -454,36 +454,56 @@ npm run dev
 
 ```
 用户 → Nginx (HTTPS, 宝塔管理)
-     → 127.0.0.1:3000 (Next.js standalone, systemd)
+     → 127.0.0.1:3000 (Next.js standalone, systemd `lumenlab.service`)
      → PostgreSQL 16 + Redis 7 (本地环回)
      → 七牛云 Kodo (文件存储)
      → course-ai-regadmin (注册码同步, regadmin.mkynstudio.top)
 ```
 
-### 构建
+服务器采用 release 目录布局，共享数据与运行版本分离：
 
-```bash
-npm run build
-cp -r .next/static .next/standalone/.next/static
+```
+/www/wwwroot/course-ai-lab/
+├── .env                  # 共享环境变量（不随发布变更）
+├── uploads/              # 共享持久数据
+├── .lumenlab/            # 共享应用数据
+├── releases/<commit>/    # 各版本的 standalone 运行单元
+├── current -> releases/<commit>
+└── build/                # 临时构建树
 ```
 
-Next.js 配置 `output: "standalone"`，构建产物自包含 Node.js 运行时所需的所有依赖。通过 systemd 管理进程，Nginx 反向代理。
+### 发布与回滚
+
+```bash
+# 部署指定 commit（默认 origin/main HEAD）：CI 门禁、构建、3002 预检、原子切换、健康检查
+./scripts/deploy.sh deploy <commit>
+
+# 回滚到上一个 release
+./scripts/deploy.sh rollback
+
+# 查看当前发布状态
+./scripts/deploy.sh status
+```
+
+部署脚本通过 SSH 在服务器上构建，目标 commit 的 GitHub Actions CI 必须为绿（无 CI 记录的历史 commit 可显式 `--skip-ci-check`）。服务器仅保留当前与上一个 release；数据库迁移前自动 `pg_dump` 快照（保留最近 3 份）。
+
+### CI 门禁
+
+push 到 `main` 触发 `.github/workflows/ci.yml`：Linux 全量验证（`npm ci`、Prisma generate、lint、tsc、测试、migrate、build、lockfile 不可变检查）加 macOS lockfile 一致性检查。
 
 ### Nginx 配置要点
 
 - 反向代理到 `127.0.0.1:3000`。
 - SSE 流式输出需关闭代理缓冲：`proxy_buffering off`。
-- 上传限制匹配 `experimental.proxyClientMaxBodySize`：`client_max_body_size 400m` 或更高。
-- 静态资源 `/_next/static` 由 Nginx 直接提供。
+- 上传限制匹配 `experimental.proxyClientMaxBodySize`。
+- 静态资源 `/_next/static` 由 Nginx 直接提供，路径固定指向 `current/.next/static`，发布无需改动 Nginx。
 
 ### 数据库迁移
 
-```bash
-# 检查待应用迁移
-npx prisma migrate status
+迁移由 `scripts/deploy.sh` 自动执行（`npx prisma migrate deploy`，迁移前自动快照）。手动检查：
 
-# 应用迁移（生产环境）
-npx prisma migrate deploy
+```bash
+npx prisma migrate status
 ```
 
 ## 贡献
