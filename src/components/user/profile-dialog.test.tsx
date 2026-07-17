@@ -160,6 +160,27 @@ describe("ProfileDialog", () => {
     expect(mocks.updateSession).toHaveBeenCalled();
   });
 
+  it("turns the primary button into an enabled 完成 after an avatar-only change", async () => {
+    const { onOpenChange } = renderDialog();
+    fireEvent.change(fileInput(), {
+      target: {
+        files: [new File(["x"], "photo.png", { type: "image/png" })],
+      },
+    });
+    expect(await screen.findByTestId("cropper")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() => {
+      expect(mocks.uploadMutate).toHaveBeenCalled();
+    });
+    // Avatar uploaded instantly, nickname untouched: the primary button
+    // should offer an enabled "完成" (close) instead of a dead "保存".
+    const doneButton = await screen.findByRole("button", { name: "完成" });
+    expect(doneButton).toBeEnabled();
+    fireEvent.click(doneButton);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(mocks.updateMutate).not.toHaveBeenCalled();
+  });
+
   it("discards the selected file when cancelling the crop", async () => {
     renderDialog();
     fireEvent.change(fileInput(), {

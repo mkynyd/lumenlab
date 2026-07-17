@@ -61,6 +61,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState(false);
   const [isCropping, setIsCropping] = useState(false);
+  const [avatarUploaded, setAvatarUploaded] = useState(false);
 
   const nameValue = name ?? currentName;
   const nameDirty = name !== null && name.trim() !== currentName.trim();
@@ -75,6 +76,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
     setAvatarError(null);
     setSaveError(false);
     setIsCropping(false);
+    setAvatarUploaded(false);
     croppedAreaRef.current = null;
   }
 
@@ -143,6 +145,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
       const nextProfile = await uploadAvatar.mutateAsync(file);
       if (sessionSnapshot !== sessionRef.current) return;
       await applyProfileToSession(nextProfile);
+      setAvatarUploaded(true);
     } catch (error) {
       if (sessionSnapshot !== sessionRef.current) return;
       setView("main");
@@ -264,15 +267,22 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
               <Button
                 variant="primary"
                 size="md"
-                onClick={handleSaveName}
+                onClick={
+                  nameDirty ? handleSaveName : () => handleOpenChange(false)
+                }
                 disabled={
-                  !nameDirty ||
+                  (!nameDirty && !avatarUploaded) ||
                   updateProfile.isPending ||
-                  profileQuery.isPending
+                  profileQuery.isPending ||
+                  uploadAvatar.isPending
                 }
                 className="rounded-xl px-4"
               >
-                {updateProfile.isPending ? "保存中..." : "保存"}
+                {updateProfile.isPending
+                  ? "保存中..."
+                  : nameDirty || !avatarUploaded
+                    ? "保存"
+                    : "完成"}
               </Button>
             </div>
           </>
