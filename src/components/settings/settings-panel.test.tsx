@@ -67,7 +67,7 @@ describe("SettingsPanel token usage", () => {
     // Sidebar tabs should be visible
     expect(screen.getByText("服务访问")).toBeInTheDocument();
     expect(screen.getByText("用量统计")).toBeInTheDocument();
-    expect(screen.getByText("用户")).toBeInTheDocument();
+    expect(screen.getByText("个性化")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "用量统计" }));
 

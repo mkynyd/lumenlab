@@ -1,38 +1,25 @@
 "use client";
 
-import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   ArrowUpRight,
   Database,
   KeyRound,
-  LogOut,
   Palette,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
-  Upload,
-  UserRound,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AvatarMark } from "@/components/user/avatar-mark";
 import { useCacheMetrics } from "@/lib/hooks/use-cache-metrics";
-import {
-  useUploadUserAvatar,
-  useUpdateUserProfile,
-  useUserProfile,
-} from "@/lib/hooks/use-user-profile";
-import {
-  avatarPresetById,
-} from "@/lib/user-profile";
 import { cn } from "@/lib/utils";
 
-type TabId = "alpha" | "tokens" | "user" | "appearance";
-const MAX_AVATAR_UPLOAD_BYTES = 20 * 1024 * 1024;
+type TabId = "alpha" | "tokens" | "personalization" | "appearance";
 const TOKEN_CHART_COLORS = {
   hit: "color-mix(in oklch, var(--color-accent) 24%, var(--color-surface))",
   miss: "color-mix(in oklch, var(--color-accent) 42%, var(--color-surface))",
@@ -90,7 +77,7 @@ export function SettingsPanel() {
   const tabs: Array<{ id: TabId; label: string; icon: typeof KeyRound }> = [
     { id: "alpha", label: "服务访问", icon: KeyRound },
     { id: "tokens", label: "用量统计", icon: Database },
-    { id: "user", label: "用户", icon: UserRound },
+    { id: "personalization", label: "个性化", icon: SlidersHorizontal },
     { id: "appearance", label: "外观", icon: Palette },
   ];
 
@@ -144,7 +131,7 @@ export function SettingsPanel() {
         <div className="min-w-0 px-4 py-5 sm:px-8 sm:py-6">
           {tab === "alpha" && <AlphaSection />}
           {tab === "tokens" && <TokensSection />}
-          {tab === "user" && <UserSection />}
+          {tab === "personalization" && <PersonalizationSection />}
           {tab === "appearance" && <AppearanceSection />}
         </div>
       </div>
@@ -611,76 +598,13 @@ function AppearanceSection() {
   );
 }
 
-function UserSection() {
-  const { data: session, update: updateSession } = useSession();
-  const profileQuery = useUserProfile();
-  const updateProfile = useUpdateUserProfile();
-  const uploadAvatar = useUploadUserAvatar();
-  const avatarInputRef = useRef<HTMLInputElement | null>(null);
-
-  const profile = profileQuery.data;
-  const currentName = profile?.name || session?.user?.name || "";
-  const currentAvatarPreset = avatarPresetById(
-    profile?.avatarPreset || session?.user?.avatarPreset
-  ).id;
-  const currentAvatarUrl = profile?.avatarUrl || session?.user?.image || null;
-  const email = profile?.email || session?.user?.email || "";
-
-  const [name, setName] = useState(currentName);
-  const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
-  const [accountSaved, setAccountSaved] = useState(false);
-  const [avatarSaved, setAvatarSaved] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
-
+function PersonalizationSection() {
   const [promptName, setPromptName] = useState("");
   const [profession, setProfession] = useState("");
   const [details, setDetails] = useState("");
   const [generating, setGenerating] = useState(false);
   const [promptSaved, setPromptSaved] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
-  const selectedAvatarTooLarge =
-    selectedAvatarFile !== null &&
-    selectedAvatarFile.size > MAX_AVATAR_UPLOAD_BYTES;
-
-  async function handleSaveAccount() {
-    setAccountSaved(false);
-    const nextProfile = await updateProfile.mutateAsync({
-      name,
-    });
-    await updateSession({
-      user: {
-        name: nextProfile.name,
-        avatarPreset: nextProfile.avatarPreset,
-        image: nextProfile.avatarUrl,
-      },
-    });
-    setAccountSaved(true);
-  }
-
-  async function handleUploadAvatar() {
-    if (!selectedAvatarFile) return;
-    setAvatarSaved(false);
-    setAvatarError(null);
-    if (selectedAvatarTooLarge) {
-      setAvatarError("头像不能超过 20MB");
-      return;
-    }
-    try {
-      const nextProfile = await uploadAvatar.mutateAsync(selectedAvatarFile);
-      await updateSession({
-        user: {
-          name: nextProfile.name,
-          avatarPreset: nextProfile.avatarPreset,
-          image: nextProfile.avatarUrl,
-        },
-      });
-      setSelectedAvatarFile(null);
-      if (avatarInputRef.current) avatarInputRef.current.value = "";
-      setAvatarSaved(true);
-    } catch (error) {
-      setAvatarError(error instanceof Error ? error.message : "上传失败，请重试");
-    }
-  }
 
   async function handleGeneratePrompt() {
     if (!promptName.trim() && !profession.trim() && !details.trim()) return;
@@ -704,137 +628,7 @@ function UserSection() {
   }
 
   return (
-    <SectionShell id="settings-panel-user" title="用户">
-      <div className="space-y-4 rounded-2xl bg-[var(--color-project-control)] p-4">
-        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-          账户信息
-        </h3>
-
-        <div className="flex items-center gap-3">
-          <AvatarMark
-            presetId={currentAvatarPreset}
-            src={currentAvatarUrl}
-            alt={`${name.trim() || email || "账户"} 的头像`}
-            className="size-10 text-sm"
-          />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
-              {name.trim() || email || "账户"}
-            </p>
-            <p className="truncate text-xs text-[var(--color-text-tertiary)]">
-              侧栏和账户菜单会显示这个昵称
-            </p>
-          </div>
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text-primary)]">
-            昵称
-          </label>
-          <Input
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              setAccountSaved(false);
-            }}
-            placeholder="你的称呼"
-            maxLength={60}
-            className="mt-2 h-9 rounded-xl bg-[var(--color-surface)]"
-          />
-        </div>
-
-        <div>
-          <p className="text-sm font-medium text-[var(--color-text-primary)]">
-            上传头像
-          </p>
-          <div className="mt-2 space-y-2">
-            <Input
-              ref={avatarInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(event) => {
-                setSelectedAvatarFile(event.target.files?.[0] ?? null);
-                setAvatarSaved(false);
-                setAvatarError(null);
-              }}
-              className="h-9 rounded-xl bg-[var(--color-surface)] text-sm"
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={handleUploadAvatar}
-                disabled={
-                  !selectedAvatarFile ||
-                  selectedAvatarTooLarge ||
-                  uploadAvatar.isPending
-                }
-                className="rounded-xl px-4"
-              >
-                <Upload data-icon="inline-start" size={16} strokeWidth={1.5} />
-                {uploadAvatar.isPending ? "上传中..." : "上传头像"}
-              </Button>
-              <span className="text-xs text-[var(--color-text-tertiary)]">
-                JPG、PNG 或 WebP，最大 20MB
-              </span>
-            </div>
-            {selectedAvatarFile && (
-              <p className="truncate text-xs text-[var(--color-text-secondary)]">
-                已选择 {selectedAvatarFile.name}
-              </p>
-            )}
-            {selectedAvatarTooLarge && (
-              <p className="text-xs text-[var(--color-error)]">
-                头像不能超过 20MB
-              </p>
-            )}
-            {avatarSaved && (
-              <p className="text-xs text-[var(--color-success)]">头像已上传</p>
-            )}
-            {avatarError && (
-              <p className="text-xs text-[var(--color-error)]">{avatarError}</p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-[var(--color-text-tertiary)]">邮箱</span>
-          <span className="text-sm text-[var(--color-text-primary)] truncate">
-            {email}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button
-            variant="primary"
-            size="md"
-            onClick={handleSaveAccount}
-            disabled={profileQuery.isPending || updateProfile.isPending}
-            className="rounded-xl px-4"
-          >
-            {updateProfile.isPending ? "保存中..." : "保存资料"}
-          </Button>
-          {accountSaved && (
-            <span className="text-xs text-[var(--color-success)]">已保存</span>
-          )}
-          {updateProfile.isError && (
-            <span className="text-xs text-[var(--color-error)]">
-              保存失败，请重试
-            </span>
-          )}
-        </div>
-      </div>
-
-      <Button
-        variant="danger"
-        size="md"
-        onClick={() => signOut({ callbackUrl: "/login" })}
-        className="w-fit rounded-xl px-4"
-      >
-        <LogOut data-icon="inline-start" size={16} strokeWidth={1.5} />
-        退出登录
-      </Button>
-
+    <SectionShell id="settings-panel-personalization" title="个性化">
       <div className="space-y-4 rounded-2xl bg-[var(--color-project-control)] p-4">
         <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
           AI 画像
