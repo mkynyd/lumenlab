@@ -1,210 +1,135 @@
-# LumenLab
+# LumenLab 项目摘要
 
-> 更新时间：2026-06-22
->
-> 总结范围：当前仓库、Git 提交记录、生产部署状态
->
-> 本地目录仍为 `light-ai-chat`，产品与 GitHub 项目名称已统一为 `LumenLab`
+> 更新日期：2026-07-17
+> 仓库：`mkynyd/lumenlab`
+> 当前主线：`main`
+> 生产地址：[lab.mkynstudio.top](https://lab.mkynstudio.top)
+> 在线文档：[lab.mkynstudio.top/docs](https://lab.mkynstudio.top/docs)
 
-## 项目架构梳理与现状审查
+## 产品定位
 
-最初对仓库进行了完整架构核对，确认项目采用 Next.js 16.2 App Router、React 19、TypeScript、Auth.js v5、Prisma 7、PostgreSQL 与 pgvector。
+LumenLab 是面向大学生与通用学习者的项目化 AI 工作台。用户可以围绕项目管理课程资料、代码、实验数据和笔记，通过多模型对话、RAG、Skill Router 与受控 Agent 完成学习任务，并把有效回答沉淀为可导出的 Artifact。
 
-当时的结论是：普通聊天已经可以运行，但项目工作台仍有明显断点。项目页虽然保存了 `projectId`、`selectedFileIds` 和任务模式，前端聊天请求却没有把这些字段传给 `/api/chat`；快捷任务也没有真正填入输入框。RAG 仅有文本切块和向量字段骨架，embedding 生成尚未接入。
+核心闭环已经打通：
 
-后续已接入 qwen3-vl-embedding 融合模式，DocumentChunk 支持文本与图片/视频融合嵌入。
-
-审查还发现了消息 Markdown 渲染的 XSS 风险、React Hooks/Lint 问题、旧 `middleware.ts` 约定的弃用提示，以及本地文件存储不适合多实例部署等问题。
-
-## 项目工作台核心闭环
-
-围绕"上传资料、选择文件、快捷任务、项目上下文聊天"完成了第一轮 MVP 接线：
-
-- 项目页支持选择文件，并把 `projectId`、`selectedFileIds`、`mode` 传入聊天请求。
-- 快捷任务可填入输入框，用户可以继续编辑后再发送。
-- 项目历史对话可在项目侧栏中切换和重新载入。
-- `/api/chat` 增加项目、文件和对话归属校验。
-- 项目资料上下文设置严格长度上限。
-- 未配置 API Key 时不再提前创建空对话。
-- 文件选择补充复选语义和键盘可访问性。
-- 普通聊天请求保持兼容。
-
-随后使用一次性测试账户和一条短文本资料进行了真实 DeepSeek Flash 请求，确认 SSE 流式响应正常、选中文件内容进入模型上下文、对话和回答刷新后仍可重新载入。
-
-## MiniMax 识图、PDF 解析与成果库
-
-实施了 MiniMax 资料流水线和 Artifact 成果系统：
-
-- 使用 `@anthropic-ai/sdk` 统一调用 DeepSeek 和 MiniMax 的 Anthropic 兼容接口。
-- API Key 按 `deepseek`、`minimax` provider 隔离管理。
-- 图片支持手动调用 MiniMax M3 OCR。
-- PDF 先尝试 PDF.js 文本提取，扫描型 PDF 再降级为逐页 OCR。
-- OCR 结果支持查看、编辑、重试和 DeepSeek 知识增强。
-- RAG 统一为"选中文件优先、关键词检索补充、未来向量检索兜底"的降级路径。
-- 新增 Artifact 模型、CRUD API 和项目成果库，助手回答可保存为成果。
-- Markdown 作为成果唯一正文源，可导出 Markdown、DOCX 和 PDF。
-- Markdown 渲染切换为 `react-markdown + remark-gfm`，移除了原有危险 HTML 注入路径。
-
-## 侧边栏与项目界面调整
-
-- 聊天和项目入口统一移动到主侧边栏，支持展开、收起。
-- 进入具体项目后，主侧边栏自动收为 64px 图标栏。
-- 项目功能侧边栏顶部新增"项目空间"和"新建项目"入口。
-- 移动端项目侧边栏改为遮罩抽屉。
-- 主导航、项目资料栏和成果库统一为 300ms 平滑位移动画，支持 `prefers-reduced-motion`。
-
-## 项目与 GitHub 重命名
-
-项目品牌从 `Light AI Chat` / `light-ai-chat` 统一为 `LumenLab`：
-
-- npm 包名、页面标题、登录注册页、导航文案和文档完成改名。
-- GitHub 仓库从 `mkynyd/course-lab` 改名为 `mkynyd/LumenLab`。
-- 本地文件夹名仍保留为 `light-ai-chat`。
-
-## 四层缓存架构
-
-- 客户端缓存：TanStack Query，统一 Query Key、typed hooks、精确失效和乐观更新。
-- 服务端请求去重：React `cache()` 数据访问层，仅在单次请求内去重。
-- 应用缓存：Redis 用于滑动窗口限流、Artifact 导出缓存和指标计数。
-- 外部 API 缓存：记录 DeepSeek/MiniMax 缓存 token，提供默认关闭的实验骨架。
-- Redis 不可用时自动降级到有界内存实现。
-- Settings 增加缓存命中率指标。
-- 长对话使用 TanStack Virtual，流式中的最后一条消息保持直接渲染。
-
-## Alpha 注册与集中 API Key
-
-为小规模 Alpha 测试设计并实现了注册码与集中密钥体系，同时涉及主业务和独立管理端。
-
-主业务 `LumenLab` 完成：
-
-- 注册改为"邮箱 + 密码 + 必填注册码"。
-- 注册码只保存 HMAC 摘要，不保存可兑换明文。
-- 使用 Serializable 事务原子校验有效期、状态和兑换次数。
-- 用户绑定管理员发布的 Credential Profile。
-- DeepSeek/MiniMax Key 改为服务端中央解析，用户不再自行填写 API Key。
-- 新增管理端发布快照同步 API。
-- 同步协议使用 RSA-OAEP、AES-256-GCM、HMAC、时间戳和 nonce 防重放。
-- 支持停止新兑换、停用密钥组和显式撤销已注册用户。
-- `middleware.ts` 迁移为 Next.js 16 的 `proxy.ts`。
-
-独立管理端 `course-ai-regadmin` 完成：
-
-- 独立 Git 仓库、数据库和加密密钥。
-- 单管理员密码与 TOTP 双因素登录。
-- 密钥组、注册码、发布记录和审计日志管理。
-- API Key 保存后只显示掩码，注册码明文只在创建时显示一次。
-- 发布前校验 DeepSeek 和 MiniMax 凭据。
-- 显式向主业务发布加密版本快照。
-
-## 生产部署
-
-于 2026-06-22 完成两个项目的生产环境部署：
-
-**服务器**：OpenCloudOS 9.4, 2 核, 1.7GB RAM, 50GB SSD
-
-**部署架构**：
-
-```
-用户 → Nginx (HTTPS, 宝塔管理)
-     → 127.0.0.1:3000 (LumenLab, systemd)
-     → 127.0.0.1:3001 (course-ai-regadmin, systemd)
-     → PostgreSQL 16 + pgvector 0.8 (本地环回)
-     → Redis 7 (本地环回)
-     → 七牛云 Kodo (文件存储, bucket: LumenLab)
-```
-
-**关键配置**：
-
-- 两个项目均使用 Next.js standalone 输出，通过 systemd 管理
-- Nginx 反向代理，SSE 流式关闭缓冲，上传限制 220m
-- TLS 证书由 Let's Encrypt 签发，宝塔自动续期
-- 数据库和 Redis 仅绑定 127.0.0.1，不对外暴露
-- 注册码同步密钥和 RSA 密钥对两端一致
-- Redis 连接配置修复：`enableOfflineQueue: true`, `connectTimeout: 2000`
-
-**域名**：
-
-- `lab.mkynstudio.top` — 主业务项目
-- `regadmin.mkynstudio.top` — 注册码管理后台
-
-**数据库状态**：
-
-- `course_ai_lab`：19 个表，9 个 migration 已应用，业务数据为零（干净启动）
-- `course_ai_regadmin`：9 个表，1 个 migration 已应用，1 个管理员账号
-
-**管理员凭据**保存在 `../ADMIN_CREDENTIALS.md`（已 gitignore，不提交）。
-
-## 项目架构总结
-
-### 产品定位
-
-`LumenLab` 是面向大学计算机课程的 AI 实验工作台与资料整理系统。核心目标是让学生上传实验数据、代码、课件、试卷和笔记后，通过快捷任务直接生成可复制、可编辑、可保存的 Markdown 成果。
-
-### 技术栈
-
-| 层级 | 技术 |
-|---|---|
-| 前端框架 | Next.js 16.2 App Router、React 19、TypeScript、Tailwind CSS 4 |
-| 认证 | Auth.js v5、Credentials Provider、JWT |
-| 数据库 | PostgreSQL 16、pgvector 0.8、Prisma 7.8 |
-| AI 调用 | Anthropic SDK，兼容 DeepSeek 与 MiniMax 接口 |
-| 流式通信 | SSE，服务端 tee 分流持久化 |
-| 文件处理 | PDF.js、MinerU Precision、MiniMax M3 OCR、@napi-rs/canvas |
-| RAG | DocumentChunk 分块、关键词降级检索、pgvector 向量检索 |
-| 缓存 | TanStack Query、React `cache()`、Redis + 内存降级 |
-| 导出 | unified/remark AST、docx、Playwright/Chromium PDF、sharp |
-| 存储 | 七牛云 Kodo 私有对象存储（生产），本地文件系统（开发降级） |
-| 加密 | AES-256-GCM、bcrypt、RSA-OAEP、HMAC-SHA256 |
-| 部署 | Next.js standalone、systemd、Nginx、宝塔 SSL 管理 |
-
-### 核心数据流
-
-```
-用户登录
-  → 创建项目或普通对话
-  → 上传并解析资料
-  → 选择文件或执行项目检索
-  → Task Router 判定任务类型
-  → Prompt 模板组装项目与资料上下文
-  → DeepSeek SSE 流式生成
-  → 前端实时展示正文、思考与用量
-  → 消息异步持久化
-  → 可保存为 Artifact
+```text
+注册 / 登录
+  → 创建项目并上传资料
+  → 解析、分块、索引与向量化
+  → 选择资料或执行项目检索
+  → Skill Router + AgentRuntime + ProviderAdapter
+  → Policy Engine 审批 Tool 调用
+  → SSE 流式回答与来源展示
+  → 保存 Artifact
   → 导出 Markdown / DOCX / PDF
 ```
 
-### 安全边界
+## 当前能力
 
-- 所有用户资源按 `session.user.id` 隔离。
-- 项目、文件、对话和成果关联 ID 均在服务端重新校验。
-- 密码使用 bcrypt，API Key 使用 AES-256-GCM 加密存储。
-- 上传文件限制类型与大小，不执行用户代码。
-- 模型错误和 SSE 错误不返回密钥、环境变量或内部堆栈。
-- 注册码同步使用 RSA-OAEP + AES-256-GCM + HMAC-SHA256 + nonce 防重放。
+### 对话与模型
 
-## 项目进度总结
+- DeepSeek V4 Pro / Flash：文字对话、推理、原生 `web.search` 与内部 Tool fallback。
+- MiniMax M3：文字与多模态对话、图片 OCR、PDF 项目解析、原生 Tool continuation。
+- Qwen3.7-Plus：默认关闭的灰度模型；启用后支持文本输出与图像、视频理解，使用 DashScope 原生多模态与 Function Calling。
+- Provider 协议默认由项目自有 Adapter 承接；`AGENT_PROVIDER_ADAPTER=pi` 可把 DeepSeek / MiniMax 切到 `@earendil-works/pi-ai@0.80.7` 隔离 POC，Qwen 保持自有 Bailian Adapter。
+- 模型目录由 `GET /api/chat/models` 在服务端按发布开关、工作空间和用户凭据动态裁剪。
 
-### 已完成并上线
+### 项目资料与 RAG
 
-- 注册、登录、JWT 会话和路由保护。
-- DeepSeek SSE 聊天与消息持久化。
-- 项目、文件、项目对话和快捷任务闭环。
-- 项目资料上下文传递与归属校验。
-- 文本切块、关键词降级检索、pgvector 向量字段以及 qwen3-vl-embedding 1024 维融合向量生成与检索。
-- MiniMax 图片 OCR 与 PDF 双模解析。
-- Artifact 成果库及 Markdown、DOCX、PDF 导出。
-- 安全 Markdown 渲染 (react-markdown)。
-- 统一可收起侧边栏和移动端项目抽屉。
-- 四层缓存、Redis 降级、缓存指标和长消息虚拟化。
-- 项目和 GitHub 仓库统一命名为 `LumenLab`。
-- Alpha 注册码注册与集中密钥管理。
-- 主业务与管理端加密同步。
-- 单管理员 TOTP 双因素管理端。
-- 七牛云 Kodo 对象存储集成。
-- 生产环境部署：systemd + Nginx + PostgreSQL 16 + Redis 7。
-- README、产品说明、实现说明和仓库索引。
+- 项目类型：实验、复习、编程、通用。
+- 单次最多上传 50 个文件，单文件 50MB，批次总量 300MB。
+- 图片与项目 PDF 使用 MiniMax M3；Office/WPS/iWork 使用 MinerU；文本和代码本地解析。
+- 解析任务持久化为 `FileParseJob`，服务启动后恢复 pending job，并重置异常中断的 running job。
+- 检索按选中文件、项目索引、关键词/全文、pgvector 向量逐级组合；向量使用百炼 `qwen3-vl-embedding` 1024 维，失败时降级为关键词检索。
+- 资料图谱按 topic / file / chunk 展示项目知识关系。
+- 回答来源统一持久化到 `Message.sources` 并在消息底部展示。
 
-### 尚未完成
+### Agent、Skill 与 Tool
 
-- 缓存实验开关默认关闭，需要收集真实基线后再启用。
-- PDF 字体路径可能在无桌面环境的服务器上需要额外配置。
+- `/api/chat` 已收敛为薄 HTTP/SSE 适配层，业务编排统一进入 `AgentRuntime.run()`。
+- Runtime 内部由 ContextAssembler、Skill Router、ProviderAdapter、AgentLoop、ToolRunner、Policy Engine 和 Prisma persistence adapters 组成。
+- 13 个内置 Skill 从 `.lumenlab/skills` 动态发现，覆盖论文、文献综述、考试、代码、PDF/Word/PPT/表格、图表规范、中文润色和苏格拉底辅导。
+- 17 个内置 Tool 覆盖项目资料、成果、RAG、网页、arXiv、参考文献、DOCX 导出与 Skill 激活。
+- Tool 使用 L1-L4 风险模型。L2 默认首次询问，L3 每次询问，L4 当前无生产 Tool。
+- 审批 token 绑定用户、对话、Tool、请求和参数哈希；批准时重新检查当前 Tool/Skill、`User.scopes`、参数与资源归属，并用条件更新避免并发覆盖终态。
+- `web.fetch` 使用域名 allowlist、完整公网 IP 判定、逐跳 DNS 校验与连接固定，防止 SSRF 和 DNS rebinding；同时限制 8 秒与 1.5MB body。
+
+### 成果与文档转换
+
+- Artifact 支持十余种成果类型，Markdown 是唯一正文源。
+- Artifact 可导出 Markdown、DOCX、PDF；Redis 以内容哈希缓存导出结果。
+- `/tools` 使用 MinerU Precision 把 PDF 转为 Markdown，保留公式、表格和图片，支持完整 ZIP 下载与保存到项目。
+- Markdown 渲染支持 GFM、KaTeX、Mermaid、代码高亮与安全 HTML table。
+
+### 账号、凭据与安全
+
+- Auth.js v5 Credentials + JWT，密码使用 bcrypt。
+- 中央模式要求 Alpha 注册码；注册码与 provider 凭据由独立的 `course-ai-regadmin` 发布加密快照。
+- 主业务与管理端使用独立数据库、`ENCRYPTION_KEY` 和注册码摘要 secret。
+- 同步协议使用 RSA-OAEP + AES-256-GCM（16-byte tag）+ HMAC + timestamp + nonce 防重放。
+- API Key 只在服务端以 AES-256-GCM 加密存储，客户端只能看到掩码。
+- 自托管模式可启用 `USER_API_KEYS_ENABLED=1`，优先读取用户 `ApiKey`，缺失时回退中央凭据。
+- 项目、文件、对话、Artifact、参考文献和 Tool handler 均做用户归属校验。
+
+## 技术架构
+
+| 层级 | 当前实现 |
+|---|---|
+| Web | Next.js 16.2.10 App Router、React 19.2、TypeScript 5、Tailwind CSS 4 |
+| 数据 | PostgreSQL 16、pgvector 0.8、Prisma 7.8；当前 schema 33 个 model、24 组 migration |
+| AI | Anthropic SDK、DashScope 原生 HTTP、可选 `pi-ai` Provider POC |
+| 缓存 | TanStack Query、React `cache()`、Redis 7 + 有界内存降级 |
+| 文件 | MiniMax M3、MinerU Precision、PDF.js、`@napi-rs/canvas`、七牛云 Kodo |
+| 导出 | unified/remark、docx、pdfkit、Playwright/Chromium、sharp |
+| 前端 | shadcn/radix-nova、Iconoir、Motion、GSAP、D3、TanStack Virtual |
+| 测试 | Vitest、Testing Library；当前仓库 131 个测试文件 |
+
+## Runtime 发布模式
+
+| 模式 | 行为 |
+|---|---|
+| `legacy` | 默认；保持兼容响应和模型驱动 Tool loop |
+| `shadow` | 返回 legacy 结果，只比较无副作用的 Skill、联网与 Tool 规划决策 |
+| `new` | 启用 Runtime-owned Skill 状态、确定性 Tool prelude 与统一 Tool loop |
+
+`AGENT_ORCHESTRATOR_ENABLED` 只保留为旧部署兼容映射，新配置使用 `AGENT_RUNTIME_MODE`。
+
+## 四层缓存
+
+| 层 | 实现 | 当前策略 |
+|---|---|---|
+| 客户端 | TanStack Query | 30 秒 stale、5 分钟 GC、mutation 精确失效 |
+| 请求内 | React `cache()` | 单次 Server Component 请求内去重 |
+| 应用 | Redis + 内存降级 | 限流、导出缓存、指标与 RAG 缓存 |
+| Provider | DeepSeek prompt cache + MiniMax 实验骨架 | 实验默认关闭；Bailian Qwen 当前记录用量 |
+
+## 生产与发布
+
+生产环境使用 Nginx HTTPS、Next.js standalone、systemd `lumenlab.service`、本机 PostgreSQL/Redis 与七牛云 Kodo。服务器按 `releases/<commit>` 保存运行单元，`current` 符号链接完成原子切换。
+
+`scripts/deploy.sh` 提供 bootstrap、deploy、rollback、status：
+
+- 部署前检查 GitHub Actions CI。
+- migration 前创建 `pg_dump` 快照并保留最近 3 份。
+- 3002 端口执行新 release 健康预检。
+- 切换后同时检查本机 3000 和 HTTPS `/api/health`。
+- 失败时恢复上一 release；服务器保留当前与一个可回滚版本。
+
+CI 在 Ubuntu 上执行依赖安装、Prisma、lockfile、lint、TypeScript、全量测试、pgvector migration、build 和 whitespace check，并在 macOS 上复核 lockfile 一致性。
+
+## 当前边界
+
+- Qwen3.7-Plus 与 `pi-ai` 仍是默认关闭的发布 POC，不代表所有生产账号已开放。
+- `legacy` 仍是 Runtime 默认模式；`shadow` / `new` 需要显式配置。
+- Prompt 重排与 MiniMax 主动缓存实验默认关闭，启用前应先收集基线。
+- Agent 审批后会立即执行 Tool 并显示终态，但不会自动恢复此前暂停的 Provider continuation；需要用户发送下一条消息继续。
+- `web.fetch` 只访问 `WEB_FETCH_ALLOWLIST` 中通过公开地址校验的域名。
+
+## 关键文档
+
+- [README](README.md)：GitHub 项目展示、快速开始与生产发布。
+- [在线文档源](docs/LumenLabDocs/README.md)：用户指南、架构与 API 参考。
+- [Skills](SKILLS.md)：13 个 Skill、17 个 Tool 与审批模型。
+- [Implementation](IMPLEMENTATION.md)：四层缓存实现。
+- [Product](PRODUCT.md)：产品定位与设计原则。
+- [QA: Pi/Qwen POC](docs/qa/pi-ai-qwen-poc-2026-07-16.md)：Provider POC 的实现与验证记录。

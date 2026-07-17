@@ -43,24 +43,24 @@
 - 请求：`multipart/form-data`
 - 响应：更新后的头像 URL。
 
-### `GET /api/user/api-keys`
+### `GET /api/user/profile/avatar`
 
-- 描述：列出当前用户自行配置的 API Key（自托管模式下生效）。
-- 认证：需登录。
-- 响应：`[{ id, provider, keyMask, createdAt, ... }]`
+- 描述：读取当前用户头像。七牛存储返回短期签名重定向，本地存储返回图片流。
+- 认证：需登录，且只能读取自己的头像。
 
 ### `POST /api/user/api-keys`
 
 - 描述：保存或更新用户自行提供的 API Key。
 - 认证：需登录。
-- 请求：`{ provider, key }`
-- 响应：保存后的 API Key 摘要信息。
+- 请求：`{ provider, apiKey }`，其中 provider 为 `deepseek`、`minimax`、`mineru` 或 `bailian`。
+- 响应：`{ provider, keyPrefix }`。仅在 `USER_API_KEYS_ENABLED=1|true` 时开放。
 
 ### `POST /api/user/generate-profile`
 
-- 描述：为当前用户生成新的凭证配置（CredentialProfile），用于分配新的模型额度或密钥组。
+- 描述：根据昵称、职业和补充信息调用 DeepSeek 生成个性化 `profilePrompt`，并写入当前用户资料。
 - 认证：需登录。
-- 响应：包含新配置 ID 与状态信息。
+- 请求：`{ nickname?, profession?, details? }`
+- 响应：`{ profilePrompt }`
 
 ### `GET /api/me/usage`
 
@@ -78,6 +78,12 @@
 ---
 
 ## Chat
+
+### `GET /api/chat/models`
+
+- 描述：返回当前部署和当前账号实际可用的聊天模型。Qwen 只有在灰度开关、百炼工作空间和用户凭据都可用时才会出现。
+- 认证：需登录。
+- 响应：`{ models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'minimax-m3', 'qwen3.7-plus'?] }`
 
 ### `POST /api/chat`
 
@@ -103,27 +109,13 @@
 
 - 描述：获取当前用户的对话列表。
 - 认证：需登录。
-- 响应：`[{ id, title, updatedAt, projectId, ... }]`
-
-### `POST /api/conversations`
-
-- 描述：创建新对话。
-- 认证：需登录。
-- 请求：`{ title?, projectId? }`
-- 响应：新创建的对话对象。
+- 响应：`{ conversations: [{ id, title, model, modelLock, thinkingEnabled, updatedAt }] }`，这里只列出普通聊天（`projectId = null`）。
 
 ### `GET /api/conversations/[id]`
 
 - 描述：获取指定对话详情与消息历史。
 - 认证：需登录，且只能访问自己的对话。
-- 响应：`{ id, title, messages: [...], ... }`
-
-### `PATCH /api/conversations/[id]`
-
-- 描述：更新对话标题或元数据。
-- 认证：需登录。
-- 请求：`{ title? }`
-- 响应：更新后的对话对象。
+- 响应：`{ conversation: { id, title, messages: [...], ... } }`
 
 ### `DELETE /api/conversations/[id]`
 
@@ -282,12 +274,11 @@
 - 认证：需登录。
 - 响应：`{ success: true }`
 
-### `POST /api/artifacts/[id]/export`
+### `GET /api/artifacts/[id]/export?format=markdown|docx|pdf`
 
 - 描述：将 Artifact 导出为 Markdown、DOCX 或 PDF。
 - 认证：需登录。
-- 请求：`{ format: 'markdown' | 'docx' | 'pdf' }`
-- 响应：导出后的下载链接或文件内容。
+- 响应：直接返回下载文件，并通过 `X-Cache: HIT|MISS` 标识 Redis 导出缓存状态。
 
 ---
 
@@ -297,12 +288,12 @@
 
 - 描述：将上传的 PDF 转换为 Markdown，使用 MinerU Precision 解析。
 - 认证：需登录。
-- 请求：`multipart/form-data` 或 `{ fileUrl }`
-- 响应：`{ markdown, metadata }`
+- 请求：`multipart/form-data`，字段为 `file`，可选一次性 `mineruToken`；单文件上限 200MB。
+- 响应：`text/event-stream`，逐步返回上传、模型解析、完成或失败事件；完成事件包含 `conversionId`、Markdown、元数据与图片资源列表。
 
-### `POST /api/tools/conversions/*`
+### `/api/tools/conversions/*`
 
-- 描述：文档转换记录与完整包生成入口。`/api/tools/conversions` 管理转换列表，`/api/tools/conversions/[id]` 读取单条转换详情。
+- 描述：文档转换记录、图片资源、完整包下载和保存到项目的入口。列表与详情使用 GET，单条记录支持 DELETE，下载与资源使用 GET，保存到项目使用 POST。
 - 认证：需登录。
 - 请求与响应：具体形状取决于转换类型，通常为异步任务 ID。
 
@@ -343,13 +334,14 @@
 
 - 描述：健康检查端点，返回应用运行状态。
 - 认证：公开。
-- 响应：`{ status: 'ok', version? }`
+- 响应：`{ status: 'healthy' | 'degraded' | 'unhealthy', timestamp, checks: { database, redis } }`。数据库失败返回 503；仅 Redis 失败时返回 200 + `degraded`。
 
 ### `GET /api/metrics/cache`
 
 - 描述：返回四层缓存的运行指标，用于性能观察与调试。
-- 认证：需登录（管理员视角）或根据部署策略公开。
-- 响应：`{ hits, misses, layers: [...] }`
+- 认证：需登录，只返回当前用户的 token/cache 统计与全局导出、RAG 缓存摘要。
+- 查询：`days=1..90`，或 `range=cycle`，也可传 `start` / `end`。
+- 响应：包含总体、每日、provider、project、tokenUsage、exports 与 rag 指标。
 
 ---
 

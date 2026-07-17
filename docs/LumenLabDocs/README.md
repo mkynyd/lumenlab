@@ -1,6 +1,8 @@
 # LumenLab 文档
 
-> 本文档面向 LumenLab 普通用户。LumenLab 是一个面向大学计算机课程的 AI 学习工作台，集成 AI 对话、项目资料管理、文档解析、受控 Agent 和成果导出。
+> 本文档面向 LumenLab 普通用户。LumenLab 是一个面向学习、研究与课程项目的 AI 工作台，集成 AI 对话、项目资料管理、文档解析、受控 Agent 和成果导出。
+>
+> 在线版本：[lab.mkynstudio.top/docs](https://lab.mkynstudio.top/docs) · 更新日期：2026-07-17
 
 ## 文档导航
 
@@ -8,6 +10,7 @@
 
 - [产品概览](./overview.md) — 产品定位、目标用户、核心特性
 - [快速开始](./getting-started.md) — 注册码、注册登录、第一次对话、项目资料、成果导出
+- [部署](./deployment.md) — 当前生产发布流程与自托管方式
 
 ### 使用指南
 
@@ -33,4 +36,3 @@
 - [数据模型](./architecture/data-model.md)
 - [API 参考](./reference/api.md)
 - [配置与环境变量](./reference/configuration.md)
-- [部署](./deployment.md)

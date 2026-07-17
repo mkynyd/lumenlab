@@ -1,11 +1,14 @@
 # LumenLab
 
-面向大学计算机课程的 AI 实验工作台。学生上传课件、实验数据、代码和笔记后，通过 Skill Router 与受控的 Agent 模式获得基于真实资料的 AI 回答，并把有价值的回答保存为可导出的成果。
+面向学习、研究与课程项目的 AI 工作台。用户上传课件、论文、实验数据、代码和笔记后，通过 Skill Router 与受控 Agent 获得基于真实资料的回答，并把有价值的内容保存为可导出的成果。
 
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
 ![TypeScript 5](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)
 ![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-16-pgvector?logo=postgresql)
 ![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react)
+[![CI](https://github.com/mkynyd/lumenlab/actions/workflows/ci.yml/badge.svg)](https://github.com/mkynyd/lumenlab/actions/workflows/ci.yml)
+
+[在线体验](https://lab.mkynstudio.top) · [在线文档](https://lab.mkynstudio.top/docs) · [注册码管理端](https://github.com/mkynyd/course-ai-regadmin)
 
 ## 目录
 
@@ -21,7 +24,7 @@
 
 ## 项目简介
 
-LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目"组织课程资料、对话、Agent 任务和可导出成果。
+LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导出成果，适用于课程学习、考试复习、论文阅读写作、实验与代码项目。
 
 - 通过 Skill Router 自动识别学习场景，在项目资料、论文、考试、代码和文档任务之间切换合适的 Skill。
 - 通过受控的 Agent 模式让模型以 Skill 绑定 + Tool 调用的方式完成多步任务，所有副作用由服务端 Policy Engine 审批。
@@ -30,7 +33,7 @@ LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目
 
 ### 目标用户
 
-需要整理课程资料、实验数据、代码和复习材料的大学生。用户通常在桌面端持续使用，需要快速切换项目上下文并保持工作区专注。
+需要整理课程资料、论文、实验数据、代码和复习材料的学生、教师与自主学习者。桌面端适合持续项目工作，移动端用于查看、轻量输入和审批确认。
 
 ## 核心特性
 
@@ -46,7 +49,7 @@ LumenLab 是一个面向大学生与学习者的 AI 学习平台，围绕"项目
 
 ### 受控 Agent 模式
 
-入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek 使用 native `web.search` 并在其他工具上保留 adapter 内部 XML/DSML fallback，MiniMax 使用 native `tool_use`；两者共享同一套工具循环、Policy、审批、审计与结构化事件。
+入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek 使用 native `web.search` 并在其他工具上保留 adapter 内部 XML/DSML fallback，MiniMax 使用 native `tool_use`，Qwen 使用 DashScope 原生 Function Calling；三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
 
 服务端 Policy Engine 拦截所有 `tool_use`，按 L0–L4 风险等级决定执行、预批准或逐次确认。
 
@@ -150,7 +153,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 | 语言 | TypeScript 5, React 19 |
 | 数据库 | PostgreSQL 16 + pgvector 0.8 |
 | ORM | Prisma 7.8 |
-| AI 调用 | Anthropic SDK (兼容 DeepSeek / MiniMax Anthropic 接口) |
+| AI 调用 | ProviderAdapter：Anthropic SDK、DashScope 原生 HTTP、可选 `pi-ai` 隔离适配 |
 | 缓存 | Redis 7 + TanStack Query + React `cache()` |
 | 认证 | NextAuth.js v5 (Credentials Provider, JWT) |
 | 样式 | Tailwind CSS 4 |
@@ -331,7 +334,7 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 | 客户端状态 | TanStack Query | 30s stale, 5min GC, 精确失效 |
 | 请求去重 | React `cache()` 数据层 | 单次 request 内 DB 查询去重 |
 | 应用缓存 | Redis + 内存降级 | 滑动窗口限流, 导出缓存 1h TTL |
-| 外部 API | DeepSeek KV + MiniMax Prompt Cache | 实验开关默认关闭 |
+| 外部 API | DeepSeek KV + MiniMax Prompt Cache；Bailian Qwen 用量统计 | 缓存实验默认关闭 |
 
 ### Agent 数据模型
 
@@ -364,7 +367,8 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 - Node.js 20+
 - PostgreSQL 16 + pgvector
 - Redis 7
-- course-ai-regadmin 管理端发布的注册码与密钥组
+- 中央模式：course-ai-regadmin 发布的注册码与密钥组
+- 自托管模式：通过 `scripts/seed-dev-access.ts` 初始化账号与用户 API Key
 
 ### 1. 安装依赖
 
@@ -390,6 +394,9 @@ cp .env.example .env
 | `REGISTRATION_SYNC_SECRET` | 与 course-ai-regadmin 共享的同步密钥 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | RSA 私钥 (PEM base64) |
 | `AGENT_RUNTIME_MODE` | `legacy` / `shadow` / `new`，默认 `legacy` |
+| `AGENT_PROVIDER_ADAPTER` | `legacy` / `pi`，默认 `legacy`；`pi` 仅用于 DeepSeek / MiniMax POC |
+| `MODEL_QWEN_ENABLED` | Qwen3.7-Plus 灰度开关，默认 `false` |
+| `BAILIAN_WORKSPACE_ID` | 启用 Qwen 聊天时必填 |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛云 Kodo 密钥（生产必填） |
 | `QINIU_BUCKET` | Kodo 空间名 |
 | `AUTH_URL` | 生产环境: `https://lab.mkynstudio.top` |
@@ -406,7 +413,7 @@ npx prisma migrate deploy
 npm run dev
 ```
 
-打开 `http://localhost:3000`，使用邮箱、密码和有效注册码创建账户。
+打开 `http://localhost:3000`。中央模式使用有效注册码注册；自托管开发模式可先运行 `USER_API_KEYS_ENABLED=1 npm run seed:dev-access` 创建本地账号与凭据。
 
 ## 使用指南
 
@@ -516,10 +523,8 @@ npx prisma migrate status
 - `npm run lint` 代码风格检查。
 - 遵循项目现有的代码组织模式。
 - API Key 等敏感信息禁止硬编码。
-- 新增 Agent Tool / Skill 时在 `src/lib/tools/registry.ts` 或 `src/lib/skills/registry.ts` 中注册，并补齐对应的 `*manifest.ts` 与测试。
+- 新增 Agent Tool 时在 `src/lib/tools/registry.ts` 注册并补测试；新增 Skill 时在 `.lumenlab/skills/<category>/<skill>/` 提供 `SKILL.md` 与 `policy.json`。
 
 ### 相关项目
 
 - [course-ai-regadmin](https://github.com/mkynyd/course-ai-regadmin) — 注册码管理后台，负责注册码生成、密钥组管理和发布同步。
-
-[MIT](LICENSE)

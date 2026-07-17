@@ -9,7 +9,7 @@
 | Client State | TanStack Query | 30 秒 stale、5 分钟 GC、窗口聚焦刷新、mutation 精确失效 |
 | Server Request | React `cache()` data layer | 仅单次 Server Component render/request 内去重 |
 | Application | Redis + 内存降级 | 速率限制滑动窗口、导出缓存 1 小时 TTL、指标计数 |
-| External API | DeepSeek/MiniMax 指标与实验骨架 | 实验默认关闭，环境变量启用后需重启 |
+| External API | DeepSeek/MiniMax 指标与实验骨架，Bailian Qwen 用量统计 | 实验默认关闭，环境变量启用后需重启 |
 
 ## Phase 1: TanStack Query
 
@@ -48,7 +48,7 @@ REDIS_URL="redis://localhost:6379"
 `GET /api/metrics/cache?days=7` 返回：
 
 - 总体和每日 token 命中率
-- DeepSeek/MiniMax provider 对比
+- DeepSeek/MiniMax/Bailian provider 对比
 - Artifact Markdown/DOCX/PDF 导出命中率
 
 Settings 使用 CSS 绘制轻量柱状条。实验代码默认关闭：

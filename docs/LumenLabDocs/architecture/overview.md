@@ -9,8 +9,9 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 - **前端框架**：Next.js 16 App Router、React 19、TypeScript、Tailwind CSS 4
 - **数据库**：PostgreSQL + pgvector，使用 Prisma 7 作为 ORM
 - **缓存**：Redis 可选；Redis 不可用时核心功能会降级到内存或数据库
-- **AI 调用**：DeepSeek（对话 / 推理）、MiniMax（多模态）、阿里云百炼（RAG 嵌入）
-- **部署**：Docker Compose（PostgreSQL + Redis）或单容器 + 外部数据库
+- **AI 调用**：DeepSeek（对话 / 推理）、MiniMax（多模态与文档解析）、阿里云百炼（RAG 嵌入与可选 Qwen3.7-Plus 聊天）
+- **Provider 层**：项目自有 DeepSeek / MiniMax / Bailian Qwen Adapter；DeepSeek / MiniMax 可切换到隔离的 `pi-ai` POC
+- **部署**：生产使用 Next.js standalone + systemd + Nginx，PostgreSQL / Redis 绑定本机环回；本地依赖也可用 Docker Compose 启动
 
 ## 应用路由结构
 
@@ -68,7 +69,7 @@ src/app/api/chat/route.ts
 AgentRuntime.run(input)
   ├─ ContextAssembler 校验项目、文件与用户边界
   ├─ Skill Router、系统提示词、检索上下文与模型路由
-  ├─ ProviderAdapter.startRound() 统一 DeepSeek / MiniMax 首轮调用
+  ├─ ProviderAdapter.startRound() 统一 DeepSeek / MiniMax / Bailian Qwen 首轮调用
   ├─ new 模式可先运行确定性工具前奏
   ├─ AgentLoop 处理规范化 Tool call、去重、轮次与停止条件
   │        └─ ToolRunner 统一执行 Policy → 审批 → handler → audit → persistence
@@ -82,7 +83,7 @@ response-stream.ts
   └─ 浏览器 useChat 按原协议消费
 ```
 
-`AgentRuntime` 不依赖 `NextRequest`、`NextResponse` 或 SSE 文本格式，Provider 特有的工具名、原生 block、XML/DSML fallback 与 continuation transcript 也只存在于 `ProviderAdapter` 边界内。来源由 `src/lib/agent/sources.ts` 聚合去重，并通过 `ConversationPersistence` 写入同一条 `Message.sources` JSON 字段，前端来源展示协议保持不变。
+`AgentRuntime` 不依赖 `NextRequest`、`NextResponse` 或 SSE 文本格式，Provider 特有的工具名、原生 block、XML/DSML fallback 与 continuation transcript 也只存在于 `ProviderAdapter` 边界内。DeepSeek / MiniMax 默认使用项目自有 Adapter，也可通过 `AGENT_PROVIDER_ADAPTER=pi` 切到隔离 POC；Qwen 始终由 `BailianQwenAdapter` 承接。来源由 `src/lib/agent/sources.ts` 聚合去重，并通过 `ConversationPersistence` 写入同一条 `Message.sources` JSON 字段，前端来源展示协议保持不变。
 
 ## Runtime 发布模式
 

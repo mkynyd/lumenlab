@@ -13,7 +13,7 @@
 | `AUTH_SECRET` | 必需 | `please-change-this` | Auth.js v5 会话签名密钥，建议用 `openssl rand -base64 32` 生成 |
 | `AUTH_URL` | 必需 | `https://lab.mkynstudio.top` | 认证回调地址，需与最终访问域名一致 |
 | `ENCRYPTION_KEY` | 必需 | `please-generate-a-64-char-hex-string` | AES-256-GCM 加密密钥，需 64 位十六进制字符；用 `openssl rand -hex 32` 生成 |
-| `REGISTRATION_CODE_PEPPER` | 必需 | — | Alpha 注册码哈希胡椒值，与管理端使用同一值 |
+| `REGISTRATION_CODE_PEPPER` | 必需 | — | 主业务落库注册码摘要的独立胡椒值；不要复用管理端 fingerprint secret |
 | `REGISTRATION_SYNC_SECRET` | 必需 | — | 注册码同步请求校验密钥，与管理端使用同一值 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | 必需 | — | Base64 编码的 RSA 私钥 PEM，用于解密注册码同步快照 |
 | `DEEPSEEK_BASE_URL` | 必需 | `https://api.deepseek.com` | DeepSeek API 基础地址 |
@@ -44,7 +44,7 @@
 
 - `AUTH_SECRET`：至少 32 字节，建议 `openssl rand -base64 32`。
 - `ENCRYPTION_KEY`：固定 64 字符十六进制，对应 32 字节，建议 `openssl rand -hex 32`。
-- `REGISTRATION_CODE_PEPPER` 与 `REGISTRATION_SYNC_SECRET`：各自独立生成，长度建议不低于 48 字节，例如 `openssl rand -base64 48`。
+- `REGISTRATION_CODE_PEPPER` 与 `REGISTRATION_SYNC_SECRET`：各自独立生成，长度建议不低于 48 字节，例如 `openssl rand -base64 48`。管理端的 `REGADMIN_CODE_FINGERPRINT_SECRET` 也必须独立；同步快照包含受加密保护的注册码明文，主业务收到后再用自己的 pepper 计算摘要。
 - `REGISTRATION_SYNC_PRIVATE_KEY_BASE64`：将 RSA 私钥 PEM 文件进行 Base64 编码后填入。
 
 ### 数据库
@@ -64,7 +64,7 @@
 
 该开关没有前端 UI，需由部署者通过环境变量控制。
 
-支持的 provider 包括 `deepseek`、`minimax`、`mineru`、`bailian`。项目资料中的 PDF/图片解析依赖 MiniMax，Office/WPS/iWork 解析依赖 MinerU，向量检索依赖 Bailian；缺失对应密钥时，相关能力会报错或降级。
+支持的 provider 包括 `deepseek`、`minimax`、`mineru`、`bailian`。项目资料中的 PDF/图片解析依赖 MiniMax，Office/WPS/iWork 解析依赖 MinerU，向量检索与可选的 Qwen3.7-Plus 聊天共用 Bailian 凭据；缺失对应密钥时，相关能力会报错、从模型目录隐藏或降级。
 
 ### Agent 与联网
 
