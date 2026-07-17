@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { SettingsPanel } from "@/components/settings/settings-panel";
+import { ProfileDialog } from "@/components/user/profile-dialog";
+import { useHashDialog } from "@/lib/hooks/use-hash-dialog";
 import { AvatarMark } from "@/components/user/avatar-mark";
 import {
   AlertDialog,
@@ -58,7 +60,7 @@ import {
   Trash,
   Xmark,
 } from "iconoir-react";
-import { BarChart3, ChevronDown, LogOut, Settings } from "lucide-react";
+import { BarChart3, ChevronDown, LogOut, Settings, UserRound } from "lucide-react";
 import {
   useConversations,
   useDeleteConversation,
@@ -100,6 +102,17 @@ export function Sidebar({
   const deleteProjectMutation = useDeleteProject();
   const deleteConversionMutation = useDeleteConversion();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const { closeDialog: closeSettingsDialog } = useHashDialog(
+    "#settings",
+    settingsOpen,
+    setSettingsOpen
+  );
+  const { closeDialog: closeProfileDialog } = useHashDialog(
+    "#profile",
+    profileOpen,
+    setProfileOpen
+  );
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountPointerHandledRef = useRef(false);
   const [conversationDeleteTarget, setConversationDeleteTarget] = useState<{
@@ -573,7 +586,21 @@ export function Sidebar({
               align="end"
               className="w-48 workbench-border-glow"
             >
-              <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setSettingsOpen(false);
+                  setProfileOpen(true);
+                }}
+              >
+                <UserRound size={14} strokeWidth={2} />
+                个人资料
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setProfileOpen(false);
+                  setSettingsOpen(true);
+                }}
+              >
                 <Settings size={14} strokeWidth={2} />
                 设置
               </DropdownMenuItem>
@@ -688,12 +715,33 @@ export function Sidebar({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <Dialog
+          open={settingsOpen}
+          onOpenChange={(next) => {
+            if (next) {
+              setProfileOpen(false);
+              setSettingsOpen(true);
+            } else {
+              closeSettingsDialog();
+            }
+          }}
+        >
           <DialogContent className="max-w-[min(960px,calc(100vw-2rem))] p-0 gap-0 overflow-hidden sm:max-w-[960px] rounded-3xl">
             <DialogTitle className="sr-only">设置</DialogTitle>
             <SettingsPanel />
           </DialogContent>
         </Dialog>
+        <ProfileDialog
+          open={profileOpen}
+          onOpenChange={(next) => {
+            if (next) {
+              setSettingsOpen(false);
+              setProfileOpen(true);
+            } else {
+              closeProfileDialog();
+            }
+          }}
+        />
       </aside>
     </SidebarProvider>
   );

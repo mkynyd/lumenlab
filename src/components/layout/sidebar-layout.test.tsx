@@ -34,6 +34,9 @@ vi.mock("@/lib/hooks/use-conversions", () => ({
 vi.mock("@/components/settings/settings-panel", () => ({
   SettingsPanel: () => null,
 }));
+vi.mock("@/components/user/profile-dialog", () => ({
+  ProfileDialog: () => null,
+}));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 import { Sidebar } from "@/components/layout/sidebar";
