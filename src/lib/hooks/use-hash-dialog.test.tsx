@@ -68,4 +68,28 @@ describe("useHashDialog", () => {
     expect(result.current.open).toBe(false);
     expect(window.location.hash).toBe("");
   });
+
+  it("does not push or replace history when deep-linking on mount", () => {
+    window.history.replaceState(null, "", "/chat#settings");
+    const pushSpy = vi.spyOn(window.history, "pushState");
+    const replaceSpy = vi.spyOn(window.history, "replaceState");
+    const { result } = setup("#settings");
+    expect(result.current.open).toBe(true);
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
+  });
+
+  it("cleans up in place when closed directly via setOpen(false), bypassing closeDialog", () => {
+    const backSpy = vi.spyOn(window.history, "back").mockImplementation(() => {});
+    const { result } = setup("#profile");
+    act(() => result.current.setOpen(true));
+    expect(window.location.hash).toBe("#profile");
+    // Bypass closeDialog: an external close while our pushed entry is current.
+    act(() => result.current.setOpen(false));
+    expect(result.current.open).toBe(false);
+    expect(window.location.hash).toBe("");
+    // pushedRef must have been reset: a later closeDialog cannot navigate back.
+    act(() => result.current.closeDialog());
+    expect(backSpy).not.toHaveBeenCalled();
+  });
 });

@@ -7,6 +7,9 @@ import { useCallback, useEffect, useRef } from "react";
  * - opening pushes the hash (browser back closes the dialog via popstate)
  * - deep-linking: mounts open when the URL already carries the hash
  * - popstate drives open state both ways so history navigation feels native
+ * - closing should go through closeDialog() so a pushed entry is exited via
+ *   history.back(); a direct setOpen(false) is still cleaned up in place
+ *   (hash stripped, no stale back), but loses that history symmetry
  */
 export function useHashDialog(
   hash: `#${string}`,
@@ -54,6 +57,18 @@ export function useHashDialog(
         "",
         window.location.pathname + window.location.search
       );
+    } else if (wasOpen && pushedRef.current && window.location.hash === hash) {
+      // Consumer bypassed closeDialog() and called setOpen(false) directly
+      // while this hook's pushed entry is still current: clear the hash in
+      // place and reset pushed so a later closeDialog() cannot fire a stale
+      // history.back(). (The closeDialog path never reaches this branch — it
+      // resets pushed before back(), and back() changes the hash first.)
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search
+      );
+      pushedRef.current = false;
     }
   }, [open, hash]);
 
@@ -79,6 +94,9 @@ export function useHashDialog(
       window.history.back();
       return;
     }
+    // Our pushed entry (if any) was already overwritten by another dialog —
+    // drop the stale claim so a later close cannot trigger a bogus back().
+    pushedRef.current = false;
     setOpen(false);
   }, [hash, setOpen]);
 
