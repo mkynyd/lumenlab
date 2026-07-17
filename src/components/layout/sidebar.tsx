@@ -101,6 +101,8 @@ export function Sidebar({
   const deleteConversationMutation = useDeleteConversation();
   const deleteProjectMutation = useDeleteProject();
   const deleteConversionMutation = useDeleteConversion();
+  // 两个 useHashDialog 的声明顺序影响互斥切换时的 strip/push 时序：
+  // 先声明者的 effect 先执行（先清旧 hash 再 push 新 hash），不要调换。
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const { closeDialog: closeSettingsDialog } = useHashDialog(
@@ -718,6 +720,7 @@ export function Sidebar({
         <Dialog
           open={settingsOpen}
           onOpenChange={(next) => {
+            // 防御性：受控 Dialog 不会自行触发 open=true，此处兜底互斥。
             if (next) {
               setProfileOpen(false);
               setSettingsOpen(true);
@@ -734,6 +737,7 @@ export function Sidebar({
         <ProfileDialog
           open={profileOpen}
           onOpenChange={(next) => {
+            // 防御性：受控 Dialog 不会自行触发 open=true，此处兜底互斥。
             if (next) {
               setSettingsOpen(false);
               setProfileOpen(true);

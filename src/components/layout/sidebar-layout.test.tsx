@@ -1,9 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   usePathname: vi.fn(),
+}));
+
+const profileDialogProps = vi.hoisted(() => ({
+  current: null as null | {
+    open: boolean;
+    onOpenChange: (next: boolean) => void;
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -35,7 +42,13 @@ vi.mock("@/components/settings/settings-panel", () => ({
   SettingsPanel: () => null,
 }));
 vi.mock("@/components/user/profile-dialog", () => ({
-  ProfileDialog: () => null,
+  ProfileDialog: (props: {
+    open: boolean;
+    onOpenChange: (next: boolean) => void;
+  }) => {
+    profileDialogProps.current = props;
+    return null;
+  },
 }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
@@ -68,5 +81,47 @@ describe("main workspace navigation layout", () => {
 
     expect(screen.getByRole("button", { name: "转换" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文档" })).not.toBeInTheDocument();
+  });
+});
+
+describe("sidebar dialog hash wiring", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    profileDialogProps.current = null;
+    window.history.replaceState(null, "", "/chat");
+  });
+
+  async function openProfileFromAccountMenu() {
+    const props = { mobileOpen: false, onClose: vi.fn(), onExpand: vi.fn() };
+    render(<Sidebar {...props} collapsed={false} />);
+    // The account trigger toggles the controlled menu from its own
+    // onPointerDown (preventDefault), not via the Radix trigger handler.
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "打开账户菜单" })
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "个人资料" })
+    );
+  }
+
+  it("pushes #profile into the URL when the profile dialog opens from the account menu", async () => {
+    await openProfileFromAccountMenu();
+
+    expect(profileDialogProps.current?.open).toBe(true);
+    expect(window.location.hash).toBe("#profile");
+  });
+
+  it("closes the dialog through closeDialog (history.back), not a bare setOpen", async () => {
+    const backSpy = vi
+      .spyOn(window.history, "back")
+      .mockImplementation(() => {});
+    await openProfileFromAccountMenu();
+    expect(window.location.hash).toBe("#profile");
+
+    // jsdom does not reliably dispatch popstate from history.back(), so we
+    // assert on the back() call itself: closeDialog() routes a pushed entry
+    // through history.back() instead of flipping open state directly.
+    act(() => profileDialogProps.current?.onOpenChange(false));
+    expect(backSpy).toHaveBeenCalledTimes(1);
   });
 });
