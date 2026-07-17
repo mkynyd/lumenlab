@@ -107,14 +107,19 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
       return;
     }
     setAvatarError(null);
+    const sessionSnapshot = sessionRef.current;
     const reader = new FileReader();
     reader.onload = () => {
+      if (sessionSnapshot !== sessionRef.current) return;
       setImageSrc(reader.result as string);
       setCrop({ x: 0, y: 0 });
       setZoom(1);
       setView("crop");
     };
-    reader.onerror = () => setAvatarError("图片读取失败，请重试");
+    reader.onerror = () => {
+      if (sessionSnapshot !== sessionRef.current) return;
+      setAvatarError("图片读取失败，请重试");
+    };
     reader.readAsDataURL(file);
   }
 

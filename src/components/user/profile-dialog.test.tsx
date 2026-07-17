@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // jsdom has no ResizeObserver, which the radix Slider in the crop view needs.
@@ -215,5 +215,20 @@ describe("ProfileDialog", () => {
     expect(
       screen.queryByText("仅支持 JPG、PNG 或 WebP 头像")
     ).not.toBeInTheDocument();
+  });
+
+  it("ignores the file result when the dialog closes before the FileReader completes", async () => {
+    renderDialog();
+    fireEvent.change(fileInput(), {
+      target: {
+        files: [new File(["x"], "photo.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    // Let the pending FileReader fire its (stale) load event.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(screen.queryByTestId("cropper")).not.toBeInTheDocument();
   });
 });

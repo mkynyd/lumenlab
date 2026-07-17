@@ -5,11 +5,6 @@ const mocks = vi.hoisted(() => ({
   useCacheMetrics: vi.fn(),
 }));
 
-vi.mock("next-auth/react", () => ({
-  signOut: vi.fn(),
-  useSession: () => ({ data: { user: { email: "user@example.com" } } }),
-}));
-
 vi.mock("@/components/ui/theme-toggle", () => ({
   ThemeToggle: () => <div>Theme toggle</div>,
 }));
@@ -82,5 +77,12 @@ describe("SettingsPanel token usage", () => {
     expect(screen.getByText("输入（命中缓存）")).toBeInTheDocument();
     expect(screen.getByText("输入（未命中缓存）")).toBeInTheDocument();
     expect(screen.getByText("输出")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "个性化" }));
+
+    expect(screen.getByText("AI 画像")).toBeInTheDocument();
+    expect(screen.queryByText("账户信息")).not.toBeInTheDocument();
+    expect(screen.queryByText("退出登录")).not.toBeInTheDocument();
+    expect(screen.queryByText("上传头像")).not.toBeInTheDocument();
   });
 });

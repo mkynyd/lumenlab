@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -123,5 +123,33 @@ describe("sidebar dialog hash wiring", () => {
     // through history.back() instead of flipping open state directly.
     act(() => profileDialogProps.current?.onOpenChange(false));
     expect(backSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches from settings to profile exclusively", async () => {
+    const props = { mobileOpen: false, onClose: vi.fn(), onExpand: vi.fn() };
+    render(<Sidebar {...props} collapsed={false} />);
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "打开账户菜单" })
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "设置" }));
+    expect(window.location.hash).toBe("#settings");
+
+    // The open settings dialog aria-hides the sidebar, so the trigger and
+    // menu items are queried with hidden: true.
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "打开账户菜单", hidden: true })
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "个人资料", hidden: true })
+    );
+
+    expect(window.location.hash).toBe("#profile");
+    expect(profileDialogProps.current?.open).toBe(true);
+    // The settings dialog (the only real Radix dialog in the tree, since
+    // ProfileDialog is mocked) must be gone: the two are mutually exclusive.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 });
