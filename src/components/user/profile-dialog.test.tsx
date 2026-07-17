@@ -172,4 +172,48 @@ describe("ProfileDialog", () => {
     expect(screen.queryByTestId("cropper")).not.toBeInTheDocument();
     expect(mocks.uploadMutate).not.toHaveBeenCalled();
   });
+
+  it("shows an error and returns to the main view when the avatar upload fails", async () => {
+    mocks.uploadMutate.mockRejectedValue(new Error("网络错误"));
+    renderDialog();
+    fireEvent.change(fileInput(), {
+      target: {
+        files: [new File(["x"], "photo.png", { type: "image/png" })],
+      },
+    });
+    expect(await screen.findByTestId("cropper")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    expect(await screen.findByText("网络错误")).toBeInTheDocument();
+    expect(screen.queryByTestId("cropper")).not.toBeInTheDocument();
+  });
+
+  it("keeps the dialog open and shows an error when saving the nickname fails", async () => {
+    mocks.updateMutate.mockRejectedValue(new Error("boom"));
+    const { onOpenChange } = renderDialog();
+    fireEvent.change(screen.getByLabelText("昵称"), {
+      target: { value: "新昵称" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("保存失败，请重试")).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("resets local state after the dialog is closed", () => {
+    const { rerender } = renderDialog();
+    fireEvent.change(screen.getByLabelText("昵称"), {
+      target: { value: "临时昵称" },
+    });
+    fireEvent.change(fileInput(), {
+      target: {
+        files: [new File(["x"], "a.gif", { type: "image/gif" })],
+      },
+    });
+    expect(screen.getByText("仅支持 JPG、PNG 或 WebP 头像")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    rerender(<ProfileDialog open onOpenChange={vi.fn()} />);
+    expect(screen.getByDisplayValue("MKYN")).toBeInTheDocument();
+    expect(
+      screen.queryByText("仅支持 JPG、PNG 或 WebP 头像")
+    ).not.toBeInTheDocument();
+  });
 });

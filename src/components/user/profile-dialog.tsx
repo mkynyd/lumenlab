@@ -5,7 +5,12 @@ import { useSession } from "next-auth/react";
 import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import { ArrowLeft, Camera, ZoomIn, ZoomOut } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -15,10 +20,10 @@ import {
   useUpdateUserProfile,
   useUploadUserAvatar,
   useUserProfile,
+  type UserProfile,
 } from "@/lib/hooks/use-user-profile";
 import { avatarPresetById } from "@/lib/user-profile";
 import { createCroppedAvatarFile } from "@/lib/avatar-crop";
-import { cn } from "@/lib/utils";
 
 const MAX_AVATAR_UPLOAD_BYTES = 20 * 1024 * 1024;
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
@@ -36,6 +41,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   const uploadAvatar = useUploadUserAvatar();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const croppedAreaRef = useRef<Area | null>(null);
+  // Bumped whenever local state resets, so async continuations from a
+  // previous "session" (e.g. after the dialog closed) skip state writes.
+  const sessionRef = useRef(0);
 
   const profile = profileQuery.data;
   const currentName = profile?.name || session?.user?.name || "";
@@ -52,11 +60,13 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   const [zoom, setZoom] = useState(1);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState(false);
+  const [isCropping, setIsCropping] = useState(false);
 
   const nameValue = name ?? currentName;
   const nameDirty = name !== null && name.trim() !== currentName.trim();
 
   function resetLocalState() {
+    sessionRef.current += 1;
     setView("main");
     setName(null);
     setImageSrc(null);
@@ -64,12 +74,23 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
     setZoom(1);
     setAvatarError(null);
     setSaveError(false);
+    setIsCropping(false);
     croppedAreaRef.current = null;
   }
 
   function handleOpenChange(next: boolean) {
     if (!next) resetLocalState();
     onOpenChange(next);
+  }
+
+  function applyProfileToSession(nextProfile: UserProfile) {
+    return updateSession({
+      user: {
+        name: nextProfile.name,
+        avatarPreset: nextProfile.avatarPreset,
+        image: nextProfile.avatarUrl,
+      },
+    });
   }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -93,6 +114,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
       setZoom(1);
       setView("crop");
     };
+    reader.onerror = () => setAvatarError("图片读取失败，请重试");
     reader.readAsDataURL(file);
   }
 
@@ -103,43 +125,41 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
   async function handleCropConfirm() {
     if (!imageSrc || !croppedAreaRef.current) return;
+    const sessionSnapshot = sessionRef.current;
+    setIsCropping(true);
     try {
       const file = await createCroppedAvatarFile(
         imageSrc,
         croppedAreaRef.current
       );
+      if (sessionSnapshot !== sessionRef.current) return;
       setView("main");
       setImageSrc(null);
       const nextProfile = await uploadAvatar.mutateAsync(file);
-      await updateSession({
-        user: {
-          name: nextProfile.name,
-          avatarPreset: nextProfile.avatarPreset,
-          image: nextProfile.avatarUrl,
-        },
-      });
+      if (sessionSnapshot !== sessionRef.current) return;
+      await applyProfileToSession(nextProfile);
     } catch (error) {
+      if (sessionSnapshot !== sessionRef.current) return;
       setView("main");
       setImageSrc(null);
       setAvatarError(error instanceof Error ? error.message : "上传失败，请重试");
+    } finally {
+      if (sessionSnapshot === sessionRef.current) setIsCropping(false);
     }
   }
 
   async function handleSaveName() {
     setSaveError(false);
+    const sessionSnapshot = sessionRef.current;
     try {
       const nextProfile = await updateProfile.mutateAsync({
         name: nameValue.trim(),
       });
-      await updateSession({
-        user: {
-          name: nextProfile.name,
-          avatarPreset: nextProfile.avatarPreset,
-          image: nextProfile.avatarUrl,
-        },
-      });
+      if (sessionSnapshot !== sessionRef.current) return;
+      await applyProfileToSession(nextProfile);
       handleOpenChange(false);
     } catch {
+      if (sessionSnapshot !== sessionRef.current) return;
       setSaveError(true);
     }
   }
@@ -152,6 +172,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
             <DialogTitle className="mb-5 text-base font-semibold">
               编辑个人资料
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              修改昵称和头像
+            </DialogDescription>
 
             <div className="flex flex-col items-center">
               <button
@@ -181,8 +204,6 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                 accept={AVATAR_ACCEPT}
                 onChange={handleFileChange}
                 className="hidden"
-                aria-hidden="true"
-                tabIndex={-1}
               />
               {avatarError && (
                 <p role="alert" className="mt-2 text-xs text-[var(--color-error)]">
@@ -264,6 +285,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
               <DialogTitle className="text-base font-semibold">
                 裁切头像
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                拖动调整头像裁切区域
+              </DialogDescription>
             </div>
 
             <div className="relative h-64 w-full overflow-hidden rounded-2xl bg-[#1c1c1e]">
@@ -318,10 +342,14 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                 variant="primary"
                 size="md"
                 onClick={handleCropConfirm}
-                disabled={uploadAvatar.isPending}
-                className={cn("rounded-xl px-4")}
+                disabled={uploadAvatar.isPending || isCropping}
+                className="rounded-xl px-4"
               >
-                {uploadAvatar.isPending ? "上传中..." : "确认"}
+                {uploadAvatar.isPending
+                  ? "上传中..."
+                  : isCropping
+                    ? "处理中..."
+                    : "确认"}
               </Button>
             </div>
           </>
