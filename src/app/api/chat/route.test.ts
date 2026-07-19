@@ -1384,7 +1384,7 @@ describe("Streaming tool loop", () => {
           data: expect.objectContaining({
             eventType: "tool_blocked",
             toolId: "project_files.list",
-            payload: expect.objectContaining({ reason: "duplicate_call" }),
+            payload: expect.objectContaining({ reasonCode: "DUPLICATE_CALL" }),
           }),
         })
       );

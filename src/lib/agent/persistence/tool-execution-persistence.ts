@@ -11,6 +11,7 @@ export interface ToolProposal {
   contextSnapshot: {
     projectId?: string;
     selectedFileIds?: string[];
+    runId?: string;
   };
 }
 

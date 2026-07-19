@@ -14,6 +14,7 @@ import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { queryKeys } from "@/lib/query-keys";
 import type { AgentEvent, ApprovalScope } from "@/lib/agent/types";
 import type { AgentSource } from "@/lib/agent/sources";
+import type { AgentPlan } from "@/lib/agent/plan";
 
 export interface AgentTimelineEntry {
   executionId: string;
@@ -27,6 +28,8 @@ export interface AgentTimelineEntry {
 }
 
 export interface AgentSessionState {
+  plan?: AgentPlan;
+  explanations: Array<Extract<AgentEvent, { type: "capability_explained" }>>;
   activeSkill?: {
     skillId: string;
     version: string;
@@ -186,6 +189,7 @@ export function useChat(options: UseChatOptions = {}) {
   >({});
   const [agentSession, setAgentSession] = useState<AgentSessionState>({
     suggestions: [],
+    explanations: [],
   });
   const abortRef = useRef<AbortController | null>(null);
   const conversationIdRef = useRef<string | undefined>(
@@ -260,7 +264,7 @@ export function useChat(options: UseChatOptions = {}) {
       // Abort any still-attached foreground stream before sending a new message.
       abortRef.current?.abort();
       setAgentTimeline({});
-      setAgentSession({ suggestions: [] });
+      setAgentSession({ suggestions: [], explanations: [] });
       const streamSession = streamSessionRef.current + 1;
       streamSessionRef.current = streamSession;
 
@@ -394,6 +398,22 @@ export function useChat(options: UseChatOptions = {}) {
           },
           {
             onAgentEvent: (event) => {
+              if (event.type === "plan_updated") {
+                setAgentSession((current) => ({ ...current, plan: event.plan }));
+                return;
+              }
+              if (event.type === "capability_explained") {
+                setAgentSession((current) => ({
+                  ...current,
+                  explanations: [
+                    ...current.explanations.filter(
+                      (item) => item.capability !== event.capability
+                    ),
+                    event,
+                  ],
+                }));
+                return;
+              }
               if (event.type === "skill_activated") {
                 setAgentSession((current) => ({
                   ...current,
@@ -604,7 +624,7 @@ export function useChat(options: UseChatOptions = {}) {
     setError(null);
     setIsStreaming(false);
     setAgentTimeline({});
-    setAgentSession({ suggestions: [] });
+    setAgentSession({ suggestions: [], explanations: [] });
   }, []);
 
   const loadConversation = useCallback(
@@ -625,7 +645,7 @@ export function useChat(options: UseChatOptions = {}) {
       setError(null);
       setIsStreaming(hasStreamingMessage(nextMessages));
       setAgentTimeline({});
-      setAgentSession({ suggestions: [] });
+      setAgentSession({ suggestions: [], explanations: [] });
     },
     []
   );

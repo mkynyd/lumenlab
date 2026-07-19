@@ -369,6 +369,152 @@ describe("runAgentLoop", () => {
       })
     ).rejects.toBe(providerError);
   });
+
+  it("records only an explicitly linked retry as an automatic recovery", async () => {
+    const initialRound = providerRound({
+      rawContent: "",
+      toolCalls: [
+        {
+          id: "native-failed-1",
+          name: "project_files.list",
+          input: { projectId: "project-1" },
+          source: "native",
+        },
+      ],
+    });
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "failed" as const,
+        executionId: "execution-failed-1",
+        code: "TIMEOUT",
+        error: "timeout",
+      })
+      .mockResolvedValueOnce({
+        status: "succeeded" as const,
+        executionId: "execution-recovery-1",
+        summary: { files: [] },
+      });
+    const emitted: Array<{ type: string; [key: string]: unknown }> = [];
+    const continueRound = vi
+      .fn()
+      .mockResolvedValueOnce(
+        providerRound({
+          rawContent: "",
+          toolCalls: [
+            {
+              id: "native-recovery-1",
+              name: "project_files.list",
+              input: {
+                projectId: "project-1",
+                recoveryOfExecutionId: "execution-failed-1",
+              },
+              source: "native",
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(providerRound({ rawContent: "完成", toolCalls: [] }));
+
+    await runAgentLoop({
+      provider: {
+        provider: "deepseek",
+        stream: vi.fn(),
+        toolProtocol: () => "native",
+        startRound: vi.fn(),
+        continueRound,
+      } as unknown as ProviderAdapter,
+      initialRound,
+      model: "deepseek-v4-pro",
+      thinkingEnabled: true,
+      reasoningEffort: "max",
+      activeTools: [tool("project_files.list")],
+      messages: initialRound.requestMessages,
+      context: {
+        userId: "user-1",
+        conversationId: "conversation-1",
+        projectId: "project-1",
+        sessionApprovals: new Map(),
+      },
+      signal: new AbortController().signal,
+      toolRunner: { run },
+      emit: (event) => emitted.push(event),
+      audit: async () => {},
+    });
+
+    expect(run).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        call: expect.objectContaining({ arguments: { projectId: "project-1" } }),
+      }),
+      expect.any(Function)
+    );
+    expect(emitted).toContainEqual({
+      type: "tool_recovery_attempted",
+      failedExecutionId: "execution-failed-1",
+      recoveryExecutionId: "execution-recovery-1",
+    });
+  });
+
+  it("publishes a validated plan event when the model updates a workflow plan", async () => {
+    const initialRound = providerRound({
+      rawContent: "",
+      toolCalls: [
+        {
+          id: "native-plan-1",
+          name: "plan.update",
+          input: {
+            steps: [
+              { id: "understand", title: "明确研究问题与边界", status: "completed" },
+              { id: "gather", title: "收集可核验的资料", status: "in_progress" },
+            ],
+            currentStepId: "gather",
+          },
+          source: "native",
+        },
+      ],
+    });
+    const emitted: string[] = [];
+
+    await runAgentLoop({
+      provider: {
+        provider: "deepseek",
+        stream: vi.fn(),
+        toolProtocol: () => "native",
+        startRound: vi.fn(),
+        continueRound: vi.fn().mockResolvedValue(providerRound({ rawContent: "完成", toolCalls: [] })),
+      } as unknown as ProviderAdapter,
+      initialRound,
+      model: "deepseek-v4-pro",
+      thinkingEnabled: true,
+      reasoningEffort: "max",
+      activeTools: [tool("plan.update")],
+      messages: initialRound.requestMessages,
+      context: {
+        userId: "user-1",
+        conversationId: "conversation-1",
+        sessionApprovals: new Map(),
+      },
+      signal: new AbortController().signal,
+      toolRunner: {
+        run: async () => ({
+          status: "succeeded",
+          executionId: "execution-plan-1",
+          summary: {
+            steps: [
+              { id: "understand", title: "明确研究问题与边界", status: "completed" },
+              { id: "gather", title: "收集可核验的资料", status: "in_progress" },
+            ],
+            currentStepId: "gather",
+          },
+        }),
+      },
+      emit: (event) => emitted.push(event.type),
+      audit: async () => {},
+    });
+
+    expect(emitted).toContain("plan_updated");
+  });
 });
 
 function providerRound(input: {

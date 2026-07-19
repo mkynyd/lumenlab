@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   DeepSeekError,
   DeepSeekMessage,
@@ -66,6 +67,8 @@ import type {
 } from "@/lib/agent/contracts";
 import type { AgentRuntimeEvent } from "@/lib/agent/runtime-events";
 import { compareRuntimeDecisions } from "@/lib/agent/observability/runtime-shadow";
+import { buildInitialAgentPlan, finalizeAgentPlan } from "@/lib/agent/plan";
+import { AgentRunMetricsCollector } from "@/lib/agent/observability/agent-run-metrics";
 import {
   createTextProviderRound,
   normalizeProviderEventStream,
@@ -174,6 +177,7 @@ function buildAllowedTools(input: {
   projectId?: string | null;
   webSearchActive: boolean;
   activeSkillId?: string | null;
+  planningEnabled?: boolean;
 }): ToolMetadata[] {
   const allowed = new Map<string, ToolMetadata>();
   const add = (toolId: string) => {
@@ -225,6 +229,8 @@ function buildAllowedTools(input: {
     }
   }
 
+  if (input.planningEnabled) add("plan.update");
+
   return [...allowed.values()];
 }
 
@@ -234,6 +240,14 @@ function adapterFallbackEvent(
   if (protocol === "native+xml_dsml") return "xml_dsml_fallback";
   if (protocol === "native") return "native_tools";
   return "none";
+}
+
+function providerForRequestedModel(
+  model: AgentRunInput["model"]["requestedModel"]
+): "deepseek" | "minimax" | "bailian" {
+  if (model === "minimax-m3") return "minimax";
+  if (model === "qwen3.7-plus") return "bailian";
+  return "deepseek";
 }
 
 export class AgentRuntimeError extends Error {
@@ -248,6 +262,7 @@ export class AgentRuntimeError extends Error {
 }
 
 export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
+  const runStartedAt = Date.now();
   const conversationPersistence = new PrismaConversationAdapter();
   const userId = input.user.id;
   const conversationId = input.conversation.id;
@@ -256,6 +271,28 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   const hiddenPrompt = input.prompt.hiddenPrompt;
   const attachments = input.prompt.attachments;
   const model = input.model.requestedModel;
+  const runId = randomUUID();
+  const runMetrics = new AgentRunMetricsCollector({
+    runId,
+    model,
+    provider: providerForRequestedModel(model),
+    startedAt: runStartedAt,
+  });
+  let runMetricRecorded = false;
+  const recordRunMetricOnce = async (
+    status: AgentCompletion["status"] | "failed",
+    resolvedConversationId = conversationId
+  ) => {
+    if (runMetricRecorded) return;
+    runMetricRecorded = true;
+    await recordAuditEvent({
+      userId,
+      conversationId: resolvedConversationId,
+      eventType: "agent_run_finished",
+      severity: status === "completed" ? "info" : status === "failed" ? "error" : "warn",
+      payload: { ...runMetrics.finish(status) },
+    });
+  };
   const thinkingEnabled = input.model.thinkingEnabled;
   const reasoningEffort = input.model.reasoningEffort;
   const selectedFileIds = input.capabilities.selectedFileIds;
@@ -264,6 +301,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   const skillOff = input.capabilities.skillOff;
   const isQuickTask = input.capabilities.isQuickTask;
   const materialScope = input.capabilities.materialScope;
+  try {
   const attachmentText = await textAttachmentContext(attachments);
   let effectivePrompt = [
     hiddenPrompt || message,
@@ -308,6 +346,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   let retrievedContext = "";
   let contextNotice: string | null = null;
   let legacySources: AgentSource[] = [];
+  let projectRetrievalAttempted = false;
   let quickTaskMaterialContext = "";
   let quickTaskMaterialSources: AgentSource[] = [];
   const projectMaterialQuickTask = Boolean(
@@ -348,6 +387,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   if (project && !agentOrchestratorEnabled && !projectMaterialQuickTask) {
 
     if (shouldUseProjectContext(effectivePrompt, uniqueFileIds, isQuickTask)) {
+      projectRetrievalAttempted = true;
       const retrieval = await retrieveProjectContext({
         userId,
         projectId: project.id,
@@ -448,6 +488,9 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   webSearchActive =
     manualWebSearchActive ||
     (agentOrchestratorEnabled && skillRoute.webAccessRecommended);
+  const planningEnabled =
+    agentOrchestratorEnabled &&
+    (skillRoute.profile === "research" || skillRoute.profile === "workflow");
   if (webSearchActive) {
     effectivePrompt = prependCurrentTimeContext(effectivePrompt);
   }
@@ -483,11 +526,18 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       systemPrompt = `${systemPrompt}\n\n<skill_content name="${activeSkill.skillId}">\n${activeSkill.instructions}\n</skill_content>`;
     }
   }
+  if (planningEnabled) {
+    systemPrompt = `${systemPrompt}\n\n【任务计划】系统已发布本次任务的简短公开计划。仅在阶段发生变化时调用 plan.update，更新 1–6 条用户可见步骤；不要写入分析过程、隐藏提示或敏感内容，也不要附加 reason。步骤标题只能使用：明确研究问题与边界、明确交付目标与约束、收集可核验的资料、比较证据并形成结论、核验引用与不确定性、准备所需资料与操作、执行并记录关键结果、检查结果与下一步。`;
+  }
+  if (agentOrchestratorEnabled) {
+    systemPrompt = `${systemPrompt}\n\n【工具恢复】若工具结果包含 recoveryOfExecutionId，且你决定自动恢复该失败操作，请在下一次工具调用附带同名 recoveryOfExecutionId 字段。该字段只用于关联失败与恢复，不会传给工具处理器。`;
+  }
 
   const modelRoute = routeModel(conversation, attachments, {
     requiresVisionModel,
     requestedModel: model,
   });
+  runMetrics.setRoute({ model, provider: modelRoute.provider });
 
   // Build the active tool allowlist from the real tool registry.
   const activeTools = projectMaterialQuickTask
@@ -495,11 +545,13 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         projectId: undefined,
         webSearchActive,
         activeSkillId: null,
+        planningEnabled: false,
       }).filter((tool) => tool.toolId === "web.search" || tool.toolId === "web.fetch")
     : buildAllowedTools({
         projectId: project?.id,
         webSearchActive,
         activeSkillId: skillRoute.activeSkillId,
+        planningEnabled,
       });
 
   if (agentRuntimeMode === "shadow") {
@@ -539,8 +591,26 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
 
   const agentEvents: AgentEvent[] = [];
+  let publicPlan: ReturnType<typeof buildInitialAgentPlan> = null;
   const emitAgentEvent = (event: AgentEvent) => {
     agentEvents.push(event);
+    if (event.type === "plan_updated") publicPlan = event.plan;
+    runMetrics.observeAgentEvent(event);
+  };
+  let retrievalExplanationEmitted = false;
+  const explainRetrieval = (sourceCount: number, sourceLabel = "项目资料") => {
+    if (retrievalExplanationEmitted) return;
+    retrievalExplanationEmitted = true;
+    emitAgentEvent({
+      type: "capability_explained",
+      capability: "retrieval",
+      title: "已检索相关资料",
+      reason: `为了让回答可核验，我检索了与当前问题相关的${sourceLabel}。`,
+      detail:
+        sourceCount > 0
+          ? `已纳入 ${sourceCount} 条可引用来源。`
+          : "没有找到可核验的来源；回答会明确这一限制。",
+    });
   };
   const toolRunner = createPrismaToolRunner();
   const sessionApprovals = await new PrismaToolExecutionAdapter()
@@ -552,6 +622,14 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   let manualWebSources: AgentSource[] = [];
 
   if (agentOrchestratorEnabled) {
+    const initialPlan = buildInitialAgentPlan({
+      profile: skillRoute.profile,
+      prompt: effectivePrompt,
+    });
+    if (initialPlan) {
+      publicPlan = initialPlan;
+      emitAgentEvent({ type: "plan_updated", plan: initialPlan, source: "runtime" });
+    }
     if (skillRoute.suggestions.length > 0) {
       emitAgentEvent({
         type: "skill_suggested",
@@ -589,6 +667,13 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         version: skillVersion,
         status: skillRoute.status === "none" ? undefined : skillRoute.status,
         reason: skillRoute.reason,
+      });
+      emitAgentEvent({
+        type: "capability_explained",
+        capability: "skill",
+        title: "已选择任务能力",
+        reason: skillRoute.reason,
+        detail: `已启用 ${skill?.displayName ?? skillRoute.activeSkillId}。`,
       });
     } else if (conversation.activeSkillId || skillOff === true) {
       const deactivatedSkillId = conversation.activeSkillId;
@@ -661,6 +746,10 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         type: "sources_updated",
         sources: manualWebSources,
       });
+      explainRetrieval(manualWebSources.length, "联网资料");
+    }
+    if (manualWebSources.length === 0) {
+      explainRetrieval(0, "联网资料");
     }
   }
 
@@ -683,12 +772,16 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     ...quickTaskMaterialSources,
     ...manualWebSources,
   ];
-  if (agentOrchestratorEnabled && quickTaskMaterialSources.length > 0) {
-    emitAgentEvent({
-      type: "sources_updated",
-      sources: quickTaskMaterialSources,
-    });
+  if (agentOrchestratorEnabled && projectMaterialQuickTask) {
+    if (quickTaskMaterialSources.length > 0) {
+      emitAgentEvent({
+        type: "sources_updated",
+        sources: quickTaskMaterialSources,
+      });
+    }
+    explainRetrieval(quickTaskMaterialSources.length);
   }
+  if (projectRetrievalAttempted) explainRetrieval(legacySources.length);
   if (agentOrchestratorEnabled && !projectMaterialQuickTask) {
     const plannedCalls = buildPlannedToolCalls({
       prompt: effectivePrompt,
@@ -715,6 +808,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
                 projectId: project?.id,
                 selectedFileIds: uniqueFileIds,
                 skillId: skillRoute.activeSkillId ?? undefined,
+                runId,
                 signal: input.signal,
                 sessionApprovals,
               },
@@ -750,6 +844,18 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           type: "sources_updated",
           sources: orchestratorSources,
         });
+        explainRetrieval(
+          orchestratorSources.length,
+          orchestratorSources.some((source) => source.type === "project_file")
+            ? "项目资料"
+            : "联网资料"
+        );
+      }
+      if (plannedCalls.some((call) => call.name === "project_rag.search")) {
+        explainRetrieval(
+          orchestratorSources.length,
+          "项目资料"
+        );
       }
       if (toolRun.stopReason && process.env.AGENT_DEBUG_EVENTS === "1") {
         emitAgentEvent({
@@ -946,6 +1052,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           projectId: project?.id,
           selectedFileIds: uniqueFileIds,
           skillId: skillRoute.activeSkillId ?? undefined,
+          runId,
           sessionApprovals,
         },
         signal: input.signal,
@@ -961,6 +1068,13 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     }
   }
   streamResult = loopResult.finalRound;
+  if (publicPlan) {
+    emitAgentEvent({
+      type: "plan_updated",
+      plan: finalizeAgentPlan(publicPlan, loopResult.status),
+      source: "runtime",
+    });
+  }
   if (loopResult.stopReason && process.env.AGENT_DEBUG_EVENTS === "1") {
     emitAgentEvent({
       type: "tool_loop_stop_reason",
@@ -976,7 +1090,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
 
   const [eventStream, persistenceStream] = streamResult.events.tee();
   const completion = accumulateAndSaveEvents(
-    persistenceStream,
+    observeProviderEvents(persistenceStream, runMetrics),
     conversation.id,
     assistantMessage.id,
     userId,
@@ -986,7 +1100,16 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     messageSources,
     loopResult.status,
     conversationPersistence
-  );
+  )
+    .then(async (result) => {
+      runMetrics.recordUsage(result.usage);
+      await recordRunMetricOnce(result.status, conversation.id);
+      return result;
+    })
+    .catch(async (error) => {
+      await recordRunMetricOnce("failed", conversation.id);
+      throw error;
+    });
   void completion.catch((error) => {
     logger.error("保存助手消息失败", { error: String(error) });
   });
@@ -1021,6 +1144,10 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     ),
     completion,
   };
+  } catch (error) {
+    await recordRunMetricOnce("failed");
+    throw error;
+  }
 }
 
 export class DefaultAgentRuntime implements AgentRuntime {
@@ -1105,6 +1232,33 @@ async function* providerEventsToRuntimeEvents(
     conversationId: metadata.conversationId,
     messageId: metadata.messageId,
   };
+}
+
+function observeProviderEvents(
+  stream: ReadableStream<ProviderStreamEvent>,
+  metrics: AgentRunMetricsCollector
+): ReadableStream<ProviderStreamEvent> {
+  return new ReadableStream<ProviderStreamEvent>({
+    async start(controller) {
+      const reader = stream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          metrics.observeProviderEvent(value);
+          controller.enqueue(value);
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+    async cancel(reason) {
+      await stream.cancel(reason).catch(() => {});
+    },
+  });
 }
 
 function normalizeUsage(usage: {

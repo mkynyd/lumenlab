@@ -178,7 +178,7 @@ export async function evaluatePolicy(
   // 4. Skill allowlist
   // skill.activate 是全局 Skill 切换能力，runtime 始终将其暴露给模型，
   // 不应被单个 Skill 的 allowedTools 限制（否则模型按系统提示切换 Skill 时会被拒绝）。
-  if (skill && tool.toolId !== "skill.activate") {
+  if (skill && !isRuntimeMetaTool(tool.toolId)) {
     if (!skill.allowedTools.includes(tool.toolId)) {
       return denyDecision(
         tool,
@@ -213,7 +213,7 @@ export async function evaluatePolicy(
   let approvalMode: ApprovalMode = tool.defaultApprovalMode;
   // skill.activate 是 Skill 切换元能力，本身只读取 Skill 元数据，不访问用户资源；
   // 不应被当前激活 Skill 的 defaultApprovalPolicy 收紧为 ask_first，否则模型按提示切换 Skill 时会弹出审批。
-  if (skill && tool.toolId !== "skill.activate") {
+  if (skill && !isRuntimeMetaTool(tool.toolId)) {
     approvalMode = maxStrictness(approvalMode, skill.defaultApprovalPolicy);
   }
   const userPref = await loadUserPreference(user.id, tool.toolId);
@@ -287,6 +287,10 @@ export async function evaluatePolicy(
     sanitizedPreview: buildPreview(tool, args, ctx),
     auditRequirements: tool.auditLevel,
   };
+}
+
+function isRuntimeMetaTool(toolId: string) {
+  return toolId === "skill.activate" || toolId === "plan.update";
 }
 
 function denyDecision(

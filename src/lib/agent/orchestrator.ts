@@ -61,6 +61,7 @@ export interface ToolLoopRecord {
 }
 
 export type ToolId =
+  | "plan.update"
   | "project_files.list"
   | "project_files.read"
   | "project_files.delete"

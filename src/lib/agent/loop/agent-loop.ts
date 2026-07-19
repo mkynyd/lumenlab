@@ -1,5 +1,6 @@
 import { sanitizeModelText } from "../tool-call-parser";
 import { toolResultProducedNewContent } from "../orchestrator";
+import { materializePlanUpdate, parsePlanUpdate } from "../plan";
 import type {
   NormalizedToolCall,
   ProviderAdapter,
@@ -26,6 +27,7 @@ export interface AgentLoopInput {
     projectId?: string;
     selectedFileIds?: string[];
     skillId?: string;
+    runId?: string;
     sessionApprovals: Map<string, ApprovalScope>;
   };
   signal: AbortSignal;
@@ -61,6 +63,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   let roundResult = input.initialRound;
   let messages = input.messages;
   let previousRoundProducedNewContent = true;
+  const failedExecutionIds = new Set<string>();
 
   for (let round = 0; round < maxRounds; round += 1) {
     if (input.signal.aborted) {
@@ -108,15 +111,32 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     for (const call of executable) {
       if (input.signal.aborted) return cancelled(roundResult);
       executedKeys.add(toolCallKey(call));
+      const recoveryOfExecutionId =
+        typeof call.input.recoveryOfExecutionId === "string"
+          ? call.input.recoveryOfExecutionId
+          : undefined;
+      const toolArguments = { ...call.input };
+      delete toolArguments.recoveryOfExecutionId;
       const result = await input.toolRunner.run(
         {
-          call: { id: call.id, toolId: call.name, arguments: call.input },
+          call: { id: call.id, toolId: call.name, arguments: toolArguments },
           context: { ...input.context, signal: input.signal },
         },
         input.emit
       );
 
       if (input.signal.aborted) return cancelled(roundResult);
+
+      const isDeclaredRecovery = Boolean(
+        recoveryOfExecutionId && failedExecutionIds.has(recoveryOfExecutionId)
+      );
+      if (isDeclaredRecovery) {
+        input.emit({
+          type: "tool_recovery_attempted",
+          failedExecutionId: recoveryOfExecutionId!,
+          recoveryExecutionId: result.executionId,
+        });
+      }
 
       if (result.status === "pending_approval") {
         return {
@@ -128,15 +148,29 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       }
 
       if (result.status === "succeeded") {
+        if (call.name === "plan.update") {
+          input.emit({
+            type: "plan_updated",
+            plan: materializePlanUpdate(parsePlanUpdate(result.summary)),
+            source: "tool",
+          });
+        }
         toolResults.push({
           toolUseId: call.id,
           content: JSON.stringify(result.summary),
         });
         roundProducedNewContent ||= toolResultProducedNewContent(result.summary);
       } else {
+        if (result.status === "failed") {
+          failedExecutionIds.add(result.executionId);
+        }
         toolResults.push({
           toolUseId: call.id,
-          content: `工具执行失败: ${result.error}`,
+          content: JSON.stringify({
+            status: "failed",
+            recoveryOfExecutionId: result.executionId,
+            error: result.error,
+          }),
         });
       }
     }

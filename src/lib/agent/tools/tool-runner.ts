@@ -31,6 +31,7 @@ export interface ToolInvocationRequest {
     projectId?: string;
     selectedFileIds?: string[];
     skillId?: string;
+    runId?: string;
     signal?: AbortSignal;
     sessionApprovals: Map<string, ApprovalScope>;
   };
@@ -124,6 +125,7 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
           ...(request.context.selectedFileIds
             ? { selectedFileIds: [...request.context.selectedFileIds] }
             : {}),
+          ...(request.context.runId ? { runId: request.context.runId } : {}),
         },
       });
       await audit(dependencies, request, execution.id, "tool_proposed", "info", {
@@ -180,6 +182,13 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
           "info",
           { expiresAt: approval.expiresAt.toISOString() }
         );
+        emit({
+          type: "capability_explained",
+          capability: "approval",
+          title: "需要你的确认",
+          reason: decision.sanitizedPreview.summary,
+          detail: "该操作会在你确认后才执行；你可以批准一次、在允许时批准本会话，或拒绝。",
+        });
         emit({
           type: "approval_required",
           executionId: execution.id,

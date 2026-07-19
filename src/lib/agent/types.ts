@@ -179,8 +179,23 @@ export interface ToolExecutionRecord {
 }
 
 import type { AgentSource } from "./sources";
+import type { AgentPlan } from "./plan";
 
 export type AgentEvent =
+  | {
+      /** A constrained, user-visible workflow state — never model reasoning. */
+      type: "plan_updated";
+      plan: AgentPlan;
+      source: "runtime" | "tool";
+    }
+  | {
+      /** Short user-facing explanation of a capability selection. */
+      type: "capability_explained";
+      capability: "skill" | "retrieval" | "approval";
+      title: string;
+      reason: string;
+      detail?: string;
+    }
   | {
       type: "skill_activated";
       skillId: string;
@@ -249,6 +264,12 @@ export type AgentEvent =
       executionId: string;
       errorCode: string;
       error: string;
+    }
+  | {
+      /** Explicitly links a declared recovery attempt to a prior failed execution. */
+      type: "tool_recovery_attempted";
+      failedExecutionId: string;
+      recoveryExecutionId: string;
     }
   | {
       type: "context_budget_warning";

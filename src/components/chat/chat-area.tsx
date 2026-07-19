@@ -9,6 +9,7 @@ import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { TokenUsageBar } from "@/components/chat/token-usage-bar";
 import { ContextRing } from "@/components/chat/context-ring";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
+import { AgentRunStatus } from "@/components/chat/agent-run-status";
 import { SkillBadge } from "@/components/chat/skill-badge";
 import { ContextBudgetWarning } from "@/components/chat/context-budget-warning";
 import { AmbientField } from "@/components/workbench/ambient-field";
@@ -176,6 +177,9 @@ export function ChatArea({
   const displayedAgentEntries = visibleAgentEntries.filter(
     (entry) => !dismissedAgentIds.has(entry.executionId)
   );
+  const needsUserDecision = displayedAgentEntries.some(
+    (entry) => entry.latestEvent.type === "approval_required"
+  );
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)]">
@@ -280,6 +284,12 @@ export function ChatArea({
           />
         </div>
       )}
+
+      <AgentRunStatus
+        plan={agentSession.plan}
+        explanations={agentSession.explanations}
+        needsUserDecision={needsUserDecision}
+      />
 
       {/* Agent timeline：当前未完成 / 最近 3 条工具调用 */}
       {displayedAgentEntries.length > 0 && (

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run --exclude '.worktrees/**'",
+    "eval:agent": "tsx scripts/evaluate-agent-results.ts",
     "alpha:clear-users": "prisma db execute --file scripts/clear-alpha-users.sql",
     "setup:api-key": "tsx scripts/setup-api-key.ts",
     "seed:dev-access": "tsx scripts/seed-dev-access.ts"

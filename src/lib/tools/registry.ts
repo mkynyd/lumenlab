@@ -33,8 +33,34 @@ import {
 } from "./reference/manage";
 import { exportArtifactAsDocx } from "./artifact-export/docx";
 import { activateSkill, buildActivateSkillEnum } from "../agent/skill-activate-handler";
+import { parsePlanUpdate } from "../agent/plan";
 
 const TOOLS: ToolMetadata[] = [
+  {
+    toolId: "plan.update",
+    name: "更新任务计划",
+    description: "更新研究或工作流任务的简短公开计划状态，不执行外部操作。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        steps: { type: "array" },
+        currentStepId: { type: "string" },
+      },
+      required: ["steps", "currentStepId"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L0",
+    isReadOnly: true,
+    hasExternalSideEffect: false,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: false,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "minimal",
+    requiredScopes: [],
+  },
   {
     toolId: "project_files.list",
     name: "列出项目资料",
@@ -588,6 +614,9 @@ export function registerBuiltinTools(): void {
   registerToolHandler("skill.activate", async (_ctx, args) => {
     return activateSkill(String(args.name ?? ""));
   });
+  registerToolHandler("plan.update", async (_ctx, args) => ({
+    ...parsePlanUpdate(args),
+  }));
 
   // 动态更新 activate_skill 的 enum（在 skills 注册完成后）
   const activateTool = toolRegistry.get("skill.activate");
