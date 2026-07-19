@@ -42,6 +42,7 @@ model User {
   artifacts           Artifact[]
   documentConversions DocumentConversion[]
   tokenUsages         TokenUsage[]
+  agentExecutions     AgentExecution[]
   credentialProfile   CredentialProfile?      @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption          RegistrationRedemption?
   profilePrompt       String?
@@ -180,6 +181,7 @@ model Conversation {
   artifacts          Artifact[]
   conversationSkills ConversationSkill[]
   tokenUsages        TokenUsage[]
+  agentExecutions    AgentExecution[]
 
   @@index([userId])
   @@index([projectId])
@@ -254,6 +256,7 @@ model Project {
   artifacts     Artifact[]
   projectIndex  ProjectIndex?
   quickActions  QuickAction[]
+  agentExecutions AgentExecution[]
 
   @@index([userId])
 }
@@ -614,6 +617,63 @@ model AgentAuditLog {
   @@index([userId, createdAt])
   @@index([conversationId, createdAt])
   @@index([toolExecutionId])
+}
+
+// Durable execution state for an Agent task. ToolExecution remains the source
+// of truth for an individual tool call and its approval lifecycle.
+enum AgentExecutionStatus {
+  queued
+  running
+  waiting_approval
+  completed
+  failed
+  cancelled
+}
+
+model AgentExecution {
+  id                     String   @id @default(cuid())
+  userId                 String
+  conversationId         String
+  projectId              String?
+  status                 AgentExecutionStatus @default(queued)
+  checkpoint             Json?
+  waitingToolExecutionId String?
+  scheduledAt            DateTime @default(now())
+  leaseOwner             String?
+  leaseExpiresAt         DateTime?
+  attempt                Int      @default(0)
+  lastEventSequence      Int      @default(0)
+  failure                Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  project      Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  events       AgentExecutionEvent[]
+
+  @@index([userId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([projectId])
+  @@index([status, scheduledAt])
+  @@index([status, leaseExpiresAt])
+  @@index([waitingToolExecutionId])
+}
+
+model AgentExecutionEvent {
+  id          String   @id @default(cuid())
+  executionId String
+  sequence    Int
+  key         String
+  type        String
+  payload     Json?
+  createdAt   DateTime @default(now())
+
+  execution AgentExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, sequence])
+  @@unique([executionId, key])
+  @@index([executionId, createdAt])
 }
 
 model UserToolPreference {
