@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   uploadObjectBuffer: vi.fn(),
   deleteStoredObject: vi.fn(),
   renderMarkdownPdf: vi.fn(),
+  validatePdfExport: vi.fn(),
   buildConversionPackage: vi.fn(),
+  buildConversionExportFingerprint: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -30,8 +32,13 @@ vi.mock("@/lib/storage/object-storage", () => ({
 vi.mock("@/lib/export/browser-pdf", () => ({
   renderMarkdownPdf: mocks.renderMarkdownPdf,
 }));
+vi.mock("@/lib/export/pdf-validation", () => ({
+  validatePdfExport: mocks.validatePdfExport,
+}));
 vi.mock("@/lib/export/conversion-package", () => ({
   buildConversionPackage: mocks.buildConversionPackage,
+  buildConversionExportFingerprint: mocks.buildConversionExportFingerprint,
+  CONVERSION_EXPORT_RENDERER_VERSION: "2026-07-19.1",
   sanitizeExportBaseName: (value: string) => value,
 }));
 
@@ -39,9 +46,9 @@ import { GET } from "@/app/api/tools/conversions/[id]/download/route";
 
 const context = { params: Promise.resolve({ id: "conversion-1" }) };
 
-function request() {
+function request(regenerate = false) {
   return new Request(
-    "http://localhost:3000/api/tools/conversions/conversion-1/download",
+    `http://localhost:3000/api/tools/conversions/conversion-1/download${regenerate ? "?regenerate=1" : ""}`,
     { headers: { cookie: "session=secret" } }
   );
 }
@@ -69,6 +76,7 @@ describe("GET conversion package", () => {
     mocks.readStoredObject.mockResolvedValue(Buffer.from([1, 2, 3]));
     mocks.renderMarkdownPdf.mockResolvedValue(Buffer.from("%PDF-test"));
     mocks.buildConversionPackage.mockResolvedValue(Buffer.from("PK-package"));
+    mocks.buildConversionExportFingerprint.mockReturnValue("fingerprint-1");
     mocks.uploadObjectBuffer.mockResolvedValue({
       provider: "local",
       key: "exports/lecture.zip",
@@ -94,6 +102,8 @@ describe("GET conversion package", () => {
       markdownContent: "# Lecture",
       exportStorageProvider: "local",
       exportStoragePath: "exports/cached.zip",
+      exportFingerprint: "fingerprint-1",
+      exportRendererVersion: "2026-07-19.1",
       assets: [],
     });
     mocks.readStoredObject.mockResolvedValue(Buffer.from("PK-cached"));
@@ -144,10 +154,34 @@ describe("GET conversion package", () => {
         exportStoragePath: "exports/lecture.zip",
         exportSize: 10,
         exportGeneratedAt: expect.any(Date),
+        exportFingerprint: "fingerprint-1",
+        exportRendererVersion: "2026-07-19.1",
       }),
     });
     expect(response.headers.get("Content-Type")).toBe("application/zip");
     expect(response.headers.get("Content-Disposition")).toContain("lecture.zip");
     expect(Buffer.from(await response.arrayBuffer()).toString()).toBe("PK-package");
+  });
+
+  it("regenerates a current package only when the user explicitly requests it", async () => {
+    mocks.conversionFindFirst.mockResolvedValue({
+      id: "conversion-1",
+      userId: "user-1",
+      originalName: "lecture.pdf",
+      markdownContent: "# Lecture",
+      exportStorageProvider: "local",
+      exportStoragePath: "exports/cached.zip",
+      exportFingerprint: "fingerprint-1",
+      exportRendererVersion: "2026-07-19.1",
+      assets: [],
+    });
+
+    await GET(request(true), context);
+
+    expect(mocks.renderMarkdownPdf).toHaveBeenCalled();
+    expect(mocks.deleteStoredObject).toHaveBeenCalledWith({
+      provider: "local",
+      key: "exports/cached.zip",
+    });
   });
 });

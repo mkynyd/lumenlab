@@ -1,7 +1,16 @@
 // @vitest-environment node
 
 import AdmZip from "adm-zip";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/export/mermaid-image", () => ({
+  renderMermaidPng: vi.fn().mockResolvedValue(
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  ),
+}));
 import { markdownToDocx } from "@/lib/export/markdown-to-docx";
 import { getPdfFont, markdownToPdf } from "@/lib/export/markdown-to-pdf";
 

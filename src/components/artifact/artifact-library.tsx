@@ -2,11 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Copy, Download, Trash2, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import rehypeHighlight from "rehype-highlight";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -25,7 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { MermaidBlock } from "@/components/chat/mermaid-block";
+import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 import { cn } from "@/lib/utils";
 import {
@@ -251,27 +246,7 @@ export function ArtifactLibrary({
                   ))}
                 </div>
                 <div className="workbench-readable markdown-body break-words rounded-[var(--radius-lg)] bg-[var(--color-panel)] p-4">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false }], rehypeHighlight]}
-                    components={{
-                      code(props) {
-                        const { className, children, ...rest } = props;
-                        const match = /language-(\w+)/.exec(className || "");
-                        const code = String(children).replace(/\n$/, "");
-                        if (match?.[1] === "mermaid") {
-                          return <MermaidBlock code={code} />;
-                        }
-                        return (
-                          <code className={className} {...rest}>
-                            {children}
-                          </code>
-                        );
-                      },
-                    }}
-                  >
-                    {selected.content}
-                  </ReactMarkdown>
+                  <MarkdownContent content={selected.content} />
                 </div>
               </>
             ) : (

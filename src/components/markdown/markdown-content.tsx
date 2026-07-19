@@ -9,6 +9,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { MermaidBlock } from "@/components/chat/mermaid-block";
+import { LumenFlowDiagram } from "@/components/markdown/lumenflow-diagram";
 import { cn } from "@/lib/utils";
 
 interface MarkdownContentProps {
@@ -48,9 +49,12 @@ export function MarkdownContent({
             const { className: codeClassName, children, ...rest } = props;
             const match = /language-(\w+)/.exec(codeClassName || "");
             const code = String(children).replace(/\n$/, "");
-            if (match?.[1] === "mermaid") {
-              return <MermaidBlock code={code} isStreaming={isStreaming} />;
-            }
+          if (match?.[1] === "mermaid") {
+            return <MermaidBlock code={code} isStreaming={isStreaming} />;
+          }
+          if (match?.[1] === "lumenflow") {
+            return <LumenFlowDiagram code={code} isStreaming={isStreaming} />;
+          }
             return (
               <code className={codeClassName} {...rest}>
                 {children}

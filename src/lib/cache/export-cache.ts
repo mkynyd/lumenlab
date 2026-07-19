@@ -3,13 +3,18 @@ import { getRedis } from "@/lib/redis";
 
 export type ExportFormat = "markdown" | "docx" | "pdf";
 
+// Increment this whenever a renderer or its output contract changes. Old cache
+// entries remain harmless and expire naturally instead of being served again.
+export const ARTIFACT_EXPORT_RENDERER_VERSION = "2026-07-19.1";
+
 export function buildExportCacheKey(
   artifactId: string,
   format: ExportFormat,
-  content: string
+  content: string,
+  rendererVersion = ARTIFACT_EXPORT_RENDERER_VERSION
 ): string {
   const contentHash = createHash("sha256").update(content).digest("hex");
-  return `export:${artifactId}:${format}:${contentHash}`;
+  return `export:${artifactId}:${format}:${rendererVersion}:${contentHash}`;
 }
 
 export async function getCachedExport(key: string): Promise<Buffer | null> {

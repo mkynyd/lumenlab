@@ -15,7 +15,7 @@ import type { Content, PhrasingContent, Root } from "mdast";
 import sharp from "sharp";
 import { markdownNodeText, parseMarkdown } from "@/lib/export/markdown-ast";
 
-type ResolveImage = (
+export type ResolveImage = (
   src: string
 ) => Promise<{ buffer: Buffer; mimeType: string } | null>;
 
@@ -196,7 +196,7 @@ async function blocks(
   return output;
 }
 
-export async function markdownToDocx(
+export async function legacyMarkdownToDocx(
   content: string,
   options: { resolveImage?: ResolveImage } = {}
 ): Promise<Buffer> {
@@ -228,4 +228,20 @@ export async function markdownToDocx(
     ],
   });
   return Packer.toBuffer(document);
+}
+
+/**
+ * Pandoc owns the production DOCX path. The previous renderer remains an
+ * explicit emergency rollback only; it is intentionally not the default.
+ */
+export async function markdownToDocx(
+  content: string,
+  options: { resolveImage?: ResolveImage } = {}
+): Promise<Buffer> {
+  if (process.env.DOCX_EXPORT_ENGINE === "legacy") {
+    return legacyMarkdownToDocx(content, options);
+  }
+
+  const { markdownToPandocDocx } = await import("@/lib/export/pandoc-docx");
+  return markdownToPandocDocx(content, options);
 }

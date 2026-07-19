@@ -3,8 +3,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { renderMarkdownPdf } from "@/lib/export/browser-pdf";
+import { validatePdfExport } from "@/lib/export/pdf-validation";
 import {
+  buildConversionExportFingerprint,
   buildConversionPackage,
+  CONVERSION_EXPORT_RENDERER_VERSION,
   sanitizeExportBaseName,
 } from "@/lib/export/conversion-package";
 import {
@@ -47,7 +50,20 @@ export async function GET(
     conversion.originalName.replace(/\.pdf$/i, "")
   );
   const filename = `${baseName}.zip`;
-  if (conversion.exportStorageProvider && conversion.exportStoragePath) {
+  const forceRegenerate = new URL(request.url).searchParams.get("regenerate") === "1";
+  const exportFingerprint = buildConversionExportFingerprint({
+    markdownContent: conversion.markdownContent,
+    assets: conversion.assets,
+  });
+  const cacheIsCurrent =
+    conversion.exportFingerprint === exportFingerprint &&
+    conversion.exportRendererVersion === CONVERSION_EXPORT_RENDERER_VERSION;
+  if (
+    !forceRegenerate &&
+    cacheIsCurrent &&
+    conversion.exportStorageProvider &&
+    conversion.exportStoragePath
+  ) {
     const cached = await readStoredObject({
       provider: conversion.exportStorageProvider as StorageProvider,
       key: conversion.exportStoragePath,
@@ -70,6 +86,7 @@ export async function GET(
     conversionId: conversion.id,
     cookieHeader: request.headers.get("cookie") || "",
   });
+  await validatePdfExport(pdfBuffer);
   const packageBuffer = await buildConversionPackage({
     baseName,
     markdownContent: conversion.markdownContent,
@@ -95,13 +112,15 @@ export async function GET(
       where: {
         id: conversion.id,
         userId: session.user.id,
-        exportStoragePath: null,
+        exportStoragePath: conversion.exportStoragePath,
       },
       data: {
         exportStorageProvider: candidate.provider,
         exportStoragePath: candidate.key,
         exportSize: packageBuffer.length,
         exportGeneratedAt: new Date(),
+        exportFingerprint,
+        exportRendererVersion: CONVERSION_EXPORT_RENDERER_VERSION,
       },
     });
     if (updated.count === 0) {
@@ -118,6 +137,12 @@ export async function GET(
         key: winner.exportStoragePath,
       });
       return packageResponse(cached, filename);
+    }
+    if (conversion.exportStorageProvider && conversion.exportStoragePath) {
+      await deleteStoredObject({
+        provider: conversion.exportStorageProvider as StorageProvider,
+        key: conversion.exportStoragePath,
+      }).catch(() => {});
     }
   } catch (error) {
     await deleteStoredObject(candidate).catch(() => {});

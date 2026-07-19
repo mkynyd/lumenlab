@@ -72,6 +72,7 @@ export function ConversionViewer({
     return (
       <main
         data-conversion-print
+        data-export-print
         className="mx-auto w-full max-w-4xl bg-white px-2 py-1 text-black"
       >
         <MarkdownContent
@@ -118,6 +119,11 @@ export function ConversionViewer({
               <a href={`/api/tools/conversions/${conversion.id}/download`}>
                 <Download data-icon="inline-start" strokeWidth={1.8} />
                 下载完整包
+              </a>
+            </Button>
+            <Button asChild variant="ghost" size="sm" className="min-h-11 sm:min-h-0">
+              <a href={`/api/tools/conversions/${conversion.id}/download?regenerate=1`}>
+                重新生成完整包
               </a>
             </Button>
             <Button

@@ -726,25 +726,25 @@ pre code {
 }
 
 @media print {
-  body:has([data-conversion-print]) {
+  body:has([data-export-print]) {
     background: #ffffff !important;
   }
 
-  body:has([data-conversion-print]) header,
-  body:has([data-conversion-print]) aside {
+  body:has([data-export-print]) header,
+  body:has([data-export-print]) aside {
     display: none !important;
   }
 
-  body:has([data-conversion-print]) .h-screen,
-  body:has([data-conversion-print]) .flex-1,
-  body:has([data-conversion-print]) main {
+  body:has([data-export-print]) .h-screen,
+  body:has([data-export-print]) .flex-1,
+  body:has([data-export-print]) main {
     display: block !important;
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
   }
 
-  [data-conversion-print] {
+  [data-export-print] {
     --color-text-primary: #111827;
     --color-text-secondary: #374151;
     --color-border: #d1d5db;
@@ -754,7 +754,7 @@ pre code {
     color: #111827 !important;
   }
 
-  [data-conversion-print] .workbench-readable {
+  [data-export-print] .workbench-readable {
     max-width: none;
   }
 }

@@ -5,6 +5,10 @@ vi.mock("@/components/chat/mermaid-block", () => ({
   MermaidBlock: ({ code }: { code: string }) => <div data-testid="mermaid">{code}</div>,
 }));
 
+vi.mock("@/components/markdown/lumenflow-diagram", () => ({
+  LumenFlowDiagram: ({ code }: { code: string }) => <div data-testid="lumenflow">{code}</div>,
+}));
+
 import { MarkdownContent } from "@/components/markdown/markdown-content";
 
 describe("MarkdownContent", () => {
@@ -23,6 +27,10 @@ describe("MarkdownContent", () => {
           "```mermaid",
           "graph LR; A-->B",
           "```",
+          "",
+          "```lumenflow",
+          '{"nodes":[{"id":"a","label":"开始"}],"edges":[]}',
+          "```",
         ].join("\n")}
         resolveImageUrl={(src) => `/assets/${src}`}
       />
@@ -36,6 +44,7 @@ describe("MarkdownContent", () => {
     );
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByTestId("mermaid")).toHaveTextContent("graph LR; A-->B");
+    expect(screen.getByTestId("lumenflow")).toHaveTextContent('"开始"');
   });
 
   it("renders sanitized HTML tables emitted by document conversion", () => {

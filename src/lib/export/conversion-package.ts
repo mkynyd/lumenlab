@@ -1,4 +1,5 @@
 import path from "path";
+import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
 import { markdownToDocx } from "@/lib/export/markdown-to-docx";
 
@@ -6,6 +7,33 @@ export interface ConversionPackageAsset {
   relativePath: string;
   mimeType: string;
   buffer: Buffer;
+}
+
+export const CONVERSION_EXPORT_RENDERER_VERSION = "2026-07-19.1";
+
+export function buildConversionExportFingerprint(input: {
+  markdownContent: string;
+  assets: Array<
+    Pick<ConversionPackageAsset, "relativePath" | "mimeType"> & {
+      storagePath?: string;
+    }
+  >;
+}) {
+  const hash = createHash("sha256");
+  hash.update(CONVERSION_EXPORT_RENDERER_VERSION);
+  hash.update("\0");
+  hash.update(input.markdownContent);
+  for (const asset of [...input.assets].sort((left, right) =>
+    left.relativePath.localeCompare(right.relativePath)
+  )) {
+    hash.update("\0");
+    hash.update(asset.relativePath);
+    hash.update("\0");
+    hash.update(asset.mimeType);
+    hash.update("\0");
+    hash.update(asset.storagePath || "");
+  }
+  return hash.digest("hex");
 }
 
 export function sanitizeExportBaseName(value: string) {

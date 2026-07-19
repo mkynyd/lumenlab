@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { safeExportFilename } from "@/lib/export/filename";
 import { markdownToDocx } from "@/lib/export/markdown-to-docx";
-import { markdownToPdf } from "@/lib/export/markdown-to-pdf";
+import { renderArtifactPdf } from "@/lib/export/browser-pdf";
+import { validatePdfExport } from "@/lib/export/pdf-validation";
 import {
   buildExportCacheKey,
   getCachedExport,
@@ -66,8 +67,13 @@ export async function GET(
       ? artifact.content
       : format === "docx"
         ? await markdownToDocx(artifact.content)
-        : await markdownToPdf(artifact.content)
+        : await renderArtifactPdf({
+            requestUrl: request.url,
+            artifactId: artifact.id,
+            cookieHeader: request.headers.get("cookie") || "",
+          })
   );
+  if (format === "pdf") await validatePdfExport(body);
   await setCachedExport(cacheKey, body);
   void recordExportCacheResult(format, "miss");
 

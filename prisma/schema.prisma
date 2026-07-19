@@ -356,6 +356,8 @@ model DocumentConversion {
   exportStoragePath     String?
   exportSize            Int?
   exportGeneratedAt     DateTime?
+  exportFingerprint     String?
+  exportRendererVersion String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

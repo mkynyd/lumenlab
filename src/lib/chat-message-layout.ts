@@ -17,6 +17,7 @@ const CODE_LINE_HEIGHT = 21;
 const CODE_PADDING_Y = 28; // 0.85em top + bottom inside pre
 const CODE_PADDING_X = 16; // 1em left + right inside pre
 const MERMAID_MIN_HEIGHT = 240;
+const LUMENFLOW_MIN_HEIGHT = 156;
 const OUTER_PADDING_Y = 32; // py-4
 const AVATAR_GAP = 12;
 const AVATAR_WIDTH = 32;
@@ -77,6 +78,16 @@ function extractMermaidBlocks(content: string): string[] {
   return blocks;
 }
 
+function extractLumenFlowBlocks(content: string): string[] {
+  const blocks: string[] = [];
+  const fenced = /```lumenflow\n([\s\S]*?)```/g;
+  let match;
+  while ((match = fenced.exec(content)) !== null) {
+    blocks.push(match[1]);
+  }
+  return blocks;
+}
+
 function extractInlineCode(content: string): string[] {
   const matches = content.match(/`([^`]+)`/g);
   return matches ? matches.map((m) => m.slice(1, -1)) : [];
@@ -98,6 +109,17 @@ function estimateMermaidBlockHeight(code: string): number {
   // plus a small per-line bonus for very large definitions.
   const lines = code.split("\n").length;
   return Math.max(MERMAID_MIN_HEIGHT, Math.min(480, lines * 28 + 80));
+}
+
+function estimateLumenFlowBlockHeight(code: string): number {
+  try {
+    const parsed = JSON.parse(code) as { direction?: string; nodes?: unknown[] };
+    const nodeCount = Array.isArray(parsed.nodes) ? parsed.nodes.length : 1;
+    if (parsed.direction === "TB") return Math.max(LUMENFLOW_MIN_HEIGHT, nodeCount * 88 + 56);
+    return Math.max(LUMENFLOW_MIN_HEIGHT, Math.min(260, nodeCount * 44 + 96));
+  } catch {
+    return estimateCodeBlockHeight(code, 480);
+  }
 }
 
 /**
@@ -186,14 +208,21 @@ export function estimateMessageHeight(
 
   const codeBlocks = extractCodeBlocks(input.content);
   const mermaidBlocks = extractMermaidBlocks(input.content);
-  const nonMermaidCode = codeBlocks.filter((b) => b.language !== "mermaid");
+  const lumenFlowBlocks = extractLumenFlowBlocks(input.content);
+  const nonDiagramCode = codeBlocks.filter(
+    (block) => block.language !== "mermaid" && block.language !== "lumenflow"
+  );
 
-  for (const block of nonMermaidCode) {
+  for (const block of nonDiagramCode) {
     height += estimateCodeBlockHeight(block.code, textWidth);
   }
 
   for (const block of mermaidBlocks) {
     height += estimateMermaidBlockHeight(block);
+  }
+
+  for (const block of lumenFlowBlocks) {
+    height += estimateLumenFlowBlockHeight(block);
   }
 
   // Inline code generally does not change line height, but give a tiny buffer
