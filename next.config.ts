@@ -26,6 +26,11 @@ const buildWorkerCount = Number.parseInt(process.env.NEXT_BUILD_CPUS ?? "", 10);
 const nextConfig: NextConfig = {
   output: "standalone",
   devIndicators: false,
+  // CI and the local release gate run `tsc --noEmit`; low-memory deploy hosts
+  // skip only Next's duplicate build-time check through an explicit env flag.
+  typescript: {
+    ignoreBuildErrors: process.env.NEXT_DEPLOY_SKIP_TYPECHECK === "1",
+  },
 
   // Allow the 300MB project file batch upload plus multipart overhead through the proxy.
   experimental: {
