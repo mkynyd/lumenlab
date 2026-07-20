@@ -151,7 +151,7 @@ export function ModelSelector({
                 {providerLabel}
               </span>
             </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-52 rounded-[var(--radius-xl)] p-2 max-md:data-[side=left]:translate-x-[calc(100%+0.25rem)]">
+            <DropdownMenuSubContent className="w-52 rounded-[var(--radius-xl)] p-2 max-md:data-[side=right]:-translate-x-[calc(100%+0.5rem)]">
               {availableProviders.map((item) => (
                 <DropdownMenuItem
                   key={item.value}
