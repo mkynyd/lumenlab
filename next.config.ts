@@ -21,6 +21,7 @@ const scriptSources = [
 ]
   .filter(Boolean)
   .join(" ");
+const buildWorkerCount = Number.parseInt(process.env.NEXT_BUILD_CPUS ?? "", 10);
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -29,6 +30,7 @@ const nextConfig: NextConfig = {
   // Allow the 300MB project file batch upload plus multipart overhead through the proxy.
   experimental: {
     proxyClientMaxBodySize: "400mb",
+    ...(buildWorkerCount > 0 ? { cpus: buildWorkerCount } : {}),
   },
   serverExternalPackages: [
     "pdfjs-dist",

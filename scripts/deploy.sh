@@ -138,7 +138,7 @@ fi
 npx prisma migrate deploy
 
 # 5. 构建(以 commit SHA 作为 deploymentId,给静态资产加 ?dpl= 缓存编号并让客户端检测版本错位自动整页刷新)
-NEXT_DEPLOYMENT_ID="$SHA" npm run build
+NEXT_BUILD_CPUS=1 NEXT_DEPLOYMENT_ID="$SHA" npm run build
 
 # 6. 组装 release(若目标就是当前运行版本则拒绝)
 CUR="$(readlink -f "$APP_ROOT/current" 2>/dev/null || true)"
