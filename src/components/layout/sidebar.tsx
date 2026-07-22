@@ -183,6 +183,18 @@ export function Sidebar({
     router.push(activeSection === "chat" ? "/chat" : "/projects/new");
   }
 
+  function openAccountSurface(surface: "profile" | "settings") {
+    setAccountMenuOpen(false);
+    onClose();
+    if (surface === "profile") {
+      setSettingsOpen(false);
+      setProfileOpen(true);
+      return;
+    }
+    setProfileOpen(false);
+    setSettingsOpen(true);
+  }
+
   const activeConversationId = pathname.startsWith("/chat/")
     ? pathname.split("/").pop()
     : null;
@@ -541,11 +553,11 @@ export function Sidebar({
               <button
                 type="button"
                 className={cn(
-                  "relative z-10 flex h-11 w-full min-w-0 items-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-surface)] px-2 text-left",
+                  "relative z-10 flex size-11 min-w-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface)] text-left sm:h-11 sm:w-full sm:justify-start sm:gap-2 sm:px-2",
                   "text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
                   collapsed && "lg:justify-center lg:px-0"
                 )}
-                aria-label="打开账户菜单"
+                aria-label="打开个人与设置"
                 aria-haspopup="menu"
                 data-dropdown-menu-trigger
                 onPointerDown={(event) => {
@@ -571,7 +583,7 @@ export function Sidebar({
                 />
                 <span
                   className={cn(
-                    "min-w-0 flex-1",
+                    "hidden min-w-0 flex-1 sm:block",
                     collapsed && "lg:hidden"
                   )}
                 >
@@ -585,29 +597,23 @@ export function Sidebar({
                 <ChevronDown
                   size={14}
                   strokeWidth={2}
-                  className={cn("shrink-0", collapsed && "lg:hidden")}
+                  className={cn("hidden shrink-0 sm:block", collapsed && "lg:hidden")}
                 />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              side="right"
+              side={mobileOpen ? "top" : "right"}
               align="end"
               className="w-48 workbench-border-glow"
             >
               <DropdownMenuItem
-                onSelect={() => {
-                  setSettingsOpen(false);
-                  setProfileOpen(true);
-                }}
+                onSelect={() => openAccountSurface("profile")}
               >
                 <UserRound size={14} strokeWidth={2} />
                 个人资料
               </DropdownMenuItem>
               <DropdownMenuItem
-                onSelect={() => {
-                  setProfileOpen(false);
-                  setSettingsOpen(true);
-                }}
+                onSelect={() => openAccountSurface("settings")}
               >
                 <Settings size={14} strokeWidth={2} />
                 设置
@@ -615,7 +621,11 @@ export function Sidebar({
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 variant="destructive"
-                onSelect={() => void signOut({ callbackUrl: "/login" })}
+                onSelect={() => {
+                  setAccountMenuOpen(false);
+                  onClose();
+                  void signOut({ callbackUrl: "/login" });
+                }}
               >
                 <LogOut size={14} strokeWidth={2} />
                 退出登录
@@ -735,7 +745,7 @@ export function Sidebar({
             }
           }}
         >
-          <DialogContent className="max-w-[min(960px,calc(100vw-2rem))] p-0 gap-0 overflow-hidden sm:max-w-[960px] rounded-3xl">
+          <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 sm:inset-auto sm:h-auto sm:max-w-[960px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl">
             <DialogTitle className="sr-only">设置</DialogTitle>
             <SettingsPanel />
           </DialogContent>

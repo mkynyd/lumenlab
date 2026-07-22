@@ -188,7 +188,7 @@ export function ModelSelector({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          className={cn("h-10 max-w-[min(56vw,15rem)]", triggerClassName)}
+          className={cn("h-10 max-w-[min(56vw,15rem)] md:hidden", triggerClassName)}
           aria-label="选择模型强度和模型"
         >
           <span className="truncate">{triggerLabel}</span>

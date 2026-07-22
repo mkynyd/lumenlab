@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileText, Globe, Paperclip, Send, StopCircle, X } from "lucide-react";
+import { FileText, Globe, Paperclip, Plus, Send, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,13 @@ import { ModelSelector } from "@/components/chat/model-selector";
 import { SkillSelector, type SkillSelectorValue } from "@/components/chat/skill-selector";
 import { useMeasuredTextareaHeight } from "@/lib/hooks/use-measured-textarea-height";
 import { modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -39,6 +46,13 @@ interface ChatInputProps {
   onSkillChange?: (value: SkillSelectorValue) => void;
 }
 
+const MOBILE_MODEL_OPTIONS = [
+  { value: "deepseek-v4-flash", label: "快速" },
+  { value: "deepseek-v4-pro", label: "深度" },
+  { value: "minimax-m3", label: "MiniMax" },
+  { value: "qwen3.7-plus", label: "Qwen" },
+] as const;
+
 export function ChatInput({
   onSend,
   onStop,
@@ -60,6 +74,7 @@ export function ChatInput({
   onSkillChange,
 }: ChatInputProps) {
   const [internalValue, setInternalValue] = useState("");
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const currentValue = value ?? internalValue;
   const hasSendableContent = currentValue.trim().length > 0 || attachments.length > 0;
@@ -114,6 +129,17 @@ export function ChatInput({
     onAttachmentsChange?.(attachments.filter((attachment) => attachment.id !== id));
   }
 
+  function selectMobileModel(nextModel: string) {
+    onModelChange?.(nextModel);
+    onReasoningEffortChange?.(
+      nextModel === "deepseek-v4-flash" ? "high" : "max"
+    );
+  }
+
+  const mobileModels = MOBILE_MODEL_OPTIONS.filter((option) =>
+    (availableModels ?? MOBILE_MODEL_OPTIONS.map((item) => item.value)).includes(option.value)
+  );
+
   return (
     <TooltipProvider>
       <form
@@ -139,7 +165,7 @@ export function ChatInput({
       )}
       <div
         className={cn(
-          "rounded-xl bg-[var(--color-surface)] p-2",
+          "rounded-[var(--radius-xl)] bg-[var(--color-surface)] p-1.5 sm:p-2",
           "outline-none ring-0 shadow-none focus-within:bg-[var(--color-surface)]"
         )}
       >
@@ -172,24 +198,38 @@ export function ChatInput({
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
-        <Textarea
-          ref={textareaRef}
-          aria-label="消息内容"
-          value={currentValue}
-          onChange={(e) => updateValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="输入问题，或让 AI 基于当前资料生成实验报告、复习提纲、代码说明"
-          rows={1}
-          disabled={disabled}
-          autoComplete="off"
-          className={cn(
-            "max-h-32 min-h-10 resize-none border-0 bg-transparent px-2 py-2 text-base sm:min-h-9 sm:text-sm shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0",
-            "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
-            "focus:outline-none disabled:opacity-50"
-          )}
-          style={textareaStyle}
-        />
-        <div className="mt-1.5 flex items-center justify-between gap-2">
+        <div className="flex items-end gap-1 sm:block">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-lg"
+            disabled={disabled || isStreaming}
+            onClick={() => setMobileToolsOpen(true)}
+            className="size-11 rounded-[var(--radius-md)] sm:hidden"
+            aria-label="更多输入选项"
+            aria-expanded={mobileToolsOpen}
+          >
+            <Plus size={20} strokeWidth={2} />
+          </Button>
+          <Textarea
+            ref={textareaRef}
+            aria-label="消息内容"
+            value={currentValue}
+            onChange={(e) => updateValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="问点什么"
+            rows={1}
+            disabled={disabled}
+            autoComplete="off"
+            className={cn(
+              "max-h-32 min-h-11 flex-1 resize-none border-0 bg-transparent px-1.5 py-2.5 text-base shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 sm:min-h-9 sm:px-2 sm:py-2 sm:text-sm",
+              "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
+              "focus:outline-none disabled:opacity-50"
+            )}
+            style={textareaStyle}
+          />
+          <div className="hidden sm:block">
+          <div className="mt-1.5 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -285,7 +325,121 @@ export function ChatInput({
             </Tooltip>
           )}
         </div>
+          </div>
+          <div className="sm:hidden">
+            {isStreaming ? (
+              <Button
+                type="button"
+                onClick={onStop}
+                variant="destructive"
+                size="icon-lg"
+                className="size-11 rounded-[var(--radius-md)]"
+                aria-label="停止生成"
+              >
+                <StopCircle size={18} strokeWidth={2} />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                disabled={!hasSendableContent || disabled}
+                variant="primary"
+                size="icon-lg"
+                className="size-11 rounded-[var(--radius-md)]"
+                aria-label="发送消息"
+              >
+                <Send size={18} strokeWidth={2} />
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
+      <Dialog open={mobileToolsOpen} onOpenChange={setMobileToolsOpen}>
+        <DialogContent
+          showCloseButton={false}
+          className="top-auto bottom-0 left-0 max-w-none -translate-x-0 -translate-y-0 gap-4 rounded-t-[var(--radius-xl)] rounded-b-none p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:hidden"
+        >
+          <DialogHeader className="flex-row items-center justify-between gap-3">
+            <DialogTitle>对话选项</DialogTitle>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" size="icon-sm" className="size-11" aria-label="关闭对话选项">
+                <X size={16} />
+              </Button>
+            </DialogClose>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={disabled || isStreaming}
+              onClick={() => {
+                setMobileToolsOpen(false);
+                fileInputRef.current?.click();
+              }}
+              className="h-12 justify-start rounded-[var(--radius-md)] px-3"
+            >
+              <Paperclip data-icon="inline-start" size={18} strokeWidth={2} />
+              文件
+            </Button>
+            {onWebSearchToggle && webSearchSupported && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={disabled || isStreaming}
+                onClick={() => {
+                  onWebSearchToggle();
+                  setMobileToolsOpen(false);
+                }}
+                className={cn(
+                  "h-12 justify-start rounded-[var(--radius-md)] px-3",
+                  webSearchActive && "bg-[var(--color-interaction-active)] text-[var(--color-accent)]"
+                )}
+              >
+                <Globe data-icon="inline-start" size={18} strokeWidth={2} />
+                联网
+              </Button>
+            )}
+          </div>
+          {model && onModelChange && mobileModels.length > 0 && (
+            <div className="space-y-2">
+              <p className="px-1 text-xs text-[var(--color-text-tertiary)]">模型</p>
+              <div className="grid grid-cols-2 gap-2">
+                {mobileModels.map((option) => (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    variant="ghost"
+                    disabled={disabled || isStreaming}
+                    onClick={() => {
+                      selectMobileModel(option.value);
+                      setMobileToolsOpen(false);
+                    }}
+                    className={cn(
+                      "h-11 justify-start rounded-[var(--radius-md)] px-3",
+                      model === option.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                    )}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          {onSkillChange && (
+            <div className="flex min-h-12 items-center justify-between gap-3 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3">
+              <span className="text-sm text-[var(--color-text-secondary)]">智能方式</span>
+              <SkillSelector
+                value={skillValue}
+                onChange={(nextValue) => {
+                  onSkillChange(nextValue);
+                  setMobileToolsOpen(false);
+                }}
+                disabled={isStreaming || disabled}
+                compact={false}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       </form>
     </TooltipProvider>
   );

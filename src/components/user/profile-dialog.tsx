@@ -174,7 +174,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[min(420px,calc(100vw-2rem))] gap-0 rounded-3xl p-6 sm:max-w-[420px]">
+      <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 rounded-none p-6 pt-[max(1.5rem,env(safe-area-inset-top))] sm:inset-auto sm:h-auto sm:max-w-[420px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl">
         {view === "main" ? (
           <>
             <DialogTitle className="mb-5 text-base font-semibold">

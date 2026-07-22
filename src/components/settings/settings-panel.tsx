@@ -82,10 +82,10 @@ export function SettingsPanel() {
   ];
 
   return (
-    <div className="flex h-[calc(100dvh-1.5rem)] min-h-0 min-w-0 max-w-full flex-col overflow-hidden sm:h-[min(560px,calc(100vh-4rem))] sm:flex-row">
+    <div className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden sm:h-[min(560px,calc(100vh-4rem))] sm:flex-row">
       {/* Left sidebar — neutral surface, no border, breathing room */}
       <nav
-        className="flex w-full shrink-0 flex-row gap-0.5 overflow-x-auto bg-[var(--color-panel)] px-3 py-2 sm:w-52 sm:flex-col sm:overflow-visible sm:py-5"
+        className="flex w-full shrink-0 flex-row gap-0.5 overflow-x-auto bg-[var(--color-panel)] px-3 py-2 pr-12 sm:w-52 sm:flex-col sm:overflow-visible sm:px-3 sm:py-5"
         role="tablist"
         aria-label="设置标签页"
       >

@@ -105,7 +105,7 @@ describe("sidebar dialog hash wiring", () => {
     // The account trigger toggles the controlled menu from its own
     // onPointerDown (preventDefault), not via the Radix trigger handler.
     fireEvent.pointerDown(
-      screen.getByRole("button", { name: "打开账户菜单" })
+      screen.getByRole("button", { name: "打开个人与设置" })
     );
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "个人资料" })
@@ -138,7 +138,7 @@ describe("sidebar dialog hash wiring", () => {
     render(<Sidebar {...props} collapsed={false} />);
 
     fireEvent.pointerDown(
-      screen.getByRole("button", { name: "打开账户菜单" })
+      screen.getByRole("button", { name: "打开个人与设置" })
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "设置" }));
     expect(window.location.hash).toBe("#settings");
@@ -146,7 +146,7 @@ describe("sidebar dialog hash wiring", () => {
     // The open settings dialog aria-hides the sidebar, so the trigger and
     // menu items are queried with hidden: true.
     fireEvent.pointerDown(
-      screen.getByRole("button", { name: "打开账户菜单", hidden: true })
+      screen.getByRole("button", { name: "打开个人与设置", hidden: true })
     );
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "个人资料", hidden: true })
