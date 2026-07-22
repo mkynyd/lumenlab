@@ -82,6 +82,14 @@ describe("main workspace navigation layout", () => {
     expect(screen.getByRole("button", { name: "转换" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文档" })).not.toBeInTheDocument();
   });
+
+  it("can remove the desktop main navigation while preserving the mobile drawer", () => {
+    const props = { mobileOpen: false, onClose: vi.fn(), onExpand: vi.fn() };
+    render(<Sidebar {...props} collapsed hiddenOnDesktop />);
+
+    expect(screen.getByLabelText("主导航侧边栏")).toHaveClass("lg:w-0");
+    expect(screen.getByLabelText("主导航侧边栏")).toHaveClass("lg:pointer-events-none");
+  });
 });
 
 describe("sidebar dialog hash wiring", () => {

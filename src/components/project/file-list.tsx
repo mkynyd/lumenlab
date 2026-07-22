@@ -64,6 +64,18 @@ interface FileListProps {
   className?: string;
 }
 
+export function middleEllipsis(value: string, maxCharacters = 18) {
+  const characters = Array.from(value);
+  if (characters.length <= maxCharacters) return value;
+
+  const visibleCharacters = Math.max(2, maxCharacters - 1);
+  const prefixLength = Math.ceil(visibleCharacters * 0.55);
+  const suffixLength = visibleCharacters - prefixLength;
+  return `${characters.slice(0, prefixLength).join("")}…${characters
+    .slice(-suffixLength)
+    .join("")}`;
+}
+
 function categoryLabel(file: ProjectFile) {
   if (file.category && (file.categoryConfidence ?? 1) >= 0.7) {
     return file.category;
@@ -135,7 +147,7 @@ export function FileList({
           })
         }
         className={cn(
-          "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left",
+          "flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-left",
           "transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]",
           selected
             ? "bg-[var(--color-project-surface-active)] text-[var(--color-text-primary)] font-semibold"
@@ -147,11 +159,11 @@ export function FileList({
         ) : (
           <Page width={14} height={14} strokeWidth={2} className="shrink-0 opacity-70" />
         )}
-        <span className="min-w-0 flex-1 truncate text-xs font-medium">
-          {file.originalName}
+        <span className="min-w-0 flex-1 truncate text-xs font-medium" title={file.originalName}>
+          {middleEllipsis(file.originalName)}
         </span>
         {parsing && (
-          <span className="shrink-0 text-xs text-[var(--color-text-tertiary)]">
+          <span className="max-w-[3.25rem] shrink-0 truncate text-xs text-[var(--color-text-tertiary)]">
             解析中
           </span>
         )}

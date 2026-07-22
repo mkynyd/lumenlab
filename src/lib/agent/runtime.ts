@@ -457,10 +457,11 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       });
     }
   } else {
-    const title = message.slice(0, 100).replace(/\n/g, " ");
     conversation = await conversationPersistence.createConversation({
       userId,
-      title,
+      // The visible title is generated asynchronously after the stream begins.
+      // Never expose a full user prompt as a navigation label in the meantime.
+      title: "新对话",
       model,
       thinkingEnabled,
       ...(project?.id ? { projectId: project.id } : {}),

@@ -481,6 +481,13 @@ export default function ProjectDetailPage() {
       );
       setChatInputValue("");
       setChatAttachments([]);
+      // Upgrade legacy prompt-derived titles lazily when the conversation is
+      // opened; this avoids a bulk background request for every project row.
+      void fetch(`/api/conversations/${conversation.id}/title`, { method: "POST" })
+        .then((response) => {
+          if (response.ok) return projectQuery.refetch();
+        })
+        .catch(() => {});
     } catch (err) {
       logger.error("加载项目对话失败", {
         error: err instanceof Error ? err.message : "未知错误",
@@ -555,7 +562,7 @@ export default function ProjectDetailPage() {
         ? "项目资料按问题自动匹配"
         : "等待上传资料后构建项目上下文";
   return (
-    <div className="project-workbench relative flex h-full overflow-hidden">
+    <div className="project-workbench relative flex h-full min-h-0 overflow-hidden">
       <button
         type="button"
         className={cn(
@@ -574,8 +581,8 @@ export default function ProjectDetailPage() {
       <div
         aria-label="项目资料侧边栏"
         className={cn(
-          "absolute inset-y-0 left-0 z-30 w-[280px] overflow-hidden",
-          "bg-[var(--color-surface)]",
+          "absolute inset-y-0 left-0 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden shadow-[var(--shadow-panel)]",
+          "bg-[var(--color-surface)] md:w-[280px] md:shadow-none",
           "transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
           mobileProjectSidebarOpen ? "translate-x-0" : "-translate-x-full",
           "md:static md:z-auto md:translate-x-0 md:transition-[width] md:duration-300 md:ease-[cubic-bezier(0.16,1,0.3,1)]",
@@ -617,7 +624,7 @@ export default function ProjectDetailPage() {
         {/* 顶部信息栏 */}
         <div
           className={cn(
-            "flex min-h-14 items-center justify-between gap-3 px-5 py-2.5",
+            "flex min-h-12 items-center justify-between gap-2 px-3 py-2 sm:min-h-14 sm:gap-3 sm:px-5 sm:py-2.5",
             "bg-[var(--color-panel)] shrink-0 backdrop-blur-[var(--glass-blur)]"
           )}
         >
@@ -647,12 +654,12 @@ export default function ProjectDetailPage() {
 	                )}
               </span>
             </button>
-            <div className="flex min-w-0 flex-1 basis-full flex-col gap-0.5 sm:basis-auto">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div className="flex min-w-0 items-center gap-x-2">
                 <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
                   {project.name}
                 </span>
-                <span className="rounded-xl bg-[var(--color-project-control)] px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)]">
+                <span className="hidden rounded-xl bg-[var(--color-project-control)] px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)] sm:inline-flex">
                   {projectModeLabel}
                 </span>
                 {activeSkillLabel && (
@@ -680,7 +687,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* 快捷任务按钮 */}
-	        <div className="bg-[var(--color-panel)] px-5 py-2.5 shrink-0 backdrop-blur-[var(--glass-blur)]">
+        <div className="shrink-0 bg-[var(--color-panel)] px-3 py-2 sm:px-5 sm:py-2.5 backdrop-blur-[var(--glass-blur)]">
           <QuickTaskBar
             projectType={projectType}
             actions={project.quickActions}

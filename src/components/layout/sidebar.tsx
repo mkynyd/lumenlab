@@ -75,6 +75,7 @@ import { DEFAULT_AVATAR_PRESET } from "@/lib/user-profile";
 interface SidebarProps {
   mobileOpen: boolean;
   collapsed: boolean;
+  hiddenOnDesktop?: boolean;
   onClose: () => void;
   onExpand: () => void;
 }
@@ -82,6 +83,7 @@ interface SidebarProps {
 export function Sidebar({
   mobileOpen,
   collapsed,
+  hiddenOnDesktop = false,
   onClose,
   onExpand,
 }: SidebarProps) {
@@ -226,7 +228,11 @@ export function Sidebar({
           "transition-[transform,width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
           "lg:static lg:translate-x-0",
-          collapsed ? "lg:w-16" : "lg:w-64"
+          hiddenOnDesktop
+            ? "lg:pointer-events-none lg:w-0 lg:border-r-0 lg:opacity-0"
+            : collapsed
+              ? "lg:w-16"
+              : "lg:w-64"
         )}
         aria-label="主导航侧边栏"
       >

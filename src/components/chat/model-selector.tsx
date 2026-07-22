@@ -1,9 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,6 +96,7 @@ export function ModelSelector({
     () => `${strengthLabel} · ${providerLabel}`,
     [providerLabel, strengthLabel]
   );
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   function setStrength(nextStrength: Strength) {
     const next = STRENGTHS.find((item) => item.value === nextStrength);
@@ -101,7 +109,15 @@ export function ModelSelector({
     onChange(modelFor(nextProvider, strength));
   }
 
+  const triggerClassName = cn(
+    "h-8 shrink-0 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-3 text-sm font-normal text-[var(--color-text-primary)] hover:bg-[var(--color-interaction-hover)] focus-visible:bg-[var(--color-interaction-active)]",
+    compact && "max-w-[min(72vw,14rem)]",
+    className
+  );
+
   return (
+    <>
+    <div className="hidden md:block">
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
@@ -109,11 +125,7 @@ export function ModelSelector({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          className={cn(
-            "h-8 shrink-0 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-3 text-sm font-normal text-[var(--color-text-primary)] hover:bg-[var(--color-interaction-hover)] focus-visible:bg-[var(--color-interaction-active)]",
-            compact && "max-w-[min(72vw,14rem)]",
-            className
-          )}
+          className={triggerClassName}
           aria-label="选择模型强度和模型"
         >
           <span className="truncate">{triggerLabel}</span>
@@ -167,5 +179,76 @@ export function ModelSelector({
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+    </div>
+
+    <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
+      <DialogTrigger asChild disabled={disabled}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={disabled}
+          className={cn("h-10 max-w-[min(56vw,15rem)]", triggerClassName)}
+          aria-label="选择模型强度和模型"
+        >
+          <span className="truncate">{triggerLabel}</span>
+          <ChevronDown data-icon="inline-end" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent
+        className="top-auto bottom-0 left-0 max-w-none -translate-x-0 -translate-y-0 gap-3 rounded-t-xl rounded-b-none p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-w-none"
+      >
+        <DialogHeader>
+          <DialogTitle>选择模型</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <p className="px-1 text-xs text-[var(--color-text-tertiary)]">推理深度</p>
+          <div className="grid grid-cols-2 gap-2">
+            {STRENGTHS.map((item) => (
+              <Button
+                key={item.value}
+                type="button"
+                variant="ghost"
+                className={cn(
+                  "h-11 justify-start rounded-[var(--radius-md)] px-3",
+                  strength === item.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                )}
+                onClick={() => {
+                  setStrength(item.value);
+                  setMobileOpen(false);
+                }}
+              >
+                {item.label}
+                {strength === item.value && <Check data-icon="inline-end" />}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <p className="px-1 text-xs text-[var(--color-text-tertiary)]">模型服务</p>
+          <div className="space-y-1">
+            {availableProviders.map((item) => (
+              <Button
+                key={item.value}
+                type="button"
+                variant="ghost"
+                className={cn(
+                  "h-11 w-full justify-start rounded-[var(--radius-md)] px-3",
+                  provider === item.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                )}
+                onClick={() => {
+                  setProvider(item.value);
+                  setMobileOpen(false);
+                }}
+              >
+                <span className="flex-1 text-left">{item.label}</span>
+                {provider === item.value && <Check data-icon="inline-end" />}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

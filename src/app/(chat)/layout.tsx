@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { SessionProvider } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
@@ -19,23 +19,15 @@ export default function ChatLayout({
     : pathname.startsWith("/tools")
       ? "tools"
       : "chat";
-  const isInsideProject = useMemo(
-    () => /^\/projects\/[^/]+/.test(pathname || ""),
-    [pathname]
-  );
+  const isInsideProject = /^\/projects\/[^/]+/.test(pathname || "");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  // 用户是否手动切换过桌面侧栏折叠状态
-  const [hasUserToggledDesktop, setHasUserToggledDesktop] = useState(false);
   const [userCollapsed, setUserCollapsed] = useState(false);
-  // 进入具体项目页(/projects/[id])时默认收起主侧拉栏，给工作区让出更多空间。
-  // 用 derived state 代替 effect 内 setState，避免级联渲染。
-  const sidebarCollapsed = hasUserToggledDesktop
-    ? userCollapsed
-    : isInsideProject;
+  // 项目页把整个主导航让给项目资料栏；离开后恢复用户在其他工作区的偏好。
+  const sidebarCollapsed = isInsideProject || userCollapsed;
 
   function toggleSidebar() {
     if (window.matchMedia("(min-width: 1024px)").matches) {
-      setHasUserToggledDesktop(true);
+      if (isInsideProject) return;
       setUserCollapsed((current) => !current);
       return;
     }
@@ -58,9 +50,10 @@ export default function ChatLayout({
         >
           跳到主内容
         </a>
-        <div className="h-screen flex flex-col bg-[var(--color-bg)]">
+        <div className="flex h-dvh min-h-svh flex-col bg-[var(--color-bg)]">
           <Navbar
             sidebarCollapsed={sidebarCollapsed}
+            desktopSidebarLocked={isInsideProject}
             mobileSidebarOpen={mobileSidebarOpen}
             onMenuToggle={toggleSidebar}
           />
@@ -68,9 +61,10 @@ export default function ChatLayout({
             <Sidebar
               mobileOpen={mobileSidebarOpen}
               collapsed={sidebarCollapsed}
+              hiddenOnDesktop={isInsideProject}
               onClose={() => setMobileSidebarOpen(false)}
               onExpand={() => {
-                setHasUserToggledDesktop(true);
+                if (isInsideProject) return;
                 setUserCollapsed(false);
               }}
             />

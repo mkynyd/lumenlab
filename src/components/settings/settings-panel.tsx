@@ -82,10 +82,10 @@ export function SettingsPanel() {
   ];
 
   return (
-    <div className="flex h-[min(560px,calc(100vh-4rem))] min-w-0 max-w-full flex-col overflow-hidden sm:flex-row">
+    <div className="flex h-[calc(100dvh-1.5rem)] min-h-0 min-w-0 max-w-full flex-col overflow-hidden sm:h-[min(560px,calc(100vh-4rem))] sm:flex-row">
       {/* Left sidebar — neutral surface, no border, breathing room */}
       <nav
-        className="flex w-full shrink-0 flex-row gap-0.5 overflow-x-auto bg-[var(--color-panel)] px-3 py-3 sm:w-52 sm:flex-col sm:overflow-visible sm:py-5"
+        className="flex w-full shrink-0 flex-row gap-0.5 overflow-x-auto bg-[var(--color-panel)] px-3 py-2 sm:w-52 sm:flex-col sm:overflow-visible sm:py-5"
         role="tablist"
         aria-label="设置标签页"
       >
@@ -98,7 +98,7 @@ export function SettingsPanel() {
               aria-controls={`settings-panel-${item.id}`}
               onClick={() => setTab(item.id)}
               className={cn(
-                "flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm sm:w-full",
+                "flex min-h-10 shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm sm:w-full",
                 "transition-colors duration-150",
                 tab === item.id
                   ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)] font-medium"

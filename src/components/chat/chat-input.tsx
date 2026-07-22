@@ -120,7 +120,7 @@ export function ChatInput({
         onSubmit={handleSubmit}
         autoComplete="off"
         className={cn(
-          "workbench-input-dock bg-[var(--color-panel)] p-3 backdrop-blur-[var(--glass-blur)]"
+          "workbench-input-dock shrink-0 bg-[var(--color-panel)] p-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-3 backdrop-blur-[var(--glass-blur)]"
         )}
       >
       {blockedReason && (
@@ -183,14 +183,14 @@ export function ChatInput({
           disabled={disabled}
           autoComplete="off"
           className={cn(
-            "max-h-32 min-h-9 resize-none border-0 bg-transparent px-2 py-2 text-sm shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0",
+            "max-h-32 min-h-10 resize-none border-0 bg-transparent px-2 py-2 text-base sm:min-h-9 sm:text-sm shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0",
             "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
             "focus:outline-none disabled:opacity-50"
           )}
           style={textareaStyle}
         />
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

@@ -353,6 +353,27 @@ export function useChat(options: UseChatOptions = {}) {
         if (newConvId && !conversationId) {
           conversationIdRef.current = newConvId;
           setConversationId(newConvId);
+          // Keep the response stream on the critical path; title generation is
+          // a best-effort background refinement of the neutral "新对话" label.
+          void fetch(`/api/conversations/${newConvId}/title`, {
+            method: "POST",
+          })
+            .then((titleResponse) => {
+              if (!titleResponse.ok) return;
+              return Promise.all([
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.conversations.all,
+                }),
+                ...(options.projectId
+                  ? [
+                      queryClient.invalidateQueries({
+                        queryKey: queryKeys.projects.detail(options.projectId),
+                      }),
+                    ]
+                  : []),
+              ]);
+            })
+            .catch(() => {});
         }
 
         const reader = response.body?.getReader();

@@ -12,12 +12,14 @@ interface NavbarProps {
   onMenuToggle?: () => void;
   sidebarCollapsed?: boolean;
   mobileSidebarOpen?: boolean;
+  desktopSidebarLocked?: boolean;
 }
 
 export function Navbar({
   onMenuToggle,
   sidebarCollapsed = false,
   mobileSidebarOpen = false,
+  desktopSidebarLocked = false,
 }: NavbarProps) {
   return (
     <header
@@ -46,23 +48,25 @@ export function Navbar({
             <PanelLeftOpen size={17} strokeWidth={1.8} />
           )}
         </button>
-        <button
-          onClick={onMenuToggle}
-          className={cn(
-            "-ml-1 hidden h-9 w-9 items-center justify-center rounded-[var(--radius-md)] lg:inline-flex",
-            "bg-[var(--color-surface)]",
-            "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
-            "transition-colors duration-150"
-          )}
-          aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-          aria-expanded={!sidebarCollapsed}
-        >
-          {sidebarCollapsed ? (
-            <PanelLeftOpen size={17} strokeWidth={1.8} />
-          ) : (
-            <PanelLeftClose size={17} strokeWidth={1.8} />
-          )}
-        </button>
+        {!desktopSidebarLocked && (
+          <button
+            onClick={onMenuToggle}
+            className={cn(
+              "-ml-1 hidden h-9 w-9 items-center justify-center rounded-[var(--radius-md)] lg:inline-flex",
+              "bg-[var(--color-surface)]",
+              "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
+              "transition-colors duration-150"
+            )}
+            aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            aria-expanded={!sidebarCollapsed}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen size={17} strokeWidth={1.8} />
+            ) : (
+              <PanelLeftClose size={17} strokeWidth={1.8} />
+            )}
+          </button>
+        )}
         <Link
           href="/chat"
           className="inline-flex min-h-11 items-center truncate rounded-[var(--radius-sm)] px-1 text-sm font-semibold tracking-tight text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)]"

@@ -19,6 +19,7 @@ import { ScrollReveal } from "./scroll-reveal";
 export function HeroSection() {
   return (
     <section className="relative isolate flex min-h-screen items-center overflow-hidden">
+      <div aria-hidden="true" className="hero-ambient-gradient -z-20" />
       <AmbientField
         intensity="medium"
         density="wide"

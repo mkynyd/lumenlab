@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ui/theme-provider";
@@ -33,6 +33,15 @@ export const metadata: Metadata = {
     index: false,
     follow: false,
   },
+};
+
+// `dvh` keeps the workbench above Safari's dynamic browser chrome; this enables
+// the matching safe-area CSS used by the mobile composer.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 export default async function RootLayout({
