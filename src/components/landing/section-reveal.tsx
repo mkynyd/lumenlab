@@ -1,6 +1,12 @@
 "use client";
 
-import { motion } from "motion/react";
+import {
+  cubicBezier,
+  motion,
+  useMotionTemplate,
+  useScroll,
+  useTransform,
+} from "motion/react";
 import { useRef } from "react";
 import { usePrefersReducedMotion } from "./prefers-motion";
 
@@ -10,9 +16,8 @@ interface SectionRevealProps extends React.HTMLAttributes<HTMLElement> {
 }
 
 /**
- * 纵向 section reveal：内容第一次进入视口时淡入并轻微上滑。
- * - viewport amount 0.2：尽早显示，不重复播放
- * - 过渡时长 0.24s，strong ease-out
+ * 全屏功能场景：内容在章节进入、阅读中心和离开时完成淡入、停留和淡出。
+ * 这让连续章节拥有 Apple 宣传页式的滚动叙事，而无需滚动吸附。
  * - prefers-reduced-motion: 退化为直接可见
  */
 export function SectionReveal({
@@ -25,6 +30,28 @@ export function SectionReveal({
   const sectionRef = useRef<HTMLElement | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
   const reduced = usePrefersReducedMotion();
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ["start end", "start 58%", "end 42%", "end start"],
+  });
+  const opacity = useTransform(
+    scrollYProgress,
+    [0, 0.18, 0.78, 1],
+    [0, 1, 1, 0],
+    {
+      ease: [
+        cubicBezier(0.22, 1, 0.36, 1),
+        cubicBezier(0.22, 1, 0.36, 1),
+        cubicBezier(0.65, 0, 0.35, 1),
+      ],
+    }
+  );
+  const y = useTransform(
+    scrollYProgress,
+    [0, 0.18, 0.78, 1],
+    [yOffset, 0, 0, -Math.round(yOffset * 0.45)]
+  );
+  const transform = useMotionTemplate`translate3d(0, ${y}px, 0)`;
 
   if (reduced) {
     return (
@@ -41,10 +68,7 @@ export function SectionReveal({
       <motion.div
         ref={innerRef}
         className={innerClassName}
-        initial={{ opacity: 0, transform: `translateY(${yOffset}px)` }}
-        whileInView={{ opacity: 1, transform: "translateY(0px)" }}
-        viewport={{ once: true, amount: 0.2 }}
-        transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
+        style={{ opacity, transform }}
       >
         {children}
       </motion.div>

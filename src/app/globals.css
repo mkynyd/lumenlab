@@ -777,25 +777,49 @@ pre code {
   box-shadow: none;
 }
 
-/* The landing owns the only decorative gradient: it is a composited backdrop,
-   not animated text or a workbench surface. */
-.hero-ambient-gradient {
-  position: absolute;
-  inset: -18%;
+/* The landing owns one fixed, composited canvas. Individual scenes remain
+   transparent, so their transitions never expose a flat page background. */
+.landing-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 18% 32%, color-mix(in oklch, var(--color-accent) 13%, transparent), transparent 34%),
-    radial-gradient(circle at 78% 58%, color-mix(in oklch, var(--color-accent) 8%, transparent), transparent 38%);
-  opacity: 0.8;
-  transform: translate3d(-1%, -1%, 0) scale(1.03);
-  will-change: transform;
-  animation: hero-gradient-drift 18s cubic-bezier(0.45, 0.05, 0.2, 1) infinite alternate;
+  background: var(--color-bg);
 }
 
-@keyframes hero-gradient-drift {
-  0% { transform: translate3d(-2%, -1%, 0) scale(1.03); }
-  46% { transform: translate3d(2%, 1.5%, 0) scale(1.08); }
-  100% { transform: translate3d(-0.5%, 2.5%, 0) scale(1.05); }
+.landing-atmosphere-layer {
+  position: absolute;
+  inset: -12%;
+  will-change: opacity;
+}
+
+.landing-atmosphere-layer--static,
+.landing-atmosphere-layer--hero {
+  background:
+    radial-gradient(ellipse at 18% 24%, color-mix(in oklch, var(--color-accent) 18%, transparent), transparent 42%),
+    radial-gradient(ellipse at 82% 64%, color-mix(in oklch, var(--color-accent) 8%, transparent), transparent 46%),
+    linear-gradient(155deg, color-mix(in oklch, var(--color-bg) 84%, var(--color-accent)) 0%, var(--color-bg) 56%, color-mix(in oklch, var(--color-bg) 90%, white) 100%);
+}
+
+.landing-atmosphere-layer--workbench {
+  background:
+    radial-gradient(ellipse at 72% 22%, color-mix(in oklch, var(--color-accent) 17%, transparent), transparent 38%),
+    radial-gradient(ellipse at 24% 76%, color-mix(in oklch, var(--color-accent) 9%, transparent), transparent 44%),
+    linear-gradient(145deg, color-mix(in oklch, var(--color-bg) 92%, white) 0%, color-mix(in oklch, var(--color-bg) 84%, var(--color-accent)) 52%, var(--color-bg) 100%);
+}
+
+.landing-atmosphere-layer--guide {
+  background:
+    radial-gradient(ellipse at 24% 26%, color-mix(in oklch, var(--color-accent) 15%, transparent), transparent 40%),
+    radial-gradient(ellipse at 78% 72%, color-mix(in oklch, var(--color-accent) 12%, transparent), transparent 44%),
+    linear-gradient(160deg, color-mix(in oklch, var(--color-bg) 88%, white) 0%, color-mix(in oklch, var(--color-bg) 91%, var(--color-accent)) 54%, var(--color-bg) 100%);
+}
+
+.landing-atmosphere-layer--finale {
+  background:
+    radial-gradient(ellipse at 50% 28%, color-mix(in oklch, var(--color-accent) 19%, transparent), transparent 48%),
+    linear-gradient(180deg, color-mix(in oklch, var(--color-bg) 88%, var(--color-accent)) 0%, var(--color-bg) 72%);
 }
 
 .dark .workbench-input-dock {
@@ -820,9 +844,8 @@ pre code {
     transition: none !important;
   }
 
-  .hero-ambient-gradient {
-    animation: none;
-    transform: none;
+  .landing-atmosphere-layer {
+    will-change: auto;
   }
 }
 

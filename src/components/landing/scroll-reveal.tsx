@@ -1,6 +1,12 @@
 "use client";
 
-import { motion } from "motion/react";
+import {
+  cubicBezier,
+  motion,
+  useMotionTemplate,
+  useScroll,
+  useTransform,
+} from "motion/react";
 import { useRef, type ReactNode } from "react";
 import { usePrefersReducedMotion } from "./prefers-motion";
 
@@ -18,18 +24,41 @@ interface ScrollRevealProps {
 }
 
 /**
- * 滚动入场揭示：元素第一次进入视口时快速淡入 + 轻微上移。
- * - viewport amount 0.2：尽早显示，不重复播放
- * - 过渡时长 0.24s，strong ease-out
+ * 滚动场景揭示：元素进入、停留和离开时均与阅读位置连续对应。
+ * - 不使用一次性 `whileInView`，反向滚动也能自然回到当前状态
+ * - 以非线性曲线分配淡入和淡出的视觉进程，而非固定延迟
  * - prefers-reduced-motion: 退化为直接可见
  * - 永远渲染 motion.div，需要不同语义的元素时由调用方在 children 里自行包裹
  */
 export function ScrollReveal({
   children,
   className,
+  yOffset = 24,
 }: ScrollRevealProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const reduced = usePrefersReducedMotion();
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start 92%", "start 62%", "end 48%", "end 12%"],
+  });
+  const opacity = useTransform(
+    scrollYProgress,
+    [0, 0.2, 0.72, 1],
+    [0, 1, 1, 0],
+    {
+      ease: [
+        cubicBezier(0.22, 1, 0.36, 1),
+        cubicBezier(0.22, 1, 0.36, 1),
+        cubicBezier(0.65, 0, 0.35, 1),
+      ],
+    }
+  );
+  const y = useTransform(
+    scrollYProgress,
+    [0, 0.2, 0.72, 1],
+    [yOffset, 0, 0, -Math.round(yOffset * 0.45)]
+  );
+  const transform = useMotionTemplate`translate3d(0, ${y}px, 0)`;
 
   if (reduced) {
     return (
@@ -43,10 +72,7 @@ export function ScrollReveal({
     <motion.div
       ref={ref}
       className={className}
-      initial={{ opacity: 0, transform: "translateY(12px)" }}
-      whileInView={{ opacity: 1, transform: "translateY(0px)" }}
-      viewport={{ once: true, amount: 0.2 }}
-      transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
+      style={{ opacity, transform }}
     >
       {children}
     </motion.div>

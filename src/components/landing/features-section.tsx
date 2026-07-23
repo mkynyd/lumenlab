@@ -44,7 +44,7 @@ const FEATURES: FeatureItem[] = [
 
 export function FeaturesSection() {
   return (
-    <div id="features" className="relative bg-[var(--color-bg)]">
+    <div id="features" className="relative">
       {FEATURES.map((feature, index) => (
         <SectionReveal
           key={feature.id}

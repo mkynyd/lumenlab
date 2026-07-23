@@ -11,7 +11,7 @@ import { ScrollReveal } from "./scroll-reveal";
  * 主页 hero：
  *  - 左列：强对比标题 + 副文 + 双 CTA
  *  - 右列：缩放版 chat-demo 预览
- *  - 背景：AmbientField 作为工作台签名（中等密度，不叠加发光）
+ *  - 背景：AmbientField 作为工作台签名，页面级渐变由 LandingAtmosphere 提供
  *
  * 视觉方向：克制但有力量。通过字号落差、留白节奏和单一 accent 重音建立层次，
  * 而不是渐变、玻璃或 metrics 模板。
@@ -19,7 +19,6 @@ import { ScrollReveal } from "./scroll-reveal";
 export function HeroSection() {
   return (
     <section className="relative isolate flex min-h-screen items-center overflow-hidden">
-      <div aria-hidden="true" className="hero-ambient-gradient -z-20" />
       <AmbientField
         intensity="medium"
         density="wide"
