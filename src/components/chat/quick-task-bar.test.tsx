@@ -24,15 +24,21 @@ describe("QuickTaskBar", () => {
     );
   });
 
-  it("includes the report code explanation task for coding projects", () => {
+  it("keeps less common tasks in the compact more menu", async () => {
+    const user = userEvent.setup();
     render(<QuickTaskBar projectType="coding" onSend={vi.fn()} />);
 
+    await user.click(
+      screen.getByRole("button", { name: "更多快捷任务" })
+    );
+
     expect(
-      screen.getByRole("button", { name: "整理实验报告代码说明" })
+      screen.getByRole("menuitem", { name: "整理实验报告代码说明" })
     ).toBeInTheDocument();
   });
 
-  it("keeps built-in actions when personalized actions are provided", () => {
+  it("keeps built-in and personalized actions without expanding another button row", async () => {
+    const user = userEvent.setup();
     render(
       <QuickTaskBar
         projectType="general"
@@ -42,8 +48,60 @@ describe("QuickTaskBar", () => {
     );
 
     expect(screen.getByRole("button", { name: "总结要点" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "生成 Mermaid 逻辑图" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "个性化任务 (1)" })).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "更多快捷任务" })
+    );
+
+    expect(
+      screen.getByRole("menuitem", { name: "生成 Mermaid 逻辑图" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("我的任务")).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "漏洞分析" })
+    ).toBeInTheDocument();
+  });
+
+  it("sends an overflow task from the more menu", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+
+    render(<QuickTaskBar projectType="review" onSend={onSend} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "更多快捷任务" })
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "生成速记版" })
+    );
+
+    expect(onSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "快捷任务：生成速记版",
+        materialScope: "project-corpus",
+      })
+    );
+  });
+
+  it("sends a task from the compact mobile menu", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+
+    render(<QuickTaskBar projectType="experiment" onSend={onSend} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "打开快捷任务" })
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "生成误差分析" })
+    );
+
+    expect(onSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "快捷任务：生成误差分析",
+        materialScope: "project-corpus",
+      })
+    );
   });
 
   it("uses neutral project controls and hover states", () => {

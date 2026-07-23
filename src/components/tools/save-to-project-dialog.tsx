@@ -46,7 +46,7 @@ export function SaveToProjectDialog({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId }),
-        }
+        },
       );
       await Promise.all([
         queryClient.invalidateQueries({
@@ -57,7 +57,9 @@ export function SaveToProjectDialog({
       onOpenChange(false);
       onSaved?.(projectName);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "保存失败，请重试");
+      setError(
+        saveError instanceof Error ? saveError.message : "保存失败，请重试",
+      );
     } finally {
       setSavingProjectId(null);
     }
@@ -71,7 +73,7 @@ export function SaveToProjectDialog({
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="max-w-[min(920px,calc(100vw-2rem))] sm:max-w-[920px]">
+      <DialogContent className="max-w-[min(28rem,calc(100vw-2rem))] gap-3 sm:max-w-md">
         <DialogHeader>
           <DialogTitle>保存到项目</DialogTitle>
           <DialogDescription>
@@ -80,20 +82,23 @@ export function SaveToProjectDialog({
         </DialogHeader>
 
         {projectsQuery.isPending ? (
-          <div className="flex min-h-32 items-center justify-center" role="status">
+          <div
+            className="flex min-h-32 items-center justify-center"
+            role="status"
+          >
             <Spinner />
             <span className="sr-only">正在加载项目</span>
           </div>
         ) : projects.length > 0 ? (
           <ScrollArea className="max-h-72">
-            <div className="flex flex-col gap-1 pr-3">
+            <div className="divide-y divide-[var(--color-border-light)] pr-3">
               {projects.map((project) => (
                 <Button
                   key={project.id}
                   type="button"
                   variant="ghost"
                   size="lg"
-                  className="h-auto min-h-11 w-full justify-start px-3 py-2.5 text-left"
+                  className="h-auto min-h-11 w-full justify-start rounded-none px-2 py-2 text-left"
                   disabled={savingProjectId !== null}
                   onClick={() => void save(project.id, project.name)}
                 >
@@ -108,7 +113,7 @@ export function SaveToProjectDialog({
             </div>
           </ScrollArea>
         ) : (
-          <p className="rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-4 py-8 text-center text-sm text-[var(--color-text-tertiary)]">
+          <p className="border-y border-[var(--color-border-light)] px-4 py-8 text-center text-sm text-[var(--color-text-tertiary)]">
             暂无项目，请先创建项目后再保存。
           </p>
         )}
@@ -116,7 +121,7 @@ export function SaveToProjectDialog({
         {error && (
           <p
             role="alert"
-            className="rounded-[var(--radius-md)] bg-[var(--color-error-muted)] px-3 py-2 text-sm text-[var(--color-error)]"
+            className="border-t border-[var(--color-border-light)] pt-3 text-sm text-[var(--color-error)]"
           >
             {error}
           </p>

@@ -138,7 +138,7 @@ export function VirtualMessageList({
   }, []);
 
   return (
-    <div ref={parentRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)] pb-32">
+    <div ref={parentRef} className="min-h-0 flex-1 overflow-y-auto bg-[var(--color-bg)] pb-4">
       {messages.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
           <p className="text-sm font-medium text-[var(--color-text-primary)]">
@@ -170,7 +170,7 @@ export function VirtualMessageList({
             setPinned(false);
             userAtBottomRef.current = true;
           }}
-          className="fixed bottom-24 right-8 z-20 flex size-10 items-center justify-center rounded-lg bg-[var(--color-surface)] text-[var(--color-text-secondary)] shadow-[var(--shadow-panel)] transition-colors hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+          className="fixed bottom-28 right-5 z-20 flex size-10 items-center justify-center rounded-full border border-[var(--color-border-light)] bg-[var(--color-control)] text-[var(--color-text-secondary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] active:scale-[0.97] sm:right-8"
           aria-label="滚动到底部"
         >
           <ArrowDown size={16} strokeWidth={2} aria-hidden="true" />

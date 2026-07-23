@@ -19,62 +19,59 @@ const STEPS = [
 ];
 
 /**
- * 上手板块：用真实「新建项目」页面同款 UI 代码精简到主页做静态演示。
- * 步骤编号用于表达真实顺序，而不是装饰性节奏；采用垂直时间线强化进程感。
+ * 上手板块：用真实「新建项目」交互精简展示完整起步路径。
  */
 export function HowToSection() {
   return (
     <section
       id="how-to"
       aria-label="三步建项目"
-      className="relative flex min-h-screen items-center py-24 sm:py-36"
+      className="relative py-24 sm:py-36"
     >
-      <div className="mx-auto grid w-full max-w-7xl gap-14 px-4 sm:px-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] md:gap-16 lg:gap-20">
+      <div className="mx-auto grid w-full max-w-7xl gap-14 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] lg:gap-20">
         <ScrollReveal className="flex flex-col justify-center">
-          <p className="text-[15px] font-medium text-[var(--color-accent)]">
-            上手
+          <p className="text-[13px] font-medium text-[var(--color-accent)]">
+            三步上手
           </p>
           <h2
-            className="mt-4 max-w-[12ch] text-[clamp(1.875rem,4.2vw,3rem)] font-semibold leading-[1.1] tracking-[-0.025em] text-[var(--color-text-primary)]"
+            className="mt-4 max-w-[12ch] text-[clamp(2rem,4.6vw,4rem)] font-semibold leading-[1.04] tracking-[-0.04em] text-[var(--color-text-primary)]"
             style={{ textWrap: "balance" }}
           >
-            三步建一个项目
+            先把下一门课放进来
           </h2>
           <p
-            className="mt-5 max-w-[46ch] text-[16px] leading-[1.65] text-[var(--color-text-secondary)]"
+            className="mt-6 max-w-[42ch] text-[16px] leading-7 text-[var(--color-text-secondary)]"
             style={{ textWrap: "pretty" }}
           >
-            进入「项目空间」新建项目：填名、选类型、告诉 AI 你的场景。
-            系统会生成项目提示词与推荐快捷任务，确认后即可开始。
+            告诉 LumenLab 课程与任务场景，它会生成一份可调整的项目提示词和常用任务。
           </p>
 
-          <ol className="relative mt-10 flex flex-col gap-0">
+          <ol className="mt-10 border-t border-[var(--color-border-light)]">
             {STEPS.map((step, index) => (
-              <li key={index} className="relative pl-11 pb-8 last:pb-0">
-                {index < STEPS.length - 1 && (
-                  <span
-                    className="absolute left-[18px] top-9 h-[calc(100%-24px)] w-px bg-[var(--color-border-light)]"
-                    aria-hidden
-                  />
-                )}
-                <span
-                  className="absolute left-0 top-0 flex size-9 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent)] text-[14px] font-semibold text-[var(--color-accent-contrast)]"
-                  aria-hidden
-                >
-                  {index + 1}
+              <li
+                key={index}
+                className="grid grid-cols-[30px_minmax(0,1fr)] gap-3 border-b border-[var(--color-border-light)] py-5"
+              >
+                <span className="pt-0.5 text-[12px] font-medium tabular-nums text-[var(--color-text-tertiary)]">
+                  0{index + 1}
                 </span>
-                <h3 className="text-[17px] font-semibold leading-snug text-[var(--color-text-primary)]">
-                  {step.title}
-                </h3>
-                <p className="mt-1.5 max-w-[46ch] text-[15px] leading-[1.6] text-[var(--color-text-secondary)]">
-                  {step.body}
-                </p>
+                <div>
+                  <h3 className="text-[15px] font-semibold leading-snug text-[var(--color-text-primary)]">
+                    {step.title}
+                  </h3>
+                  <p className="mt-1.5 max-w-[42ch] text-[14px] leading-6 text-[var(--color-text-secondary)]">
+                    {step.body}
+                  </p>
+                </div>
               </li>
             ))}
           </ol>
         </ScrollReveal>
 
-        <ScrollReveal delay={0.08} yOffset={28}>
+        <ScrollReveal
+          yOffset={20}
+          className="overflow-hidden rounded-[28px] bg-[var(--color-surface)] ring-1 ring-[var(--color-border-light)]"
+        >
           <ProjectCreateDemo />
         </ScrollReveal>
       </div>

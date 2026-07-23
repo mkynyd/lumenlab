@@ -7,13 +7,10 @@ import type { FileAttachment } from "@/lib/chat/router";
 import { ChatInput } from "@/components/chat/chat-input";
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { TokenUsageBar } from "@/components/chat/token-usage-bar";
-import { ContextRing } from "@/components/chat/context-ring";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
 import { AgentRunStatus } from "@/components/chat/agent-run-status";
-import { SkillBadge } from "@/components/chat/skill-badge";
 import { ContextBudgetWarning } from "@/components/chat/context-budget-warning";
-import { AmbientField } from "@/components/workbench/ambient-field";
-import { AlertCircle, Cpu, Globe2, Hash } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import type { AgentEvent } from "@/lib/agent/types";
 import type { AgentSource } from "@/lib/agent/sources";
 import type { SkillSelectorValue } from "@/components/chat/skill-selector";
@@ -33,12 +30,6 @@ interface ChatAreaProps {
     sources?: AgentSource[] | null;
   }>;
 }
-
-const PROVIDER_LABELS = {
-  deepseek: "DeepSeek",
-  minimax: "MiniMax",
-  bailian: "Qwen",
-} as const;
 
 const AUTO_DISMISS_STATUSES = new Set<AgentEvent["type"]>([
   "tool_completed",
@@ -181,51 +172,27 @@ export function ChatArea({
     (entry) => entry.latestEvent.type === "approval_required"
   );
 
+  const composer = (
+    <ChatInput
+      onSend={handleSend}
+      onStop={abort}
+      isStreaming={isStreaming}
+      attachments={attachments}
+      onAttachmentsChange={setAttachments}
+      model={model}
+      onModelChange={setModel}
+      availableModels={availableModels}
+      reasoningEffort={reasoningEffort}
+      onReasoningEffortChange={setReasoningEffort}
+      webSearchActive={sendWithWebSearch}
+      onWebSearchToggle={toggleWebSearch}
+      skillValue={skillValue}
+      onSkillChange={handleSkillChange}
+    />
+  );
+
   return (
-    <div className="flex flex-col h-full bg-[var(--color-bg)]">
-      {/* 顶部模型切换栏 */}
-      <div
-        className={cn(
-          "flex min-h-14 items-center justify-between gap-3 px-4 py-2",
-          "border-b border-[var(--color-border-light)]",
-          "bg-[var(--color-panel)] shrink-0 backdrop-blur-[var(--glass-blur)]"
-        )}
-      >
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <div className="text-xs font-medium text-[var(--color-text-tertiary)]">
-            聊天
-          </div>
-          {agentSession.activeSkill && (
-            <SkillBadge
-              skill={agentSession.activeSkill}
-              className={cn(
-                "rounded-[var(--radius-md)]",
-                agentSession.activeSkill.status === "awaiting_context" &&
-                  "bg-[var(--color-warning)]/12 text-[var(--color-warning)]"
-              )}
-            />
-          )}
-          {agentSession.webAccess && (
-            <span className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 text-xs text-[var(--color-text-secondary)]">
-              <Globe2 size={12} />
-              {agentSession.webAccess.mode === "auto" ? "自动联网" : "联网"}
-            </span>
-          )}
-          {agentSession.modelAdapter && (
-            <span className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 text-xs text-[var(--color-text-secondary)]">
-              <Cpu size={12} />
-              {PROVIDER_LABELS[agentSession.modelAdapter.provider]}
-            </span>
-          )}
-        </div>
-
-        {usage && (
-          <div className="hidden md:flex items-center gap-3">
-            <ContextRing used={usage.totalTokens} />
-          </div>
-        )}
-      </div>
-
+    <div className="flex h-full min-h-0 flex-col bg-[var(--color-bg)]">
       {/* 错误提示 */}
       {error && (
         <div
@@ -249,26 +216,18 @@ export function ChatArea({
       {/* 上下文预算警告 */}
       <ContextBudgetWarning contextBudget={contextBudget} />
 
-      {/* 消息列表 */}
       {messages.length === 0 ? (
-        <div className="relative flex-1 overflow-y-auto">
-          <AmbientField density="wide" className="opacity-75" />
-          <div className="relative flex h-full flex-col items-center justify-center px-4 text-center">
-            <div
-              data-dot-avoid
-              className={cn(
-                "mb-4 flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)]",
-                "bg-[var(--color-panel)]"
-              )}
-            >
-              <Hash size={24} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
+        <div className="flex min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex min-h-full w-full max-w-[52rem] flex-col justify-center px-1 pb-[10vh] pt-8 sm:px-4">
+            <div className="mb-5 px-5 text-center sm:mb-6">
+              <h1 className="text-[1.65rem] font-semibold tracking-[-0.035em] text-[var(--color-text-primary)] sm:text-[2rem]">
+                今天想一起完成什么？
+              </h1>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--color-text-tertiary)]">
+                提问、上传资料，或选择一种学习方式开始。
+              </p>
             </div>
-            <h2 data-dot-avoid className="mb-2 text-lg font-semibold text-[var(--color-text-primary)]">
-              开始对话
-            </h2>
-            <p data-dot-avoid className="max-w-sm text-sm leading-relaxed text-[var(--color-text-secondary)]">
-              选择强度和模型，然后发送消息即可开始对话。
-            </p>
+            {composer}
           </div>
         </div>
       ) : (
@@ -285,15 +244,17 @@ export function ChatArea({
         </div>
       )}
 
-      <AgentRunStatus
-        plan={agentSession.plan}
-        explanations={agentSession.explanations}
-        needsUserDecision={needsUserDecision}
-      />
+      {messages.length > 0 && (
+        <>
+          <AgentRunStatus
+            plan={agentSession.plan}
+            explanations={agentSession.explanations}
+            needsUserDecision={needsUserDecision}
+          />
 
-      {/* Agent timeline：当前未完成 / 最近 3 条工具调用 */}
-      {displayedAgentEntries.length > 0 && (
-        <div className="px-4 pt-2 pb-1 space-y-1.5 max-h-72 overflow-y-auto">
+          {/* Agent timeline：当前未完成 / 最近 3 条工具调用 */}
+          {displayedAgentEntries.length > 0 && (
+            <div className="max-h-72 space-y-1.5 overflow-y-auto px-4 pb-1 pt-2">
           {displayedAgentEntries.map((entry) => {
             const event = entry.latestEvent;
             const isFading = fadingAgentIds.has(entry.executionId);
@@ -443,26 +404,12 @@ export function ChatArea({
             }
             return null;
           })}
-        </div>
-      )}
+            </div>
+          )}
 
-      {/* 输入框 */}
-      <ChatInput
-        onSend={handleSend}
-        onStop={abort}
-        isStreaming={isStreaming}
-        attachments={attachments}
-        onAttachmentsChange={setAttachments}
-        model={model}
-        onModelChange={setModel}
-        availableModels={availableModels}
-        reasoningEffort={reasoningEffort}
-        onReasoningEffortChange={setReasoningEffort}
-        webSearchActive={sendWithWebSearch}
-        onWebSearchToggle={toggleWebSearch}
-        skillValue={skillValue}
-        onSkillChange={handleSkillChange}
-      />
+          {composer}
+        </>
+      )}
     </div>
   );
 }

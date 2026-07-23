@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // jsdom has no ResizeObserver, which the radix Slider in the crop view needs.
@@ -19,8 +25,8 @@ const mocks = vi.hoisted(() => ({
     email: "user@example.com",
     name: "MKYN",
     avatarPreset: "lumen",
-    avatarUrl: null,
-  },
+    avatarUrl: null
+  }
 }));
 
 vi.mock("next-auth/react", () => ({
@@ -30,23 +36,23 @@ vi.mock("next-auth/react", () => ({
         email: "user@example.com",
         name: "MKYN",
         avatarPreset: "lumen",
-        image: null,
-      },
+        image: null
+      }
     },
-    update: mocks.updateSession,
-  }),
+    update: mocks.updateSession
+  })
 }));
 
 vi.mock("@/lib/hooks/use-user-profile", () => ({
   useUserProfile: () => ({ data: mocks.profile, isPending: false }),
   useUpdateUserProfile: () => ({
     mutateAsync: mocks.updateMutate,
-    isPending: false,
+    isPending: false
   }),
   useUploadUserAvatar: () => ({
     mutateAsync: mocks.uploadMutate,
-    isPending: false,
-  }),
+    isPending: false
+  })
 }));
 
 vi.mock("react-easy-crop", () => ({
@@ -57,11 +63,11 @@ vi.mock("react-easy-crop", () => ({
       props.onCropComplete?.({}, { x: 0, y: 0, width: 200, height: 200 })
     );
     return <div data-testid="cropper" />;
-  },
+  }
 }));
 
 vi.mock("@/lib/avatar-crop", () => ({
-  createCroppedAvatarFile: mocks.createCroppedAvatarFile,
+  createCroppedAvatarFile: mocks.createCroppedAvatarFile
 }));
 
 import { ProfileDialog } from "@/components/user/profile-dialog";
@@ -102,10 +108,16 @@ describe("ProfileDialog", () => {
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 
+  it("exposes a clear header close action", () => {
+    const { onOpenChange } = renderDialog();
+    fireEvent.click(screen.getByRole("button", { name: "关闭个人资料" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("saves the trimmed nickname and closes on success", async () => {
     const { onOpenChange } = renderDialog();
     fireEvent.change(screen.getByLabelText("昵称"), {
-      target: { value: "  新昵称  " },
+      target: { value: "  新昵称  " }
     });
     const saveButton = screen.getByRole("button", { name: "保存" });
     expect(saveButton).toBeEnabled();
@@ -122,17 +134,19 @@ describe("ProfileDialog", () => {
     renderDialog();
     fireEvent.change(fileInput(), {
       target: {
-        files: [new File(["x"], "a.gif", { type: "image/gif" })],
-      },
+        files: [new File(["x"], "a.gif", { type: "image/gif" })]
+      }
     });
-    expect(screen.getByText("仅支持 JPG、PNG 或 WebP 头像")).toBeInTheDocument();
+    expect(
+      screen.getByText("仅支持 JPG、PNG 或 WebP 头像")
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("cropper")).not.toBeInTheDocument();
   });
 
   it("rejects files larger than 20MB", () => {
     renderDialog();
     fireEvent.change(fileInput(), {
-      target: { files: [oversizedFile()] },
+      target: { files: [oversizedFile()] }
     });
     expect(screen.getByText("头像不能超过 20MB")).toBeInTheDocument();
   });
@@ -141,8 +155,8 @@ describe("ProfileDialog", () => {
     renderDialog();
     fireEvent.change(fileInput(), {
       target: {
-        files: [new File(["x"], "photo.png", { type: "image/png" })],
-      },
+        files: [new File(["x"], "photo.png", { type: "image/png" })]
+      }
     });
     expect(await screen.findByTestId("cropper")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
@@ -164,8 +178,8 @@ describe("ProfileDialog", () => {
     const { onOpenChange } = renderDialog();
     fireEvent.change(fileInput(), {
       target: {
-        files: [new File(["x"], "photo.png", { type: "image/png" })],
-      },
+        files: [new File(["x"], "photo.png", { type: "image/png" })]
+      }
     });
     expect(await screen.findByTestId("cropper")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
@@ -185,8 +199,8 @@ describe("ProfileDialog", () => {
     renderDialog();
     fireEvent.change(fileInput(), {
       target: {
-        files: [new File(["x"], "photo.png", { type: "image/png" })],
-      },
+        files: [new File(["x"], "photo.png", { type: "image/png" })]
+      }
     });
     expect(await screen.findByTestId("cropper")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
@@ -199,8 +213,8 @@ describe("ProfileDialog", () => {
     renderDialog();
     fireEvent.change(fileInput(), {
       target: {
-        files: [new File(["x"], "photo.png", { type: "image/png" })],
-      },
+        files: [new File(["x"], "photo.png", { type: "image/png" })]
+      }
     });
     expect(await screen.findByTestId("cropper")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
@@ -212,7 +226,7 @@ describe("ProfileDialog", () => {
     mocks.updateMutate.mockRejectedValue(new Error("boom"));
     const { onOpenChange } = renderDialog();
     fireEvent.change(screen.getByLabelText("昵称"), {
-      target: { value: "新昵称" },
+      target: { value: "新昵称" }
     });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(await screen.findByText("保存失败，请重试")).toBeInTheDocument();
@@ -222,14 +236,16 @@ describe("ProfileDialog", () => {
   it("resets local state after the dialog is closed", () => {
     const { rerender } = renderDialog();
     fireEvent.change(screen.getByLabelText("昵称"), {
-      target: { value: "临时昵称" },
+      target: { value: "临时昵称" }
     });
     fireEvent.change(fileInput(), {
       target: {
-        files: [new File(["x"], "a.gif", { type: "image/gif" })],
-      },
+        files: [new File(["x"], "a.gif", { type: "image/gif" })]
+      }
     });
-    expect(screen.getByText("仅支持 JPG、PNG 或 WebP 头像")).toBeInTheDocument();
+    expect(
+      screen.getByText("仅支持 JPG、PNG 或 WebP 头像")
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     rerender(<ProfileDialog open onOpenChange={vi.fn()} />);
     expect(screen.getByDisplayValue("MKYN")).toBeInTheDocument();
@@ -242,8 +258,8 @@ describe("ProfileDialog", () => {
     renderDialog();
     fireEvent.change(fileInput(), {
       target: {
-        files: [new File(["x"], "photo.png", { type: "image/png" })],
-      },
+        files: [new File(["x"], "photo.png", { type: "image/png" })]
+      }
     });
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     // Let the pending FileReader fire its (stale) load event.

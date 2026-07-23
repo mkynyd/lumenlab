@@ -66,7 +66,7 @@ export function FileContentDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] p-4">
-      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-[var(--radius-lg)] bg-[var(--color-surface)] shadow-xl">
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-none">
         <div className="flex items-center justify-between px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold">{file.originalName}</h2>

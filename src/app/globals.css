@@ -34,40 +34,40 @@
 
 /* ============================================
    LumenLab Design System
-   Academic Workbench
+   Geist-neutral workbench with one blue accent
    ============================================ */
 
 /* ---- Light Theme (default) ---- */
 :root {
-  --color-bg: oklch(0.972 0 0);
-  --color-surface: oklch(0.995 0 0);
-  --color-surface-hover: oklch(0.965 0 0);
-  --color-surface-active: oklch(0.945 0 0);
-  --color-panel: oklch(0.985 0 0);
-  --color-panel-muted: oklch(0.94 0 0);
-  --color-control: oklch(0.995 0 0);
-  --color-control-menu: oklch(0.995 0 0);
-  --color-interaction-hover: oklch(0.96 0 0);
-  --color-interaction-active: oklch(0.93 0 0);
+  --color-bg: oklch(1 0 0);
+  --color-surface: oklch(0.985 0 0);
+  --color-surface-hover: oklch(0.145 0 0 / 0.05);
+  --color-surface-active: oklch(0.145 0 0 / 0.08);
+  --color-panel: oklch(1 0 0);
+  --color-panel-muted: oklch(0.965 0 0);
+  --color-control: oklch(1 0 0);
+  --color-control-menu: oklch(1 0 0);
+  --color-interaction-hover: oklch(0.145 0 0 / 0.05);
+  --color-interaction-active: oklch(0.145 0 0 / 0.08);
 
-  --color-text-primary: oklch(0.24 0 0);
+  --color-text-primary: oklch(0.18 0 0);
   --color-text-secondary: oklch(0.42 0 0);
-  --color-text-tertiary: oklch(0.5 0 0);
+  --color-text-tertiary: oklch(0.56 0 0);
 
-  --color-accent: oklch(0.5151 0.2399 257.85);
-  --color-accent-hover: oklch(0.46 0.21 257.85);
-  --color-accent-muted: oklch(0.916 0.047 245.1);
-  --color-accent-soft: oklch(0.946 0.029 249.8);
-  --color-accent-contrast: oklch(0.995 0.002 255);
+  --color-accent: oklch(0.5761 0.2508 258.23);
+  --color-accent-hover: oklch(0.5151 0.2399 257.85);
+  --color-accent-muted: oklch(0.9158 0.0473 245.12);
+  --color-accent-soft: oklch(0.9458 0.0293 249.85);
+  --color-accent-contrast: oklch(1 0 0);
 
   /* Project workbench: blue actions with neutral interaction states */
-  --color-project-action: oklch(0.5151 0.2399 257.85);
-  --color-project-action-hover: oklch(0.46 0.21 257.85);
-  --color-project-action-contrast: oklch(0.995 0.002 255);
-  --color-project-surface: oklch(0.937 0 0);
-  --color-project-surface-hover: oklch(0.15 0 0 / 0.13);
-  --color-project-surface-active: oklch(0.15 0 0 / 0.18);
-  --color-project-control: oklch(0.15 0 0 / 0.06);
+  --color-project-action: var(--color-accent);
+  --color-project-action-hover: var(--color-accent-hover);
+  --color-project-action-contrast: var(--color-accent-contrast);
+  --color-project-surface: oklch(0.965 0 0);
+  --color-project-surface-hover: oklch(0.145 0 0 / 0.06);
+  --color-project-surface-active: oklch(0.145 0 0 / 0.1);
+  --color-project-control: oklch(0.145 0 0 / 0.05);
 
   /* Semantic */
   --color-success: oklch(0.575 0.145 160);
@@ -80,8 +80,8 @@
   --color-info-muted: oklch(0.93 0.025 215);
 
   /* Borders */
-  --color-border: oklch(0.835 0 0 / 0.76);
-  --color-border-light: oklch(0.9 0 0 / 0.72);
+  --color-border: oklch(0.145 0 0 / 0.14);
+  --color-border-light: oklch(0.145 0 0 / 0.08);
 
   /* Progress / Ring */
   --color-ring-track: oklch(0.9 0.004 255);
@@ -89,18 +89,21 @@
   --color-loader-path: oklch(0.7 0.018 255);
   --color-loader-dot: var(--color-accent);
   --color-loader-dot-soft: oklch(0.68 0.03 255);
-  --color-overlay: oklch(0.15 0.01 255 / 0.34);
+  --color-overlay: oklch(0.145 0 0 / 0.28);
 
   /* Misc */
   --radius-0: 0;
   --radius-xs: 4px;
   --radius-sm: 6px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 16px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --shadow-none: none;
-  --shadow-panel: 0 16px 42px oklch(0.25 0 0 / 0.07);
-  --shadow-float: 0 18px 48px oklch(0.25 0 0 / 0.10);
+  --shadow-card: none;
+  --shadow-panel: none;
+  --shadow-float: none;
+  --shadow-input: 0 1px 2px oklch(0.145 0 0 / 0.04), 0 8px 24px oklch(0.145 0 0 / 0.035);
+  --shadow-pill: 0 1px 2px oklch(0.145 0 0 / 0.05), 0 4px 12px oklch(0.145 0 0 / 0.04);
   --glass-blur: 0px;
   --dot-grid-base: oklch(0.66 0 0 / 0.18);
   --dot-grid-active: oklch(0.42 0 0 / 0.72);
@@ -128,7 +131,7 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.96 0 0);
+  --sidebar: oklch(0.98 0 0);
   --sidebar-foreground: var(--color-text-primary);
   --sidebar-primary: var(--color-accent);
   --sidebar-primary-foreground: var(--color-accent-contrast);
@@ -140,37 +143,37 @@
 
 /* ---- Dark Theme ---- */
 .dark {
-  --color-bg: oklch(0.16 0 0);
-  --color-surface: oklch(0.235 0 0);
-  --color-surface-hover: oklch(0.29 0 0);
-  --color-surface-active: oklch(0.33 0 0);
-  --color-panel: oklch(0.205 0 0);
-  --color-panel-muted: oklch(0.275 0 0);
-  --color-control: oklch(0.245 0 0);
-  --color-control-menu: oklch(0.285 0 0);
-  --color-interaction-hover: oklch(0.3 0 0);
-  --color-interaction-active: oklch(0.35 0 0);
+  --color-bg: oklch(0.13 0 0);
+  --color-surface: oklch(1 0 0 / 0.055);
+  --color-surface-hover: oklch(1 0 0 / 0.08);
+  --color-surface-active: oklch(1 0 0 / 0.12);
+  --color-panel: oklch(0.13 0 0);
+  --color-panel-muted: oklch(1 0 0 / 0.07);
+  --color-control: oklch(0.18 0 0);
+  --color-control-menu: oklch(0.19 0 0);
+  --color-interaction-hover: oklch(1 0 0 / 0.08);
+  --color-interaction-active: oklch(1 0 0 / 0.12);
 
   /* Text */
-  --color-text-primary: oklch(0.925 0 0);
+  --color-text-primary: oklch(0.95 0 0);
   --color-text-secondary: oklch(0.76 0 0);
-  --color-text-tertiary: oklch(0.68 0 0);
+  --color-text-tertiary: oklch(0.66 0 0);
 
   /* Accent */
-  --color-accent: oklch(64.92% .1572 181.95);
-  --color-accent-hover: oklch(0.72 0.14 181.95);
-  --color-accent-muted: oklch(0.32 0.05 181.95);
-  --color-accent-soft: oklch(54.817% 0.09601 178.06 / 0.728);
-  --color-accent-contrast: oklch(0.995 0 0);
+  --color-accent: oklch(0.7308 0.1583 248.13);
+  --color-accent-hover: oklch(0.78 0.13 248.13);
+  --color-accent-muted: oklch(0.32 0.07 253);
+  --color-accent-soft: oklch(0.28 0.055 253);
+  --color-accent-contrast: oklch(0.13 0 0);
 
-  /* Project workbench: Teal actions with neutral interaction states */
-  --color-project-action: oklch(0.6492 0.1572 181.95);
-  --color-project-action-hover: oklch(0.72 0.14 181.95);
-  --color-project-action-contrast: oklch(0.13 0.02 181.95);
-  --color-project-surface: oklch(0.125 0 0);
-  --color-project-surface-hover: oklch(0.92 0 0 / 0.17);
-  --color-project-surface-active: oklch(0.92 0 0 / 0.22);
-  --color-project-control: oklch(0.92 0 0 / 0.08);
+  /* Project workbench: the same blue action and neutral hierarchy. */
+  --color-project-action: var(--color-accent);
+  --color-project-action-hover: var(--color-accent-hover);
+  --color-project-action-contrast: var(--color-accent-contrast);
+  --color-project-surface: oklch(1 0 0 / 0.055);
+  --color-project-surface-hover: oklch(1 0 0 / 0.09);
+  --color-project-surface-active: oklch(1 0 0 / 0.13);
+  --color-project-control: oklch(1 0 0 / 0.07);
 
   /* Semantic */
   --color-success: oklch(0.72 0.14 150);
@@ -183,8 +186,8 @@
   --color-info-muted: oklch(0.29 0.022 215);
 
   /* Borders */
-  --color-border: oklch(0.42 0 0 / 0.72);
-  --color-border-light: oklch(0.35 0 0 / 0.68);
+  --color-border: oklch(1 0 0 / 0.16);
+  --color-border-light: oklch(1 0 0 / 0.1);
 
   /* Progress / Ring */
   --color-ring-track: oklch(0.31 0.006 255);
@@ -198,12 +201,15 @@
   --radius-0: 0;
   --radius-xs: 4px;
   --radius-sm: 6px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 16px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --shadow-none: none;
-  --shadow-panel: 0 22px 42px oklch(0.05 0 0 / 0.30);
-  --shadow-float: 0 22px 54px oklch(0.05 0 0 / 0.38);
+  --shadow-card: none;
+  --shadow-panel: none;
+  --shadow-float: none;
+  --shadow-input: 0 1px 2px oklch(0 0 0 / 0.2), 0 8px 24px oklch(0 0 0 / 0.16);
+  --shadow-pill: 0 1px 2px oklch(0 0 0 / 0.22), 0 4px 12px oklch(0 0 0 / 0.16);
   --glass-blur: 0px;
   --dot-grid-base: oklch(0.68 0 0 / 0.16);
   --dot-grid-active: oklch(0.82 0 0 / 0.8);
@@ -230,7 +236,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.19 0 0);
+  --sidebar: oklch(0.16 0 0);
   --sidebar-foreground: var(--color-text-primary);
   --sidebar-primary: var(--color-accent);
   --sidebar-primary-foreground: var(--color-accent-contrast);
@@ -659,7 +665,6 @@ pre code {
 
 .workbench-glass {
   background: var(--color-panel);
-  box-shadow: var(--shadow-panel);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
 }
 
@@ -774,7 +779,7 @@ pre code {
 }
 
 .workbench-input-dock {
-  box-shadow: none;
+  box-shadow: var(--shadow-input);
 }
 
 /* The landing owns one fixed, composited canvas. Individual scenes remain
@@ -797,33 +802,30 @@ pre code {
 .landing-atmosphere-layer--static,
 .landing-atmosphere-layer--hero {
   background:
-    radial-gradient(ellipse at 18% 24%, color-mix(in oklch, var(--color-accent) 18%, transparent), transparent 42%),
-    radial-gradient(ellipse at 82% 64%, color-mix(in oklch, var(--color-accent) 8%, transparent), transparent 46%),
-    linear-gradient(155deg, color-mix(in oklch, var(--color-bg) 84%, var(--color-accent)) 0%, var(--color-bg) 56%, color-mix(in oklch, var(--color-bg) 90%, white) 100%);
+    radial-gradient(ellipse at 18% 24%, color-mix(in oklch, var(--color-accent) 5%, transparent), transparent 42%),
+    linear-gradient(155deg, color-mix(in oklch, var(--color-bg) 97%, var(--color-accent)) 0%, var(--color-bg) 56%, color-mix(in oklch, var(--color-bg) 96%, white) 100%);
 }
 
 .landing-atmosphere-layer--workbench {
   background:
-    radial-gradient(ellipse at 72% 22%, color-mix(in oklch, var(--color-accent) 17%, transparent), transparent 38%),
-    radial-gradient(ellipse at 24% 76%, color-mix(in oklch, var(--color-accent) 9%, transparent), transparent 44%),
-    linear-gradient(145deg, color-mix(in oklch, var(--color-bg) 92%, white) 0%, color-mix(in oklch, var(--color-bg) 84%, var(--color-accent)) 52%, var(--color-bg) 100%);
+    radial-gradient(ellipse at 72% 22%, color-mix(in oklch, var(--color-accent) 5%, transparent), transparent 38%),
+    linear-gradient(145deg, color-mix(in oklch, var(--color-bg) 96%, white) 0%, color-mix(in oklch, var(--color-bg) 97%, var(--color-accent)) 52%, var(--color-bg) 100%);
 }
 
 .landing-atmosphere-layer--guide {
   background:
-    radial-gradient(ellipse at 24% 26%, color-mix(in oklch, var(--color-accent) 15%, transparent), transparent 40%),
-    radial-gradient(ellipse at 78% 72%, color-mix(in oklch, var(--color-accent) 12%, transparent), transparent 44%),
-    linear-gradient(160deg, color-mix(in oklch, var(--color-bg) 88%, white) 0%, color-mix(in oklch, var(--color-bg) 91%, var(--color-accent)) 54%, var(--color-bg) 100%);
+    radial-gradient(ellipse at 24% 26%, color-mix(in oklch, var(--color-accent) 4%, transparent), transparent 40%),
+    linear-gradient(160deg, color-mix(in oklch, var(--color-bg) 97%, white) 0%, color-mix(in oklch, var(--color-bg) 98%, var(--color-accent)) 54%, var(--color-bg) 100%);
 }
 
 .landing-atmosphere-layer--finale {
   background:
-    radial-gradient(ellipse at 50% 28%, color-mix(in oklch, var(--color-accent) 19%, transparent), transparent 48%),
-    linear-gradient(180deg, color-mix(in oklch, var(--color-bg) 88%, var(--color-accent)) 0%, var(--color-bg) 72%);
+    radial-gradient(ellipse at 50% 28%, color-mix(in oklch, var(--color-accent) 5%, transparent), transparent 48%),
+    linear-gradient(180deg, color-mix(in oklch, var(--color-bg) 97%, var(--color-accent)) 0%, var(--color-bg) 72%);
 }
 
 .dark .workbench-input-dock {
-  box-shadow: none;
+  box-shadow: var(--shadow-input);
 }
 
 .loading-indicator-status {

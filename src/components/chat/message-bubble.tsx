@@ -5,7 +5,6 @@ import { TaskList } from "iconoir-react";
 import {
   Archive,
   BookOpen,
-  Bot,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -13,7 +12,6 @@ import {
   GraduationCap,
   Lightbulb,
   Save,
-  User,
 } from "lucide-react";
 import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
@@ -186,26 +184,14 @@ function MessageBubbleComponent({
   }
 
   return (
-    <div className="w-full px-4 py-4 md:px-6">
+    <div className="w-full px-4 py-3 md:px-6 md:py-4">
       <div
         className={cn(
-          "mx-auto flex w-full max-w-[56rem] gap-3",
-          isUser && "flex-row-reverse"
+          "mx-auto flex w-full max-w-[48rem]",
+          isUser && "justify-end"
         )}
       >
-        <div
-          className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-lg)] mt-0.5",
-            isUser
-              ? "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
-              : "bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]"
-          )}
-          aria-hidden="true"
-        >
-          {isUser ? <User size={14} /> : <Bot size={14} />}
-        </div>
-
-        <div className={cn("flex-1 min-w-0", isUser && "flex flex-col items-end")}>
+        <div className={cn("min-w-0", isUser ? "flex w-full flex-col items-end" : "w-full")}>
         {shouldShowReasoning && (
           <Collapsible
             open={showReasoning}
@@ -249,14 +235,14 @@ function MessageBubbleComponent({
           className={cn(
             "chat-message-text",
             isUser
-              ? "w-fit max-w-[85%] rounded-[var(--radius-xl)] bg-[var(--color-surface-active)] px-3.5 py-2.5"
+              ? "w-fit max-w-[85%] rounded-[22px] bg-[var(--color-interaction-active)] px-4 py-2.5 sm:max-w-[70%]"
               : "w-full"
           )}
         >
           {content ? (
             <MarkdownContent content={content} isStreaming={isStreaming} />
           ) : isStreaming ? (
-            <div className="rounded-[var(--radius-xl)] bg-[var(--color-panel)] px-3 py-2 backdrop-blur-[var(--glass-blur)]">
+            <div className="py-1">
               <LoadingIndicator
                 size="sm"
                 variant="lissajous"
@@ -279,14 +265,14 @@ function MessageBubbleComponent({
             <button
               type="button"
               onClick={() => setShowSave((current) => !current)}
-	              className="flex items-center gap-1 rounded-[var(--radius-md)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+              className="flex items-center gap-1 rounded-[var(--radius-md)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
               aria-expanded={showSave}
             >
               <Save size={12} />
               保存为成果
             </button>
             {showSave && (
-	              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-xl)] bg-[var(--color-panel)] p-2 backdrop-blur-[var(--glass-blur)]">
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--color-border-light)] pt-3">
                 <Input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
@@ -294,17 +280,17 @@ function MessageBubbleComponent({
                   maxLength={150}
                   aria-label="成果标题"
                 />
-	                <SelectMenu
-	                  value={type}
-	                  placeholder="成果类型"
-	                  ariaLabel="成果类型"
-	                  options={ARTIFACT_TYPES.map(([value, label]) => ({
-	                    value,
-	                    label,
-	                  }))}
-	                  onChange={setType}
-	                  className="w-36"
-	                />
+                <SelectMenu
+                  value={type}
+                  placeholder="成果类型"
+                  ariaLabel="成果类型"
+                  options={ARTIFACT_TYPES.map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
+                  onChange={setType}
+                  className="w-36"
+                />
                 <Button
                   type="button"
                   size="sm"

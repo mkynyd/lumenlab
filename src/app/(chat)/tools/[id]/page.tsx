@@ -28,18 +28,18 @@ export default async function ConversionDetailPage({
   if (!conversion) {
     return (
       <div className="flex h-full items-center justify-center px-6">
-        <div className="max-w-sm rounded-[var(--radius-xl)] bg-[var(--color-surface)] px-6 py-10 text-center">
+        <div className="max-w-sm text-center">
           <PageEdit
-            width={32}
-            height={32}
-            strokeWidth={1.4}
+            width={28}
+            height={28}
+            strokeWidth={1.5}
             className="mx-auto text-[var(--color-text-tertiary)]"
           />
-          <h1 className="mt-4 text-base font-semibold">转换记录不存在</h1>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-text-tertiary)]">
+          <h1 className="mt-3 text-base font-semibold">转换记录不存在</h1>
+          <p className="mt-1.5 text-sm leading-6 text-[var(--color-text-tertiary)]">
             记录可能已被删除，或不属于当前账户。
           </p>
-          <Button asChild className="mt-5">
+          <Button asChild size="sm" className="mt-4">
             <Link href="/tools">返回文档工具</Link>
           </Button>
         </div>

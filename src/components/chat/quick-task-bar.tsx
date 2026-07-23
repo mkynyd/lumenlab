@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { MoreHoriz } from "iconoir-react";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   getDefaultQuickActions,
   type ProjectType,
@@ -61,6 +68,15 @@ function resolveQuickActions(projectType: ProjectType, actions?: QuickTaskAction
   return sortActions([...systemActions, ...personalizedActions]);
 }
 
+function toSendInput(action: QuickTaskAction): QuickTaskSendInput {
+  return {
+    label: `快捷任务：${action.title}`,
+    prompt: action.prompt,
+    quickActionId: action.id,
+    materialScope: action.materialScope ?? "project-corpus",
+  };
+}
+
 function ActionButton({
   action,
   onSend,
@@ -73,22 +89,15 @@ function ActionButton({
   return (
     <button
       type="button"
-      onClick={() =>
-        onSend({
-          label: `快捷任务：${action.title}`,
-          prompt: action.prompt,
-          quickActionId: action.id,
-          materialScope: action.materialScope ?? "project-corpus",
-        })
-      }
+      onClick={() => onSend(toSendInput(action))}
       disabled={disabled}
       className={cn(
-        "rounded-xl px-3 py-2 text-xs",
+        "h-8 shrink-0 rounded-[var(--radius-md)] px-2.5 text-xs",
         "bg-[var(--color-project-control)]",
         "text-[var(--color-text-secondary)]",
         "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
         "focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]",
-        "transition-[background-color,color] duration-150 whitespace-nowrap",
+        "transition-[background-color,color] duration-150",
         "disabled:opacity-40 disabled:cursor-not-allowed"
       )}
     >
@@ -104,84 +113,112 @@ export function QuickTaskBar({
   disabled,
   className,
 }: QuickTaskBarProps) {
-  const [customOpen, setCustomOpen] = useState(false);
-  const [systemExpanded, setSystemExpanded] = useState(true);
   const resolvedActions: QuickTaskAction[] = resolveQuickActions(projectType, actions);
   const systemActions = resolvedActions.filter((action) => action.isSystem !== false);
   const customActions = resolvedActions.filter((action) => action.isSystem === false);
-  // Show all when expanded, show up to 6 when collapsed (more natural threshold)
-  const PREVIEW_COUNT = 6;
-  const showExpandButton = systemActions.length > PREVIEW_COUNT;
-  const visibleSystemActions = systemExpanded || !showExpandButton ? systemActions : systemActions.slice(0, PREVIEW_COUNT);
+  const previewActions = systemActions.slice(0, 3);
+  const overflowActions = systemActions.slice(3);
+  const hasMoreActions = overflowActions.length > 0 || customActions.length > 0;
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      {visibleSystemActions.map((action) => (
-        <ActionButton
-          key={action.id || action.title}
-          action={action}
-          onSend={onSend}
-          disabled={disabled}
-        />
-      ))}
-      {showExpandButton && !systemExpanded && (
-        <button
-          type="button"
-          onClick={() => setSystemExpanded(true)}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs",
-            "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
-            "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
-            "focus-visible:bg-[var(--color-project-surface-hover)]",
-            "transition-[background-color,color] duration-150 whitespace-nowrap"
-          )}
-        >
-          <ChevronRight size={12} />
-          更多 ({systemActions.length - PREVIEW_COUNT})
-        </button>
-      )}
-      {showExpandButton && systemExpanded && (
-        <button
-          type="button"
-          onClick={() => setSystemExpanded(false)}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs",
-            "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
-            "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
-            "focus-visible:bg-[var(--color-project-surface-hover)]",
-            "transition-[background-color,color] duration-150 whitespace-nowrap"
-          )}
-        >
-          <ChevronDown size={12} />
-          收起
-        </button>
-      )}
-      {customActions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setCustomOpen((current) => !current)}
-            className={cn(
-	              "inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs",
-	              "bg-[var(--color-project-control)] text-[var(--color-text-secondary)]",
-	              "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)] aria-expanded:bg-[var(--color-project-surface-active)] transition-colors duration-150"
-            )}
-            aria-expanded={customOpen}
-          >
-            {customOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            个性化任务 ({customActions.length})
-          </button>
-          {customOpen &&
-            customActions.map((action) => (
-              <ActionButton
+    <div className="min-w-0">
+      <div className="sm:hidden">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={disabled}
+              className={cn(
+                "inline-flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-md)] px-2 text-xs",
+                "text-[var(--color-text-tertiary)]",
+                "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
+                "focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]",
+                "data-[state=open]:bg-[var(--color-project-surface-active)]",
+                "disabled:cursor-not-allowed disabled:opacity-40"
+              )}
+              aria-label="打开快捷任务"
+            >
+              <MoreHoriz width={14} height={14} strokeWidth={2} />
+              快捷任务
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            {resolvedActions.map((action) => (
+              <DropdownMenuItem
                 key={action.id || action.title}
-                action={action}
-                onSend={onSend}
                 disabled={disabled}
-              />
+                onSelect={() => onSend(toSendInput(action))}
+              >
+                {action.title}
+              </DropdownMenuItem>
             ))}
-        </div>
-      )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className={cn("hidden min-w-0 items-center gap-1.5 sm:flex", className)}>
+        <span className="mr-0.5 shrink-0 text-[11px] font-medium text-[var(--color-text-tertiary)]">
+          快捷任务
+        </span>
+        {previewActions.map((action) => (
+          <ActionButton
+            key={action.id || action.title}
+            action={action}
+            onSend={onSend}
+            disabled={disabled}
+          />
+        ))}
+        {hasMoreActions && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                disabled={disabled}
+                className={cn(
+                  "inline-flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-md)] px-2 text-xs",
+                  "text-[var(--color-text-tertiary)]",
+                  "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
+                  "focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]",
+                  "data-[state=open]:bg-[var(--color-project-surface-active)]",
+                  "disabled:cursor-not-allowed disabled:opacity-40"
+                )}
+                aria-label="更多快捷任务"
+              >
+                <MoreHoriz width={14} height={14} strokeWidth={2} />
+                更多
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {overflowActions.map((action) => (
+                <DropdownMenuItem
+                  key={action.id || action.title}
+                  disabled={disabled}
+                  onSelect={() => onSend(toSendInput(action))}
+                >
+                  {action.title}
+                </DropdownMenuItem>
+              ))}
+              {overflowActions.length > 0 && customActions.length > 0 && (
+                <DropdownMenuSeparator />
+              )}
+              {customActions.length > 0 && (
+                <>
+                  <DropdownMenuLabel>我的任务</DropdownMenuLabel>
+                  {customActions.map((action) => (
+                    <DropdownMenuItem
+                      key={action.id || action.title}
+                      disabled={disabled}
+                      onSelect={() => onSend(toSendInput(action))}
+                    >
+                      {action.title}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
     </div>
   );
 }

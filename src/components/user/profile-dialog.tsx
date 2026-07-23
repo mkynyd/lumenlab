@@ -4,12 +4,12 @@ import { useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
-import { ArrowLeft, Camera, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, Camera, X, ZoomIn, ZoomOut } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import {
   useUpdateUserProfile,
   useUploadUserAvatar,
   useUserProfile,
-  type UserProfile,
+  type UserProfile
 } from "@/lib/hooks/use-user-profile";
 import { avatarPresetById } from "@/lib/user-profile";
 import { createCroppedAvatarFile } from "@/lib/avatar-crop";
@@ -28,6 +28,8 @@ import { createCroppedAvatarFile } from "@/lib/avatar-crop";
 const MAX_AVATAR_UPLOAD_BYTES = 20 * 1024 * 1024;
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
 const AVATAR_TYPES = new Set(AVATAR_ACCEPT.split(","));
+const PROFILE_FIELD_CLASS =
+  "h-9 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] transition-colors duration-150 focus:border-[var(--color-accent)] motion-reduce:transition-none";
 
 type ProfileDialogProps = {
   open: boolean;
@@ -90,8 +92,8 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
       user: {
         name: nextProfile.name,
         avatarPreset: nextProfile.avatarPreset,
-        image: nextProfile.avatarUrl,
-      },
+        image: nextProfile.avatarUrl
+      }
     });
   }
 
@@ -150,7 +152,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
       if (sessionSnapshot !== sessionRef.current) return;
       setView("main");
       setImageSrc(null);
-      setAvatarError(error instanceof Error ? error.message : "上传失败，请重试");
+      setAvatarError(
+        error instanceof Error ? error.message : "上传失败，请重试"
+      );
     } finally {
       if (sessionSnapshot === sessionRef.current) setIsCropping(false);
     }
@@ -161,7 +165,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
     const sessionSnapshot = sessionRef.current;
     try {
       const nextProfile = await updateProfile.mutateAsync({
-        name: nameValue.trim(),
+        name: nameValue.trim()
       });
       if (sessionSnapshot !== sessionRef.current) return;
       await applyProfileToSession(nextProfile);
@@ -174,85 +178,121 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 rounded-none p-6 pt-[max(1.5rem,env(safe-area-inset-top))] sm:inset-auto sm:h-auto sm:max-w-[420px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl">
+      <DialogContent
+        showCloseButton={false}
+        className="inset-0 flex h-dvh max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-[var(--color-surface)] p-0 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none [&>[data-slot=dialog-close]]:right-[max(0.5rem,env(safe-area-inset-right))] [&>[data-slot=dialog-close]]:top-[max(0.5rem,env(safe-area-inset-top))] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-auto sm:max-h-[min(640px,calc(100vh-3rem))] sm:max-w-[540px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:border-[var(--color-border-light)] sm:pb-0 sm:pt-0 sm:[&>[data-slot=dialog-close]]:right-2 sm:[&>[data-slot=dialog-close]]:top-2"
+      >
         {view === "main" ? (
           <>
-            <DialogTitle className="mb-5 text-base font-semibold">
-              编辑个人资料
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              修改昵称和头像
-            </DialogDescription>
-
-            <div className="flex flex-col items-center">
-              <button
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border-light)] px-5">
+              <DialogTitle className="text-base font-semibold">
+                编辑个人资料
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                修改昵称和头像
+              </DialogDescription>
+              <Button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="group relative block rounded-full"
-                aria-label="更换头像"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => handleOpenChange(false)}
+                aria-label="关闭个人资料"
               >
-                <AvatarMark
-                  presetId={currentAvatarPreset}
-                  src={currentAvatarUrl}
-                  alt={`${nameValue.trim() || email || "账户"} 的头像`}
-                  className="size-24 rounded-full text-2xl"
-                />
-                <span className="absolute -bottom-0.5 -right-0.5 flex size-7 items-center justify-center rounded-full bg-[var(--color-surface)] text-[var(--color-text-secondary)] shadow-sm transition-colors group-hover:text-[var(--color-text-primary)]">
-                  <Camera size={14} strokeWidth={1.8} />
-                </span>
-                {uploadAvatar.isPending && (
-                  <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
-                    <Spinner className="size-6 text-white" />
+                <X size={16} strokeWidth={1.8} />
+              </Button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5">
+              <div className="divide-y divide-[var(--color-border-light)]">
+                <div className="grid gap-3 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
+                  <div>
+                    <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                      头像
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
+                      JPG、PNG 或 WebP，最大 20MB
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-start sm:items-end">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="group relative block rounded-full outline-none transition-transform duration-150 active:scale-[0.98] active:duration-75 focus-visible:ring-2 focus-visible:ring-[var(--color-accent-muted)] motion-reduce:transition-none"
+                      aria-label="更换头像"
+                    >
+                      <AvatarMark
+                        presetId={currentAvatarPreset}
+                        src={currentAvatarUrl}
+                        alt={`${nameValue.trim() || email || "账户"} 的头像`}
+                        className="size-16 rounded-full text-xl"
+                      />
+                      <span className="absolute -bottom-0.5 -right-0.5 flex size-7 items-center justify-center rounded-full border border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] transition-colors duration-150 group-hover:text-[var(--color-text-primary)] motion-reduce:transition-none">
+                        <Camera size={14} strokeWidth={1.8} />
+                      </span>
+                      {uploadAvatar.isPending && (
+                        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
+                          <Spinner className="size-5 text-white" />
+                        </span>
+                      )}
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={AVATAR_ACCEPT}
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    {avatarError && (
+                      <p
+                        role="alert"
+                        className="mt-2 text-xs text-[var(--color-error)]"
+                      >
+                        {avatarError}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-2 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
+                  <label
+                    htmlFor="profile-name"
+                    className="text-sm font-medium text-[var(--color-text-primary)]"
+                  >
+                    昵称
+                  </label>
+                  <Input
+                    id="profile-name"
+                    value={nameValue}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      setSaveError(false);
+                    }}
+                    placeholder="你的称呼"
+                    maxLength={60}
+                    className={PROFILE_FIELD_CLASS}
+                  />
+                </div>
+
+                <div className="grid gap-1 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
+                  <span className="text-sm font-medium text-[var(--color-text-primary)]">
+                    邮箱
                   </span>
-                )}
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={AVATAR_ACCEPT}
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              {avatarError && (
-                <p role="alert" className="mt-2 text-xs text-[var(--color-error)]">
-                  {avatarError}
-                </p>
-              )}
-            </div>
-
-            <div className="mt-5 space-y-4">
-              <div>
-                <label
-                  htmlFor="profile-name"
-                  className="text-sm font-medium text-[var(--color-text-primary)]"
-                >
-                  昵称
-                </label>
-                <Input
-                  id="profile-name"
-                  value={nameValue}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                    setSaveError(false);
-                  }}
-                  placeholder="你的称呼"
-                  maxLength={60}
-                  className="mt-1.5 h-9 rounded-xl bg-[var(--color-surface)]"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-[var(--color-text-tertiary)]">
-                  邮箱
-                </span>
-                <span className="truncate text-sm text-[var(--color-text-primary)]">
-                  {email}
-                </span>
+                  <span
+                    className="truncate text-sm text-[var(--color-text-secondary)] sm:text-right"
+                    title={email}
+                  >
+                    {email}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-end gap-2">
+            <div className="mt-auto flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border-light)] px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:pb-4">
               {saveError && (
-                <span className="mr-auto text-xs text-[var(--color-error)]">
+                <span
+                  className="mr-auto text-xs text-[var(--color-error)]"
+                  role="alert"
+                >
                   保存失败，请重试
                 </span>
               )}
@@ -260,7 +300,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                 variant="secondary"
                 size="md"
                 onClick={() => handleOpenChange(false)}
-                className="rounded-xl px-4"
+                className="rounded-lg px-4"
               >
                 取消
               </Button>
@@ -276,7 +316,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                   profileQuery.isPending ||
                   uploadAvatar.isPending
                 }
-                className="rounded-xl px-4"
+                className="rounded-lg px-4"
               >
                 {updateProfile.isPending
                   ? "保存中..."
@@ -288,7 +328,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
           </>
         ) : (
           <>
-            <div className="mb-4 flex items-center gap-1">
+            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--color-border-light)] px-3">
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -303,53 +343,65 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
               <DialogDescription className="sr-only">
                 拖动调整头像裁切区域
               </DialogDescription>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => handleOpenChange(false)}
+                aria-label="关闭头像裁切"
+                className="ml-auto"
+              >
+                <X size={16} strokeWidth={1.8} />
+              </Button>
             </div>
 
-            <div className="relative h-64 w-full overflow-hidden rounded-2xl bg-[#1c1c1e]">
-              {imageSrc && (
-                <Cropper
-                  image={imageSrc}
-                  crop={crop}
-                  zoom={zoom}
-                  aspect={1}
-                  cropShape="round"
-                  showGrid={false}
-                  onCropChange={setCrop}
-                  onZoomChange={setZoom}
-                  onCropComplete={(_, pixels) => {
-                    croppedAreaRef.current = pixels;
-                  }}
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <div className="relative h-[min(18rem,48vh)] w-full overflow-hidden rounded-xl bg-black">
+                {imageSrc && (
+                  <Cropper
+                    image={imageSrc}
+                    crop={crop}
+                    zoom={zoom}
+                    aspect={1}
+                    cropShape="round"
+                    showGrid={false}
+                    onCropChange={setCrop}
+                    onZoomChange={setZoom}
+                    onCropComplete={(_, pixels) => {
+                      croppedAreaRef.current = pixels;
+                    }}
+                  />
+                )}
+              </div>
+
+              <div className="mt-5 flex items-center gap-3">
+                <ZoomOut
+                  size={14}
+                  strokeWidth={1.8}
+                  className="shrink-0 text-[var(--color-text-tertiary)]"
                 />
-              )}
+                <Slider
+                  value={[zoom]}
+                  min={1}
+                  max={3}
+                  step={0.05}
+                  onValueChange={(value) => setZoom(value[0] ?? 1)}
+                  aria-label="缩放"
+                />
+                <ZoomIn
+                  size={14}
+                  strokeWidth={1.8}
+                  className="shrink-0 text-[var(--color-text-tertiary)]"
+                />
+              </div>
             </div>
 
-            <div className="mt-4 flex items-center gap-3">
-              <ZoomOut
-                size={14}
-                strokeWidth={1.8}
-                className="shrink-0 text-[var(--color-text-tertiary)]"
-              />
-              <Slider
-                value={[zoom]}
-                min={1}
-                max={3}
-                step={0.05}
-                onValueChange={(value) => setZoom(value[0] ?? 1)}
-                aria-label="缩放"
-              />
-              <ZoomIn
-                size={14}
-                strokeWidth={1.8}
-                className="shrink-0 text-[var(--color-text-tertiary)]"
-              />
-            </div>
-
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-auto flex shrink-0 justify-end gap-2 border-t border-[var(--color-border-light)] px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:pb-4">
               <Button
                 variant="secondary"
                 size="md"
                 onClick={handleCropCancel}
-                className="rounded-xl px-4"
+                className="rounded-lg px-4"
               >
                 取消
               </Button>
@@ -358,7 +410,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                 size="md"
                 onClick={handleCropConfirm}
                 disabled={uploadAvatar.isPending || isCropping}
-                className="rounded-xl px-4"
+                className="rounded-lg px-4"
               >
                 {uploadAvatar.isPending
                   ? "上传中..."

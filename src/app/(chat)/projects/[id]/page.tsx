@@ -15,12 +15,10 @@ import {
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { ContextRing } from "@/components/chat/context-ring";
 import {
-  Hashtag,
   SidebarCollapse,
   SidebarExpand,
   WarningTriangle,
 } from "iconoir-react";
-import { AmbientField } from "@/components/workbench/ambient-field";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 import {
   useChat,
@@ -583,10 +581,14 @@ export default function ProjectDetailPage() {
         className={cn(
           "absolute inset-y-0 left-0 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden shadow-[var(--shadow-panel)]",
           "bg-[var(--color-surface)] md:w-[280px] md:shadow-none",
-          "transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-          mobileProjectSidebarOpen ? "translate-x-0" : "-translate-x-full",
+          "transition-[transform,width,visibility] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+          mobileProjectSidebarOpen
+            ? "visible translate-x-0"
+            : "invisible -translate-x-full",
           "md:static md:z-auto md:translate-x-0 md:transition-[width] md:duration-300 md:ease-[cubic-bezier(0.16,1,0.3,1)]",
-          desktopProjectSidebarOpen ? "md:w-[280px]" : "md:w-0"
+          desktopProjectSidebarOpen
+            ? "md:visible md:w-[280px]"
+            : "md:invisible md:w-0"
         )}
       >
         <div
@@ -621,118 +623,100 @@ export default function ProjectDetailPage() {
 
       {/* 右侧工作区 */}
       <div className="flex-1 flex flex-col min-w-0 bg-[var(--color-bg)]">
-        {/* 顶部信息栏 */}
-        <div
-          className={cn(
-            "flex min-h-12 items-center justify-between gap-2 px-3 py-2 sm:min-h-14 sm:gap-3 sm:px-5 sm:py-2.5",
-            "bg-[var(--color-panel)] shrink-0 backdrop-blur-[var(--glass-blur)]"
-          )}
-        >
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+        <header className="shrink-0 bg-[var(--color-panel)] px-3 py-2 backdrop-blur-[var(--glass-blur)] sm:px-5">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={toggleProjectSidebar}
               className={cn(
-	                "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-	                "bg-[var(--color-project-control)]",
-	                "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]",
+                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)]",
+                "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]",
                 "transition-colors duration-150"
               )}
               aria-label="切换项目侧边栏"
             >
               <span className="md:hidden">
-	                {mobileProjectSidebarOpen ? (
-	                  <SidebarCollapse width={16} height={16} strokeWidth={1.8} />
-	                ) : (
-	                  <SidebarExpand width={16} height={16} strokeWidth={1.8} />
-	                )}
+                {mobileProjectSidebarOpen ? (
+                  <SidebarCollapse width={16} height={16} strokeWidth={1.8} />
+                ) : (
+                  <SidebarExpand width={16} height={16} strokeWidth={1.8} />
+                )}
               </span>
               <span className="hidden md:inline">
-	                {desktopProjectSidebarOpen ? (
-	                  <SidebarCollapse width={16} height={16} strokeWidth={1.8} />
-	                ) : (
-	                  <SidebarExpand width={16} height={16} strokeWidth={1.8} />
-	                )}
+                {desktopProjectSidebarOpen ? (
+                  <SidebarCollapse width={16} height={16} strokeWidth={1.8} />
+                ) : (
+                  <SidebarExpand width={16} height={16} strokeWidth={1.8} />
+                )}
               </span>
             </button>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div className="flex min-w-0 items-center gap-x-2">
-                <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
-                  {project.name}
+            <div
+              className={cn(
+                "flex min-w-0 max-w-[12rem] shrink-0 items-baseline gap-2 sm:max-w-[16rem]",
+                desktopProjectSidebarOpen && "md:hidden"
+              )}
+            >
+              <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
+                {project.name}
+              </span>
+              <span className="hidden shrink-0 text-[11px] text-[var(--color-text-tertiary)] lg:inline">
+                {projectModeLabel}
+              </span>
+              {activeSkillLabel && (
+                <span
+                  className={cn(
+                    "hidden shrink-0 text-[11px] font-medium text-[var(--color-accent)] xl:inline",
+                    agentSession.activeSkill?.status === "awaiting_context" &&
+                      "text-[var(--color-warning)]"
+                  )}
+                >
+                  {activeSkillLabel}
                 </span>
-                <span className="hidden rounded-xl bg-[var(--color-project-control)] px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)] sm:inline-flex">
-                  {projectModeLabel}
-                </span>
-                {activeSkillLabel && (
-                  <span
-                    className={cn(
-                      "rounded-xl bg-[var(--color-accent)]/12 px-2 py-0.5 text-[11px] font-medium text-[var(--color-accent)]",
-                      agentSession.activeSkill?.status === "awaiting_context" &&
-                        "bg-[var(--color-warning-muted)] text-[var(--color-warning)]"
-                    )}
-                  >
-                    {activeSkillLabel}
-                  </span>
-                )}
-              </div>
-              <p className="hidden truncate text-[11px] text-[var(--color-text-tertiary)] md:block">
-                {contextHint}
-              </p>
+              )}
             </div>
-          </div>
-          <div className="flex min-w-0 shrink-0 items-center gap-2 overflow-x-auto">
+            <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <QuickTaskBar
+                projectType={projectType}
+                actions={project.quickActions}
+                onSend={(input) => void handleQuickTaskSend(input)}
+                disabled={isStreaming}
+                className="min-w-max justify-end"
+              />
+            </div>
             {usage && (
-              <ContextRing used={usage.totalTokens} />
+              <div className="hidden shrink-0 sm:block">
+                <ContextRing used={usage.totalTokens} />
+              </div>
             )}
           </div>
-        </div>
-
-        {/* 快捷任务按钮 */}
-        <div className="shrink-0 bg-[var(--color-panel)] px-3 py-2 sm:px-5 sm:py-2.5 backdrop-blur-[var(--glass-blur)]">
-          <QuickTaskBar
-            projectType={projectType}
-            actions={project.quickActions}
-            onSend={(input) => void handleQuickTaskSend(input)}
-            disabled={isStreaming}
-          />
-        </div>
+        </header>
 
         {/* 消息区域 */}
         {messages.length === 0 ? (
-          <div className="relative flex-1 overflow-y-auto">
-	            <AmbientField density="wide" className="opacity-80" />
-            <div className="relative flex h-full flex-col items-center justify-center px-4 text-center">
-              <div
-                data-dot-avoid
-                className={cn(
-	                  "mb-4 flex h-14 w-14 items-center justify-center rounded-2xl",
-	                  "bg-[var(--color-panel)]"
-	                )}
-              >
-	                <Hashtag width={26} height={26} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
-              </div>
-              <h2 data-dot-avoid className="text-base font-medium text-[var(--color-text-primary)] mb-1">
-                {project.name}
+          <div className="flex-1 overflow-y-auto">
+            <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+              <h2 className="mb-1 text-base font-medium text-[var(--color-text-primary)]">
+                {project.files.length === 0 ? "添加第一份资料" : "向项目资料提问"}
               </h2>
               {selectedFileIds.size > 0 && (
-                <p data-dot-avoid className="max-w-md text-sm leading-relaxed text-[var(--color-text-secondary)]">
-                  已选择 {selectedFileIds.size} 个文件作为上下文，点击快捷任务或输入问题开始对话
+                <p className="max-w-md text-sm leading-relaxed text-[var(--color-text-secondary)]">
+                  已选择 {selectedFileIds.size} 个文件，输入问题或选择快捷任务即可开始
                 </p>
               )}
               {project.files.length === 0 ? (
-                <p data-dot-avoid className="mt-2 max-w-md text-sm leading-relaxed text-[var(--color-text-secondary)]">
-                  从左侧项目资料上传 PDF / Markdown，上传后 AI 会自动按问题匹配相关片段。
+                <p className="mt-1 max-w-md text-sm leading-relaxed text-[var(--color-text-secondary)]">
+                  从左侧上传 PDF、Office、图片或文本，之后会按问题匹配相关内容。
                 </p>
               ) : (
-                <div data-dot-avoid className="mt-5 flex w-full max-w-xl flex-wrap items-center justify-center gap-2">
+                <div className="mt-4 flex w-full max-w-xl flex-wrap items-center justify-center gap-1">
                   {SUGGESTED_PROMPTS[projectType].map((prompt) => (
                     <button
                       key={prompt}
                       type="button"
                       onClick={() => void handleSuggestedPromptSend(prompt)}
                       className={cn(
-                        "rounded-[var(--radius-md)] px-3 py-1.5 text-xs",
-                        "bg-[var(--color-surface)] text-[var(--color-text-secondary)]",
-                        "hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
+                        "rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs",
+                        "text-[var(--color-text-secondary)]",
+                        "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
                         "focus-visible:bg-[var(--color-accent-soft)] focus-visible:text-[var(--color-text-primary)]",
                         "transition-colors duration-150"
                       )}

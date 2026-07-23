@@ -11,14 +11,11 @@ import { LandingAtmosphere } from "./landing-atmosphere";
  * 公开主页壳层。
  *  - 不接 SessionProvider（landing 不需要登录态）
  *  - 不渲染 (chat) 路由组的 Sidebar / Navbar
- *  - 内部子组件自行处理主题、深浅色、prefers-reduced-motion
- *
- * 主页不使用滚动吸附。背景和场景的过渡由滚动位置连续驱动，
- * 让内容在进入、停留、离开时保持清晰的叙事节奏。
+ *  - 产品叙事在桌面使用 ScrollTrigger，移动端退化为原生横向 snap
  */
 export function LandingSurface() {
   return (
-    <div className="relative isolate flex min-h-screen flex-col overflow-x-clip">
+    <div className="relative isolate flex min-h-screen flex-col bg-[var(--color-bg)]">
       <LandingAtmosphere />
       <div className="relative z-10 flex min-h-screen flex-col">
         <LandingNav />

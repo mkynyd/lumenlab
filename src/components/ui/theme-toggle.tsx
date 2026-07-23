@@ -26,8 +26,8 @@ export function ThemeToggle({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex items-center rounded-[var(--radius-lg)] p-0.5",
-        "bg-[var(--color-surface)]",
+        "flex items-center rounded-full p-0.5",
+        "bg-[var(--color-interaction-hover)]",
         className
       )}
       role="radiogroup"
@@ -43,9 +43,9 @@ export function ThemeToggle({ className }: { className?: string }) {
             aria-label={label}
             onClick={() => setTheme(key)}
             className={cn(
-              "flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] transition-colors duration-150 sm:h-10 sm:w-10",
+              "flex h-9 w-9 items-center justify-center rounded-full transition-[background-color,color,transform] duration-150 active:scale-[0.96] sm:h-8 sm:w-8",
               active
-                ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                ? "bg-[var(--color-panel)] text-[var(--color-text-primary)]"
                 : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
             )}
           >

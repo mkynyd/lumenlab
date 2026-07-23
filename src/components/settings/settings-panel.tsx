@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   ArrowUpRight,
   Database,
@@ -9,7 +9,7 @@ import {
   Palette,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
+  Sparkles
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,10 @@ type TabId = "alpha" | "tokens" | "personalization" | "appearance";
 const TOKEN_CHART_COLORS = {
   hit: "color-mix(in oklch, var(--color-accent) 24%, var(--color-surface))",
   miss: "color-mix(in oklch, var(--color-accent) 42%, var(--color-surface))",
-  output: "var(--color-accent)",
+  output: "var(--color-accent)"
 };
+const FIELD_CLASS =
+  "rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] transition-colors duration-150 focus:border-[var(--color-accent)] motion-reduce:transition-none";
 
 function formatTokenCount(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -78,30 +80,39 @@ export function SettingsPanel() {
     { id: "alpha", label: "服务访问", icon: KeyRound },
     { id: "tokens", label: "用量统计", icon: Database },
     { id: "personalization", label: "个性化", icon: SlidersHorizontal },
-    { id: "appearance", label: "外观", icon: Palette },
+    { id: "appearance", label: "外观", icon: Palette }
   ];
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden sm:h-[min(560px,calc(100vh-4rem))] sm:flex-row">
-      {/* Left sidebar — neutral surface, no border, breathing room */}
-      <nav
-        className="flex w-full shrink-0 flex-row gap-0.5 overflow-x-auto bg-[var(--color-panel)] px-3 py-2 pr-12 sm:w-52 sm:flex-col sm:overflow-visible sm:px-3 sm:py-5"
-        role="tablist"
-        aria-label="设置标签页"
-      >
-        <div className="flex shrink-0 flex-row gap-0.5 sm:flex-col">
+    <div className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)] sm:h-[min(640px,calc(100vh-3rem))] sm:flex-row">
+      <aside className="flex w-full shrink-0 flex-col border-b border-[var(--color-border-light)] bg-[var(--color-panel)] sm:w-[17.5rem] sm:border-b-0 sm:border-r">
+        <div className="px-5 pb-3 pt-5 pr-14 sm:pr-5">
+          <p className="text-base font-semibold tracking-tight text-[var(--color-text-primary)]">
+            设置
+          </p>
+          <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+            管理服务、用量与偏好
+          </p>
+        </div>
+
+        <div
+          className="flex shrink-0 gap-1 overflow-x-auto px-3 pb-3 sm:flex-col sm:overflow-visible sm:px-3"
+          role="tablist"
+          aria-label="设置标签页"
+        >
           {tabs.map((item) => (
             <button
               key={item.id}
+              id={`settings-tab-${item.id}`}
               role="tab"
               aria-selected={tab === item.id}
               aria-controls={`settings-panel-${item.id}`}
               onClick={() => setTab(item.id)}
               className={cn(
-                "flex min-h-10 shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm sm:w-full",
-                "transition-colors duration-150",
+                "flex h-10 shrink-0 items-center gap-2.5 rounded-lg px-3 text-left text-sm outline-none sm:w-full",
+                "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] active:bg-[var(--color-interaction-active)] active:duration-75 motion-reduce:transition-none",
                 tab === item.id
-                  ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)] font-medium"
+                  ? "bg-[var(--color-interaction-active)] font-medium text-[var(--color-text-primary)]"
                   : "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
               )}
             >
@@ -114,21 +125,23 @@ export function SettingsPanel() {
         <Link
           href="/home"
           className={cn(
-            "flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm sm:mt-auto sm:w-full",
-            "sm:mt-3",
+            "mx-3 mb-3 flex h-10 shrink-0 items-center gap-2.5 rounded-lg px-3 text-left text-sm sm:mt-auto",
             "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]",
-            "transition-colors duration-150"
+            "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] focus-visible:outline-none motion-reduce:transition-none"
           )}
         >
           <Sparkles size={16} strokeWidth={1.5} />
           <span className="flex-1">网站介绍</span>
-          <ArrowUpRight size={12} strokeWidth={1.5} className="text-[var(--color-text-tertiary)]" />
+          <ArrowUpRight
+            size={12}
+            strokeWidth={1.5}
+            className="text-[var(--color-text-tertiary)]"
+          />
         </Link>
-      </nav>
+      </aside>
 
-      {/* Right content — soft surface, generous spacing */}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-bg)]">
-        <div className="min-w-0 px-4 py-5 sm:px-8 sm:py-6">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)]">
+        <div className="mx-auto min-w-0 max-w-3xl px-5 py-6 sm:px-8 sm:py-7">
           {tab === "alpha" && <AlphaSection />}
           {tab === "tokens" && <TokensSection />}
           {tab === "personalization" && <PersonalizationSection />}
@@ -146,20 +159,25 @@ export function SettingsPanel() {
 function SectionShell({
   id,
   title,
-  children,
+  children
 }: {
   id: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <div id={id} className="space-y-5" role="tabpanel" aria-label={title}>
-      <div className="pb-3 border-b border-[var(--color-border-light)]">
-        <h2 className="text-base font-semibold text-[var(--color-text-primary)] tracking-tight">
+    <div
+      id={id}
+      className="space-y-7"
+      role="tabpanel"
+      aria-labelledby={id.replace("panel", "tab")}
+    >
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]">
           {title}
         </h2>
       </div>
-      <div className="space-y-4">{children}</div>
+      <div className="space-y-7">{children}</div>
     </div>
   );
 }
@@ -184,7 +202,7 @@ function AlphaSection() {
       const res = await fetch("/api/user/switch-code", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code })
       });
       const data = await res.json();
       if (!res.ok) {
@@ -204,51 +222,75 @@ function AlphaSection() {
 
   return (
     <SectionShell id="settings-panel-alpha" title="Alpha 服务访问">
-      <div className="rounded-2xl bg-[var(--color-project-control)] p-4">
-        <div className="flex items-start gap-3">
-          <ShieldCheck size={16} className="mt-0.5 shrink-0 text-[var(--color-success)]" />
-          <div className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            API Key 由管理员统一配置。账户通过注册码绑定 Alpha 测试密钥组，无需自行填写。
+      <section aria-labelledby="alpha-access-status">
+        <h3
+          id="alpha-access-status"
+          className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]"
+        >
+          当前访问方式
+        </h3>
+        <div className="flex items-start gap-3 border-y border-[var(--color-border-light)] py-4">
+          <ShieldCheck
+            size={17}
+            className="mt-0.5 shrink-0 text-[var(--color-success)]"
+          />
+          <div className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
+            API Key 由管理员统一配置。账户通过注册码绑定 Alpha
+            测试密钥组，无需自行填写。
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-2xl bg-[var(--color-project-control)] p-4 space-y-3">
-        <div>
-          <p className="text-sm font-medium text-[var(--color-text-primary)]">更换注册码</p>
-          <p className="text-xs text-[var(--color-text-tertiary)] mt-0.5">
-            更换后立即生效，原注册码自动失效
-          </p>
+      <section aria-labelledby="switch-registration-code">
+        <h3
+          id="switch-registration-code"
+          className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]"
+        >
+          注册码
+        </h3>
+        <div className="space-y-4 border-y border-[var(--color-border-light)] py-4">
+          <div>
+            <p className="text-sm font-medium text-[var(--color-text-primary)]">
+              更换注册码
+            </p>
+            <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+              更换后立即生效，原注册码自动失效
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              type="text"
+              value={switchCodeValue}
+              onChange={(e) => setSwitchCodeValue(e.target.value)}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+              aria-label="新注册码"
+              className={cn("h-9 flex-1 font-mono text-sm", FIELD_CLASS)}
+            />
+            <Button
+              variant="primary"
+              size="md"
+              disabled={switchPending || !switchCodeValue.trim()}
+              onClick={handleSwitchCode}
+              className="rounded-lg px-4"
+            >
+              {switchPending ? "验证中..." : "更换"}
+            </Button>
+          </div>
+          {switchMessage && (
+            <p
+              className={cn(
+                "text-xs",
+                switchError
+                  ? "text-[var(--color-error)]"
+                  : "text-[var(--color-success)]"
+              )}
+              role={switchError ? "alert" : "status"}
+            >
+              {switchMessage}
+            </p>
+          )}
         </div>
-        <div className="flex gap-2">
-          <Input
-            type="text"
-            value={switchCodeValue}
-            onChange={(e) => setSwitchCodeValue(e.target.value)}
-            placeholder="XXXX-XXXX-XXXX-XXXX"
-            className="flex-1 h-9 rounded-xl font-mono text-sm bg-[var(--color-surface)]"
-          />
-          <Button
-            variant="primary"
-            size="md"
-            disabled={switchPending || !switchCodeValue.trim()}
-            onClick={handleSwitchCode}
-            className="rounded-xl px-4"
-          >
-            {switchPending ? "验证中..." : "更换"}
-          </Button>
-        </div>
-        {switchMessage && (
-          <p
-            className={cn(
-              "text-xs",
-              switchError ? "text-[var(--color-error)]" : "text-[var(--color-success)]"
-            )}
-          >
-            {switchMessage}
-          </p>
-        )}
-      </div>
+      </section>
     </SectionShell>
   );
 }
@@ -265,8 +307,12 @@ function TokensSection() {
           cacheMetrics.data.tokenUsage.daily.map((d) => [d.date, d])
         );
         return buildDateRange(
-          cycleStart || cacheMetrics.data.tokenUsage.daily[0]?.date || dateKey(new Date()),
-          cycleEnd || cacheMetrics.data.tokenUsage.daily.at(-1)?.date || dateKey(new Date())
+          cycleStart ||
+            cacheMetrics.data.tokenUsage.daily[0]?.date ||
+            dateKey(new Date()),
+          cycleEnd ||
+            cacheMetrics.data.tokenUsage.daily.at(-1)?.date ||
+            dateKey(new Date())
         ).map((date) => {
           return (
             byDate.get(date) || {
@@ -274,7 +320,7 @@ function TokensSection() {
               totalTokens: 0,
               inputCacheHitTokens: 0,
               inputCacheMissTokens: 0,
-              outputTokens: 0,
+              outputTokens: 0
             }
           );
         });
@@ -289,88 +335,109 @@ function TokensSection() {
   const hoveredDay = hoveredIndex >= 0 ? monthDays[hoveredIndex] : null;
   const tooltipLeft =
     hoveredIndex >= 0
-      ? Math.min(78, Math.max(22, ((hoveredIndex + 0.5) / monthDays.length) * 100))
+      ? Math.min(
+          78,
+          Math.max(22, ((hoveredIndex + 0.5) / monthDays.length) * 100)
+        )
       : 50;
 
   return (
     <SectionShell id="settings-panel-tokens" title="用量统计">
-      <p className="text-xs text-[var(--color-text-tertiary)] -mt-2">
+      <p className="-mt-4 text-sm text-[var(--color-text-secondary)]">
         本期 Token 使用情况
       </p>
 
       {cacheMetrics.isPending ? (
-        <Skeleton className="h-24 rounded-2xl" />
+        <Skeleton className="h-24 rounded-lg" />
       ) : cacheMetrics.data ? (
-        <div className="space-y-5">
+        <div className="space-y-8">
           <div
-            className="grid min-w-0 gap-3"
+            className="grid min-w-0 border-y border-[var(--color-border-light)] sm:grid-cols-2 sm:divide-x sm:divide-[var(--color-border-light)]"
             style={{
               gridTemplateColumns:
-                "repeat(auto-fit, minmax(min(14rem, 100%), 1fr))",
+                "repeat(auto-fit, minmax(min(14rem, 100%), 1fr))"
             }}
           >
-            <div className="min-w-0 rounded-2xl bg-[var(--color-project-control)] p-4">
+            <div className="min-w-0 border-b border-[var(--color-border-light)] py-4 sm:border-b-0 sm:px-4 sm:first:pl-0">
               <p className="text-xs text-[var(--color-text-tertiary)]">
                 本期总量
               </p>
-              <p className="mt-1 break-words text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+              <p className="mt-1 break-words text-2xl font-semibold tabular-nums tracking-tight text-[var(--color-text-primary)]">
                 {formatTokenCount(cacheMetrics.data.tokenUsage.totalTokens)}
               </p>
               <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
-                今日 {formatTokenCount(cacheMetrics.data.tokenUsage.todayTokens)}
+                今日{" "}
+                {formatTokenCount(cacheMetrics.data.tokenUsage.todayTokens)}
               </p>
             </div>
-            <div className="min-w-0 rounded-2xl bg-[var(--color-project-control)] p-4">
-              <p className="text-xs text-[var(--color-text-tertiary)]">预估费用</p>
-              <p className="mt-1 break-words text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+            <div className="min-w-0 py-4 sm:px-4 sm:last:pr-0">
+              <p className="text-xs text-[var(--color-text-tertiary)]">
+                预估费用
+              </p>
+              <p className="mt-1 break-words text-2xl font-semibold tabular-nums tracking-tight text-[var(--color-text-primary)]">
                 {formatCurrency(cacheMetrics.data.tokenUsage.estimatedCostCny)}
               </p>
               <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
-                输入 {formatTokenCount(cacheMetrics.data.tokenUsage.inputTokens)} / 输出{" "}
+                输入{" "}
+                {formatTokenCount(cacheMetrics.data.tokenUsage.inputTokens)} /
+                输出{" "}
                 {formatTokenCount(cacheMetrics.data.tokenUsage.outputTokens)}
               </p>
             </div>
           </div>
 
-          <div className="min-w-0 space-y-1 rounded-2xl bg-[var(--color-project-control)] p-4">
-            <p className="mb-2 text-xs text-[var(--color-text-tertiary)]">
+          <section className="min-w-0" aria-labelledby="provider-breakdown">
+            <p
+              id="provider-breakdown"
+              className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]"
+            >
               服务拆分
             </p>
-            {(["deepseek", "minimax", "bailian"] as const).map((provider) => (
-              <div
-                key={provider}
-                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-0.5 text-sm"
-              >
-                <span className="min-w-0 text-[var(--color-text-secondary)]">
-                  {provider === "deepseek"
-                    ? "DeepSeek"
-                    : provider === "minimax"
-                      ? "MiniMax"
-                      : "Qwen"}
-                </span>
-                <span className="min-w-0 text-right font-mono text-[var(--color-text-primary)]">
-                  {cacheMetrics.data.tokenUsage.providers[provider].requestCount > 0 ? (
-                    <span className="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5">
-                      {formatTokenCount(cacheMetrics.data.tokenUsage.providers[provider].totalTokens)}
-                      <span className="text-[var(--color-text-tertiary)]">
-                        {formatCurrency(
-                          cacheMetrics.data.tokenUsage.providers[provider].estimatedCostCny
+            <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
+              {(["deepseek", "minimax", "bailian"] as const).map((provider) => (
+                <div
+                  key={provider}
+                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-3 text-sm"
+                >
+                  <span className="min-w-0 text-[var(--color-text-secondary)]">
+                    {provider === "deepseek"
+                      ? "DeepSeek"
+                      : provider === "minimax"
+                        ? "MiniMax"
+                        : "Qwen"}
+                  </span>
+                  <span className="min-w-0 text-right font-mono tabular-nums text-[var(--color-text-primary)]">
+                    {cacheMetrics.data.tokenUsage.providers[provider]
+                      .requestCount > 0 ? (
+                      <span className="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5">
+                        {formatTokenCount(
+                          cacheMetrics.data.tokenUsage.providers[provider]
+                            .totalTokens
                         )}
+                        <span className="text-[var(--color-text-tertiary)]">
+                          {formatCurrency(
+                            cacheMetrics.data.tokenUsage.providers[provider]
+                              .estimatedCostCny
+                          )}
+                        </span>
                       </span>
-                    </span>
-                  ) : (
-                    "--"
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
+                    ) : (
+                      "--"
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
 
-          <div>
-            <p className="text-xs text-[var(--color-text-tertiary)] mb-2">
+          <section aria-labelledby="daily-token-chart">
+            <p
+              id="daily-token-chart"
+              className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]"
+            >
               每日 Token 构成
             </p>
-            <div className="min-w-0 overflow-hidden rounded-2xl bg-[var(--color-project-control)] p-4">
+            <div className="min-w-0 overflow-hidden border-y border-[var(--color-border-light)] py-5">
               {monthDays.length > 0 ? (
                 <div className="min-w-0">
                   <div className="flex items-baseline gap-4">
@@ -395,13 +462,16 @@ function TokensSection() {
                     <div
                       className="absolute bottom-8 left-14 right-0 top-0 grid items-end gap-1"
                       style={{
-                        gridTemplateColumns: `repeat(${monthDays.length}, minmax(4px, 1fr))`,
+                        gridTemplateColumns: `repeat(${monthDays.length}, minmax(4px, 1fr))`
                       }}
                     >
                       {monthDays.map((day) => {
                         const barHeightPercent =
                           day.totalTokens > 0
-                            ? Math.max(2, (day.totalTokens / Math.max(chartMax, 1)) * 100)
+                            ? Math.max(
+                                2,
+                                (day.totalTokens / Math.max(chartMax, 1)) * 100
+                              )
                             : 0;
                         const hitHeight =
                           day.totalTokens > 0
@@ -451,7 +521,7 @@ function TokensSection() {
                                   <div
                                     style={{
                                       height: `${outputHeight}%`,
-                                      backgroundColor: TOKEN_CHART_COLORS.output,
+                                      backgroundColor: TOKEN_CHART_COLORS.output
                                     }}
                                   />
                                 )}
@@ -459,7 +529,7 @@ function TokensSection() {
                                   <div
                                     style={{
                                       height: `${missHeight}%`,
-                                      backgroundColor: TOKEN_CHART_COLORS.miss,
+                                      backgroundColor: TOKEN_CHART_COLORS.miss
                                     }}
                                   />
                                 )}
@@ -467,7 +537,7 @@ function TokensSection() {
                                   <div
                                     style={{
                                       height: `${otherInputHeight}%`,
-                                      backgroundColor: TOKEN_CHART_COLORS.miss,
+                                      backgroundColor: TOKEN_CHART_COLORS.miss
                                     }}
                                   />
                                 )}
@@ -475,7 +545,7 @@ function TokensSection() {
                                   <div
                                     style={{
                                       height: `${hitHeight}%`,
-                                      backgroundColor: TOKEN_CHART_COLORS.hit,
+                                      backgroundColor: TOKEN_CHART_COLORS.hit
                                     }}
                                   />
                                 )}
@@ -497,8 +567,12 @@ function TokensSection() {
 
                     {hoveredDay && hoveredDay.totalTokens > 0 && (
                       <div
-                        className="pointer-events-none absolute top-3 z-10 min-w-64 -translate-x-1/2 rounded-2xl bg-[var(--color-control-menu)] px-4 py-3 shadow-[var(--shadow-float)]"
-                        style={{ left: `${tooltipLeft}%` }}
+                        className="pointer-events-none absolute left-1/2 top-3 z-10 w-64 max-w-[calc(100%-1rem)] -translate-x-1/2 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-control-menu)] px-4 py-3 sm:left-[var(--tooltip-left)] sm:min-w-64 sm:w-auto"
+                        style={
+                          {
+                            "--tooltip-left": `${tooltipLeft}%`
+                          } as CSSProperties
+                        }
                       >
                         <div className="mb-2 grid grid-cols-[1fr_auto] gap-6 text-sm font-semibold text-[var(--color-text-primary)]">
                           <span>{hoveredDay.date}</span>
@@ -510,18 +584,18 @@ function TokensSection() {
                           [
                             "输入（命中缓存）",
                             hoveredDay.inputCacheHitTokens,
-                            TOKEN_CHART_COLORS.hit,
+                            TOKEN_CHART_COLORS.hit
                           ],
                           [
                             "输入（未命中缓存）",
                             hoveredDay.inputCacheMissTokens,
-                            TOKEN_CHART_COLORS.miss,
+                            TOKEN_CHART_COLORS.miss
                           ],
                           [
                             "输出",
                             hoveredDay.outputTokens,
-                            TOKEN_CHART_COLORS.output,
-                          ],
+                            TOKEN_CHART_COLORS.output
+                          ]
                         ].map(([label, value, color]) => (
                           <div
                             key={label}
@@ -547,25 +621,33 @@ function TokensSection() {
                 </p>
               )}
             </div>
-          </div>
+          </section>
 
-          <div>
-            <p className="text-xs text-[var(--color-text-tertiary)] mb-2">
+          <section aria-labelledby="rag-cache-rate">
+            <p
+              id="rag-cache-rate"
+              className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]"
+            >
               RAG 缓存命中率
             </p>
-            <div className="rounded-2xl bg-[var(--color-project-control)] p-4 space-y-2">
-              {([
+            <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
+              {[
                 ["search", "检索结果缓存"] as const,
                 ["file-select", "文件选择缓存"] as const,
-                ["query-embed", "查询向量缓存"] as const,
-              ]).map(([key, label]) => {
+                ["query-embed", "查询向量缓存"] as const
+              ].map(([key, label]) => {
                 const metric = cacheMetrics.data.rag[key];
                 const total = metric.hits + metric.misses;
                 const rate = total > 0 ? Math.round(metric.hitRate * 100) : 0;
                 return (
-                  <div key={key} className="flex items-center gap-3 text-sm">
-                    <span className="w-24 text-[var(--color-text-secondary)]">{label}</span>
-                    <div className="flex-1 h-2 rounded-full bg-[var(--color-surface)] overflow-hidden">
+                  <div
+                    key={key}
+                    className="flex items-center gap-3 py-3 text-sm"
+                  >
+                    <span className="w-24 text-[var(--color-text-secondary)]">
+                      {label}
+                    </span>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-interaction-active)]">
                       <div
                         className="h-full rounded-full bg-[var(--color-success)]"
                         style={{ width: `${rate}%` }}
@@ -578,7 +660,7 @@ function TokensSection() {
                 );
               })}
             </div>
-          </div>
+          </section>
         </div>
       ) : (
         <p className="text-sm text-[var(--color-error)]">加载失败</p>
@@ -590,8 +672,15 @@ function TokensSection() {
 function AppearanceSection() {
   return (
     <SectionShell id="settings-panel-appearance" title="外观">
-      <div className="flex items-center justify-between rounded-2xl bg-[var(--color-project-control)] p-4">
-        <span className="text-sm text-[var(--color-text-primary)]">主题</span>
+      <div className="flex items-center justify-between gap-4 border-y border-[var(--color-border-light)] py-4">
+        <div>
+          <p className="text-sm font-medium text-[var(--color-text-primary)]">
+            主题
+          </p>
+          <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+            选择浅色、深色或跟随系统
+          </p>
+        </div>
         <ThemeToggle />
       </div>
     </SectionShell>
@@ -615,7 +704,7 @@ function PersonalizationSection() {
       const res = await fetch("/api/user/generate-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname: promptName, profession, details }),
+        body: JSON.stringify({ nickname: promptName, profession, details })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "生成失败");
@@ -629,70 +718,102 @@ function PersonalizationSection() {
 
   return (
     <SectionShell id="settings-panel-personalization" title="个性化">
-      <div className="space-y-4 rounded-2xl bg-[var(--color-project-control)] p-4">
-        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-          AI 画像
-        </h3>
-        <p className="text-xs text-[var(--color-text-tertiary)]">
-          AI 会根据这些信息更好地理解你的使用场景
-        </p>
+      <section aria-labelledby="ai-profile-heading">
+        <div className="mb-3">
+          <h3
+            id="ai-profile-heading"
+            className="text-sm font-medium text-[var(--color-text-primary)]"
+          >
+            AI 画像
+          </h3>
+          <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+            AI 会根据这些信息更好地理解你的使用场景
+          </p>
+        </div>
 
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text-primary)]">
-            名字
-          </label>
-          <Input
-            value={promptName}
-            onChange={(e) => setPromptName(e.target.value)}
-            placeholder="你的名字"
-            maxLength={60}
-            className="mt-2 h-9 rounded-xl bg-[var(--color-surface)]"
-          />
+        <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
+          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+            <label
+              htmlFor="personalization-name"
+              className="text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              名字
+            </label>
+            <Input
+              id="personalization-name"
+              value={promptName}
+              onChange={(e) => setPromptName(e.target.value)}
+              placeholder="你的名字"
+              maxLength={60}
+              className={cn("h-9", FIELD_CLASS)}
+            />
+          </div>
+          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+            <label
+              htmlFor="personalization-profession"
+              className="text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              职业
+            </label>
+            <Input
+              id="personalization-profession"
+              value={profession}
+              onChange={(e) => setProfession(e.target.value)}
+              placeholder="例如：计算机学院本科生"
+              maxLength={100}
+              className={cn("h-9", FIELD_CLASS)}
+            />
+          </div>
+          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-start sm:gap-5">
+            <label
+              htmlFor="personalization-details"
+              className="pt-2 text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              你的详情
+            </label>
+            <Textarea
+              id="personalization-details"
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+              placeholder="描述你的学习目标、使用习惯等"
+              maxLength={500}
+              className={cn("h-24 resize-none", FIELD_CLASS)}
+            />
+          </div>
         </div>
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text-primary)]">
-            职业
-          </label>
-          <Input
-            value={profession}
-            onChange={(e) => setProfession(e.target.value)}
-            placeholder="例如: 计算机学院本科生"
-            maxLength={100}
-            className="mt-2 h-9 rounded-xl bg-[var(--color-surface)]"
-          />
+
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+          {promptSaved && (
+            <p
+              className="mr-auto text-xs text-[var(--color-success)]"
+              role="status"
+            >
+              已保存
+            </p>
+          )}
+          {promptError && (
+            <p
+              className="mr-auto text-xs text-[var(--color-error)]"
+              role="alert"
+            >
+              {promptError}
+            </p>
+          )}
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleGeneratePrompt}
+            disabled={generating}
+            className="rounded-lg px-4"
+          >
+            {generating
+              ? "生成中..."
+              : promptSaved
+                ? "重新生成"
+                : "生成个人描述"}
+          </Button>
         </div>
-        <div>
-          <label className="text-sm font-medium text-[var(--color-text-primary)]">
-            你的详情
-          </label>
-          <Textarea
-            value={details}
-            onChange={(e) => setDetails(e.target.value)}
-            placeholder="描述你的学习目标、使用习惯等"
-            maxLength={500}
-            className="mt-2 h-24 rounded-xl bg-[var(--color-surface)] resize-none"
-          />
-        </div>
-        <Button
-          variant="primary"
-          size="md"
-          onClick={handleGeneratePrompt}
-          disabled={generating}
-          className="rounded-xl px-4"
-        >
-          {generating
-            ? "生成中..."
-            : promptSaved
-              ? "已保存，点击重新生成"
-              : "生成个人描述"}
-        </Button>
-        {promptSaved && (
-          <p className="text-xs text-[var(--color-success)]">已保存</p>
-        )}
-        {promptError && (
-          <p className="text-xs text-[var(--color-error)]">{promptError}</p>
-        )}
-      </div>
+      </section>
     </SectionShell>
   );
 }

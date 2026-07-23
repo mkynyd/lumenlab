@@ -50,28 +50,34 @@ export default function ChatLayout({
         >
           跳到主内容
         </a>
-        <div className="flex h-dvh min-h-svh flex-col bg-[var(--color-bg)]">
-          <Navbar
-            sidebarCollapsed={sidebarCollapsed}
-            desktopSidebarLocked={isInsideProject}
-            mobileSidebarOpen={mobileSidebarOpen}
-            onMenuToggle={toggleSidebar}
+        <div className="flex h-dvh min-h-svh overflow-hidden bg-[var(--color-bg)]">
+          <Sidebar
+            mobileOpen={mobileSidebarOpen}
+            collapsed={sidebarCollapsed}
+            hiddenOnDesktop={isInsideProject}
+            onClose={() => setMobileSidebarOpen(false)}
+            onExpand={() => {
+              if (isInsideProject) return;
+              setUserCollapsed(false);
+            }}
+            onCollapse={() => {
+              if (isInsideProject) return;
+              setUserCollapsed(true);
+            }}
           />
-          <div className="flex-1 flex overflow-hidden">
-            <Sidebar
-              mobileOpen={mobileSidebarOpen}
-              collapsed={sidebarCollapsed}
-              hiddenOnDesktop={isInsideProject}
-              onClose={() => setMobileSidebarOpen(false)}
-              onExpand={() => {
-                if (isInsideProject) return;
-                setUserCollapsed(false);
-              }}
-            />
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            {!isInsideProject && (
+              <Navbar
+                sidebarCollapsed={sidebarCollapsed}
+                desktopSidebarLocked={false}
+                mobileSidebarOpen={mobileSidebarOpen}
+                onMenuToggle={toggleSidebar}
+              />
+            )}
             <main
               key={section}
               id="workbench-main"
-              className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg)] workbench-view-enter"
+              className="workbench-view-enter flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-bg)]"
             >
               {children}
             </main>

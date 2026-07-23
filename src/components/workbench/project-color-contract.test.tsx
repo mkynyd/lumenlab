@@ -24,21 +24,21 @@ describe("project workspace color contract", () => {
     );
   });
 
-  it("defines blue light actions, Teal dark actions, and neutral project states", () => {
+  it("uses the shared blue accent in both themes and keeps project states neutral", () => {
     const css = readFileSync("src/app/globals.css", "utf8");
 
     expect(css).toMatch(
-      /:root[\s\S]*--color-project-action:\s*oklch\([^;]+257\./
+      /:root[\s\S]*--color-accent:\s*oklch\([^;]+258\.[^;]+;[\s\S]*--color-project-action:\s*var\(--color-accent\)/
     );
     expect(css).toMatch(
-      /\.dark[\s\S]*--color-project-action:\s*oklch\([^;]+18[01]\./
+      /\.dark[\s\S]*--color-accent:\s*oklch\([^;]+248\.[^;]+;[\s\S]*--color-project-action:\s*var\(--color-accent\)/
     );
     expect(css).not.toContain("--color-project-surface: var(");
     expect(css).toMatch(
       /:root[\s\S]*--color-project-surface:\s*oklch\(0\.9[0-9]+\s+0\s+0\)/
     );
     expect(css).toMatch(
-      /\.dark[\s\S]*--color-project-surface:\s*oklch\(0\.1[0-9]+\s+0\s+0\)/
+      /\.dark[\s\S]*--color-project-surface:\s*oklch\(1\s+0\s+0\s*\/\s*0\.0[0-9]+\)/
     );
     expect(css).not.toContain("--color-project-hover:");
   });
@@ -72,22 +72,22 @@ describe("project workspace color contract", () => {
     const dark = css.match(/\.dark\s*\{([\s\S]*?)\n\}/)?.[1] || "";
 
     expect(light).toContain(
-      "--color-project-control: oklch(0.15 0 0 / 0.06);"
+      "--color-project-control: oklch(0.145 0 0 / 0.05);"
     );
     expect(light).toContain(
-      "--color-project-surface-hover: oklch(0.15 0 0 / 0.13);"
+      "--color-project-surface-hover: oklch(0.145 0 0 / 0.06);"
     );
     expect(light).toContain(
-      "--color-project-surface-active: oklch(0.15 0 0 / 0.18);"
+      "--color-project-surface-active: oklch(0.145 0 0 / 0.1);"
     );
     expect(dark).toContain(
-      "--color-project-control: oklch(0.92 0 0 / 0.08);"
+      "--color-project-control: oklch(1 0 0 / 0.07);"
     );
     expect(dark).toContain(
-      "--color-project-surface-hover: oklch(0.92 0 0 / 0.17);"
+      "--color-project-surface-hover: oklch(1 0 0 / 0.09);"
     );
     expect(dark).toContain(
-      "--color-project-surface-active: oklch(0.92 0 0 / 0.22);"
+      "--color-project-surface-active: oklch(1 0 0 / 0.13);"
     );
   });
 

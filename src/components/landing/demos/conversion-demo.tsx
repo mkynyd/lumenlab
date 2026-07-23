@@ -17,7 +17,7 @@ export function ConversionDemo({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] bg-[var(--color-surface)]",
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-[inherit] bg-[var(--color-surface)]",
         className
       )}
     >

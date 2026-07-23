@@ -60,7 +60,14 @@ import {
   Trash,
   Xmark,
 } from "iconoir-react";
-import { BarChart3, ChevronDown, LogOut, Settings, UserRound } from "lucide-react";
+import {
+  BarChart3,
+  ChevronDown,
+  LogOut,
+  PanelLeftClose,
+  Settings,
+  UserRound,
+} from "lucide-react";
 import {
   useConversations,
   useDeleteConversation,
@@ -78,6 +85,7 @@ interface SidebarProps {
   hiddenOnDesktop?: boolean;
   onClose: () => void;
   onExpand: () => void;
+  onCollapse?: () => void;
 }
 
 export function Sidebar({
@@ -86,6 +94,7 @@ export function Sidebar({
   hiddenOnDesktop = false,
   onClose,
   onExpand,
+  onCollapse,
 }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -236,30 +245,41 @@ export function Sidebar({
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-64 flex-col overflow-hidden",
-          "border-r border-[var(--color-border-light)] bg-[var(--color-panel)] backdrop-blur-[var(--glass-blur)]",
-          "transition-[transform,width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          "border-r border-[var(--color-border-light)] bg-[var(--sidebar)]",
+          "transition-[transform,width,opacity,visibility] duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none",
+          mobileOpen
+            ? "visible translate-x-0"
+            : "invisible -translate-x-full",
           "lg:static lg:translate-x-0",
           hiddenOnDesktop
-            ? "lg:pointer-events-none lg:w-0 lg:border-r-0 lg:opacity-0"
+            ? "lg:invisible lg:pointer-events-none lg:w-0 lg:border-r-0 lg:opacity-0"
             : collapsed
-              ? "lg:w-16"
-              : "lg:w-64"
+              ? "lg:visible lg:w-16"
+              : "lg:visible lg:w-64"
         )}
         aria-label="主导航侧边栏"
       >
-        <SidebarHeader className="flex h-14 shrink-0 flex-row items-center justify-between px-3 py-0">
-          <span
-            className={cn(
-              "whitespace-nowrap text-xs font-medium text-[var(--color-text-tertiary)]",
-              "transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
-              collapsed
-                ? "lg:pointer-events-none lg:-translate-x-2 lg:opacity-0"
-                : "opacity-100"
-            )}
+        <SidebarHeader className="flex h-[52px] shrink-0 flex-row items-center justify-between px-3 py-0">
+          <Link
+            href="/chat"
+            onClick={onClose}
+            className="inline-flex min-h-11 min-w-0 items-center rounded-[var(--radius-sm)] text-sm font-semibold tracking-[-0.02em] text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)]"
+            aria-label="LumenLab 首页"
           >
-            工作空间
-          </span>
+            <span className={cn("truncate", collapsed && "lg:hidden")}>LumenLab</span>
+            <span className={cn("hidden text-sm", collapsed && "lg:inline")}>L</span>
+          </Link>
+          {!collapsed && onCollapse && (
+            <button
+              type="button"
+              onClick={onCollapse}
+              className="hidden h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] active:scale-[0.97] lg:inline-flex"
+              aria-label="收起侧边栏"
+              aria-expanded="true"
+            >
+              <PanelLeftClose size={17} strokeWidth={1.8} />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -270,14 +290,14 @@ export function Sidebar({
           </button>
         </SidebarHeader>
 
-        <SidebarGroup className="mx-2 my-2 w-auto shrink-0 rounded-[var(--radius-xl)] bg-[var(--color-surface)] p-1.5">
-          <SidebarMenu aria-label="工作空间导航" className="gap-1">
+        <SidebarGroup className="mx-2 mb-1 mt-1 w-auto shrink-0 p-0">
+          <SidebarMenu aria-label="工作空间导航" className="gap-0.5">
             <SidebarMenuItem>
               <SidebarMenuButton
                 type="button"
                 onClick={() => openSection("chat")}
                 isActive={activeSection === "chat"}
-                className={cn("h-11 lg:h-10", collapsed && "lg:justify-center lg:px-0")}
+                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                 aria-current={activeSection === "chat" ? "page" : undefined}
                 title={collapsed ? "展开聊天" : undefined}
               >
@@ -292,7 +312,7 @@ export function Sidebar({
                 type="button"
                 onClick={() => openSection("projects")}
                 isActive={activeSection === "projects"}
-                className={cn("h-11 lg:h-10", collapsed && "lg:justify-center lg:px-0")}
+                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                 aria-current={activeSection === "projects" ? "page" : undefined}
                 title={collapsed ? "展开项目" : undefined}
               >
@@ -307,7 +327,7 @@ export function Sidebar({
                 type="button"
                 onClick={() => openSection("tools")}
                 isActive={activeSection === "tools"}
-                className={cn("h-11 lg:h-10", collapsed && "lg:justify-center lg:px-0")}
+                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                 aria-current={activeSection === "tools" ? "page" : undefined}
                 title={collapsed ? "展开转换" : undefined}
               >
@@ -322,7 +342,7 @@ export function Sidebar({
                 <SidebarMenuButton
                   type="button"
                   isActive={activeSection === "usage"}
-                  className={cn("h-11 lg:h-10 w-full", collapsed && "lg:justify-center lg:px-0")}
+                  className={cn("h-11 w-full font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                   aria-current={activeSection === "usage" ? "page" : undefined}
                   title={collapsed ? "用量统计" : undefined}
                 >
@@ -347,13 +367,13 @@ export function Sidebar({
           aria-hidden={collapsed && !mobileOpen}
           inert={collapsed && !mobileOpen ? true : undefined}
         >
-          <SidebarGroup className="shrink-0 px-3 pb-3 pt-1">
+          <SidebarGroup className="shrink-0 px-2 pb-2 pt-1">
             <Button
               type="button"
               onClick={createItem}
-              variant="primary"
+              variant="ghost"
               size="md"
-              className="w-full"
+              className="h-9 w-full justify-start rounded-[var(--radius-md)] px-2 font-normal"
             >
               <Plus data-icon="inline-start" strokeWidth={2} />
               {activeSection === "chat"
@@ -364,15 +384,15 @@ export function Sidebar({
             </Button>
           </SidebarGroup>
 
-          <SidebarGroupLabel className="px-4 pb-2 text-xs">
+          <SidebarGroupLabel className="h-7 px-4 pb-1 text-[11px] font-normal uppercase tracking-[0.06em]">
             {activeSection === "chat"
-              ? "对话列表"
+              ? "最近对话"
               : activeSection === "tools"
-                ? "转换记录"
-                : "项目列表"}
+                ? "最近转换"
+                : "最近项目"}
           </SidebarGroupLabel>
 
-          <SidebarContent className="flex-1 px-2 pb-2">
+          <SidebarContent className="flex-1 px-2 pb-1">
             {isLoading ? (
               <div className="flex flex-col gap-1 px-2" role="status" aria-label="正在加载工作区列表">
                 {[1, 2, 3].map((item) => (
@@ -384,7 +404,7 @@ export function Sidebar({
               </div>
             ) : activeSection === "chat" ? (
               conversations.length > 0 ? (
-                <SidebarMenu className="gap-1">
+                <SidebarMenu className="gap-0.5">
                   {conversations.map((conversation) => (
                     <ContextMenu key={conversation.id}>
                       <ContextMenuTrigger asChild>
@@ -439,7 +459,7 @@ export function Sidebar({
               )
             ) : activeSection === "tools" ? (
               conversions.length > 0 ? (
-                <SidebarMenu className="gap-1">
+                <SidebarMenu className="gap-0.5">
                   {conversions.map((conversion) => (
                     <ContextMenu key={conversion.id}>
                       <ContextMenuTrigger asChild>
@@ -497,7 +517,7 @@ export function Sidebar({
                 </p>
               )
             ) : projects.length > 0 ? (
-              <SidebarMenu className="gap-1">
+              <SidebarMenu className="gap-0.5">
                 {projects.map((project) => (
                   <ContextMenu key={project.id}>
                     <ContextMenuTrigger asChild>
@@ -543,7 +563,7 @@ export function Sidebar({
 
         <SidebarFooter
           className={cn(
-            "shrink-0 px-2 py-2",
+            "shrink-0 px-2 pb-2 pt-1",
             "transition-opacity duration-200 ease-out motion-reduce:transition-none",
             collapsed ? "lg:px-2" : "lg:px-3"
           )}
@@ -553,9 +573,9 @@ export function Sidebar({
               <button
                 type="button"
                 className={cn(
-                  "relative z-10 flex size-11 min-w-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface)] text-left sm:h-11 sm:w-full sm:justify-start sm:gap-2 sm:px-2",
+                  "relative z-10 flex h-11 w-full min-w-0 items-center justify-start gap-2 rounded-[var(--radius-md)] px-2 text-left lg:h-10",
                   "text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]",
-                  collapsed && "lg:justify-center lg:px-0"
+                  collapsed && "lg:w-11 lg:justify-center lg:px-0"
                 )}
                 aria-label="打开个人与设置"
                 aria-haspopup="menu"
@@ -583,7 +603,7 @@ export function Sidebar({
                 />
                 <span
                   className={cn(
-                    "hidden min-w-0 flex-1 sm:block",
+                    "block min-w-0 flex-1",
                     collapsed && "lg:hidden"
                   )}
                 >
@@ -597,14 +617,14 @@ export function Sidebar({
                 <ChevronDown
                   size={14}
                   strokeWidth={2}
-                  className={cn("hidden shrink-0 sm:block", collapsed && "lg:hidden")}
+                  className={cn("shrink-0", collapsed && "lg:hidden")}
                 />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               side={mobileOpen ? "top" : "right"}
               align="end"
-              className="w-48 workbench-border-glow"
+              className="w-48"
             >
               <DropdownMenuItem
                 onSelect={() => openAccountSurface("profile")}
@@ -745,7 +765,7 @@ export function Sidebar({
             }
           }}
         >
-          <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 sm:inset-auto sm:h-auto sm:max-w-[960px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl">
+          <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none [&>[data-slot=dialog-close]]:right-[max(0.5rem,env(safe-area-inset-right))] [&>[data-slot=dialog-close]]:top-[max(0.5rem,env(safe-area-inset-top))] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-auto sm:max-w-[960px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[20px] sm:pb-0 sm:pt-0 sm:[&>[data-slot=dialog-close]]:right-2 sm:[&>[data-slot=dialog-close]]:top-2">
             <DialogTitle className="sr-only">设置</DialogTitle>
             <SettingsPanel />
           </DialogContent>

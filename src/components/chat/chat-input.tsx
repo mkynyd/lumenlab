@@ -62,6 +62,7 @@ export function ChatInput({
   onValueChange,
   attachments = [],
   onAttachmentsChange,
+  contextHint,
   blockedReason,
   model,
   onModelChange,
@@ -81,10 +82,10 @@ export function ChatInput({
   const webSearchSupported = modelSupportsWebSearch(model);
   const { ref: textareaRef, style: textareaStyle } = useMeasuredTextareaHeight({
     value: currentValue,
-    minHeight: 36,
-    maxHeight: 128,
-    fontSize: 14,
-    lineHeight: 20,
+    minHeight: 40,
+    maxHeight: 160,
+    fontSize: 16,
+    lineHeight: 24,
     fontFamily: '"Noto Sans SC"',
   });
 
@@ -146,7 +147,7 @@ export function ChatInput({
         onSubmit={handleSubmit}
         autoComplete="off"
         className={cn(
-          "workbench-input-dock shrink-0 bg-[var(--color-panel)] p-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-3 backdrop-blur-[var(--glass-blur)]"
+          "mx-auto w-full max-w-[48rem] shrink-0 space-y-2 bg-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pb-4"
         )}
       >
       {blockedReason && (
@@ -165,8 +166,8 @@ export function ChatInput({
       )}
       <div
         className={cn(
-          "rounded-[var(--radius-xl)] bg-[var(--color-surface)] p-1.5 sm:p-2",
-          "outline-none ring-0 shadow-none focus-within:bg-[var(--color-surface)]"
+          "workbench-input-dock rounded-[28px] border border-[var(--color-border-light)] bg-[var(--color-control)] p-1.5 sm:p-2",
+          "outline-none ring-0 transition-[border-color,box-shadow] duration-200 focus-within:border-[var(--color-border)] motion-reduce:transition-none"
         )}
       >
         {attachments.length > 0 && (
@@ -198,6 +199,11 @@ export function ChatInput({
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
+        {contextHint && (
+          <p className="mb-0.5 truncate px-2 text-xs text-[var(--color-text-tertiary)]">
+            {contextHint}
+          </p>
+        )}
         <div className="flex items-end gap-1 sm:block">
           <Button
             type="button"
@@ -205,7 +211,7 @@ export function ChatInput({
             size="icon-lg"
             disabled={disabled || isStreaming}
             onClick={() => setMobileToolsOpen(true)}
-            className="size-11 rounded-[var(--radius-md)] sm:hidden"
+            className="size-11 rounded-full sm:hidden"
             aria-label="更多输入选项"
             aria-expanded={mobileToolsOpen}
           >
@@ -222,7 +228,7 @@ export function ChatInput({
             disabled={disabled}
             autoComplete="off"
             className={cn(
-              "max-h-32 min-h-11 flex-1 resize-none border-0 bg-transparent px-1.5 py-2.5 text-base shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 sm:min-h-9 sm:px-2 sm:py-2 sm:text-sm",
+              "max-h-40 min-h-11 flex-1 resize-none border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 sm:px-2 sm:py-2",
               "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
               "focus:outline-none disabled:opacity-50"
             )}
@@ -239,7 +245,7 @@ export function ChatInput({
                   onClick={() => fileInputRef.current?.click()}
                   variant="ghost"
                   size="icon-sm"
-                  className="shrink-0 rounded-md"
+                  className="shrink-0 rounded-full"
                   aria-label="添加附件"
                 >
                   <Paperclip size={17} strokeWidth={2} />
@@ -276,8 +282,8 @@ export function ChatInput({
                     onClick={onWebSearchToggle}
                     disabled={isStreaming || disabled}
                     className={cn(
-                      "shrink-0 rounded-md",
-                      webSearchActive && "bg-[var(--color-surface-active)] text-[var(--color-accent)]"
+                      "shrink-0 rounded-full",
+                      webSearchActive && "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                     )}
                     aria-label={webSearchActive ? "关闭联网搜索" : "打开联网搜索"}
                     aria-pressed={webSearchActive}
@@ -299,7 +305,7 @@ export function ChatInput({
                   onClick={onStop}
                   variant="destructive"
                   size="icon-lg"
-                  className="shrink-0 rounded-md"
+                  className="shrink-0 rounded-full"
                   aria-label="停止生成"
                 >
                   <StopCircle size={17} strokeWidth={2} />
@@ -315,7 +321,7 @@ export function ChatInput({
                   disabled={!hasSendableContent || disabled}
                   variant="primary"
                   size="icon-lg"
-                  className="shrink-0 rounded-md"
+                  className="shrink-0 rounded-full"
                   aria-label="发送消息"
                 >
                   <Send size={17} strokeWidth={2} />
@@ -333,7 +339,7 @@ export function ChatInput({
                 onClick={onStop}
                 variant="destructive"
                 size="icon-lg"
-                className="size-11 rounded-[var(--radius-md)]"
+                className="size-11 rounded-full"
                 aria-label="停止生成"
               >
                 <StopCircle size={18} strokeWidth={2} />
@@ -344,7 +350,7 @@ export function ChatInput({
                 disabled={!hasSendableContent || disabled}
                 variant="primary"
                 size="icon-lg"
-                className="size-11 rounded-[var(--radius-md)]"
+                className="size-11 rounded-full"
                 aria-label="发送消息"
               >
                 <Send size={18} strokeWidth={2} />
@@ -356,7 +362,7 @@ export function ChatInput({
       <Dialog open={mobileToolsOpen} onOpenChange={setMobileToolsOpen}>
         <DialogContent
           showCloseButton={false}
-          className="top-auto bottom-0 left-0 max-w-none -translate-x-0 -translate-y-0 gap-4 rounded-t-[var(--radius-xl)] rounded-b-none p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:hidden"
+          className="top-auto bottom-0 left-0 max-w-none -translate-x-0 -translate-y-0 gap-3 rounded-t-[20px] rounded-b-none border-x-0 border-b-0 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-none sm:hidden"
         >
           <DialogHeader className="flex-row items-center justify-between gap-3">
             <DialogTitle>对话选项</DialogTitle>
@@ -366,7 +372,7 @@ export function ChatInput({
               </Button>
             </DialogClose>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-1">
             <Button
               type="button"
               variant="ghost"
@@ -375,7 +381,7 @@ export function ChatInput({
                 setMobileToolsOpen(false);
                 fileInputRef.current?.click();
               }}
-              className="h-12 justify-start rounded-[var(--radius-md)] px-3"
+              className="h-11 justify-start rounded-[var(--radius-md)] px-3 font-normal"
             >
               <Paperclip data-icon="inline-start" size={18} strokeWidth={2} />
               文件
@@ -391,7 +397,7 @@ export function ChatInput({
                 }}
                 className={cn(
                   "h-12 justify-start rounded-[var(--radius-md)] px-3",
-                  webSearchActive && "bg-[var(--color-interaction-active)] text-[var(--color-accent)]"
+                  webSearchActive && "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                 )}
               >
                 <Globe data-icon="inline-start" size={18} strokeWidth={2} />
@@ -402,7 +408,7 @@ export function ChatInput({
           {model && onModelChange && mobileModels.length > 0 && (
             <div className="space-y-2">
               <p className="px-1 text-xs text-[var(--color-text-tertiary)]">模型</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1">
                 {mobileModels.map((option) => (
                   <Button
                     key={option.value}
@@ -414,7 +420,7 @@ export function ChatInput({
                       setMobileToolsOpen(false);
                     }}
                     className={cn(
-                      "h-11 justify-start rounded-[var(--radius-md)] px-3",
+                      "h-11 justify-start rounded-[var(--radius-md)] px-3 font-normal",
                       model === option.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
                     )}
                   >
@@ -425,7 +431,7 @@ export function ChatInput({
             </div>
           )}
           {onSkillChange && (
-            <div className="flex min-h-12 items-center justify-between gap-3 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3">
+            <div className="flex min-h-12 items-center justify-between gap-3 border-t border-[var(--color-border-light)] px-3 pt-2">
               <span className="text-sm text-[var(--color-text-secondary)]">智能方式</span>
               <SkillSelector
                 value={skillValue}

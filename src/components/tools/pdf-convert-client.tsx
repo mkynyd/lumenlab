@@ -2,13 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Check,
-  Download,
-  Folder,
-  PageEdit,
-  Refresh,
-} from "iconoir-react";
+import { Check, Download, Folder, PageEdit, Refresh } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -91,7 +85,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
     if (stage !== "done") return;
     const timeout = window.setTimeout(
       () => setStage("idle"),
-      COMPLETED_PROGRESS_DISMISS_MS
+      COMPLETED_PROGRESS_DISMISS_MS,
     );
     return () => window.clearTimeout(timeout);
   }, [stage]);
@@ -187,7 +181,9 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
             setResult({
               content: String(event.content || ""),
               conversionId: String(event.conversionId || ""),
-              fileName: String(event.fileName || file.name.replace(/\.pdf$/i, ".md")),
+              fileName: String(
+                event.fileName || file.name.replace(/\.pdf$/i, ".md"),
+              ),
               assets: Array.isArray(event.assets)
                 ? event.assets.flatMap((asset) => {
                     if (!asset || typeof asset !== "object") return [];
@@ -222,7 +218,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
       setError(
         conversionError instanceof Error
           ? conversionError.message
-          : "转换失败，请稍后重试"
+          : "转换失败，请稍后重试",
       );
     }
   }
@@ -253,7 +249,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
 
   const pageCount = Number(result?.metadata?.pageCount) || 0;
   const resultAssetsByPath = new Map(
-    (result?.assets || []).map((asset) => [asset.relativePath, asset.id])
+    (result?.assets || []).map((asset) => [asset.relativePath, asset.id]),
   );
 
   function resolveResultImageUrl(src: string) {
@@ -266,30 +262,28 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
+      <div className="mx-auto w-full max-w-4xl px-4 py-7 pb-14 sm:px-8 sm:py-10">
         <header className="max-w-2xl">
           <p className="text-xs font-medium text-[var(--color-text-tertiary)]">
             文档工具
           </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-[1.75rem]">
+          <h1 className="mt-1.5 text-xl font-semibold tracking-tight">
             PDF 转 Markdown
           </h1>
-          <p className="mt-2 max-w-[65ch] text-sm leading-6 text-[var(--color-text-secondary)]">
+          <p className="mt-1.5 max-w-[65ch] text-sm leading-6 text-[var(--color-text-secondary)]">
             转换课程讲义、论文和实验资料，保留表格、公式与图片引用。
           </p>
         </header>
 
-        <section
-          aria-labelledby="upload-heading"
-          className="mt-8 rounded-[var(--radius-xl)] bg-[var(--color-surface)] p-4 sm:p-6"
-        >
+        <section aria-labelledby="upload-heading" className="mt-7">
           <h2 id="upload-heading" className="sr-only">
             上传 PDF
           </h2>
           <div
             className={cn(
-              "flex min-h-64 flex-col items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-6 py-10 text-center transition-colors duration-200 motion-reduce:transition-none",
-              isDragOver && "bg-[var(--color-accent-muted)]"
+              "flex min-h-52 flex-col items-center justify-center rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-8 text-center transition-[background-color,border-color,transform] duration-150 ease-out motion-reduce:transition-none",
+              isDragOver &&
+                "border-[var(--color-accent)] bg-[var(--color-accent-soft)]",
             )}
             onDragEnter={(event) => {
               event.preventDefault();
@@ -311,14 +305,14 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
               disabled={isConverting}
               onChange={(event) => handleFile(event.target.files?.[0])}
             />
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-[var(--color-surface)] text-[var(--color-text-tertiary)]">
+            <span className="flex size-10 items-center justify-center text-[var(--color-text-tertiary)]">
               {isConverting ? (
-                <Spinner className="size-6" />
+                <Spinner className="size-5" />
               ) : (
-                <PageEdit width={30} height={30} strokeWidth={1.35} />
+                <PageEdit width={26} height={26} strokeWidth={1.5} />
               )}
             </span>
-            <p className="mt-5 text-sm font-medium text-[var(--color-text-primary)]">
+            <p className="mt-3 text-sm font-medium text-[var(--color-text-primary)]">
               {isConverting ? "正在转换，请保持页面打开" : "拖拽 PDF 到此处"}
             </p>
             <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">
@@ -326,9 +320,8 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
             </p>
             <Button
               type="button"
-              variant="secondary"
-              size="lg"
-              className="mt-5 min-h-11 sm:min-h-0"
+              size="sm"
+              className="mt-4 min-h-10 px-3 sm:min-h-0"
               disabled={isConverting}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -337,7 +330,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
           </div>
 
           {showTokenInput && selectedFile && (
-            <div className="mt-5 flex flex-col gap-3 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] p-4">
+            <div className="mt-5 flex flex-col gap-3 border-y border-[var(--color-border-light)] py-4">
               <label className="flex flex-col gap-2 text-xs font-medium text-[var(--color-text-secondary)]">
                 MinerU Token
                 <Input
@@ -346,7 +339,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
                   autoComplete="off"
                   aria-describedby="mineru-token-help"
                   placeholder="输入仅用于本次转换的 Token"
-                  className="h-11 font-mono sm:h-8"
+                  className="h-10 font-mono sm:h-8"
                   onChange={(event) => setMineruToken(event.target.value)}
                 />
               </label>
@@ -359,9 +352,12 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
               <div className="flex justify-end">
                 <Button
                   type="button"
-                  className="min-h-11 sm:min-h-0"
+                  size="sm"
+                  className="min-h-10 sm:min-h-0"
                   disabled={!mineruToken.trim()}
-                  onClick={() => void startConversion(selectedFile, mineruToken)}
+                  onClick={() =>
+                    void startConversion(selectedFile, mineruToken)
+                  }
                 >
                   开始转换
                 </Button>
@@ -374,33 +370,36 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
           <section
             aria-label="转换进度"
             aria-live="polite"
-            className="mt-6 rounded-[var(--radius-xl)] bg-[var(--color-surface)] p-4 sm:p-6"
+            className="mt-6 border-y border-[var(--color-border-light)] py-4"
           >
-            <ol className="grid grid-cols-4 gap-1">
+            <ol className="grid grid-cols-4 gap-1.5">
               {STAGES.map((item, index) => {
                 const complete = stageIndex > index || stage === "done";
                 const current = stageIndex === index;
                 return (
-                  <li key={item.key} className="flex min-w-0 items-center gap-1.5">
+                  <li
+                    key={item.key}
+                    className="flex min-w-0 items-center gap-1.5"
+                  >
                     <span
-                      aria-label={complete ? `${item.label}步骤已完成` : undefined}
+                      aria-label={
+                        complete ? `${item.label}步骤已完成` : undefined
+                      }
                       className={cn(
-                        "flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold",
-                        complete
-                          ? "bg-[var(--color-success-muted)] text-[var(--color-success)]"
-                          : current
-                            ? "bg-[var(--color-warning-muted)] text-[var(--color-warning)]"
-                            : "bg-[var(--color-panel-muted)] text-[var(--color-text-tertiary)]"
+                        "flex size-5 shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-semibold transition-colors duration-150 motion-reduce:transition-none",
+                        complete || current
+                          ? "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
+                          : "bg-[var(--color-panel-muted)] text-[var(--color-text-tertiary)]",
                       )}
                     >
-                      {complete ? <Check width={13} height={13} /> : index + 1}
+                      {complete ? <Check width={12} height={12} /> : index + 1}
                     </span>
                     <span
                       className={cn(
                         "truncate text-xs",
                         stageIndex >= index
                           ? "text-[var(--color-text-primary)]"
-                          : "text-[var(--color-text-tertiary)]"
+                          : "text-[var(--color-text-tertiary)]",
                       )}
                     >
                       {item.label}
@@ -414,7 +413,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
             </ol>
 
             {stage === "model" && progress && (
-              <div className="mt-5">
+              <div className="mt-4">
                 <Progress
                   value={
                     progress.totalPages > 0
@@ -425,7 +424,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
                   color="accent"
                   label={`已解析 ${progress.extractedPages} / ${progress.totalPages} 页`}
                 />
-                <p className="mt-2 text-xs tabular-nums text-[var(--color-text-tertiary)]">
+                <p className="mt-1.5 text-xs tabular-nums text-[var(--color-text-tertiary)]">
                   已解析 {progress.extractedPages} / {progress.totalPages} 页
                 </p>
               </div>
@@ -436,17 +435,21 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
         {error && (
           <section
             role="alert"
-            className="mt-6 rounded-[var(--radius-xl)] bg-[var(--color-error-muted)] p-4"
+            className="mt-6 border-y border-[var(--color-border-light)] py-4"
           >
-            <p className="text-sm leading-6 text-[var(--color-error)]">{error}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <p className="text-sm leading-6 text-[var(--color-error)]">
+              {error}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1">
               {selectedFile && (
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="ghost"
                   size="sm"
-                  className="min-h-11 sm:min-h-0"
-                  onClick={() => void startConversion(selectedFile, mineruToken)}
+                  className="min-h-10 sm:min-h-0"
+                  onClick={() =>
+                    void startConversion(selectedFile, mineruToken)
+                  }
                 >
                   <Refresh data-icon="inline-start" strokeWidth={1.8} />
                   重新转换
@@ -456,7 +459,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="min-h-11 sm:min-h-0"
+                className="min-h-10 sm:min-h-0"
                 onClick={reset}
               >
                 选择其他文件
@@ -469,10 +472,10 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
           <p
             role="status"
             className={cn(
-              "mt-4 rounded-[var(--radius-lg)] px-4 py-3 text-sm",
+              "mt-4 text-sm",
               feedback.tone === "success"
-                ? "bg-[var(--color-success-muted)] text-[var(--color-success)]"
-                : "bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]"
+                ? "text-[var(--color-success)]"
+                : "text-[var(--color-text-secondary)]",
             )}
           >
             {feedback.message}
@@ -480,7 +483,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
         )}
 
         {result && (
-          <section className="mt-6 rounded-[var(--radius-xl)] bg-[var(--color-surface)] p-4 sm:p-6">
+          <section className="mt-6 border-t border-[var(--color-border-light)] pt-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold">转换结果</h2>
@@ -488,23 +491,20 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
                   {result.fileName}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  asChild
-                  variant="secondary"
-                  size="sm"
-                  className="min-h-11 sm:min-h-0"
-                >
-                  <a href={`/api/tools/conversions/${result.conversionId}/download`}>
+              <div className="flex flex-wrap gap-1">
+                <Button asChild size="sm" className="min-h-10 sm:min-h-0">
+                  <a
+                    href={`/api/tools/conversions/${result.conversionId}/download`}
+                  >
                     <Download data-icon="inline-start" strokeWidth={1.8} />
                     下载完整包
                   </a>
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="ghost"
                   size="sm"
-                  className="min-h-11 sm:min-h-0"
+                  className="min-h-10 sm:min-h-0"
                   onClick={downloadContent}
                 >
                   <Download data-icon="inline-start" strokeWidth={1.8} />
@@ -512,9 +512,9 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="ghost"
                   size="sm"
-                  className="min-h-11 sm:min-h-0"
+                  className="min-h-10 sm:min-h-0"
                   onClick={() => setShowProjectPicker(true)}
                 >
                   <Folder data-icon="inline-start" strokeWidth={1.8} />
@@ -523,7 +523,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
               </div>
             </div>
 
-            <div className="mt-4 max-h-[36rem] overflow-auto rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] p-4 sm:p-6">
+            <div className="mt-4 max-h-[36rem] overflow-auto rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] p-4 sm:p-6">
               <MarkdownContent
                 content={result.content}
                 resolveImageUrl={resolveResultImageUrl}

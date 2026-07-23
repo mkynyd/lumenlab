@@ -9,31 +9,26 @@ interface LandingNavProps {
 }
 
 /**
- * 极简顶部导航。无 sidebar、无 store 依赖、无认证态。
- * 品牌 = Sparkles icon + LumenLab；右侧放主题切换和登录入口。
+ * 单层公开导航。无 sidebar、无 store 依赖、无认证态。
  */
 export function LandingNav({ showBrand = true }: LandingNavProps) {
   return (
-    <header className="sticky top-0 z-40 w-full">
-      <div
-        className="absolute inset-0 -z-10 bg-[var(--color-bg)]/80"
-        aria-hidden
-      />
+    <header className="sticky top-0 z-40 w-full border-b border-[var(--color-border-light)] bg-[var(--color-bg)]">
       <nav
         aria-label="主导航"
-        className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6"
+        className="mx-auto flex h-[52px] w-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6"
       >
         {showBrand ? (
           <Link
             href="/home"
-            className="flex items-center gap-2 rounded-[var(--radius-md)] px-1 py-1 text-[15px] font-semibold tracking-tight text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)]"
+            className="flex items-center gap-2 rounded-lg px-1 py-1 text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-primary)] transition-colors duration-200 hover:text-[var(--color-accent)]"
           >
-            <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-[var(--radius-md)]">
+            <span className="relative flex size-7 items-center justify-center overflow-hidden rounded-lg">
               <Image
                 src="/LumenLab-logo-only.png"
                 alt="LumenLab"
-                width={32}
-                height={32}
+                width={28}
+                height={28}
                 className="object-cover"
                 priority
               />
@@ -44,7 +39,28 @@ export function LandingNav({ showBrand = true }: LandingNavProps) {
           <div aria-hidden />
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex">
+          <Link
+            href="#features"
+            className="rounded-full px-3 py-1.5 text-[13px] text-[var(--color-text-secondary)] transition-colors duration-200 hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+          >
+            工作流
+          </Link>
+          <Link
+            href="#how-to"
+            className="rounded-full px-3 py-1.5 text-[13px] text-[var(--color-text-secondary)] transition-colors duration-200 hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+          >
+            上手
+          </Link>
+          <Link
+            href="/docs"
+            className="rounded-full px-3 py-1.5 text-[13px] text-[var(--color-text-secondary)] transition-colors duration-200 hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+          >
+            文档
+          </Link>
+        </div>
+
+        <div className="flex items-center gap-1">
           <div className="hidden sm:block">
             <ThemeToggle />
           </div>
@@ -52,22 +68,14 @@ export function LandingNav({ showBrand = true }: LandingNavProps) {
             asChild
             variant="ghost"
             size="sm"
-            className="hidden h-9 rounded-[var(--radius-md)] px-3 text-[14px] sm:inline-flex"
-          >
-            <Link href="/docs">文档</Link>
-          </Button>
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="h-9 rounded-[var(--radius-md)] px-3 text-[14px]"
+            className="h-8 rounded-full px-3 text-[13px]"
           >
             <Link href="/login">登录</Link>
           </Button>
           <Button
             asChild
             size="sm"
-            className="h-9 rounded-[var(--radius-md)] px-3 text-[14px]"
+            className="h-8 rounded-full px-3.5 text-[13px]"
           >
             <Link href="/register">开始使用</Link>
           </Button>

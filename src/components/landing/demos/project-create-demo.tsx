@@ -52,7 +52,7 @@ export function ProjectCreateDemo({ className }: ProjectCreateDemoProps) {
   return (
     <div
       className={cn(
-        "flex flex-col rounded-[var(--radius-xl)] bg-[var(--color-surface)] p-5",
+        "flex flex-col rounded-[inherit] bg-[var(--color-surface)] p-5 sm:p-6",
         className
       )}
     >

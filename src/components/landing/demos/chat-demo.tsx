@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Globe, Paperclip, Send, Sparkles, User, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Globe, Paperclip, Send } from "lucide-react";
 import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ModelSelector } from "@/components/chat/model-selector";
@@ -17,19 +17,20 @@ export function ChatDemo({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] bg-[var(--color-surface)]",
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-[inherit] bg-[var(--color-surface)]",
         className
       )}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--color-border-light)] bg-[var(--color-panel)] px-4 py-2.5">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--color-border-light)] bg-[var(--color-panel)] px-4">
         <div className="flex items-center gap-2">
-          <span className="size-1.5 rounded-full bg-[var(--color-success)]" aria-hidden />
-          <span className="text-xs font-medium text-[var(--color-text-secondary)]">光电效应实验复盘</span>
+          <span className="text-[13px] font-medium text-[var(--color-text-primary)]">光电效应实验复盘</span>
         </div>
-        <span className="text-xs text-[var(--color-text-tertiary)]">在线 · 深度</span>
+        <span className="rounded-full bg-[var(--color-surface-active)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)]">
+          DeepSeek · 深度
+        </span>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-hidden bg-[var(--color-bg)] px-3 py-4 sm:px-4">
+      <div className="min-h-0 flex-1 space-y-5 overflow-hidden bg-[var(--color-bg)] px-4 py-5 sm:px-7 sm:py-7">
         {MOCK_CHAT_MESSAGES.map((message) => (
           <MockBubble key={message.id} message={message} />
         ))}
@@ -45,29 +46,18 @@ function MockBubble({ message }: { message: MockChatMessage }) {
   const [reasoningOpen, setReasoningOpen] = useState(false);
 
   return (
-    <div className={cn("flex gap-2.5", isUser && "flex-row-reverse")}>
-      <div
-        className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-md)]",
-          isUser
-            ? "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]"
-            : "bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)]"
-        )}
-      >
-        {isUser ? <User size={12} /> : <Sparkles size={12} />}
-      </div>
-
-      <div className={cn("min-w-0 flex-1", isUser && "flex flex-col items-end")}>
+    <div className={cn("flex", isUser && "justify-end")}>
+      <div className={cn("min-w-0", isUser ? "flex max-w-[72%] flex-col items-end" : "w-full")}>
         {message.reasoningContent && (
           <Collapsible
             open={reasoningOpen}
             onOpenChange={setReasoningOpen}
-            className="mb-1.5 w-full max-w-[74ch]"
+            className="mb-2 w-full max-w-[74ch]"
           >
             <CollapsibleTrigger asChild>
               <button
                 type="button"
-                className="flex items-center gap-1.5 rounded-[var(--radius-md)] px-1.5 py-1 text-xs text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-secondary)]"
+                className="flex items-center gap-1.5 rounded-lg px-1 py-1 text-[11px] text-[var(--color-text-tertiary)] transition-colors duration-200 hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-secondary)]"
                 aria-expanded={reasoningOpen}
               >
                 {reasoningOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -75,7 +65,7 @@ function MockBubble({ message }: { message: MockChatMessage }) {
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <p className="mt-1 max-w-[74ch] rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-2 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
+              <p className="mt-1 max-w-[74ch] border-l border-[var(--color-border-light)] pl-3 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
                 {message.reasoningContent}
               </p>
             </CollapsibleContent>
@@ -84,10 +74,10 @@ function MockBubble({ message }: { message: MockChatMessage }) {
 
         <div
           className={cn(
-            "max-w-[85%] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] leading-relaxed",
+            "text-[13px] leading-relaxed",
             isUser
-              ? "bg-[var(--color-accent-soft)] text-[var(--color-text-primary)]"
-              : "bg-transparent pl-0"
+              ? "rounded-[18px] bg-[var(--color-surface-active)] px-3.5 py-2.5 text-[var(--color-text-primary)]"
+              : "max-w-[74ch] text-[var(--color-text-primary)]"
           )}
         >
           {isUser ? (
@@ -97,10 +87,6 @@ function MockBubble({ message }: { message: MockChatMessage }) {
               <MarkdownContent content={message.content} imageLoading="lazy" />
             </div>
           )}
-        </div>
-
-        <div className="mt-1 px-1 text-xs tabular-nums text-[var(--color-text-tertiary)]">
-          {message.tokenCount} tokens
         </div>
       </div>
     </div>
@@ -117,8 +103,8 @@ function MockBubble({ message }: { message: MockChatMessage }) {
  */
 function ChatDemoInputDock() {
   return (
-    <div className="shrink-0 border-t border-[var(--color-border-light)] bg-[var(--color-panel)] p-3">
-      <div className="rounded-[calc(var(--radius-xl)+10px)] bg-[var(--color-surface)] p-2">
+    <div className="shrink-0 bg-[var(--color-bg)] px-3 pb-3 sm:px-5 sm:pb-5">
+      <div className="rounded-[24px] bg-[var(--color-surface)] p-2 ring-1 ring-[var(--color-border-light)] shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_rgb(0_0_0/0.035)]">
         <div className="min-h-9 px-2 py-2 text-[13px] leading-snug text-[var(--color-text-tertiary)]">
           向 LumenLab 提问，支持附件、引用资料…
         </div>
@@ -158,14 +144,10 @@ function ChatDemoInputDock() {
           </button>
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-3 text-xs text-[var(--color-text-tertiary)]">
+      <div className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-[var(--color-text-tertiary)]">
         <span className="inline-flex items-center gap-1">
           <FileText size={10} />
-          1 资料已挂载
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <X size={10} />
-          可在 /chat 关闭
+          已挂载 1 份项目资料
         </span>
       </div>
     </div>
