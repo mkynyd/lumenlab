@@ -80,7 +80,7 @@ describe("ProductStory", () => {
       screen.getAllByText("回答引用你正在学的内容").length
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByText("从 PDF 到可继续编辑的成果").length
+      screen.getAllByText("从 PDF 到可编辑的文档").length
     ).toBeGreaterThan(0);
   });
 
