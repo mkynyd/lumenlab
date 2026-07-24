@@ -1,26 +1,51 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductStory } from "./product-story";
 
 const motionPreference = vi.hoisted(() => ({ reduced: true }));
+const gsapMocks = vi.hoisted(() => ({
+  timeline: vi.fn(),
+  timelineFromTo: vi.fn(),
+  timelineTo: vi.fn(),
+  refresh: vi.fn(),
+  set: vi.fn(),
+}));
 
 vi.mock("./prefers-motion", () => ({
   usePrefersReducedMotion: () => motionPreference.reduced,
 }));
 
 vi.mock("gsap", () => ({
-  gsap: {
-    context: (setup: () => void) => {
-      setup();
-      return { revert: vi.fn() };
-    },
-    matchMedia: () => ({ add: vi.fn(), revert: vi.fn() }),
-    registerPlugin: vi.fn(),
-  },
+  gsap: (() => {
+    const timeline = {
+      fromTo: (...args: unknown[]) => {
+        gsapMocks.timelineFromTo(...args);
+        return timeline;
+      },
+      to: (...args: unknown[]) => {
+        gsapMocks.timelineTo(...args);
+        return timeline;
+      },
+    };
+    gsapMocks.timeline.mockReturnValue(timeline);
+    return {
+      context: (setup: () => void) => {
+        setup();
+        return { revert: vi.fn() };
+      },
+      matchMedia: () => ({
+        add: (_query: string, setup: () => void) => setup(),
+        revert: vi.fn(),
+      }),
+      registerPlugin: vi.fn(),
+      set: gsapMocks.set,
+      timeline: gsapMocks.timeline,
+    };
+  })(),
 }));
 
 vi.mock("gsap/ScrollTrigger", () => ({
-  ScrollTrigger: {},
+  ScrollTrigger: { refresh: gsapMocks.refresh },
 }));
 
 vi.mock("./demos/chat-demo", () => ({
@@ -36,6 +61,10 @@ vi.mock("./demos/conversion-demo", () => ({
 }));
 
 describe("ProductStory", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("keeps every workflow chapter available when motion is reduced", () => {
     motionPreference.reduced = true;
     const { container } = render(<ProductStory />);
@@ -55,20 +84,25 @@ describe("ProductStory", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("hides and inerts inactive desktop scenes before GSAP initializes", () => {
+  it("uses a native sticky stage without ScrollTrigger pinning or snapping", async () => {
     motionPreference.reduced = false;
     const { container } = render(<ProductStory />);
 
-    const panels = Array.from(
-      container.querySelectorAll<HTMLElement>("[data-story-panel]")
+    expect(container.querySelector("#features")).toHaveAttribute(
+      "data-scroll-mode",
+      "sticky-natural"
     );
-    expect(panels).toHaveLength(3);
-    expect(panels[0]).not.toHaveAttribute("aria-hidden", "true");
-    expect(panels[0]).not.toHaveAttribute("inert");
-    expect(panels[1]).toHaveClass("invisible", "opacity-0");
-    expect(panels[1]).toHaveAttribute("aria-hidden", "true");
-    expect(panels[1]).toHaveAttribute("inert");
-    expect(panels[2]).toHaveClass("invisible", "opacity-0");
-    expect(panels[2]).toHaveAttribute("inert");
+    expect(container.querySelector("[data-story-stage]")).toHaveClass("sticky");
+    expect(container.querySelectorAll("[data-story-panel]")).toHaveLength(3);
+    expect(container.innerHTML).not.toContain("snap-mandatory");
+
+    await waitFor(() => {
+      expect(gsapMocks.timeline).toHaveBeenCalled();
+    });
+    const scrollTrigger =
+      gsapMocks.timeline.mock.calls[0][0].scrollTrigger;
+    expect(scrollTrigger).not.toHaveProperty("pin");
+    expect(scrollTrigger).not.toHaveProperty("anticipatePin");
+    expect(scrollTrigger).not.toHaveProperty("snap");
   });
 });

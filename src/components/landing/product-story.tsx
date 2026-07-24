@@ -58,13 +58,12 @@ const STORY_CHAPTERS: StoryChapter[] = [
 /**
  * 产品叙事主段。
  *
- * 桌面端由 ScrollTrigger 固定一屏，并在三段真实产品预览间切换；
- * 移动端使用原生横向 snap，避免窄屏上的长距离 pin；
- * reduced-motion 模式保留全部章节，仅改为普通纵向阅读。
+ * 桌面端使用原生 sticky 保持叙事舞台固定，ScrollTrigger 只驱动内容切换；
+ * 不使用 ScrollTrigger pin、anticipatePin 或 snap，避免接近区块时产生吸附感；
+ * 移动端保留自由横向浏览，reduced-motion 使用普通纵向阅读。
  */
 export function ProductStory() {
   const rootRef = useRef<HTMLElement | null>(null);
-  const frameRef = useRef<HTMLDivElement | null>(null);
   const progressRef = useRef<HTMLSpanElement | null>(null);
   const copyRefs = useRef<Array<HTMLDivElement | null>>([]);
   const panelRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -92,7 +91,7 @@ export function ProductStory() {
         import("gsap/ScrollTrigger"),
       ]);
 
-      if (cancelled || !rootRef.current || !frameRef.current) return;
+      if (cancelled || !rootRef.current) return;
 
       gsap.registerPlugin(ScrollTrigger);
       context = gsap.context(() => {
@@ -137,12 +136,8 @@ export function ProductStory() {
                 id: "lumenlab-product-story",
                 trigger: rootRef.current,
                 start: "top top+=52",
-                end: () =>
-                  `+=${Math.max(window.innerHeight * 2.2, 1480)}`,
-                pin: frameRef.current,
-                pinSpacing: true,
-                scrub: 0.2,
-                anticipatePin: 1,
+                end: "bottom bottom",
+                scrub: true,
                 invalidateOnRefresh: true,
                 onUpdate: (self) => {
                   const nextIndex = Math.min(
@@ -198,6 +193,8 @@ export function ProductStory() {
                 );
             }
 
+            ScrollTrigger.refresh();
+
             return () => {
               lastIndex = 0;
             };
@@ -220,14 +217,21 @@ export function ProductStory() {
       ref={rootRef}
       id="features"
       aria-label="LumenLab 产品工作流"
-      className="relative scroll-mt-14"
+      data-scroll-mode="sticky-natural"
+      className={cn(
+        "relative scroll-mt-14",
+        !reducedMotion && "lg:min-h-[300svh]"
+      )}
     >
       <MobileStory reducedMotion={reducedMotion} />
 
       {reducedMotion ? (
         <ReducedMotionStory />
       ) : (
-        <div ref={frameRef} className="hidden min-h-[calc(100svh-3.25rem)] lg:block">
+        <div
+          data-story-stage
+          className="sticky top-[52px] hidden min-h-[calc(100svh-3.25rem)] lg:block"
+        >
           <div className="mx-auto flex min-h-[calc(100svh-3.25rem)] w-full max-w-7xl flex-col px-6 py-10 xl:px-8 xl:py-12">
             <StoryHeading id="product-story-title-desktop" />
 
@@ -371,7 +375,7 @@ function MobileStory({ reducedMotion }: { reducedMotion: boolean }) {
           "flex gap-4 px-4 pb-4 sm:px-6",
           reducedMotion
             ? "flex-col gap-16"
-            : "snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            : "overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         )}
         aria-label="产品工作流"
       >
@@ -382,7 +386,7 @@ function MobileStory({ reducedMotion }: { reducedMotion: boolean }) {
               "max-w-[680px]",
               reducedMotion
                 ? "w-full"
-                : "w-[calc(100vw-2rem)] shrink-0 snap-center sm:w-[calc(100vw-3rem)]"
+                : "w-[calc(100vw-2rem)] shrink-0 sm:w-[calc(100vw-3rem)]"
             )}
           >
             <div className="mb-7">
