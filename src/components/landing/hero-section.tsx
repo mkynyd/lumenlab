@@ -29,7 +29,7 @@ export function HeroSection() {
             className="mt-7 max-w-[54ch] text-[16px] leading-7 text-[var(--color-text-secondary)] sm:text-[18px] sm:leading-8"
             style={{ textWrap: "pretty" }}
           >
-            把课程资料、上下文对话、PDF 解析和成果导出放进同一个项目。少切换工具，把精力留给理解、推导和表达。
+            把课程资料、AI 对话和文档导出放在同一个项目里，不用反复切换工具。
           </p>
 
           <div className="mt-9 flex flex-wrap items-center justify-center gap-2">
@@ -53,7 +53,7 @@ export function HeroSection() {
             </Button>
           </div>
           <p className="mt-3 text-[12px] text-[var(--color-text-tertiary)]">
-            Alpha 阶段免费 · 使用注册码开通
+            Alpha 阶段免费 · 凭注册码使用
           </p>
         </ScrollReveal>
 

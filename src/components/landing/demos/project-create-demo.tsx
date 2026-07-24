@@ -231,7 +231,7 @@ function SceneStep() {
         描述你的使用场景
       </label>
       <p className="text-[12px] text-[var(--color-text-secondary)]">
-        用自然语言告诉 AI 你的背景和目的，AI 会据此生成专属的项目提示词和快捷任务。
+        用自然语言告诉 AI 你的背景和目的，AI 会据此生成适合你的项目提示词和快捷任务。
       </p>
       <Textarea
         value={MOCK_NEW_PROJECT.sceneDescription}

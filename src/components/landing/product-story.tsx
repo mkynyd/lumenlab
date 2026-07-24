@@ -37,7 +37,7 @@ const STORY_CHAPTERS: StoryChapter[] = [
     label: "上下文对话",
     title: "回答引用你正在学的内容",
     description:
-      "直接围绕项目资料追问。模型、推理强度、附件和联网能力都在同一个输入区，不打断思路。",
+      "直接围绕项目资料追问。模型、推理强度、附件和联网能力都在同一个输入区。",
     detail: "从原始材料出发，保留推导与引用。",
     icon: <MessageSquareText size={17} strokeWidth={1.8} />,
     demo: <ChatDemo className="h-full" />,
@@ -46,10 +46,10 @@ const STORY_CHAPTERS: StoryChapter[] = [
     id: "deliver",
     index: "03",
     label: "结构化成果",
-    title: "从 PDF 到可继续编辑的成果",
+    title: "从 PDF 到可编辑的文档",
     description:
       "课件解析后保留标题、公式、图片和代码结构，再导出 Markdown、PDF 或 DOCX，直接进入复习与写作。",
-    detail: "解析、检查、保存和导出形成一条闭环。",
+    detail: "从课件到笔记，一步到位。",
     icon: <FileText size={17} strokeWidth={1.8} />,
     demo: <ConversionDemo className="h-full" />,
   },
@@ -295,14 +295,14 @@ function StoryHeading({ id }: { id: string }) {
   return (
     <div className="mb-8 max-w-3xl">
       <p className="text-[13px] font-medium text-[var(--color-accent)]">
-        一条完整的学习工作流
+        从资料到成果
       </p>
       <h2
         id={id}
         className="mt-3 text-[clamp(2rem,4vw,3.6rem)] font-semibold leading-[1.06] tracking-[-0.035em] text-[var(--color-text-primary)]"
         style={{ textWrap: "balance" }}
       >
-        从一份资料开始，走到可交付的成果
+        从一份资料开始，走到能用的东西
       </h2>
     </div>
   );

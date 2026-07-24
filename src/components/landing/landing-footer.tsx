@@ -25,7 +25,7 @@ export function LandingFooter() {
               把资料、问题和成果放在一起
             </h2>
             <p className="mt-5 max-w-[48ch] text-[15px] leading-7 text-[var(--color-text-secondary)]">
-              当前为 Alpha 阶段，使用管理员签发的注册码即可开通。
+              当前为 Alpha 阶段，需要注册码才能使用。
             </p>
           </div>
 

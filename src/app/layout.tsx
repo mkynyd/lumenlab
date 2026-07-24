@@ -21,13 +21,13 @@ export const metadata: Metadata = {
     default: "LumenLab",
     template: "%s · LumenLab",
   },
-  description: "面向大学计算机课程的 AI 实验工作台、资料整理与成果导出工具。",
+  description: "面向大学计算机课程的学习工具，把资料、对话和导出放在一起。",
   openGraph: {
     type: "website",
     locale: "zh_CN",
     siteName: "LumenLab",
     title: "LumenLab",
-    description: "AI 对话、项目资料管理、文档解析与学习成果导出工作台。",
+    description: "LumenLab 是一个 AI 学习工作台，帮大学生管理课程资料、辅助理解、导出成果。",
   },
   robots: {
     index: false,
