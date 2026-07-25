@@ -73,6 +73,75 @@ git pull origin main          # 同步远端
 
 不要执行 `git reset --hard`、`git checkout -- .`、`git clean -fd` 等破坏性命令，除非明确知道未提交改动是废弃的。
 
+## 生产部署流程
+
+生产环境只允许通过仓库内的 `scripts/deploy.sh` 发布。不要在服务器上手工执行 `git pull`、`npm install`、`npm run build`、复制 `.next` 或直接改写 `current` 软链接；这些操作会绕过 CI 门禁、数据库快照、预检和自动回滚。
+
+### 发布前提
+
+- 只有用户明确要求部署时才执行生产发布；普通的提交或推送不自动扩大为部署授权。
+- 待发布代码必须已经进入 `main` 并推送到 `origin/main`。
+- 先记录待发布的完整 commit SHA，建议始终显式传给部署脚本，避免等待 CI 期间 `main` 又前进。
+- GitHub Actions `.github/workflows/ci.yml` 必须全部通过。CI 包含 Linux 上的依赖安装、Prisma generate、lockfile 不可变检查、lint、`tsc --noEmit`、全量测试、数据库迁移演练、生产构建和 whitespace check，以及 macOS lockfile 一致性检查。
+- 本机需要可用的 GitHub 凭据（`gh auth token` 或 Git credential）和服务器 SSH 入口；默认 SSH host 为 `remoteDev`，需要覆盖时使用 `DEPLOY_SSH_HOST`。
+- 主工作树如有无关未提交或未跟踪文件，必须保留，不得为了部署顺手清理。
+
+### 标准发布
+
+```bash
+git status
+git pull --ff-only origin main
+git push origin main
+
+# 等目标 commit 的 GitHub Actions 全部变绿后
+./scripts/deploy.sh deploy <完整-commit-sha>
+
+# 发布后确认 current、systemd、健康状态、磁盘和最近发布记录
+./scripts/deploy.sh status
+curl -fsS https://lab.mkynstudio.top/api/health
+```
+
+部署脚本会自动完成以下步骤：
+
+1. 解析并锁定目标 commit，检查该 commit 的 GitHub Actions check runs。
+2. 检查服务器 `/www` 至少有 5GB 可用空间，在独立 `build/` 树中 fetch 并 checkout 精确 commit。
+3. 执行 `npm ci --include=dev` 和 `npx prisma generate`。
+4. 在迁移前使用 `pg_dump -Fc` 生成数据库快照，保留最近 3 份，然后执行 `npx prisma migrate deploy`。
+5. 在低内存生产机上用 `NEXT_BUILD_CPUS=1 NEXT_DEPLOY_SKIP_TYPECHECK=1 NEXT_DEPLOYMENT_ID=<sha> npm run build` 构建。这里只跳过服务器上的重复 typecheck；完整 `tsc --noEmit` 仍必须由 CI 通过，本地和 CI 不得设置 `NEXT_DEPLOY_SKIP_TYPECHECK=1`。
+6. 将 standalone、静态资源和 `public/` 组装到 `releases/<commit>/`，并链接共享的 `.env`、`uploads/`、`.lumenlab/` 数据。
+7. 通过临时 systemd unit 在 `127.0.0.1:3002` 启动新 release，要求 `/api/health` 返回 `status: healthy`。
+8. 预检通过后原子切换 `/www/wwwroot/course-ai-lab/current`，重启 `lumenlab.service`，依次检查本机 `127.0.0.1:3000` 和公网 HTTPS 健康状态。
+9. 切换后检查失败时自动把 `current` 恢复到上一 release；成功后仅保留当前版本和最近一个可回滚版本，清理临时构建产物并写入 `deploy.log`。
+
+CI 为 `pending` 或 `failure` 时脚本会拒绝部署。`--skip-ci-check` 只用于没有 CI 记录的历史 commit 或本机确实无法取得 GitHub 凭据的特殊情况，必须先获得用户明确确认；它不能绕过仍在运行或已经失败的 CI。
+
+### 状态、回滚与首次迁移
+
+```bash
+# 查看 current、release 列表、systemd 状态、本机健康检查和最近日志
+./scripts/deploy.sh status
+
+# 回滚到当前版本之外最新的一个 release，并重新完成本机与 HTTPS 健康检查
+./scripts/deploy.sh rollback
+
+# 仅首次把旧部署迁移到 releases/current + systemd 模式时使用
+./scripts/deploy.sh bootstrap
+```
+
+`bootstrap` 会安装并启用 `deploy/lumenlab.service`，把 Nginx 的站点根目录和 `/_next/static` alias 切到 `current`，停止受控范围内的旧手工进程，再执行完整部署流程。正常发布不得重复使用 `bootstrap`。
+
+生产布局固定为：
+
+```text
+/www/wwwroot/course-ai-lab/
+├── .env                  # 共享环境变量，不随 release 删除
+├── uploads/              # 共享上传数据
+├── .lumenlab/            # 共享应用数据
+├── releases/<commit>/    # 可运行的 standalone release
+├── current -> releases/<commit>
+└── build/                # 临时构建树
+```
+
 ## UI 设计语言
 
 学生端工作台采用现代科技极简风格。后续所有 UI 修改必须遵守以下规则：
