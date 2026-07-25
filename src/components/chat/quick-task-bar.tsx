@@ -92,7 +92,7 @@ function ActionButton({
       onClick={() => onSend(toSendInput(action))}
       disabled={disabled}
       className={cn(
-        "h-8 shrink-0 rounded-[var(--radius-md)] px-2.5 text-xs",
+        "h-8 shrink-0 rounded-full px-3 text-xs",
         "bg-[var(--color-project-control)]",
         "text-[var(--color-text-secondary)]",
         "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
@@ -106,6 +106,11 @@ function ActionButton({
   );
 }
 
+/**
+ * 输入区上方的建议 chips（ChatGPT suggestion 样式）。
+ *  - 统一一套布局：常用任务以胶囊横排展示，超出与自定义任务收进「更多」
+ *  - 不再占用项目顶栏；移动端同样横滑浏览
+ */
 export function QuickTaskBar({
   projectType,
   actions,
@@ -121,29 +126,42 @@ export function QuickTaskBar({
   const hasMoreActions = overflowActions.length > 0 || customActions.length > 0;
 
   return (
-    <div className="min-w-0">
-      <div className="sm:hidden">
+    <div
+      className={cn(
+        "flex min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        className
+      )}
+    >
+      {previewActions.map((action) => (
+        <ActionButton
+          key={action.id || action.title}
+          action={action}
+          onSend={onSend}
+          disabled={disabled}
+        />
+      ))}
+      {hasMoreActions && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               disabled={disabled}
               className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-md)] px-2 text-xs",
+                "inline-flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs",
                 "text-[var(--color-text-tertiary)]",
                 "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
                 "focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]",
                 "data-[state=open]:bg-[var(--color-project-surface-active)]",
                 "disabled:cursor-not-allowed disabled:opacity-40"
               )}
-              aria-label="打开快捷任务"
+              aria-label="更多快捷任务"
             >
               <MoreHoriz width={14} height={14} strokeWidth={2} />
-              快捷任务
+              更多
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            {resolvedActions.map((action) => (
+          <DropdownMenuContent align="start" className="w-52">
+            {overflowActions.map((action) => (
               <DropdownMenuItem
                 key={action.id || action.title}
                 disabled={disabled}
@@ -152,73 +170,26 @@ export function QuickTaskBar({
                 {action.title}
               </DropdownMenuItem>
             ))}
+            {overflowActions.length > 0 && customActions.length > 0 && (
+              <DropdownMenuSeparator />
+            )}
+            {customActions.length > 0 && (
+              <>
+                <DropdownMenuLabel>我的任务</DropdownMenuLabel>
+                {customActions.map((action) => (
+                  <DropdownMenuItem
+                    key={action.id || action.title}
+                    disabled={disabled}
+                    onSelect={() => onSend(toSendInput(action))}
+                  >
+                    {action.title}
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-
-      <div className={cn("hidden min-w-0 items-center gap-1.5 sm:flex", className)}>
-        <span className="mr-0.5 shrink-0 text-[11px] font-medium text-[var(--color-text-tertiary)]">
-          快捷任务
-        </span>
-        {previewActions.map((action) => (
-          <ActionButton
-            key={action.id || action.title}
-            action={action}
-            onSend={onSend}
-            disabled={disabled}
-          />
-        ))}
-        {hasMoreActions && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                disabled={disabled}
-                className={cn(
-                  "inline-flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-md)] px-2 text-xs",
-                  "text-[var(--color-text-tertiary)]",
-                  "hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)]",
-                  "focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]",
-                  "data-[state=open]:bg-[var(--color-project-surface-active)]",
-                  "disabled:cursor-not-allowed disabled:opacity-40"
-                )}
-                aria-label="更多快捷任务"
-              >
-                <MoreHoriz width={14} height={14} strokeWidth={2} />
-                更多
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              {overflowActions.map((action) => (
-                <DropdownMenuItem
-                  key={action.id || action.title}
-                  disabled={disabled}
-                  onSelect={() => onSend(toSendInput(action))}
-                >
-                  {action.title}
-                </DropdownMenuItem>
-              ))}
-              {overflowActions.length > 0 && customActions.length > 0 && (
-                <DropdownMenuSeparator />
-              )}
-              {customActions.length > 0 && (
-                <>
-                  <DropdownMenuLabel>我的任务</DropdownMenuLabel>
-                  {customActions.map((action) => (
-                    <DropdownMenuItem
-                      key={action.id || action.title}
-                      disabled={disabled}
-                      onSelect={() => onSend(toSendInput(action))}
-                    >
-                      {action.title}
-                    </DropdownMenuItem>
-                  ))}
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
+      )}
     </div>
   );
 }

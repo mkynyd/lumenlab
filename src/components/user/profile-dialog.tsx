@@ -12,7 +12,6 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { AvatarMark } from "@/components/user/avatar-mark";
@@ -28,8 +27,6 @@ import { createCroppedAvatarFile } from "@/lib/avatar-crop";
 const MAX_AVATAR_UPLOAD_BYTES = 20 * 1024 * 1024;
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
 const AVATAR_TYPES = new Set(AVATAR_ACCEPT.split(","));
-const PROFILE_FIELD_CLASS =
-  "h-9 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] transition-colors duration-150 focus:border-[var(--color-accent)] motion-reduce:transition-none";
 
 type ProfileDialogProps = {
   open: boolean;
@@ -180,87 +177,68 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="inset-0 flex h-dvh max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-[var(--color-surface)] p-0 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none [&>[data-slot=dialog-close]]:right-[max(0.5rem,env(safe-area-inset-right))] [&>[data-slot=dialog-close]]:top-[max(0.5rem,env(safe-area-inset-top))] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-auto sm:max-h-[min(640px,calc(100vh-3rem))] sm:max-w-[540px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:border-[var(--color-border-light)] sm:pb-0 sm:pt-0 sm:[&>[data-slot=dialog-close]]:right-2 sm:[&>[data-slot=dialog-close]]:top-2"
+        className="inset-0 flex h-dvh max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-[var(--color-surface)] p-0 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-auto sm:max-h-[min(640px,calc(100vh-3rem))] sm:max-w-[540px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:border-[var(--color-border-light)] sm:pb-0 sm:pt-0"
       >
         {view === "main" ? (
           <>
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border-light)] px-5">
-              <DialogTitle className="text-base font-semibold">
+            <div className="shrink-0 px-6 pt-6 sm:px-7 sm:pt-7">
+              <DialogTitle className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]">
                 编辑个人资料
               </DialogTitle>
               <DialogDescription className="sr-only">
-                修改昵称和头像
+                修改显示名称和头像
               </DialogDescription>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => handleOpenChange(false)}
-                aria-label="关闭个人资料"
-              >
-                <X size={16} strokeWidth={1.8} />
-              </Button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5">
-              <div className="divide-y divide-[var(--color-border-light)]">
-                <div className="grid gap-3 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
-                  <div>
-                    <p className="text-sm font-medium text-[var(--color-text-primary)]">
-                      头像
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
-                      JPG、PNG 或 WebP，最大 20MB
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-start sm:items-end">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="group relative block rounded-full outline-none transition-transform duration-150 active:scale-[0.98] active:duration-75 focus-visible:ring-2 focus-visible:ring-[var(--color-accent-muted)] motion-reduce:transition-none"
-                      aria-label="更换头像"
-                    >
-                      <AvatarMark
-                        presetId={currentAvatarPreset}
-                        src={currentAvatarUrl}
-                        alt={`${nameValue.trim() || email || "账户"} 的头像`}
-                        className="size-16 rounded-full text-xl"
-                      />
-                      <span className="absolute -bottom-0.5 -right-0.5 flex size-7 items-center justify-center rounded-full border border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] transition-colors duration-150 group-hover:text-[var(--color-text-primary)] motion-reduce:transition-none">
-                        <Camera size={14} strokeWidth={1.8} />
-                      </span>
-                      {uploadAvatar.isPending && (
-                        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
-                          <Spinner className="size-5 text-white" />
-                        </span>
-                      )}
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept={AVATAR_ACCEPT}
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                    {avatarError && (
-                      <p
-                        role="alert"
-                        className="mt-2 text-xs text-[var(--color-error)]"
-                      >
-                        {avatarError}
-                      </p>
-                    )}
-                  </div>
-                </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 sm:px-7">
+              <div className="flex flex-col items-center pb-8 pt-7">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="group relative block rounded-full outline-none transition-transform duration-150 active:scale-[0.98] active:duration-75 focus-visible:ring-2 focus-visible:ring-[var(--color-accent-muted)] motion-reduce:transition-none"
+                  aria-label="更换头像"
+                >
+                  <AvatarMark
+                    presetId={currentAvatarPreset}
+                    src={currentAvatarUrl}
+                    alt={`${nameValue.trim() || email || "账户"} 的头像`}
+                    className="size-28 rounded-full text-3xl"
+                  />
+                  <span className="absolute -bottom-0.5 -right-0.5 flex size-8 items-center justify-center rounded-full border border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text-secondary)] transition-colors duration-150 group-hover:text-[var(--color-text-primary)] motion-reduce:transition-none">
+                    <Camera size={15} strokeWidth={1.8} />
+                  </span>
+                  {uploadAvatar.isPending && (
+                    <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
+                      <Spinner className="size-5 text-white" />
+                    </span>
+                  )}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={AVATAR_ACCEPT}
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                {avatarError && (
+                  <p
+                    role="alert"
+                    className="mt-3 text-xs text-[var(--color-error)]"
+                  >
+                    {avatarError}
+                  </p>
+                )}
+              </div>
 
-                <div className="grid gap-2 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
+              <div className="space-y-3">
+                <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-panel)] px-4 py-3 transition-colors duration-150 focus-within:border-[var(--color-accent)] motion-reduce:transition-none">
                   <label
                     htmlFor="profile-name"
-                    className="text-sm font-medium text-[var(--color-text-primary)]"
+                    className="block text-xs font-medium text-[var(--color-text-secondary)]"
                   >
-                    昵称
+                    显示名称
                   </label>
-                  <Input
+                  <input
                     id="profile-name"
                     value={nameValue}
                     onChange={(event) => {
@@ -269,25 +247,29 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                     }}
                     placeholder="你的称呼"
                     maxLength={60}
-                    className={PROFILE_FIELD_CLASS}
+                    className="mt-1 w-full bg-transparent text-[15px] leading-6 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
                   />
                 </div>
 
-                <div className="grid gap-1 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
-                  <span className="text-sm font-medium text-[var(--color-text-primary)]">
+                <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-panel)] px-4 py-3">
+                  <span className="block text-xs font-medium text-[var(--color-text-secondary)]">
                     邮箱
                   </span>
                   <span
-                    className="truncate text-sm text-[var(--color-text-secondary)] sm:text-right"
+                    className="mt-1 block truncate text-[15px] leading-6 text-[var(--color-text-primary)]"
                     title={email}
                   >
                     {email}
                   </span>
                 </div>
               </div>
+
+              <p className="mt-6 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">
+                你的头像和显示名称会用在侧边栏与对话中。
+              </p>
             </div>
 
-            <div className="mt-auto flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border-light)] px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:pb-4">
+            <div className="mt-auto flex shrink-0 flex-wrap items-center justify-end gap-2 px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 sm:px-7">
               {saveError && (
                 <span
                   className="mr-auto text-xs text-[var(--color-error)]"
@@ -300,7 +282,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                 variant="secondary"
                 size="md"
                 onClick={() => handleOpenChange(false)}
-                className="rounded-lg px-4"
+                className="rounded-full px-5"
               >
                 取消
               </Button>
@@ -316,7 +298,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                   profileQuery.isPending ||
                   uploadAvatar.isPending
                 }
-                className="rounded-lg px-4"
+                className="rounded-full px-5"
               >
                 {updateProfile.isPending
                   ? "保存中..."

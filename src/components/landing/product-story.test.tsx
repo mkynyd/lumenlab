@@ -73,15 +73,9 @@ describe("ProductStory", () => {
       "aria-label",
       "LumenLab 产品工作流"
     );
-    expect(
-      screen.getAllByText("资料先归位，问题才有上下文").length
-    ).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText("回答引用你正在学的内容").length
-    ).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText("从 PDF 到可编辑的文档").length
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("创建项目").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("围绕资料提问").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("解析并导出文档").length).toBeGreaterThan(0);
   });
 
   it("uses a native sticky stage without ScrollTrigger pinning or snapping", async () => {

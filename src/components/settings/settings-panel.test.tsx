@@ -9,6 +9,20 @@ vi.mock("@/components/ui/theme-toggle", () => ({
   ThemeToggle: () => <div>Theme toggle</div>
 }));
 
+vi.mock("next-auth/react", () => ({
+  useSession: () => ({
+    data: {
+      user: {
+        name: "测试用户",
+        email: "user@example.com",
+        avatarPreset: "lumen",
+        image: null
+      }
+    }
+  }),
+  signOut: vi.fn()
+}));
+
 vi.mock("@/lib/hooks/use-cache-metrics", () => ({
   useCacheMetrics: mocks.useCacheMetrics
 }));
@@ -100,7 +114,8 @@ describe("SettingsPanel token usage", () => {
 
     expect(screen.getByText("AI 画像")).toBeInTheDocument();
     expect(screen.queryByText("账户信息")).not.toBeInTheDocument();
-    expect(screen.queryByText("退出登录")).not.toBeInTheDocument();
+    // 移动端设置首页提供 ChatGPT 式的退出登录入口（桌面端仍在侧边栏菜单里）
+    expect(screen.getByText("退出登录")).toBeInTheDocument();
     expect(screen.queryByText("上传头像")).not.toBeInTheDocument();
   });
 });

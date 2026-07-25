@@ -244,9 +244,9 @@ export function Sidebar({
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col overflow-hidden",
+          "fixed inset-y-0 left-0 z-50 flex w-[min(20rem,85vw)] flex-col overflow-hidden",
           "border-r border-[var(--color-border-light)] bg-[var(--sidebar)]",
-          "transition-[transform,width,opacity,visibility] duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none",
+          "transition-[transform,width,opacity,visibility] duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none",
           mobileOpen
             ? "visible translate-x-0"
             : "invisible -translate-x-full",
@@ -371,7 +371,6 @@ export function Sidebar({
             <Button
               type="button"
               onClick={createItem}
-              variant="ghost"
               size="md"
               className="h-9 w-full justify-start rounded-[var(--radius-md)] px-2 font-normal"
             >
@@ -568,6 +567,41 @@ export function Sidebar({
             collapsed ? "lg:px-2" : "lg:px-3"
           )}
         >
+          {/* 移动端：账户行（进入个人资料）+ 悬浮设置按钮，不用下拉菜单 */}
+          <div className="flex items-center gap-1 lg:hidden">
+            <button
+              type="button"
+              onClick={() => openAccountSurface("profile")}
+              className="flex h-11 min-w-0 flex-1 items-center justify-start gap-2 rounded-[var(--radius-md)] px-2 text-left text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+              aria-label="编辑个人资料"
+            >
+              <AvatarMark
+                presetId={accountAvatarPreset}
+                src={accountAvatarUrl}
+                alt={`${accountName} 的头像`}
+                className="size-7"
+              />
+              <span className="block min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-[var(--color-text-primary)]">
+                  {accountName}
+                </span>
+                <span className="block truncate text-xs text-[var(--color-text-tertiary)]">
+                  {accountEmail || "账户设置"}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openAccountSurface("settings")}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-panel)] text-[var(--color-text-secondary)] shadow-[var(--shadow-pill)] transition-[color,transform] duration-150 hover:text-[var(--color-text-primary)] active:scale-[0.96] motion-reduce:transition-none"
+              aria-label="打开设置"
+            >
+              <Settings size={17} strokeWidth={1.8} />
+            </button>
+          </div>
+
+          {/* 桌面端：保留下拉菜单 */}
+          <div className="hidden lg:block">
           <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
             <DropdownMenuTrigger asChild>
               <button
@@ -652,6 +686,7 @@ export function Sidebar({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </SidebarFooter>
         <AlertDialog
           open={conversationDeleteTarget !== null}
@@ -767,7 +802,7 @@ export function Sidebar({
         >
           <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none [&>[data-slot=dialog-close]]:right-[max(0.5rem,env(safe-area-inset-right))] [&>[data-slot=dialog-close]]:top-[max(0.5rem,env(safe-area-inset-top))] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-auto sm:max-w-[960px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[20px] sm:pb-0 sm:pt-0 sm:[&>[data-slot=dialog-close]]:right-2 sm:[&>[data-slot=dialog-close]]:top-2">
             <DialogTitle className="sr-only">设置</DialogTitle>
-            <SettingsPanel />
+            <SettingsPanel onOpenProfile={() => openAccountSurface("profile")} />
           </DialogContent>
         </Dialog>
         <ProfileDialog

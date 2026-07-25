@@ -16,16 +16,16 @@ export function LandingFooter() {
         <ScrollReveal className="flex flex-col items-start justify-between gap-10 sm:flex-row sm:items-end">
           <div>
             <p className="text-[13px] font-medium text-[var(--color-accent)]">
-              从下一门课开始
+              开始使用
             </p>
             <h2
               className="mt-4 max-w-[16ch] text-[clamp(2.25rem,5vw,4.8rem)] font-semibold leading-[1.02] tracking-[-0.045em] text-[var(--color-text-primary)]"
               style={{ textWrap: "balance" }}
             >
-              把资料、问题和成果放在一起
+              现在开始使用 LumenLab。
             </h2>
             <p className="mt-5 max-w-[48ch] text-[15px] leading-7 text-[var(--color-text-secondary)]">
-              当前为 Alpha 阶段，需要注册码才能使用。
+              当前为 Alpha 阶段，凭注册码免费注册。
             </p>
           </div>
 

@@ -24,9 +24,9 @@ const STORY_CHAPTERS: StoryChapter[] = [
     id: "organize",
     index: "01",
     label: "项目空间",
-    title: "资料先归位，问题才有上下文",
+    title: "创建项目",
     description:
-      "把讲义、实验数据、代码和作业放进同一个项目。之后的每次提问，都能沿用这套资料与项目目标。",
+      "把讲义、实验数据、代码和作业放进同一个项目。之后的每次提问，都会沿用这些资料和项目目标。",
     detail: "一个项目，持续保存资料、对话与成果。",
     icon: <FolderOpen size={17} strokeWidth={1.8} />,
     demo: <ProjectDemo className="h-full" />,
@@ -35,9 +35,9 @@ const STORY_CHAPTERS: StoryChapter[] = [
     id: "ask",
     index: "02",
     label: "上下文对话",
-    title: "回答引用你正在学的内容",
+    title: "围绕资料提问",
     description:
-      "直接围绕项目资料追问。模型、推理强度、附件和联网能力都在同一个输入区。",
+      "直接针对项目里的资料追问，回答会引用你上传的内容。模型、推理强度、附件和联网功能都在同一个输入区。",
     detail: "从原始材料出发，保留推导与引用。",
     icon: <MessageSquareText size={17} strokeWidth={1.8} />,
     demo: <ChatDemo className="h-full" />,
@@ -46,9 +46,9 @@ const STORY_CHAPTERS: StoryChapter[] = [
     id: "deliver",
     index: "03",
     label: "结构化成果",
-    title: "从 PDF 到可编辑的文档",
+    title: "解析并导出文档",
     description:
-      "课件解析后保留标题、公式、图片和代码结构，再导出 Markdown、PDF 或 DOCX，直接进入复习与写作。",
+      "课件解析后保留标题、公式、图片和代码结构，可导出为 Markdown、PDF 或 DOCX，直接用于复习和写作。",
     detail: "从课件到笔记，一步到位。",
     icon: <FileText size={17} strokeWidth={1.8} />,
     demo: <ConversionDemo className="h-full" />,
@@ -190,6 +190,16 @@ export function ProductStory() {
                     ease: "power2.out",
                   },
                   index
+                )
+                .fromTo(
+                  panels[index],
+                  { scale: 0.97 },
+                  {
+                    scale: 1,
+                    duration: 0.34,
+                    ease: "power2.out",
+                  },
+                  index
                 );
             }
 
@@ -295,14 +305,14 @@ function StoryHeading({ id }: { id: string }) {
   return (
     <div className="mb-8 max-w-3xl">
       <p className="text-[13px] font-medium text-[var(--color-accent)]">
-        从资料到成果
+        工作流程
       </p>
       <h2
         id={id}
-        className="mt-3 text-[clamp(2rem,4vw,3.6rem)] font-semibold leading-[1.06] tracking-[-0.035em] text-[var(--color-text-primary)]"
+        className="mt-3 max-w-3xl text-[clamp(2rem,4vw,3.6rem)] font-semibold leading-[1.06] tracking-[-0.035em] text-[var(--color-text-primary)]"
         style={{ textWrap: "balance" }}
       >
-        从一份资料开始，走到能用的东西
+        从资料到成果，一站完成。
       </h2>
     </div>
   );

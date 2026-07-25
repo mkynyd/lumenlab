@@ -20,6 +20,8 @@ interface ScrollRevealProps {
   yOffset?: number;
   /** @deprecated 滚动 scrub 不再使用固定入场时长，保留以免破坏调用方。 */
   duration?: number;
+  /** 媒体面板专用：进入视口时从 0.96 轻微放大到 1（Apple 宣传页式 zoom settle）。 */
+  scale?: boolean;
   className?: string;
 }
 
@@ -34,6 +36,7 @@ export function ScrollReveal({
   children,
   className,
   yOffset = 24,
+  scale = false,
 }: ScrollRevealProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const reduced = usePrefersReducedMotion();
@@ -58,7 +61,14 @@ export function ScrollReveal({
     [0, 0.2, 0.72, 1],
     [yOffset, 0, 0, -Math.round(yOffset * 0.45)]
   );
-  const transform = useMotionTemplate`translate3d(0, ${y}px, 0)`;
+  const scaleValue = useTransform(
+    scrollYProgress,
+    [0, 0.2, 0.72, 1],
+    [0.96, 1, 1, 1],
+    { ease: [cubicBezier(0.28, 0.11, 0.32, 1), cubicBezier(0.22, 1, 0.36, 1), cubicBezier(0.65, 0, 0.35, 1)] }
+  );
+  const scaleTemplate = useMotionTemplate`translate3d(0, ${y}px, 0) scale(${scaleValue})`;
+  const translateTemplate = useMotionTemplate`translate3d(0, ${y}px, 0)`;
 
   if (reduced) {
     return (
@@ -72,7 +82,7 @@ export function ScrollReveal({
     <motion.div
       ref={ref}
       className={className}
-      style={{ opacity, transform }}
+      style={{ opacity, transform: scale ? scaleTemplate : translateTemplate }}
     >
       {children}
     </motion.div>

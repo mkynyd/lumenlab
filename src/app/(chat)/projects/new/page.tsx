@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Stepper } from "@/components/ui/stepper";
 import { FolderOpen } from "lucide-react";
+import { NavArrowLeft } from "iconoir-react";
 import { RotatingText } from "@/components/ui/rotating-text";
 import { useCreateProject } from "@/lib/hooks/use-projects";
 import { signOut } from "next-auth/react";
@@ -341,6 +343,16 @@ export default function NewProjectPage() {
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-4 mb-5">
+            <Button
+              asChild
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-interaction-hover)]"
+            >
+              <Link href="/projects" aria-label="返回项目空间">
+                <NavArrowLeft strokeWidth={2} />
+              </Link>
+            </Button>
             <div className="flex items-center justify-center w-10 h-10 rounded-[var(--radius-md)] bg-[var(--color-project-action)] hover:bg-[var(--color-project-action-hover)]">
               <FolderOpen size={22} strokeWidth={1.75} className="text-[var(--color-project-action-contrast)]" />
             </div>

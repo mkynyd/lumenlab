@@ -673,15 +673,7 @@ export default function ProjectDetailPage() {
                 </span>
               )}
             </div>
-            <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <QuickTaskBar
-                projectType={projectType}
-                actions={project.quickActions}
-                onSend={(input) => void handleQuickTaskSend(input)}
-                disabled={isStreaming}
-                className="min-w-max justify-end"
-              />
-            </div>
+            <div className="min-w-0 flex-1" />
             {usage && (
               <div className="hidden shrink-0 sm:block">
                 <ContextRing used={usage.totalTokens} />
@@ -765,6 +757,15 @@ export default function ProjectDetailPage() {
             </button>
           </div>
         )}
+
+        <div className="mx-auto w-full max-w-[48rem] shrink-0 px-3 pt-2 sm:px-4">
+          <QuickTaskBar
+            projectType={projectType}
+            actions={project.quickActions}
+            onSend={(input) => void handleQuickTaskSend(input)}
+            disabled={isStreaming}
+          />
+        </div>
 
         <ChatInput
           onSend={handleSend}

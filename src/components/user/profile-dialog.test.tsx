@@ -108,15 +108,15 @@ describe("ProfileDialog", () => {
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 
-  it("exposes a clear header close action", () => {
+  it("closes from the cancel action", () => {
     const { onOpenChange } = renderDialog();
-    fireEvent.click(screen.getByRole("button", { name: "关闭个人资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it("saves the trimmed nickname and closes on success", async () => {
     const { onOpenChange } = renderDialog();
-    fireEvent.change(screen.getByLabelText("昵称"), {
+    fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "  新昵称  " }
     });
     const saveButton = screen.getByRole("button", { name: "保存" });
@@ -225,7 +225,7 @@ describe("ProfileDialog", () => {
   it("keeps the dialog open and shows an error when saving the nickname fails", async () => {
     mocks.updateMutate.mockRejectedValue(new Error("boom"));
     const { onOpenChange } = renderDialog();
-    fireEvent.change(screen.getByLabelText("昵称"), {
+    fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "新昵称" }
     });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -235,7 +235,7 @@ describe("ProfileDialog", () => {
 
   it("resets local state after the dialog is closed", () => {
     const { rerender } = renderDialog();
-    fireEvent.change(screen.getByLabelText("昵称"), {
+    fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "临时昵称" }
     });
     fireEvent.change(fileInput(), {

@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { useState, type CSSProperties } from "react";
+import { signOut, useSession } from "next-auth/react";
 import {
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
   Database,
   KeyRound,
+  LogOut,
   Palette,
   ShieldCheck,
   SlidersHorizontal,
@@ -16,7 +20,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AvatarMark } from "@/components/user/avatar-mark";
 import { useCacheMetrics } from "@/lib/hooks/use-cache-metrics";
+import { DEFAULT_AVATAR_PRESET } from "@/lib/user-profile";
 import { cn } from "@/lib/utils";
 
 type TabId = "alpha" | "tokens" | "personalization" | "appearance";
@@ -73,8 +79,20 @@ function buildDateRange(startDate: string, endDate: string) {
   });
 }
 
-export function SettingsPanel() {
+export function SettingsPanel({
+  onOpenProfile
+}: {
+  onOpenProfile?: () => void;
+}) {
   const [tab, setTab] = useState<TabId>("alpha");
+  // 移动端：菜单页 → 详情页（ChatGPT 式 push 导航）；桌面端恒为分栏
+  const [mobileDetail, setMobileDetail] = useState(false);
+  const { data: session } = useSession();
+  const accountName = session?.user?.name || session?.user?.email || "账户";
+  const accountEmail = session?.user?.email || "";
+  const accountAvatarPreset =
+    session?.user?.avatarPreset || DEFAULT_AVATAR_PRESET;
+  const accountAvatarUrl = session?.user?.image || null;
 
   const tabs: Array<{ id: TabId; label: string; icon: typeof KeyRound }> = [
     { id: "alpha", label: "服务访问", icon: KeyRound },
@@ -84,9 +102,35 @@ export function SettingsPanel() {
   ];
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)] sm:h-[min(640px,calc(100vh-3rem))] sm:flex-row">
-      <aside className="flex w-full shrink-0 flex-col border-b border-[var(--color-border-light)] bg-[var(--color-panel)] sm:w-[17.5rem] sm:border-b-0 sm:border-r">
-        <div className="px-5 pb-3 pt-5 pr-14 sm:pr-5">
+    <div className="relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)] sm:h-[min(640px,calc(100vh-3rem))] sm:flex-row">
+      <aside className="flex w-full flex-1 shrink-0 flex-col overflow-y-auto bg-[var(--color-panel)] sm:w-[17.5rem] sm:flex-none sm:overflow-visible sm:border-r sm:border-[var(--color-border-light)]">
+        {/* 移动端：资料头，点击进入个人资料 */}
+        <div className="flex flex-col items-center pb-7 pt-9 sm:hidden">
+          <button
+            type="button"
+            onClick={onOpenProfile}
+            aria-label="编辑个人资料"
+            className="rounded-full outline-none transition-transform duration-150 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-[var(--color-accent-muted)] motion-reduce:transition-none"
+          >
+            <AvatarMark
+              presetId={accountAvatarPreset}
+              src={accountAvatarUrl}
+              alt={`${accountName} 的头像`}
+              className="size-16 rounded-full text-xl"
+            />
+          </button>
+          <p className="mt-3 text-base font-semibold text-[var(--color-text-primary)]">
+            {accountName}
+          </p>
+          {accountEmail && (
+            <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">
+              {accountEmail}
+            </p>
+          )}
+        </div>
+
+        {/* 桌面端：分栏标题 */}
+        <div className="hidden px-5 pb-3 pt-5 sm:block">
           <p className="text-base font-semibold tracking-tight text-[var(--color-text-primary)]">
             设置
           </p>
@@ -95,53 +139,107 @@ export function SettingsPanel() {
           </p>
         </div>
 
+        <p className="px-5 pb-1.5 text-xs text-[var(--color-text-tertiary)] sm:hidden">
+          偏好
+        </p>
         <div
-          className="flex shrink-0 gap-1 overflow-x-auto px-3 pb-3 sm:flex-col sm:overflow-visible sm:px-3"
+          className="mx-3 flex shrink-0 flex-col gap-0 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:mx-0 sm:gap-1 sm:overflow-visible sm:rounded-none sm:bg-transparent sm:px-3 sm:pb-3"
           role="tablist"
           aria-label="设置标签页"
         >
-          {tabs.map((item) => (
+          {tabs.map((item, index) => (
             <button
               key={item.id}
               id={`settings-tab-${item.id}`}
               role="tab"
               aria-selected={tab === item.id}
               aria-controls={`settings-panel-${item.id}`}
-              onClick={() => setTab(item.id)}
+              onClick={() => {
+                setTab(item.id);
+                setMobileDetail(true);
+              }}
               className={cn(
-                "flex h-10 shrink-0 items-center gap-2.5 rounded-lg px-3 text-left text-sm outline-none sm:w-full",
+                "flex h-12 shrink-0 items-center gap-3 px-4 text-left text-sm outline-none sm:h-10 sm:w-full sm:gap-2.5 sm:rounded-lg sm:px-3",
+                index > 0 &&
+                  "border-t border-[var(--color-border-light)] sm:border-t-0",
                 "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] active:bg-[var(--color-interaction-active)] active:duration-75 motion-reduce:transition-none",
                 tab === item.id
-                  ? "bg-[var(--color-interaction-active)] font-medium text-[var(--color-text-primary)]"
-                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+                  ? "font-medium text-[var(--color-text-primary)] sm:bg-[var(--color-interaction-active)]"
+                  : "text-[var(--color-text-primary)] sm:text-[var(--color-text-secondary)] sm:hover:bg-[var(--color-interaction-hover)] sm:hover:text-[var(--color-text-primary)]"
               )}
             >
-              <item.icon size={16} strokeWidth={1.5} />
-              {item.label}
+              <item.icon
+                size={16}
+                strokeWidth={1.5}
+                className="text-[var(--color-text-secondary)]"
+              />
+              <span className="flex-1">{item.label}</span>
+              <ChevronRight
+                size={15}
+                strokeWidth={1.8}
+                className="text-[var(--color-text-tertiary)] sm:hidden"
+              />
             </button>
           ))}
         </div>
 
-        <Link
-          href="/home"
-          className={cn(
-            "mx-3 mb-3 flex h-10 shrink-0 items-center gap-2.5 rounded-lg px-3 text-left text-sm sm:mt-auto",
-            "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]",
-            "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] focus-visible:outline-none motion-reduce:transition-none"
-          )}
-        >
-          <Sparkles size={16} strokeWidth={1.5} />
-          <span className="flex-1">网站介绍</span>
-          <ArrowUpRight
-            size={12}
-            strokeWidth={1.5}
-            className="text-[var(--color-text-tertiary)]"
-          />
-        </Link>
+        <p className="px-5 pb-1.5 pt-6 text-xs text-[var(--color-text-tertiary)] sm:hidden">
+          更多
+        </p>
+        <div className="mx-3 mb-3 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:mt-auto sm:rounded-none sm:bg-transparent">
+          <Link
+            href="/home"
+            className={cn(
+              "flex h-12 shrink-0 items-center gap-3 px-4 text-left text-sm sm:h-10 sm:gap-2.5 sm:rounded-lg sm:px-3",
+              "text-[var(--color-text-primary)] sm:text-[var(--color-text-secondary)] sm:hover:bg-[var(--color-interaction-hover)] sm:hover:text-[var(--color-text-primary)]",
+              "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] focus-visible:outline-none motion-reduce:transition-none"
+            )}
+          >
+            <Sparkles
+              size={16}
+              strokeWidth={1.5}
+              className="text-[var(--color-text-secondary)]"
+            />
+            <span className="flex-1">网站介绍</span>
+            <ArrowUpRight
+              size={12}
+              strokeWidth={1.5}
+              className="text-[var(--color-text-tertiary)]"
+            />
+          </Link>
+        </div>
+
+        <div className="mx-3 mb-6 mt-5 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:hidden">
+          <button
+            type="button"
+            onClick={() => void signOut({ callbackUrl: "/login" })}
+            className="flex h-12 w-full items-center gap-3 px-4 text-left text-sm text-[var(--color-error)] transition-colors duration-150 active:bg-[var(--color-interaction-hover)] motion-reduce:transition-none"
+          >
+            <LogOut size={16} strokeWidth={1.6} />
+            退出登录
+          </button>
+        </div>
       </aside>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)]">
-        <div className="mx-auto min-w-0 max-w-3xl px-5 py-6 sm:px-8 sm:py-7">
+      <div
+        className={cn(
+          "min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)]",
+          "max-sm:absolute max-sm:inset-0 max-sm:z-10",
+          "max-sm:transition-transform max-sm:duration-300 max-sm:ease-[cubic-bezier(0.25,1,0.5,1)] max-sm:motion-reduce:transition-none",
+          mobileDetail ? "max-sm:translate-x-0" : "max-sm:translate-x-full"
+        )}
+      >
+        <div className="sticky top-0 z-10 flex items-center bg-[var(--color-surface)] px-2 py-2 sm:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileDetail(false)}
+            className="inline-flex h-9 items-center gap-0.5 rounded-[var(--radius-md)] px-2 text-sm text-[var(--color-text-secondary)] transition-colors duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+          >
+            <ChevronLeft size={16} strokeWidth={1.8} />
+            返回
+          </button>
+        </div>
+        <div className="mx-auto min-w-0 max-w-3xl px-5 pb-6 pt-2 sm:px-8 sm:py-7">
           {tab === "alpha" && <AlphaSection />}
           {tab === "tokens" && <TokensSection />}
           {tab === "personalization" && <PersonalizationSection />}

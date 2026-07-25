@@ -31,13 +31,13 @@ export function HowToSection() {
       <div className="mx-auto grid w-full max-w-7xl gap-14 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] lg:gap-20">
         <ScrollReveal className="flex flex-col justify-center">
           <p className="text-[13px] font-medium text-[var(--color-accent)]">
-            三步上手
+            快速上手
           </p>
           <h2
             className="mt-4 max-w-[12ch] text-[clamp(2rem,4.6vw,4rem)] font-semibold leading-[1.04] tracking-[-0.04em] text-[var(--color-text-primary)]"
             style={{ textWrap: "balance" }}
           >
-            先把下一门课放进来
+            三步创建项目。
           </h2>
           <p
             className="mt-6 max-w-[42ch] text-[16px] leading-7 text-[var(--color-text-secondary)]"
@@ -69,6 +69,7 @@ export function HowToSection() {
         </ScrollReveal>
 
         <ScrollReveal
+          scale
           yOffset={20}
           className="overflow-hidden rounded-[28px] bg-[var(--color-surface)] ring-1 ring-[var(--color-border-light)]"
         >

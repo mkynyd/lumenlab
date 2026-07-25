@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SessionProvider } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Navbar } from "@/components/layout/navbar";
+import { MobileFloatingNav } from "@/components/layout/mobile-floating-nav";
 import { Sidebar } from "@/components/layout/sidebar";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { cn } from "@/lib/utils";
@@ -65,11 +65,16 @@ export default function ChatLayout({
               setUserCollapsed(true);
             }}
           />
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 flex-col overflow-hidden",
+              "transition-transform duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none",
+              // 移动端抽屉展开时，内容区整体右移（ChatGPT 式视差推动）
+              mobileSidebarOpen && "max-lg:translate-x-[min(20rem,85vw)]"
+            )}
+          >
             {!isInsideProject && (
-              <Navbar
-                sidebarCollapsed={sidebarCollapsed}
-                desktopSidebarLocked={false}
+              <MobileFloatingNav
                 mobileSidebarOpen={mobileSidebarOpen}
                 onMenuToggle={toggleSidebar}
               />
@@ -77,7 +82,11 @@ export default function ChatLayout({
             <main
               key={section}
               id="workbench-main"
-              className="workbench-view-enter flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-bg)]"
+              className={cn(
+                "workbench-view-enter flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-bg)]",
+                // 移动端为悬浮胶囊留出落位空间；桌面端无顶栏，正文全高
+                !isInsideProject && "pt-16 lg:pt-0"
+              )}
             >
               {children}
             </main>

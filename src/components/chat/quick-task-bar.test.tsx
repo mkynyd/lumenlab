@@ -83,25 +83,15 @@ describe("QuickTaskBar", () => {
     );
   });
 
-  it("sends a task from the compact mobile menu", async () => {
-    const user = userEvent.setup();
-    const onSend = vi.fn();
+  it("uses one unified chip row across viewports", () => {
+    render(<QuickTaskBar projectType="experiment" onSend={vi.fn()} />);
 
-    render(<QuickTaskBar projectType="experiment" onSend={onSend} />);
-
-    await user.click(
-      screen.getByRole("button", { name: "打开快捷任务" })
-    );
-    await user.click(
-      screen.getByRole("menuitem", { name: "生成误差分析" })
-    );
-
-    expect(onSend).toHaveBeenCalledWith(
-      expect.objectContaining({
-        label: "快捷任务：生成误差分析",
-        materialScope: "project-corpus",
-      })
-    );
+    expect(
+      screen.queryByRole("button", { name: "打开快捷任务" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "生成实验报告" })
+    ).toBeInTheDocument();
   });
 
   it("uses neutral project controls and hover states", () => {
