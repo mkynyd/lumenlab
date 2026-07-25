@@ -2,6 +2,7 @@ import { parseDocumentWithMiniMax } from "@/lib/vision/minimax";
 import type { DocumentParser, ParseInput, ParseResult } from "../types";
 import { PIPELINE_VERSION } from "../version";
 import { markdownToBlocks } from "./markdown-to-blocks";
+import { MAX_MINIMAX_PDF_BYTES } from "./utils";
 
 export class MiniMaxPdfParser implements DocumentParser {
   readonly parserId = "minimax-m3-pdf";
@@ -10,7 +11,8 @@ export class MiniMaxPdfParser implements DocumentParser {
   canParse(input: ParseInput): boolean {
     const ext = input.filename.toLowerCase().endsWith(".pdf");
     const mime = input.mimeType === "application/pdf";
-    return ext || mime;
+    // 超过 MiniMax 端点单请求上限的大 PDF 交给 MinerUParser
+    return (ext || mime) && input.data.length <= MAX_MINIMAX_PDF_BYTES;
   }
 
   async parse(

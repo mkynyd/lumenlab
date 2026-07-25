@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { MiniMaxPdfParser } from "../parsers/minimax-pdf-parser";
+import { MAX_MINIMAX_PDF_BYTES } from "../parsers/utils";
 import * as minimax from "@/lib/vision/minimax";
 
 vi.mock("@/lib/vision/minimax");
@@ -23,6 +24,14 @@ describe("MiniMaxPdfParser", () => {
     expect(parser.canParse(makeInput("doc.pdf", "application/octet-stream", Buffer.from("pdf")))).toBe(true);
     expect(parser.canParse(makeInput("doc", "application/pdf", Buffer.from("pdf")))).toBe(true);
     expect(parser.canParse(makeInput("notes.md", "text/markdown", Buffer.from("md")))).toBe(false);
+  });
+
+  it("rejects PDFs above the MiniMax request size limit", () => {
+    const parser = new MiniMaxPdfParser();
+    const big = Buffer.alloc(MAX_MINIMAX_PDF_BYTES + 1);
+    expect(parser.canParse(makeInput("big.pdf", "application/pdf", big))).toBe(false);
+    const atLimit = Buffer.alloc(MAX_MINIMAX_PDF_BYTES);
+    expect(parser.canParse(makeInput("limit.pdf", "application/pdf", atLimit))).toBe(true);
   });
 
   it("throws when MiniMax API key is missing", async () => {

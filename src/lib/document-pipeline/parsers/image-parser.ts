@@ -3,6 +3,7 @@ import type { DocumentParser, ParseInput, ParseResult } from "../types";
 import { PIPELINE_VERSION } from "../version";
 import { analyzeImageWithMiniMax } from "../vision/minimax-analyzer";
 import type { MiniMaxImageMedia } from "../vision/minimax-analyzer";
+import { analyzeImageWithQwen } from "../vision/qwen-analyzer";
 import { extensionOf } from "./utils";
 
 const IMAGE_MIME_TYPES = new Set([
@@ -48,20 +49,31 @@ export class ImageParser implements DocumentParser {
   async parse(input: ParseInput): Promise<ParseResult> {
     const startedAt = new Date().toISOString();
 
-    if (!input.apiKeys.minimax) {
-      throw new Error("尚未配置 MiniMax API Key，无法解析图片");
+    if (!input.apiKeys.bailian && !input.apiKeys.minimax) {
+      throw new Error("尚未配置百炼或 MiniMax API Key，无法解析图片");
     }
 
     const mediaType = toMiniMaxMediaType(input.mimeType, input.filename);
 
-    const result = await analyzeImageWithMiniMax({
-      apiKey: input.apiKeys.minimax,
-      image: {
-        type: "base64",
-        mediaType,
-        data: input.data,
-      },
-    });
+    // 优先走百炼 Qwen3.7-Plus，无百炼 key 时回退 MiniMax
+    const useQwen = Boolean(input.apiKeys.bailian);
+    const result = useQwen
+      ? await analyzeImageWithQwen({
+          apiKey: input.apiKeys.bailian!,
+          image: {
+            type: "base64",
+            mediaType,
+            data: input.data,
+          },
+        })
+      : await analyzeImageWithMiniMax({
+          apiKey: input.apiKeys.minimax!,
+          image: {
+            type: "base64",
+            mediaType,
+            data: input.data,
+          },
+        });
 
     const analysisText = [result.summary, result.ocrText]
       .filter(Boolean)
@@ -79,7 +91,7 @@ export class ImageParser implements DocumentParser {
       ],
       assets: [],
       metadata: {
-        parser: this.parserId,
+        parser: useQwen ? "qwen3.7-plus-image" : this.parserId,
         pipelineVersion: PIPELINE_VERSION,
         sourceKind: this.sourceKind,
         requiresVisionModel: true,

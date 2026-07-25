@@ -3,9 +3,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ImageParser } from "../parsers/image-parser";
 import * as minimaxAnalyzer from "../vision/minimax-analyzer";
+import * as qwenAnalyzer from "../vision/qwen-analyzer";
 import type { ParseInput } from "../types";
 
 vi.mock("../vision/minimax-analyzer");
+vi.mock("../vision/qwen-analyzer");
 
 function makeInput(filename: string, mimeType: string, data: Buffer, apiKeys: ParseInput["apiKeys"] = {}): ParseInput {
   return {
@@ -110,11 +112,60 @@ describe("ImageParser", () => {
     expect(image.mediaType).toBe("image/jpeg");
   });
 
-  it("throws when MiniMax API key is missing", async () => {
+  it("throws when neither bailian nor MiniMax API key is configured", async () => {
     const parser = new ImageParser();
     await expect(
       parser.parse(makeInput("photo.png", "image/png", Buffer.alloc(10), {}))
-    ).rejects.toThrow("尚未配置 MiniMax API Key");
+    ).rejects.toThrow("尚未配置百炼或 MiniMax API Key");
+  });
+
+  it("prefers Qwen when a bailian key is present", async () => {
+    vi.mocked(qwenAnalyzer.analyzeImageWithQwen).mockResolvedValue({
+      summary: "A bar chart by Qwen",
+      ocrText: "Q1: 100",
+      confidence: 0.9,
+      warnings: [],
+    });
+
+    const parser = new ImageParser();
+    const data = Buffer.from("fake-image-bytes");
+    const result = await parser.parse(
+      makeInput("chart.png", "image/png", data, {
+        bailian: "sk-bailian",
+        minimax: "sk-minimax",
+      })
+    );
+
+    expect(qwenAnalyzer.analyzeImageWithQwen).toHaveBeenCalledTimes(1);
+    expect(minimaxAnalyzer.analyzeImageWithMiniMax).not.toHaveBeenCalled();
+    const call = vi.mocked(qwenAnalyzer.analyzeImageWithQwen).mock.calls[0][0];
+    expect(call.apiKey).toBe("sk-bailian");
+    expect(call.image).toEqual({
+      type: "base64",
+      mediaType: "image/png",
+      data,
+    });
+    expect(result.metadata.parser).toBe("qwen3.7-plus-image");
+    const textBlock = result.blocks[0] as Extract<typeof result.blocks[number], { type: "text" }>;
+    expect(textBlock.content).toContain("A bar chart by Qwen");
+  });
+
+  it("falls back to MiniMax when no bailian key is configured", async () => {
+    vi.mocked(minimaxAnalyzer.analyzeImageWithMiniMax).mockResolvedValue({
+      summary: "A bar chart",
+      ocrText: "",
+      confidence: 0.8,
+      warnings: [],
+    });
+
+    const parser = new ImageParser();
+    const result = await parser.parse(
+      makeInput("chart.png", "image/png", Buffer.alloc(100), { minimax: "sk-minimax" })
+    );
+
+    expect(minimaxAnalyzer.analyzeImageWithMiniMax).toHaveBeenCalledTimes(1);
+    expect(qwenAnalyzer.analyzeImageWithQwen).not.toHaveBeenCalled();
+    expect(result.metadata.parser).toBe("minimax-m3-image");
   });
 
   it("passes through analyzer warnings", async () => {

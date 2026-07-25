@@ -3,6 +3,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { MinerUParser } from "../parsers/mineru-parser";
 import { assignAssetIdsToImageBlocks, markdownToBlocks } from "../parsers/markdown-to-blocks";
+import { MAX_MINERU_FILE_BYTES, MAX_MINIMAX_PDF_BYTES } from "../parsers/utils";
 import type { ParsedAsset } from "../types";
 import * as mineru from "@/lib/parse/mineru";
 
@@ -160,6 +161,22 @@ describe("MinerUParser", () => {
     const parser = new MinerUParser();
     expect(parser.canParse(makeInput("notes.md", "text/markdown", Buffer.from("x")))).toBe(false);
     expect(parser.canParse(makeInput("report.pdf", "application/pdf", Buffer.from("x")))).toBe(false);
+  });
+
+  it("accepts PDFs above the MiniMax limit but within the MinerU 200MB limit", () => {
+    const parser = new MinerUParser();
+    const big = Buffer.alloc(MAX_MINIMAX_PDF_BYTES + 1);
+    expect(parser.canParse(makeInput("big.pdf", "application/pdf", big))).toBe(true);
+    expect(parser.canParse(makeInput("big.pdf", "application/octet-stream", big))).toBe(true);
+  });
+
+  it("rejects small PDFs and PDFs above the MinerU 200MB limit", () => {
+    const parser = new MinerUParser();
+    expect(
+      parser.canParse(makeInput("small.pdf", "application/pdf", Buffer.alloc(MAX_MINIMAX_PDF_BYTES)))
+    ).toBe(false);
+    const huge = Buffer.alloc(MAX_MINERU_FILE_BYTES + 1);
+    expect(parser.canParse(makeInput("huge.pdf", "application/pdf", huge))).toBe(false);
   });
 
   it("throws when MinerU token is missing", async () => {

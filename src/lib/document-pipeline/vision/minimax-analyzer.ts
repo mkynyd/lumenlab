@@ -87,11 +87,11 @@ export function selectImageThinking(
   return "disabled";
 }
 
-function buildSystemPrompt(mode: ImageAnalysisMode): string {
+export function buildSystemPrompt(mode: ImageAnalysisMode): string {
   return [BASE_PROMPT, MODE_INSTRUCTIONS[mode], JSON_FORMAT_PROMPT].join("\n\n");
 }
 
-function buildUserText(
+export function buildUserText(
   mode: ImageAnalysisMode,
   context?: string,
   pageLabel?: string
@@ -109,7 +109,7 @@ function buildUserText(
   return parts.join("\n");
 }
 
-function parseAnalysisResponse(text: string): ImageAnalysisResult {
+export function parseAnalysisResponse(text: string): ImageAnalysisResult {
   const cleaned = text.trim();
   const fenced = cleaned.match(/```json\s*([\s\S]*?)```/i)?.[1];
   const jsonText = fenced || cleaned;

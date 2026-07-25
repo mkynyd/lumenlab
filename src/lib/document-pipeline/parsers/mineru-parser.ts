@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { parseFileWithMinerU } from "@/lib/parse/mineru";
 import type { DocumentParser, ParseInput, ParseResult, ParsedAsset } from "../types";
 import { PIPELINE_VERSION } from "../version";
-import { extensionOf } from "./utils";
+import { extensionOf, MAX_MINERU_FILE_BYTES, MAX_MINIMAX_PDF_BYTES } from "./utils";
 import { assignAssetIdsToImageBlocks, markdownToBlocks } from "./markdown-to-blocks";
 
 export class MinerUParser implements DocumentParser {
@@ -26,7 +26,14 @@ export class MinerUParser implements DocumentParser {
 
   canParse(input: ParseInput): boolean {
     const ext = extensionOf(input.filename);
-    return this.officeExtensions.has(ext);
+    if (this.officeExtensions.has(ext)) return true;
+    // 大 PDF（超出 MiniMax 单请求上限）分流到 MinerU，但不超过 MinerU 自身 200MB 上限
+    const isPdf = ext === "pdf" || input.mimeType === "application/pdf";
+    return (
+      isPdf &&
+      input.data.length > MAX_MINIMAX_PDF_BYTES &&
+      input.data.length <= MAX_MINERU_FILE_BYTES
+    );
   }
 
   async parse(
@@ -36,7 +43,7 @@ export class MinerUParser implements DocumentParser {
     const startedAt = new Date().toISOString();
 
     if (!input.apiKeys.mineru) {
-      throw new Error("尚未配置 MinerU Token，Office 文件无法解析");
+      throw new Error("尚未配置 MinerU Token，Office/PDF 文件无法解析");
     }
 
     const parsed = await parseFileWithMinerU({

@@ -11,11 +11,13 @@ import { renderDocumentToMarkdown } from "./renderer";
 import { filterImagesForAnalysis, inferImageMode } from "./image-filter";
 import { analyzeImageWithMiniMax } from "./vision/minimax-analyzer";
 import type { MiniMaxImageMedia } from "./vision/minimax-analyzer";
+import { analyzeImageWithQwen } from "./vision/qwen-analyzer";
+import { MiniMaxError } from "@/lib/vision/minimax";
 import { TextLocalParser } from "./parsers/text-local-parser";
 import { MinerUParser } from "./parsers/mineru-parser";
 import { MiniMaxPdfParser } from "./parsers/minimax-pdf-parser";
 import { ImageParser } from "./parsers/image-parser";
-import { extensionOf } from "./parsers/utils";
+import { extensionOf, MAX_MINERU_FILE_BYTES } from "./parsers/utils";
 import { buildParseQualityReport } from "./quality-checker";
 
 export interface PipelineResult {
@@ -40,14 +42,18 @@ export class DocumentPipeline {
     const parser = this.parsers.find((p) => p.canParse(input));
     if (!parser) {
       const ext = extensionOf(input.filename);
+      const isPdf = ext === "pdf" || input.mimeType === "application/pdf";
+      if (isPdf && input.data.length > MAX_MINERU_FILE_BYTES) {
+        throw new Error("PDF 文件超过 200MB 解析上限，请压缩或拆分后重试");
+      }
       throw new Error(`不支持的文件类型: .${ext || input.mimeType}`);
     }
 
-    const parseResult = await parser.parse(input, onProgress);
+    const parseResult = await this.parseWithFallback(parser, input, onProgress);
 
     if (
       parseResult.assets.length > 0 &&
-      input.apiKeys.minimax &&
+      (input.apiKeys.bailian || input.apiKeys.minimax) &&
       parseResult.metadata.requiresVisionModel
     ) {
       await this.analyzeImages(parseResult, input, onProgress);
@@ -76,6 +82,35 @@ export class DocumentPipeline {
       blocks: parseResult.blocks,
       assets: parseResult.assets,
     };
+  }
+
+  /**
+   * MiniMax PDF 解析被端点以请求过大/格式无效（400/413）拒绝时，
+   * 在 MinerU 可用且文件不超过其 200MB 上限的前提下回退到 MinerU 重试一次。
+   */
+  private async parseWithFallback(
+    parser: DocumentParser,
+    input: ParseInput,
+    onProgress?: ProgressCallback
+  ): Promise<ParseResult> {
+    try {
+      return await parser.parse(input, onProgress);
+    } catch (error) {
+      const canFallback =
+        parser instanceof MiniMaxPdfParser &&
+        error instanceof MiniMaxError &&
+        (error.status === 400 || error.status === 413) &&
+        Boolean(input.apiKeys.mineru) &&
+        input.data.length <= MAX_MINERU_FILE_BYTES;
+      if (!canFallback) throw error;
+
+      const message = error instanceof Error ? error.message : String(error);
+      const fallbackResult = await new MinerUParser().parse(input, onProgress);
+      fallbackResult.metadata.parseWarnings.push(
+        `MiniMax PDF 解析失败（${message}），已回退到 MinerU 解析`
+      );
+      return fallbackResult;
+    }
   }
 
   private async analyzeImages(
@@ -113,15 +148,23 @@ export class DocumentPipeline {
       });
 
       try {
-        const result = await analyzeImageWithMiniMax({
-          apiKey: input.apiKeys.minimax!,
-          image: {
-            type: "base64",
-            mediaType: asset.mimeType as MiniMaxImageMedia,
-            data: asset.buffer,
-          },
-          mode: inferImageMode(block),
-        });
+        const mode = inferImageMode(block);
+        const image = {
+          type: "base64" as const,
+          mediaType: asset.mimeType as MiniMaxImageMedia,
+          data: asset.buffer,
+        };
+        const result = input.apiKeys.bailian
+          ? await analyzeImageWithQwen({
+              apiKey: input.apiKeys.bailian,
+              image,
+              mode,
+            })
+          : await analyzeImageWithMiniMax({
+              apiKey: input.apiKeys.minimax!,
+              image,
+              mode,
+            });
 
         block.visionSummary = result.summary;
         block.visionText = result.ocrText;
