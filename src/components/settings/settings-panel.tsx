@@ -223,13 +223,13 @@ export function SettingsPanel({
 
       <div
         className={cn(
-          "min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)]",
+          "min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-surface-solid)]",
           "max-sm:absolute max-sm:inset-0 max-sm:z-10",
           "max-sm:transition-transform max-sm:duration-300 max-sm:ease-[cubic-bezier(0.25,1,0.5,1)] max-sm:motion-reduce:transition-none",
           mobileDetail ? "max-sm:translate-x-0" : "max-sm:translate-x-full"
         )}
       >
-        <div className="sticky top-0 z-10 flex items-center bg-[var(--color-surface)] px-2 py-2 sm:hidden">
+        <div className="sticky top-0 z-10 flex items-center bg-[var(--color-surface-solid)] px-2 py-2 sm:hidden">
           <button
             type="button"
             onClick={() => setMobileDetail(false)}

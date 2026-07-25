@@ -41,6 +41,7 @@
 :root {
   --color-bg: oklch(1 0 0);
   --color-surface: oklch(0.985 0 0);
+  --color-surface-solid: oklch(0.985 0 0);
   --color-surface-hover: oklch(0.145 0 0 / 0.05);
   --color-surface-active: oklch(0.145 0 0 / 0.08);
   --color-panel: oklch(1 0 0);
@@ -145,6 +146,7 @@
 .dark {
   --color-bg: oklch(0.13 0 0);
   --color-surface: oklch(1 0 0 / 0.055);
+  --color-surface-solid: oklch(0.178 0 0);
   --color-surface-hover: oklch(1 0 0 / 0.08);
   --color-surface-active: oklch(1 0 0 / 0.12);
   --color-panel: oklch(0.13 0 0);
@@ -255,6 +257,7 @@
 @theme inline {
   --color-bg: var(--color-bg);
   --color-surface: var(--color-surface);
+  --color-surface-solid: var(--color-surface-solid);
   --color-surface-hover: var(--color-surface-hover);
   --color-surface-active: var(--color-surface-active);
   --color-panel: var(--color-panel);

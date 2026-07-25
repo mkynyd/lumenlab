@@ -15,12 +15,35 @@ describe("ModelSelector", () => {
     );
 
     const triggers = screen.getAllByRole("button", {
-      name: "选择模型强度和模型",
+      name: "选择模型",
     });
     await user.click(triggers.at(-1)!);
 
     expect(screen.getByRole("dialog")).toHaveTextContent("选择模型");
+    expect(
+      screen.getByRole("button", { name: "DeepSeek V4 Flash" })
+    ).toHaveClass("h-11");
     expect(screen.getByRole("button", { name: "快速" })).toHaveClass("h-11");
-    expect(screen.getByRole("button", { name: "DeepSeek" })).toHaveClass("h-11");
+  });
+
+  it("keeps model and reasoning effort independent", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onReasoningEffortChange = vi.fn();
+    render(
+      <ModelSelector
+        model="deepseek-v4-pro"
+        onChange={onChange}
+        reasoningEffort="max"
+        onReasoningEffortChange={onReasoningEffortChange}
+      />
+    );
+
+    const triggers = screen.getAllByRole("button", { name: "选择模型" });
+    await user.click(triggers.at(-1)!);
+    await user.click(screen.getByRole("button", { name: "MiniMax M3" }));
+
+    expect(onChange).toHaveBeenCalledWith("minimax-m3");
+    expect(onReasoningEffortChange).not.toHaveBeenCalled();
   });
 });

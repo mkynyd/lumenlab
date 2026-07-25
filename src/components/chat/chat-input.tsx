@@ -47,10 +47,15 @@ interface ChatInputProps {
 }
 
 const MOBILE_MODEL_OPTIONS = [
-  { value: "deepseek-v4-flash", label: "快速" },
-  { value: "deepseek-v4-pro", label: "深度" },
-  { value: "minimax-m3", label: "MiniMax" },
-  { value: "qwen3.7-plus", label: "Qwen" },
+  { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+  { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+  { value: "minimax-m3", label: "MiniMax M3" },
+  { value: "qwen3.7-plus", label: "Qwen3.7-Plus" },
+] as const;
+
+const MOBILE_EFFORT_OPTIONS = [
+  { value: "high", label: "快速" },
+  { value: "max", label: "深度" },
 ] as const;
 
 export function ChatInput({
@@ -128,13 +133,6 @@ export function ChatInput({
 
   function removeAttachment(id: string) {
     onAttachmentsChange?.(attachments.filter((attachment) => attachment.id !== id));
-  }
-
-  function selectMobileModel(nextModel: string) {
-    onModelChange?.(nextModel);
-    onReasoningEffortChange?.(
-      nextModel === "deepseek-v4-flash" ? "high" : "max"
-    );
   }
 
   const mobileModels = MOBILE_MODEL_OPTIONS.filter((option) =>
@@ -391,10 +389,7 @@ export function ChatInput({
                 type="button"
                 variant="ghost"
                 disabled={disabled || isStreaming}
-                onClick={() => {
-                  onWebSearchToggle();
-                  setMobileToolsOpen(false);
-                }}
+                onClick={onWebSearchToggle}
                 className={cn(
                   "h-12 justify-start rounded-[var(--radius-md)] px-3",
                   webSearchActive && "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
@@ -415,13 +410,32 @@ export function ChatInput({
                     type="button"
                     variant="ghost"
                     disabled={disabled || isStreaming}
-                    onClick={() => {
-                      selectMobileModel(option.value);
-                      setMobileToolsOpen(false);
-                    }}
+                    onClick={() => onModelChange(option.value)}
                     className={cn(
                       "h-11 justify-start rounded-[var(--radius-md)] px-3 font-normal",
                       model === option.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                    )}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          {onReasoningEffortChange && (
+            <div className="space-y-2">
+              <p className="px-1 text-xs text-[var(--color-text-tertiary)]">思考深度</p>
+              <div className="grid grid-cols-2 gap-2">
+                {MOBILE_EFFORT_OPTIONS.map((option) => (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    variant="ghost"
+                    disabled={disabled || isStreaming}
+                    onClick={() => onReasoningEffortChange(option.value)}
+                    className={cn(
+                      "h-11 justify-start rounded-[var(--radius-md)] px-3 font-normal",
+                      reasoningEffort === option.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
                     )}
                   >
                     {option.label}
@@ -435,10 +449,7 @@ export function ChatInput({
               <span className="text-sm text-[var(--color-text-secondary)]">智能方式</span>
               <SkillSelector
                 value={skillValue}
-                onChange={(nextValue) => {
-                  onSkillChange(nextValue);
-                  setMobileToolsOpen(false);
-                }}
+                onChange={onSkillChange}
                 disabled={isStreaming || disabled}
                 compact={false}
               />

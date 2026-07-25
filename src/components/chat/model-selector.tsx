@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,20 +14,13 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type Provider = "deepseek" | "minimax" | "bailian";
-type Strength = "fast" | "advanced";
 type ReasoningEffort = "high" | "max";
 
 interface ModelSelectorProps {
@@ -42,34 +35,22 @@ interface ModelSelectorProps {
   availableModels?: readonly string[];
 }
 
-const STRENGTHS: Array<{ value: Strength; label: string; effort: ReasoningEffort }> = [
-  { value: "fast", label: "快速", effort: "high" },
-  { value: "advanced", label: "深度", effort: "max" },
+const MODELS = [
+  { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+  { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+  { value: "minimax-m3", label: "MiniMax M3" },
+  { value: "qwen3.7-plus", label: "Qwen3.7-Plus" },
+] as const;
+
+const EFFORTS: Array<{ value: ReasoningEffort; label: string }> = [
+  { value: "high", label: "快速" },
+  { value: "max", label: "深度" },
 ];
 
-const PROVIDERS: Array<{ value: Provider; label: string }> = [
-  { value: "deepseek", label: "DeepSeek" },
-  { value: "minimax", label: "MiniMax" },
-  { value: "bailian", label: "Qwen3.7-Plus" },
-];
-
-function providerFor(model: string): Provider {
-  if (model === "qwen3.7-plus") return "bailian";
-  return model === "minimax-m3" ? "minimax" : "deepseek";
-}
-
-function strengthFor(model: string, effort: ReasoningEffort): Strength {
-  if (model === "deepseek-v4-flash") return "fast";
-  if (effort === "max") return "advanced";
-  return "fast";
-}
-
-function modelFor(provider: Provider, strength: Strength) {
-  if (provider === "minimax") return "minimax-m3";
-  if (provider === "bailian") return "qwen3.7-plus";
-  return strength === "fast" ? "deepseek-v4-flash" : "deepseek-v4-pro";
-}
-
+/**
+ * ChatGPT 式模型选择：模型与思考深度是两个独立分组，
+ * 切换模型不动思考深度，调整思考深度也不换模型。
+ */
 export function ModelSelector({
   model,
   onChange,
@@ -80,34 +61,10 @@ export function ModelSelector({
   className,
   availableModels = ["deepseek-v4-pro", "deepseek-v4-flash", "minimax-m3"],
 }: ModelSelectorProps) {
-  const availableProviders = PROVIDERS.filter((item) =>
-    availableModels.includes(modelFor(item.value, "advanced")) ||
-    availableModels.includes(modelFor(item.value, "fast"))
-  );
-  const requestedProvider = providerFor(model);
-  const provider = availableProviders.some((item) => item.value === requestedProvider)
-    ? requestedProvider
-    : availableProviders[0]?.value ?? "deepseek";
-  const strength = strengthFor(model, reasoningEffort);
-  const providerLabel = PROVIDERS.find((item) => item.value === provider)?.label ?? "DeepSeek";
-  const strengthLabel = STRENGTHS.find((item) => item.value === strength)?.label ?? "高级";
-
-  const triggerLabel = useMemo(
-    () => `${strengthLabel} · ${providerLabel}`,
-    [providerLabel, strengthLabel]
-  );
+  const models = MODELS.filter((item) => availableModels.includes(item.value));
+  const current = models.find((item) => item.value === model) ?? models[0];
+  const triggerLabel = current?.label ?? model;
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  function setStrength(nextStrength: Strength) {
-    const next = STRENGTHS.find((item) => item.value === nextStrength);
-    if (!next) return;
-    onReasoningEffortChange?.(next.effort);
-    onChange(modelFor(provider, nextStrength));
-  }
-
-  function setProvider(nextProvider: Provider) {
-    onChange(modelFor(nextProvider, strength));
-  }
 
   const triggerClassName = cn(
     "h-8 shrink-0 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-3 text-sm font-normal text-[var(--color-text-primary)] hover:bg-[var(--color-interaction-hover)] focus-visible:bg-[var(--color-interaction-active)]",
@@ -126,7 +83,7 @@ export function ModelSelector({
           size="sm"
           disabled={disabled}
           className={triggerClassName}
-          aria-label="选择模型强度和模型"
+          aria-label="选择模型"
         >
           <span className="truncate">{triggerLabel}</span>
           <ChevronDown data-icon="inline-end" />
@@ -138,13 +95,13 @@ export function ModelSelector({
         className="w-56 rounded-[var(--radius-xl)] p-2"
       >
         <DropdownMenuLabel className="px-3 py-2 text-sm font-normal text-[var(--color-text-tertiary)]">
-          推理深度
+          模型
         </DropdownMenuLabel>
         <DropdownMenuRadioGroup
-          value={strength}
-          onValueChange={(value) => setStrength(value as Strength)}
+          value={current?.value}
+          onValueChange={onChange}
         >
-          {STRENGTHS.map((item) => (
+          {models.map((item) => (
             <DropdownMenuRadioItem
               key={item.value}
               value={item.value}
@@ -154,29 +111,30 @@ export function ModelSelector({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator className="mx-3 my-2" />
-        <DropdownMenuGroup>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="h-10 rounded-[var(--radius-md)] px-3 text-base">
-              <span className="flex-1">模型</span>
-              <span className="text-sm text-[var(--color-text-tertiary)]">
-                {providerLabel}
-              </span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-52 rounded-[var(--radius-xl)] p-2 max-md:data-[side=right]:-translate-x-[calc(100%+0.5rem)]">
-              {availableProviders.map((item) => (
-                <DropdownMenuItem
+        {onReasoningEffortChange && (
+          <>
+            <DropdownMenuSeparator className="mx-3 my-2" />
+            <DropdownMenuLabel className="px-3 py-2 text-sm font-normal text-[var(--color-text-tertiary)]">
+              思考深度
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={reasoningEffort}
+              onValueChange={(value) =>
+                onReasoningEffortChange(value as ReasoningEffort)
+              }
+            >
+              {EFFORTS.map((item) => (
+                <DropdownMenuRadioItem
                   key={item.value}
-                  onSelect={() => setProvider(item.value)}
+                  value={item.value}
                   className="h-10 rounded-[var(--radius-md)] px-3 text-base"
                 >
-                  <span className="flex-1 whitespace-nowrap">{item.label}</span>
-                  {provider === item.value && <Check data-icon="inline-end" />}
-                </DropdownMenuItem>
+                  {item.label}
+                </DropdownMenuRadioItem>
               ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        </DropdownMenuGroup>
+            </DropdownMenuRadioGroup>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
     </div>
@@ -189,7 +147,7 @@ export function ModelSelector({
           size="sm"
           disabled={disabled}
           className={cn("h-10 max-w-[min(56vw,15rem)] md:hidden", triggerClassName)}
-          aria-label="选择模型强度和模型"
+          aria-label="选择模型"
         >
           <span className="truncate">{triggerLabel}</span>
           <ChevronDown data-icon="inline-end" />
@@ -202,51 +160,50 @@ export function ModelSelector({
           <DialogTitle>选择模型</DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
-          <p className="px-1 text-xs text-[var(--color-text-tertiary)]">推理深度</p>
-          <div className="grid grid-cols-2 gap-2">
-            {STRENGTHS.map((item) => (
-              <Button
-                key={item.value}
-                type="button"
-                variant="ghost"
-                className={cn(
-                  "h-11 justify-start rounded-[var(--radius-md)] px-3",
-                  strength === item.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                )}
-                onClick={() => {
-                  setStrength(item.value);
-                  setMobileOpen(false);
-                }}
-              >
-                {item.label}
-                {strength === item.value && <Check data-icon="inline-end" />}
-              </Button>
-            ))}
-          </div>
-        </div>
-        <div className="space-y-2">
-          <p className="px-1 text-xs text-[var(--color-text-tertiary)]">模型服务</p>
+          <p className="px-1 text-xs text-[var(--color-text-tertiary)]">模型</p>
           <div className="space-y-1">
-            {availableProviders.map((item) => (
+            {models.map((item) => (
               <Button
                 key={item.value}
                 type="button"
                 variant="ghost"
                 className={cn(
                   "h-11 w-full justify-start rounded-[var(--radius-md)] px-3",
-                  provider === item.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                  current?.value === item.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
                 )}
                 onClick={() => {
-                  setProvider(item.value);
+                  onChange(item.value);
                   setMobileOpen(false);
                 }}
               >
                 <span className="flex-1 text-left">{item.label}</span>
-                {provider === item.value && <Check data-icon="inline-end" />}
+                {current?.value === item.value && <Check data-icon="inline-end" />}
               </Button>
             ))}
           </div>
         </div>
+        {onReasoningEffortChange && (
+          <div className="space-y-2">
+            <p className="px-1 text-xs text-[var(--color-text-tertiary)]">思考深度</p>
+            <div className="grid grid-cols-2 gap-2">
+              {EFFORTS.map((item) => (
+                <Button
+                  key={item.value}
+                  type="button"
+                  variant="ghost"
+                  className={cn(
+                    "h-11 justify-start rounded-[var(--radius-md)] px-3",
+                    reasoningEffort === item.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                  )}
+                  onClick={() => onReasoningEffortChange(item.value)}
+                >
+                  {item.label}
+                  {reasoningEffort === item.value && <Check data-icon="inline-end" />}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
     </>

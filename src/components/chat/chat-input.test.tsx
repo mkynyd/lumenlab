@@ -50,7 +50,9 @@ describe("ChatInput", () => {
     expect(within(tools).getByRole("button", { name: "文件" })).toBeInTheDocument();
     expect(within(tools).getByRole("button", { name: "联网" })).toBeInTheDocument();
 
-    await user.click(within(tools).getByRole("button", { name: "快速" }));
+    await user.click(within(tools).getByRole("button", { name: "DeepSeek V4 Flash" }));
     expect(onModelChange).toHaveBeenCalledWith("deepseek-v4-flash");
+    // 选项变更不再自动关闭展开栏，由用户自行关闭
+    expect(screen.getByRole("dialog", { name: "对话选项" })).toBeInTheDocument();
   });
 });
