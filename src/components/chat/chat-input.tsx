@@ -163,17 +163,14 @@ export function ChatInput({
         </div>
       )}
       <div
-        className={cn(
-          "workbench-input-dock rounded-[28px] border border-[var(--color-border-light)] bg-[var(--color-control)] p-1.5 sm:p-2",
-          "outline-none ring-0 transition-[border-color,box-shadow] duration-200 focus-within:border-[var(--color-border)] motion-reduce:transition-none"
-        )}
+        className="workbench-input-dock rounded-[28px] border border-[var(--color-border-light)] bg-[var(--color-control)] p-1.5 sm:p-2"
       >
         {attachments.length > 0 && (
           <div className="mb-1.5 flex flex-wrap gap-1.5 px-1">
             {attachments.map((attachment) => (
               <span
                 key={attachment.id}
-                className="inline-flex h-7 max-w-56 items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 text-xs"
+                className="inline-flex h-7 max-w-56 items-center gap-1 px-1.5 text-xs text-[var(--color-text-secondary)]"
                 title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
               >
                 <FileText size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
@@ -181,7 +178,7 @@ export function ChatInput({
                 <button
                   type="button"
                   onClick={() => removeAttachment(attachment.id)}
-                  className="rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+                  className="text-[var(--color-text-tertiary)]"
                   aria-label={`移除附件 ${attachment.name}`}
                 >
                   <X size={12} />
@@ -226,7 +223,7 @@ export function ChatInput({
             disabled={disabled}
             autoComplete="off"
             className={cn(
-              "max-h-40 min-h-11 flex-1 resize-none border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 sm:px-2 sm:py-2",
+              "max-h-40 min-h-11 flex-1 resize-none border-0 bg-transparent! px-1.5 py-2.5 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 sm:px-2 sm:py-2",
               "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
               "focus:outline-none disabled:opacity-50"
             )}

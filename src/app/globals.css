@@ -781,8 +781,19 @@ pre code {
   opacity: 1;
 }
 
+/* Flat input dock: a single readable surface (thin border + soft shadow,
+   allowed for inputs) with no nested cards and no hover fills — typing
+   feedback is just the blinking caret. */
 .workbench-input-dock {
   box-shadow: var(--shadow-input);
+}
+
+.workbench-input-dock button[data-variant="ghost"]:not([aria-pressed="true"]):not([aria-expanded="true"]):not(:disabled) {
+  background-color: transparent;
+}
+
+.workbench-input-dock button[data-variant="ghost"]:hover:not(:disabled) {
+  background-color: transparent;
 }
 
 /* The landing owns one fixed, composited canvas. Individual scenes remain
@@ -825,10 +836,6 @@ pre code {
   background:
     radial-gradient(ellipse at 50% 28%, color-mix(in oklch, var(--color-accent) 5%, transparent), transparent 48%),
     linear-gradient(180deg, color-mix(in oklch, var(--color-bg) 97%, var(--color-accent)) 0%, var(--color-bg) 72%);
-}
-
-.dark .workbench-input-dock {
-  box-shadow: var(--shadow-input);
 }
 
 .loading-indicator-status {

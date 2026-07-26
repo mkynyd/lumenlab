@@ -104,7 +104,7 @@ function MockBubble({ message }: { message: MockChatMessage }) {
 function ChatDemoInputDock() {
   return (
     <div className="shrink-0 bg-[var(--color-bg)] px-3 pb-3 sm:px-5 sm:pb-5">
-      <div className="rounded-[24px] bg-[var(--color-surface)] p-2 ring-1 ring-[var(--color-border-light)] shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_rgb(0_0_0/0.035)]">
+      <div className="workbench-input-dock rounded-[24px] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-2">
         <div className="min-h-9 px-2 py-2 text-[13px] leading-snug text-[var(--color-text-tertiary)]">
           向 LumenLab 提问，支持附件、引用资料…
         </div>
