@@ -11,7 +11,7 @@
 | `DATABASE_URL` | 必需 | `postgresql://postgres:postgres@localhost:5432/ai_workspace?schema=public` | PostgreSQL 连接串，需启用 `pgvector` 扩展 |
 | `REDIS_URL` | 可选 | `redis://localhost:6379` | 共享缓存与限流存储；不可用时回退到内存 |
 | `AUTH_SECRET` | 必需 | `please-change-this` | Auth.js v5 会话签名密钥，建议用 `openssl rand -base64 32` 生成 |
-| `AUTH_URL` | 必需 | `https://lab.mkynstudio.top` | 认证回调地址，需与最终访问域名一致 |
+| `AUTH_URL` | 必需 | `https://app.example.com` | 认证回调地址，需与最终访问域名一致 |
 | `ENCRYPTION_KEY` | 必需 | `please-generate-a-64-char-hex-string` | AES-256-GCM 加密密钥，需 64 位十六进制字符；用 `openssl rand -hex 32` 生成 |
 | `REGISTRATION_CODE_PEPPER` | 必需 | — | 主业务落库注册码摘要的独立胡椒值；不要复用管理端 fingerprint secret |
 | `REGISTRATION_SYNC_SECRET` | 必需 | — | 注册码同步请求校验密钥，与管理端使用同一值 |
@@ -24,7 +24,7 @@
 | `QINIU_BUCKET` | 必需 | `course-ai-lab` | 七牛云存储空间名 |
 | `QINIU_REGION` | 必需 | `z2` | 七牛云存储区域 |
 | `QINIU_UPLOAD_HOST` | 必需 | `https://up-z2.qiniup.com` | 七牛云上传域名 |
-| `QINIU_PRIVATE_DOMAIN` | 必需 | `coursecdn.mkynstudio.top` | 七牛云私有下载域名 |
+| `QINIU_PRIVATE_DOMAIN` | 必需 | `cdn.example.com` | 七牛云私有下载域名 |
 | `NEXT_PUBLIC_APP_NAME` | 必需 | `LumenLab` | 前端展示的应用名称 |
 | `USER_API_KEYS_ENABLED` | 可选 | `false` | 自托管开关；设为 `1` 或 `true` 时优先读取用户自行配置的 API Key |
 | `AGENT_RUNTIME_MODE` | 可选 | `legacy` | Agent Runtime 发布模式：`legacy` / `shadow` / `new` |

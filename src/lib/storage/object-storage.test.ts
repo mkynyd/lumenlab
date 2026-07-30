@@ -105,7 +105,7 @@ describe("object storage adapter", () => {
     setEnv("QINIU_BUCKET", "course-ai-lab");
     setEnv("QINIU_REGION", "z2");
     setEnv("QINIU_UPLOAD_HOST", "https://up-z2.qiniup.com");
-    setEnv("QINIU_PRIVATE_DOMAIN", "coursecdn.mkynstudio.top");
+    setEnv("QINIU_PRIVATE_DOMAIN", "cdn.example.com");
 
     const url = createSignedDownloadUrl({
       provider: "qiniu",
@@ -115,7 +115,7 @@ describe("object storage adapter", () => {
     });
 
     expect(url).toContain(
-      "https://coursecdn.mkynstudio.top/users/user-1/projects/project-1/files/file-1/notes.txt"
+      "https://cdn.example.com/users/user-1/projects/project-1/files/file-1/notes.txt"
     );
     expect(url).toContain("attname=%E8%AF%BE%E5%A0%82%E7%AC%94%E8%AE%B0.txt");
     expect(url).toContain("e=1781827800");
@@ -126,7 +126,7 @@ describe("object storage adapter", () => {
     setEnv("QINIU_ACCESS_KEY", "ak");
     setEnv("QINIU_SECRET_KEY", "sk");
     setEnv("QINIU_BUCKET", "course-ai-lab");
-    setEnv("QINIU_PRIVATE_DOMAIN", "coursecdn.mkynstudio.top");
+    setEnv("QINIU_PRIVATE_DOMAIN", "cdn.example.com");
 
     const url = createSignedDownloadUrl({
       provider: "qiniu",
@@ -136,7 +136,7 @@ describe("object storage adapter", () => {
     });
 
     expect(url).toContain(
-      "https://coursecdn.mkynstudio.top/users/user-1/profile/avatar/source.png-avatar.jpg"
+      "https://cdn.example.com/users/user-1/profile/avatar/source.png-avatar.jpg"
     );
     expect(url).toContain("e=1781827800");
     expect(url).toContain("token=ak:");
@@ -148,7 +148,7 @@ describe("object storage adapter", () => {
     setEnv("QINIU_BUCKET", "course-ai-lab");
     setEnv("QINIU_UPLOAD_HOST", "https://up-z2.qiniup.com");
     setEnv("QINIU_RS_HOST", "https://rs.qiniuapi.com");
-    setEnv("QINIU_PRIVATE_DOMAIN", "coursecdn.mkynstudio.top");
+    setEnv("QINIU_PRIVATE_DOMAIN", "cdn.example.com");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200 })
       .mockResolvedValueOnce({ ok: true, status: 200 });
@@ -177,7 +177,7 @@ describe("object storage adapter", () => {
     setEnv("QINIU_ACCESS_KEY", "ak");
     setEnv("QINIU_SECRET_KEY", "sk");
     setEnv("QINIU_BUCKET", "course-ai-lab");
-    setEnv("QINIU_PRIVATE_DOMAIN", "coursecdn.mkynstudio.top");
+    setEnv("QINIU_PRIVATE_DOMAIN", "cdn.example.com");
     setEnv("URLLIB_ENABLE_PROXY", "1");
 
     expect(() => activeStorageProvider()).toThrow("禁止启用 URLLIB 代理");

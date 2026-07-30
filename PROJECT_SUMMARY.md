@@ -3,8 +3,6 @@
 > 更新日期：2026-07-17
 > 仓库：`mkynyd/lumenlab`
 > 当前主线：`main`
-> 生产地址：[lab.mkynstudio.top](https://lab.mkynstudio.top)
-> 在线文档：[lab.mkynstudio.top/docs](https://lab.mkynstudio.top/docs)
 
 ## 产品定位
 
@@ -105,15 +103,14 @@ LumenLab 是面向大学生与通用学习者的项目化 AI 工作台。用户�
 
 ## 生产与发布
 
-生产环境使用 Nginx HTTPS、Next.js standalone、systemd `lumenlab.service`、本机 PostgreSQL/Redis 与七牛云 Kodo。服务器按 `releases/<commit>` 保存运行单元，`current` 符号链接完成原子切换。
+生产环境采用反向代理 HTTPS、Next.js standalone、进程管理器托管、本机 PostgreSQL/Redis 与七牛云 Kodo 的常见结构，通过自动化部署脚本发布（脚本为内部运维文件，不随公开仓库分发）。
 
-`scripts/deploy.sh` 提供 bootstrap、deploy、rollback、status：
+发布流程要点：
 
 - 部署前检查 GitHub Actions CI。
-- migration 前创建 `pg_dump` 快照并保留最近 3 份。
-- 3002 端口执行新 release 健康预检。
-- 切换后同时检查本机 3000 和 HTTPS `/api/health`。
-- 失败时恢复上一 release；服务器保留当前与一个可回滚版本。
+- migration 前自动创建数据库快照。
+- 新 release 先通过健康预检，再原子切换运行版本。
+- 切换后检查本机与 HTTPS `/api/health`，失败时自动恢复上一 release。
 
 CI 在 Ubuntu 上执行依赖安装、Prisma、lockfile、lint、TypeScript、全量测试、pgvector migration、build 和 whitespace check，并在 macOS 上复核 lockfile 一致性。
 
@@ -132,4 +129,3 @@ CI 在 Ubuntu 上执行依赖安装、Prisma、lockfile、lint、TypeScript、�
 - [Skills](SKILLS.md)：13 个 Skill、17 个 Tool 与审批模型。
 - [Implementation](IMPLEMENTATION.md)：四层缓存实现。
 - [Product](PRODUCT.md)：产品定位与设计原则。
-- [QA: Pi/Qwen POC](docs/qa/pi-ai-qwen-poc-2026-07-16.md)：Provider POC 的实现与验证记录。

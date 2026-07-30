@@ -399,7 +399,7 @@ cp .env.example .env
 | `BAILIAN_WORKSPACE_ID` | 启用 Qwen 聊天时必填 |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛云 Kodo 密钥（生产必填） |
 | `QINIU_BUCKET` | Kodo 空间名 |
-| `AUTH_URL` | 生产环境: `https://lab.mkynstudio.top` |
+| `AUTH_URL` | 生产环境填写实际访问域名，如 `https://app.example.com` |
 
 ### 3. 初始化数据库
 
@@ -457,59 +457,19 @@ npm run dev
 
 ## 部署
 
-### 生产环境
-
-项目已在 `lab.mkynstudio.top` 生产运行。架构如下：
-
-```
-用户 → Nginx (HTTPS, 宝塔管理)
-     → 127.0.0.1:3000 (Next.js standalone, systemd `lumenlab.service`)
-     → PostgreSQL 16 + Redis 7 (本地环回)
-     → 七牛云 Kodo (文件存储)
-     → course-ai-regadmin (注册码同步, regadmin.mkynstudio.top)
-```
-
-服务器采用 release 目录布局，共享数据与运行版本分离：
-
-```
-/www/wwwroot/course-ai-lab/
-├── .env                  # 共享环境变量（不随发布变更）
-├── uploads/              # 共享持久数据
-├── .lumenlab/            # 共享应用数据
-├── releases/<commit>/    # 各版本的 standalone 运行单元
-├── current -> releases/<commit>
-└── build/                # 临时构建树
-```
-
-### 发布与回滚
-
-```bash
-# 部署指定 commit（默认 origin/main HEAD）：CI 门禁、构建、3002 预检、原子切换、健康检查
-./scripts/deploy.sh deploy <commit>
-
-# 回滚到上一个 release
-./scripts/deploy.sh rollback
-
-# 查看当前发布状态
-./scripts/deploy.sh status
-```
-
-部署脚本通过 SSH 在服务器上构建，目标 commit 的 GitHub Actions CI 必须为绿（无 CI 记录的历史 commit 可显式 `--skip-ci-check`）。服务器仅保留当前与上一个 release；数据库迁移前自动 `pg_dump` 快照（保留最近 3 份）。
+生产部署采用 Next.js standalone + 反向代理 + 进程管理（如 systemd / Docker）的常见结构，发布走 CI 门禁与自动化脚本。环境变量、数据库迁移、反向代理与进程管理的自托管步骤见[部署文档](docs/LumenLabDocs/deployment.md)。
 
 ### CI 门禁
 
 push 到 `main` 触发 `.github/workflows/ci.yml`：Linux 全量验证（`npm ci`、Prisma generate、lint、tsc、测试、migrate、build、lockfile 不可变检查）加 macOS lockfile 一致性检查。
 
-### Nginx 配置要点
-
-- 反向代理到 `127.0.0.1:3000`。
-- SSE 流式输出需关闭代理缓冲：`proxy_buffering off`。
-- 上传限制匹配 `experimental.proxyClientMaxBodySize`。
-- 静态资源 `/_next/static` 由 Nginx 直接提供，路径固定指向 `current/.next/static`，发布无需改动 Nginx。
-
 ### 数据库迁移
 
-迁移由 `scripts/deploy.sh` 自动执行（`npx prisma migrate deploy`，迁移前自动快照）。手动检查：
+```bash
+npx prisma migrate deploy
+```
+
+手动检查：
 
 ```bash
 npx prisma migrate status

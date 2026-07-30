@@ -2,7 +2,7 @@
 
 > 本文档面向 LumenLab 普通用户。LumenLab 是一个面向学习、研究与课程项目的 AI 工作台，集成 AI 对话、项目资料管理、文档解析、受控 Agent 和成果导出。
 >
-> 在线版本：[lab.mkynstudio.top/docs](https://lab.mkynstudio.top/docs) · 更新日期：2026-07-17
+> 在线版本随应用发布在站点的 `/docs` 路径 · 更新日期：2026-07-17
 
 ## 文档导航
 

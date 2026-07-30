@@ -1,69 +1,8 @@
 # 部署
 
-> 本文档面向 LumenLab 的部署与运维人员，覆盖当前生产发布流程和独立自托管方式。普通用户请阅读 [快速开始](./getting-started.md)。
+> 本文档面向 LumenLab 的部署与运维人员，介绍通用的自托管方式。普通用户请阅读 [快速开始](./getting-started.md)。
 
-## 当前生产架构
-
-LumenLab 已运行在 [lab.mkynstudio.top](https://lab.mkynstudio.top)，在线文档位于 [/docs](https://lab.mkynstudio.top/docs)。当前生产路径为：
-
-```text
-用户 → Nginx HTTPS
-     → 127.0.0.1:3000（Next.js standalone，systemd lumenlab.service）
-     → PostgreSQL 16 + pgvector / Redis 7（本机环回）
-     → 七牛云 Kodo（私有对象存储）
-     → course-ai-regadmin（加密注册码与凭据快照）
-```
-
-应用采用 release 目录和 `current` 符号链接，环境变量、上传文件与 `.lumenlab` 数据独立于每次发布：
-
-```text
-/www/wwwroot/course-ai-lab/
-├── .env
-├── uploads/
-├── .lumenlab/
-├── releases/<commit>/
-├── current -> releases/<commit>
-└── build/
-```
-
-## 官方发布与回滚
-
-仓库内 `scripts/deploy.sh` 是当前生产发布入口，默认通过 SSH alias `remoteDev` 连接服务器，也可通过 `DEPLOY_SSH_HOST` 覆盖。
-
-```bash
-# 首次迁移：安装 systemd unit、调整 Nginx 并部署首个 release
-./scripts/deploy.sh bootstrap
-
-# 部署指定 commit；省略 commit 时使用 origin/main
-./scripts/deploy.sh deploy <commit>
-
-# 回滚到保留的上一 release
-./scripts/deploy.sh rollback
-
-# 查看 current、release、systemd、健康状态和磁盘余量
-./scripts/deploy.sh status
-```
-
-部署流程会验证目标 commit 的 GitHub Actions CI，创建数据库快照，执行 Prisma migration 和生产构建，在 3002 端口完成预检，再原子切换 `current` 并检查本机与 HTTPS 健康端点。失败时恢复上一 release。服务器只保留当前版本与最近一个可回滚版本，数据库快照保留最近 3 份。
-
-### CI 门禁
-
-push 到 `main` 会触发 `.github/workflows/ci.yml`：
-
-- Ubuntu：`npm ci`、Prisma generate、lockfile 不可变检查、lint、TypeScript、全量测试、pgvector migration、生产构建和 whitespace check。
-- macOS：`npm ci` 与 lockfile 一致性检查。
-
-历史 commit 没有 CI 记录时，部署脚本只允许显式添加 `--skip-ci-check`；pending 或失败状态不能绕过。
-
-### Nginx 与 systemd
-
-- Nginx 反向代理到 `127.0.0.1:3000`，SSE 路径需要 `proxy_buffering off`。
-- 上传限制应不低于 400MB，以覆盖应用的 300MB 批量上传和 multipart 开销。
-- `/_next/static` 固定指向 `current/.next/static`。
-- systemd unit 位于 `deploy/lumenlab.service`，工作目录为 `current`，停止超时 20 秒，异常退出自动重启。
-- `/api/health` 同时检查 PostgreSQL 和 Redis：数据库失败为 `unhealthy` / HTTP 503，Redis 单独失败为 `degraded` / HTTP 200。
-
-## 独立自托管
+## 自托管准备
 
 ### 1. 准备环境
 
@@ -86,7 +25,7 @@ npx prisma migrate deploy
 
 中央管理模式需要独立的 [course-ai-regadmin](https://github.com/mkynyd/course-ai-regadmin) 发布注册码和加密凭据快照。
 
-单机自托管可开启用户 API Key 模式，并用种子脚本创建本地账号：
+单机自托管可开启用户 API Key 模式，并用种子脚本创建本地账号。`DEV_USER_PASSWORD` 必须显式设置，种子脚本不提供默认密码：
 
 ```bash
 USER_API_KEYS_ENABLED=1 \
@@ -116,14 +55,35 @@ npm run seed:dev-access
 npm run dev
 ```
 
-通用生产环境可先使用 Next.js start 验证：
+生产环境先构建再启动：
 
 ```bash
 npm run build
 npm start
 ```
 
-正式 standalone 部署还需要复制 `.next/static`、`public`、`.lumenlab` 和持久化目录。可参考仓库的 `scripts/deploy.sh` 与 `deploy/lumenlab.service`，根据自己的服务器路径改写，不要直接复用其中的域名与绝对路径。
+## 生产部署
+
+生产部署由三部分组成：环境变量、反向代理和进程管理。
+
+### 环境变量
+
+- 按 [配置参考](./reference/configuration.md) 在服务器上准备 `.env`，`AUTH_URL` 必须与最终对外访问的域名一致。
+- `.env` 只放在服务器上，不要提交到仓库。
+
+### 反向代理
+
+使用 Nginx、Caddy 或任意反向代理，把 HTTPS 流量转发到应用监听的本机端口（默认 `127.0.0.1:3000`）：
+
+- SSE 流式输出需要关闭代理缓冲（Nginx 为 `proxy_buffering off`）。
+- 上传限制建议不低于 400MB，以覆盖应用的 300MB 批量上传和 multipart 开销。
+- 可将 `/_next/static` 交给反向代理直接提供，减轻 Node 进程压力。
+
+### 进程管理
+
+使用 systemd、pm2 或 Docker 守护 Node 进程，并配置异常退出自动重启。应用暴露 `/api/health` 健康检查端点，可用于进程管理器与反向代理的存活探测。
+
+使用 standalone 输出时，注意把 `.next/static` 与 `public` 一并复制到运行目录。
 
 ## 发布前检查
 

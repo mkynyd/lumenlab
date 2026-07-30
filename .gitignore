@@ -62,3 +62,9 @@ REPOSITORY_INDEX.md
 LOCALTEST.md
 /docs/test-report/
 /docs/Claude Code Docs
+
+# Internal ops & QA records (not for public repo)
+/docs/qa/
+/接口文档.md
+/scripts/deploy.sh
+/deploy/

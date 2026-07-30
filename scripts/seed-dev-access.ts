@@ -4,8 +4,11 @@
  * Usage:
  *   USER_API_KEYS_ENABLED=1 npx tsx scripts/seed-dev-access.ts
  *
+ * Required env:
+ *   DEV_USER_PASSWORD (no default; must be set explicitly)
+ *
  * Optional env:
- *   DEV_USER_EMAIL, DEV_USER_PASSWORD, DEV_USER_NAME
+ *   DEV_USER_EMAIL, DEV_USER_NAME
  *   DEV_DEEPSEEK_API_KEY, DEV_MINIMAX_API_KEY, DEV_MINERU_API_KEY, DEV_BAILIAN_API_KEY
  *   or DEEPSEEK_API_KEY, MINIMAX_API_KEY, MINERU_API_KEY, BAILIAN_API_KEY
  */
@@ -33,7 +36,13 @@ function getProviderKey(provider: ProviderName) {
 
 async function main() {
   const email = process.env.DEV_USER_EMAIL || "dev@example.com";
-  const password = process.env.DEV_USER_PASSWORD || "LumenLabDev123!";
+  const password = process.env.DEV_USER_PASSWORD;
+  if (!password) {
+    console.error(
+      "DEV_USER_PASSWORD is not set. Refusing to seed without an explicit password."
+    );
+    process.exit(1);
+  }
   const name = process.env.DEV_USER_NAME || "Dev User";
   const passwordHash = await bcrypt.hash(password, 12);
 

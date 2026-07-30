@@ -2,7 +2,7 @@
 
 > 更新日期：2026-07-17
 
-本目录包含 LumenLab 自身文档、实现与 QA 记录，以及开发时使用的第三方服务参考。面向用户的在线文档由 `docs/LumenLabDocs` 直接驱动，发布在 [lab.mkynstudio.top/docs](https://lab.mkynstudio.top/docs)。
+本目录包含 LumenLab 自身文档与实现记录，以及开发时使用的第三方服务参考。面向用户的在线文档由 `docs/LumenLabDocs` 直接驱动，随应用一同发布在 `/docs` 页面。
 
 ## 项目核心文档
 
@@ -53,7 +53,7 @@
 | [配置](LumenLabDocs/reference/configuration.md) | 环境变量、Provider 与发布开关 |
 | [错误处理](LumenLabDocs/reference/error-codes.md) | 注册、上传、检索、导出和 Agent 排查 |
 
-## 实现与 QA 记录
+## 实现记录
 
 | 文档 | 说明 |
 |---|---|
@@ -61,8 +61,6 @@
 | [Token 与上下文预算](token-usage-context-budget-compression.md) | 用量、预算与压缩策略 |
 | [Artifact 导出](artifact-export.md) | 导出实现笔记 |
 | [PostgreSQL + pgvector](database-postgresql-pgvector.md) | 数据库与向量配置 |
-| [LumenLab A-test QA](qa/lumenlab-a-test-2026-07-11.md) | A 测硬化验证 |
-| [Pi/Qwen POC QA](qa/pi-ai-qwen-poc-2026-07-16.md) | `pi-ai` 与 Bailian Qwen 验证 |
 | [TODO](TODO.md) | 待办汇总；内容可能早于当前主线，执行前需重新核对源码 |
 
 ## 第三方服务参考

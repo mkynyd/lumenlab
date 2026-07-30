@@ -37,7 +37,7 @@ describe("GET /api/files/[id]/download", () => {
       storageProvider: "qiniu",
       storagePath: "users/user-1/projects/project-1/files/file-1/file.pdf",
     });
-    mocks.createSignedDownloadUrl.mockReturnValue("https://coursecdn.mkynstudio.top/signed");
+    mocks.createSignedDownloadUrl.mockReturnValue("https://cdn.example.com/signed");
   });
 
   it("checks file ownership before returning a short-lived signed URL", async () => {
@@ -57,7 +57,7 @@ describe("GET /api/files/[id]/download", () => {
       expiresInSeconds: 600,
     });
     await expect(response.json()).resolves.toEqual({
-      url: "https://coursecdn.mkynstudio.top/signed",
+      url: "https://cdn.example.com/signed",
     });
   });
 });

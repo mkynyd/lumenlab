@@ -73,7 +73,7 @@ describe("/api/user/profile/avatar", () => {
     mocks.readStoredObject.mockResolvedValue(Buffer.from([1, 2, 3]));
     mocks.deleteStoredObject.mockResolvedValue(undefined);
     mocks.createSignedDownloadUrl.mockReturnValue(
-      "https://coursecdn.example.com/users/user-1/profile/avatar/old.png-avatar.jpg?e=1783061700&token=ak:signed"
+      "https://cdn.example.com/users/user-1/profile/avatar/old.png-avatar.jpg?e=1783061700&token=ak:signed"
     );
   });
 
@@ -82,7 +82,7 @@ describe("/api/user/profile/avatar", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
-      "https://coursecdn.example.com/users/user-1/profile/avatar/old.png-avatar.jpg?e=1783061700&token=ak:signed"
+      "https://cdn.example.com/users/user-1/profile/avatar/old.png-avatar.jpg?e=1783061700&token=ak:signed"
     );
     expect(mocks.createSignedDownloadUrl).toHaveBeenCalledWith({
       provider: "qiniu",
