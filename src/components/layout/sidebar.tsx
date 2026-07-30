@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,7 @@ import {
   ChevronDown,
   LogOut,
   PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   UserRound,
 } from "lucide-react";
@@ -263,12 +265,50 @@ export function Sidebar({
           <Link
             href="/chat"
             onClick={onClose}
-            className="inline-flex min-h-11 min-w-0 items-center rounded-[var(--radius-sm)] text-sm font-semibold tracking-[-0.02em] text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)]"
+            className={cn(
+              "inline-flex min-h-11 min-w-0 items-center gap-2 rounded-[var(--radius-sm)] text-sm font-semibold tracking-[-0.02em] text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)]",
+              collapsed && "lg:hidden"
+            )}
             aria-label="LumenLab 首页"
           >
-            <span className={cn("truncate", collapsed && "lg:hidden")}>LumenLab</span>
-            <span className={cn("hidden text-sm", collapsed && "lg:inline")}>L</span>
+            <span className="relative flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-lg">
+              <Image
+                src="/LumenLab-logo-only.png"
+                alt=""
+                width={28}
+                height={28}
+                className="object-cover"
+                priority
+              />
+            </span>
+            <span className="truncate">LumenLab</span>
           </Link>
+          {collapsed && (
+            <button
+              type="button"
+              onClick={onExpand}
+              className="group relative hidden h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] transition-colors hover:bg-[var(--color-interaction-hover)] lg:inline-flex"
+              aria-label="展开侧边栏"
+              aria-expanded="false"
+              title="展开侧边栏"
+            >
+              <span className="relative flex size-6 items-center justify-center overflow-hidden rounded-md transition-opacity group-hover:opacity-0">
+                <Image
+                  src="/LumenLab-logo-only.png"
+                  alt=""
+                  width={24}
+                  height={24}
+                  className="object-cover"
+                  priority
+                />
+              </span>
+              <PanelLeftOpen
+                size={17}
+                strokeWidth={1.8}
+                className="absolute text-[var(--color-text-tertiary)] opacity-0 transition-opacity group-hover:opacity-100"
+              />
+            </button>
+          )}
           {!collapsed && onCollapse && (
             <button
               type="button"
@@ -367,29 +407,33 @@ export function Sidebar({
           aria-hidden={collapsed && !mobileOpen}
           inert={collapsed && !mobileOpen ? true : undefined}
         >
-          <SidebarGroup className="shrink-0 px-2 pb-2 pt-1">
-            <Button
-              type="button"
-              onClick={createItem}
-              size="md"
-              className="h-9 w-full justify-start rounded-[var(--radius-md)] px-2 font-normal"
-            >
-              <Plus data-icon="inline-start" strokeWidth={2} />
-              {activeSection === "chat"
-                ? "新对话"
-                : activeSection === "tools"
-                  ? "新转换"
-                  : "新建项目"}
-            </Button>
+          <SidebarGroup className="shrink-0 px-2 pb-1 pt-1">
+            <div className="flex items-center justify-between gap-1">
+              <SidebarGroupLabel className="h-7 px-2 pb-0 text-[11px] font-normal uppercase tracking-[0.06em]">
+                {activeSection === "chat"
+                  ? "最近对话"
+                  : activeSection === "tools"
+                    ? "最近转换"
+                    : "最近项目"}
+              </SidebarGroupLabel>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={createItem}
+                className="shrink-0 rounded-full"
+                aria-label={
+                  activeSection === "chat"
+                    ? "新对话"
+                    : activeSection === "tools"
+                      ? "新转换"
+                      : "新建项目"
+                }
+              >
+                <Plus strokeWidth={2} />
+              </Button>
+            </div>
           </SidebarGroup>
-
-          <SidebarGroupLabel className="h-7 px-4 pb-1 text-[11px] font-normal uppercase tracking-[0.06em]">
-            {activeSection === "chat"
-              ? "最近对话"
-              : activeSection === "tools"
-                ? "最近转换"
-                : "最近项目"}
-          </SidebarGroupLabel>
 
           <SidebarContent className="flex-1 px-2 pb-1">
             {isLoading ? (
@@ -453,7 +497,7 @@ export function Sidebar({
                 <p className="px-2 py-8 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">
                   暂无对话记录
                   <br />
-                  点击「新对话」开始聊天
+                  点击右上角 + 开始聊天
                 </p>
               )
             ) : activeSection === "tools" ? (

@@ -1,7 +1,4 @@
-"use client";
-
-import { ChevronDown, ChevronRight, Loader2, Check, X, AlertTriangle } from "lucide-react";
-import { useState } from "react";
+import { Loader2, Check, X, AlertTriangle } from "lucide-react";
 import type { ToolCallPreview } from "@/lib/agent/types";
 import { cn } from "@/lib/utils";
 
@@ -26,77 +23,48 @@ export function sanitizeToolResult(value: unknown): unknown {
   );
 }
 
+/**
+ * 单行工具调用记录：状态图标 + 灰色小字，不使用卡片气泡，不提供结果展开。
+ */
 export function ToolCallCard({
   preview,
   status,
-  progress,
   message,
-  resultSummary,
   error,
 }: ToolCallCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  const showResult = status === "completed" || status === "failed";
-  const expandable = showResult && (resultSummary || error);
-
   return (
-    <div
-      className={cn(
-        "rounded-xl px-3 py-2 text-xs",
-        "bg-[var(--color-project-control)]",
-        status === "failed" && "text-[var(--color-error)]",
-        status === "completed" && "text-[var(--color-success)]"
+    <div className="flex items-center gap-1.5 px-1 py-0.5 text-xs text-[var(--color-text-tertiary)]">
+      {status === "executing" ? (
+        <Loader2 size={12} className="shrink-0 animate-spin" />
+      ) : status === "completed" ? (
+        <Check size={12} className="shrink-0" />
+      ) : status === "failed" ? (
+        <X size={12} className="shrink-0 text-[var(--color-error)]" />
+      ) : (
+        <span className="size-1.5 shrink-0 rounded-full bg-[var(--color-text-tertiary)]" />
       )}
-    >
-      <div className="flex items-center gap-2">
-        {status === "executing" ? (
-          <Loader2 size={12} className="animate-spin shrink-0" />
-        ) : status === "completed" ? (
-          <Check size={12} className="shrink-0" />
-        ) : status === "failed" ? (
-          <X size={12} className="shrink-0" />
-        ) : (
-          <span className="size-2 rounded-full bg-[var(--color-text-tertiary)] shrink-0" />
+      <span
+        className={cn(
+          "min-w-0 truncate",
+          status === "failed" && "text-[var(--color-error)]"
         )}
-        <span className="text-[var(--color-text-primary)] font-medium truncate flex-1">
-          {preview.summary}
-        </span>
-        {preview.skillName && (
-          <span className="text-[var(--color-text-tertiary)] font-mono text-xs">
-            {preview.skillName}
-          </span>
-        )}
-        {expandable && (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="ml-1 inline-flex items-center justify-center size-5 rounded-md hover:bg-[var(--color-interaction-hover)] text-[var(--color-text-tertiary)]"
-            aria-label={expanded ? "折叠结果" : "展开结果"}
-          >
-            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          </button>
-        )}
-      </div>
-      {status === "executing" && typeof progress === "number" && (
-        <div className="mt-2 h-1 w-full rounded-full bg-[var(--color-border-light)] overflow-hidden">
-          <div
-            className="h-full bg-[var(--color-accent)] transition-[width]"
-            style={{ width: `${Math.max(0, Math.min(100, progress * 100))}%` }}
-          />
-        </div>
+      >
+        {preview.summary}
+      </span>
+      {preview.skillName && (
+        <span className="shrink-0 font-mono">{preview.skillName}</span>
       )}
-      {message && (
-        <div className="mt-1 text-[var(--color-text-tertiary)] truncate">{message}</div>
+      {status === "executing" && message && (
+        <span className="min-w-0 truncate">{message}</span>
       )}
-      {expandable && expanded && (
-        <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-[var(--color-surface)] p-2 text-xs whitespace-pre-wrap break-words text-[var(--color-text-secondary)]">
-          {error ?? JSON.stringify(sanitizeToolResult(resultSummary), null, 2)}
-        </pre>
+      {status === "failed" && error && (
+        <span className="min-w-0 truncate text-[var(--color-error)]">{error}</span>
       )}
       {preview.sendsToExternal && (
-        <div className="mt-1 flex items-center gap-1 text-[var(--color-warning,#b45309)]">
+        <span className="inline-flex shrink-0 items-center gap-1 text-[var(--color-warning,#b45309)]">
           <AlertTriangle size={11} />
-          <span>会将数据发送到外部</span>
-        </div>
+          <span>发送至外部</span>
+        </span>
       )}
     </div>
   );
