@@ -5,6 +5,9 @@ import { createTextMessage, DeepSeekError } from "@/lib/deepseek";
 import type { Prisma } from "@/generated/prisma/client";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import { ProviderAccessError } from "@/lib/provider-access";
+import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
+import { recordFileContentChange } from "@/lib/learning/services";
+import { logger } from "@/lib/logger";
 
 const ENHANCE_PROMPT = `你是大学课程资料 OCR 结果整理器。以下内容来自图片 OCR/视觉解析，可能存在识别错误。
 只做结构化整理和知识增强，不要解题，不要生成最终实验报告，不要编造看不清的数据，不要把不确定内容改成确定结论。
@@ -87,11 +90,13 @@ export async function POST(
       }
     );
     const enhancedAt = new Date().toISOString();
+    const currentFingerprint = computeContentFingerprint(enhancedContent);
     await prisma.fileAsset.update({
       where: { id: file.id },
       data: {
         enhancedContent,
         enhancementStatus: "enhanced",
+        contentFingerprint: currentFingerprint,
         processingMetadata: metadataWith(file.processingMetadata, {
           enhancedAt,
           enhancedByModel: "deepseek-v4-flash",
@@ -99,6 +104,19 @@ export async function POST(
         }),
       },
     });
+    if (file.contentFingerprint) {
+      await recordFileContentChange({
+        userId,
+        fileAssetId: file.id,
+        previousFingerprint: file.contentFingerprint,
+        currentFingerprint,
+      }).catch((error) => {
+        logger.warn("文件增强完成后学习资料新鲜度更新失败", {
+          fileId: file.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
     return NextResponse.json({
       success: true,
       enhancementStatus: "enhanced",

@@ -3,10 +3,15 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createDocumentChunks } from "@/lib/rag/vector-store";
 import { FILE_CATEGORIES } from "@/lib/file-categories";
-import { refreshProjectIndex } from "@/lib/rag/project-index";
+import {
+  fallbackIndexMetadata,
+  refreshProjectIndex,
+} from "@/lib/rag/project-index";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { deleteFileAsset } from "@/lib/files/delete-file-asset";
+import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
+import { recordFileContentChange } from "@/lib/learning/services";
 
 const updateFileSchema = z
   .object({
@@ -29,7 +34,20 @@ export async function GET(
 
   const file = await prisma.fileAsset.findFirst({
     where: { id, userId: session.user.id },
-    include: {
+    select: {
+      id: true,
+      filename: true,
+      originalName: true,
+      mimeType: true,
+      size: true,
+      textContent: true,
+      enhancementStatus: true,
+      processingMetadata: true,
+      status: true,
+      category: true,
+      categoryConfidence: true,
+      createdAt: true,
+      updatedAt: true,
       resources: { select: { id: true, relativePath: true } },
     },
   });
@@ -38,11 +56,22 @@ export async function GET(
     return NextResponse.json({ error: "文件不存在" }, { status: 404 });
   }
 
-  const { resources, ...fileDetail } = file;
   return NextResponse.json({
     file: {
-      ...fileDetail,
-      resources: resources.map((resource) => ({
+      id: file.id,
+      filename: file.filename,
+      originalName: file.originalName,
+      mimeType: file.mimeType,
+      size: file.size,
+      textContent: file.textContent,
+      enhancementStatus: file.enhancementStatus,
+      processingMetadata: file.processingMetadata,
+      status: file.status,
+      category: file.category,
+      categoryConfidence: file.categoryConfidence,
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+      resources: file.resources.map((resource) => ({
         id: resource.id,
         relativePath: resource.relativePath,
       })),
@@ -85,16 +114,30 @@ export async function PATCH(
     );
   }
 
+  const correctedIndexMetadata =
+    parsed.data.textContent !== undefined
+      ? fallbackIndexMetadata({
+          filename: file.originalName,
+          content: parsed.data.textContent,
+        })
+      : null;
+
+  const currentFingerprint =
+    parsed.data.textContent !== undefined
+      ? computeContentFingerprint(parsed.data.textContent)
+      : null;
   await prisma.fileAsset.update({
     where: { id: file.id },
     data: {
       ...(parsed.data.textContent !== undefined && {
         textContent: parsed.data.textContent,
         enhancementStatus: file.enhancedContent ? "stale" : "none",
+        contentFingerprint: currentFingerprint,
         processingMetadata: {
           ...(file.processingMetadata && typeof file.processingMetadata === "object"
             ? file.processingMetadata
             : {}),
+          ...correctedIndexMetadata,
           correctedAt: new Date().toISOString(),
         },
       }),
@@ -104,6 +147,23 @@ export async function PATCH(
       }),
     },
   });
+  if (
+    parsed.data.textContent !== undefined &&
+    file.contentFingerprint &&
+    currentFingerprint
+  ) {
+    await recordFileContentChange({
+      userId: session.user.id,
+      fileAssetId: file.id,
+      previousFingerprint: file.contentFingerprint,
+      currentFingerprint,
+    }).catch((error) => {
+      logger.warn("手工修订 OCR 后学习资料新鲜度更新失败", {
+        fileId: file.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   if (parsed.data.textContent !== undefined) {
     await createDocumentChunks({
       fileAssetId: file.id,

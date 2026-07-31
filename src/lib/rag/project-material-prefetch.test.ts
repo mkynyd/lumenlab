@@ -43,7 +43,7 @@ describe("prefetchProjectMaterialForQuickTask", () => {
         enhancedContent: null,
         processingMetadata: {},
       },
-    ] as Awaited<ReturnType<typeof prisma.fileAsset.findMany>>);
+    ] as unknown as Awaited<ReturnType<typeof prisma.fileAsset.findMany>>);
 
     const result = await prefetchProjectMaterialForQuickTask({
       userId: "user-1",
@@ -75,7 +75,7 @@ describe("prefetchProjectMaterialForQuickTask", () => {
         enhancedContent: null,
         processingMetadata: {},
       },
-    ] as Awaited<ReturnType<typeof prisma.fileAsset.findMany>>);
+    ] as unknown as Awaited<ReturnType<typeof prisma.fileAsset.findMany>>);
 
     const result = await prefetchProjectMaterialForQuickTask({
       userId: "user-1",
@@ -89,5 +89,33 @@ describe("prefetchProjectMaterialForQuickTask", () => {
       selectedOnly: true,
       readableFileCount: 0,
     });
+  });
+
+  it("does not prefetch stale enhanced content after the OCR source changes", async () => {
+    vi.mocked(prisma.fileAsset.findMany).mockResolvedValueOnce([
+      {
+        id: "file-1",
+        originalName: "修订讲义.md",
+        category: "讲义",
+        categoryConfidence: 1,
+        status: "parsed",
+        textContent: "当前 OCR 正文",
+        enhancedContent: "已经过期的增强正文",
+        enhancementStatus: "stale",
+        processingMetadata: { summary: "修订讲义" },
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.fileAsset.findMany>>);
+
+    const result = await prefetchProjectMaterialForQuickTask({
+      userId: "user-1",
+      projectId: "project-1",
+      selectedFileIds: [],
+      prompt: "复习讲义",
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.context).toContain("当前 OCR 正文");
+    expect(result.context).not.toContain("已经过期的增强正文");
   });
 });

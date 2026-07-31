@@ -3,6 +3,7 @@ import { createTextMessage } from "@/lib/deepseek";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 export { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
+import { getEffectiveFileContent } from "@/lib/files/content-fingerprint";
 
 interface IndexFile {
   id: string;
@@ -12,6 +13,7 @@ interface IndexFile {
   status: string;
   textContent: string | null;
   enhancedContent: string | null;
+  enhancementStatus: string;
   processingMetadata: unknown;
 }
 
@@ -78,7 +80,7 @@ function tokenize(value: string, limit = 18) {
 }
 
 function fileContent(file: IndexFile) {
-  return file.enhancedContent || file.textContent || "";
+  return getEffectiveFileContent(file);
 }
 
 function metadataRecord(value: unknown): Record<string, unknown> {
@@ -160,6 +162,7 @@ async function getIndexableFiles(input: RefreshProjectIndexInput): Promise<Index
       status: true,
       textContent: true,
       enhancedContent: true,
+      enhancementStatus: true,
       processingMetadata: true,
     },
   });

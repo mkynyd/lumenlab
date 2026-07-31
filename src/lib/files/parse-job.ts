@@ -25,6 +25,8 @@ import {
   enqueueFileParseJobs,
 } from "@/lib/document-pipeline/job-runner";
 import type { JobContext, ParseStage } from "@/lib/document-pipeline/job-runner";
+import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
+import { recordFileContentChange } from "@/lib/learning/services";
 
 export async function runParseStages(
   ctx: JobContext,
@@ -81,15 +83,30 @@ export async function runParseStages(
 
     await updateStage(file, "writing", completedMetadata);
 
+    const currentFingerprint = computeContentFingerprint(content);
     await prisma.fileAsset.update({
       where: { id: file.id },
       data: {
         textContent: content,
+        contentFingerprint: currentFingerprint,
         status: result.status,
         enhancementStatus: file.enhancedContent ? "stale" : "none",
         processingMetadata: mergeMetadata(file.processingMetadata, completedMetadata),
       },
     });
+    if (file.contentFingerprint) {
+      await recordFileContentChange({
+        userId: ctx.userId,
+        fileAssetId: file.id,
+        previousFingerprint: file.contentFingerprint,
+        currentFingerprint,
+      }).catch((error) => {
+        logger.warn("文件解析完成后学习资料新鲜度更新失败", {
+          fileId: file.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
 
     // Stage: chunk_index
     attempt("chunk_index");

@@ -8,6 +8,7 @@ import * as minimaxAnalyzer from "@/lib/document-pipeline/vision/minimax-analyze
 import * as vectorStore from "@/lib/rag/vector-store";
 import * as projectIndex from "@/lib/rag/project-index";
 import * as embedding from "@/lib/rag/embedding";
+import * as learningServices from "@/lib/learning/services";
 import { prisma } from "@/lib/db";
 
 vi.mock("@/lib/storage/object-storage");
@@ -18,6 +19,7 @@ vi.mock("@/lib/document-pipeline/vision/minimax-analyzer");
 vi.mock("@/lib/rag/vector-store");
 vi.mock("@/lib/rag/project-index");
 vi.mock("@/lib/rag/embedding");
+vi.mock("@/lib/learning/services");
 vi.mock("@/lib/db", () => ({
   prisma: {
     fileAsset: {
@@ -229,6 +231,7 @@ describe("parseFileAsset", () => {
       originalName: "slides.pptx",
       projectId: "p1",
       enhancedContent: null,
+      contentFingerprint: "sha256:v1:previous",
       processingMetadata: {},
       status: "parsing",
     } as never);
@@ -260,6 +263,11 @@ describe("parseFileAsset", () => {
     vi.mocked(vectorStore.createDocumentChunks).mockResolvedValue(1);
     vi.mocked(embedding.embedChunksForFile).mockResolvedValue(undefined);
     vi.mocked(projectIndex.refreshProjectIndex).mockResolvedValue("project index");
+    vi.mocked(learningServices.recordFileContentChange).mockResolvedValue({
+      changed: true,
+      knowledgePoints: [],
+      practiceItems: [],
+    });
     vi.mocked(minimaxAnalyzer.analyzeImageWithMiniMax).mockResolvedValue({
       summary: "A chart",
       ocrText: "10, 20",
@@ -297,6 +305,15 @@ describe("parseFileAsset", () => {
     const textContent = (updateCall![0] as { data: { textContent: string } }).data.textContent;
     expect(textContent).not.toContain("pics/chart.png");
     expect(textContent).toContain("/api/files/f1/resources/");
+    expect(updateCall![0].data).toMatchObject({
+      contentFingerprint: expect.stringMatching(/^sha256:v1:[a-f0-9]{64}$/),
+    });
+    expect(learningServices.recordFileContentChange).toHaveBeenCalledWith({
+      userId: "u1",
+      fileAssetId: "f1",
+      previousFingerprint: "sha256:v1:previous",
+      currentFingerprint: updateCall![0].data.contentFingerprint,
+    });
 
     expect(vectorStore.createDocumentChunks).toHaveBeenCalledWith(
       expect.objectContaining({

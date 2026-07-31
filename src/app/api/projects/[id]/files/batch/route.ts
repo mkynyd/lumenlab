@@ -2,12 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { deleteChunksByFileAsset } from "@/lib/rag/vector-store";
 import { FILE_CATEGORIES } from "@/lib/file-categories";
 import { refreshProjectIndex } from "@/lib/rag/project-index";
 import { startFileParseBatch } from "@/lib/files/parse-job";
-import { deleteStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
-import { logger } from "@/lib/logger";
+import { deleteFileAsset } from "@/lib/files/delete-file-asset";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { invalidateSearchCache } from "@/lib/cache/rag-search-cache";
 import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
@@ -104,36 +102,23 @@ export async function POST(
   }
 
   if (body.action === "delete") {
-    await Promise.all(
-      files.map(async (file) => {
-        await deleteChunksByFileAsset(file.id, session.user.id);
-        if (file.storagePath) {
-          await deleteStoredObject({
-            provider: file.storageProvider as StorageProvider,
-            key: file.storagePath,
-          }).catch((error) => {
-            logger.warn("文件对象删除失败", { fileId: file.id, error: String(error) });
-          });
-        }
-        await Promise.all(
-          file.resources.map((resource) =>
-            deleteStoredObject({
-              provider: resource.storageProvider as StorageProvider,
-              key: resource.storagePath,
-            }).catch((error) => {
-              logger.warn("文件资源对象删除失败", {
-                fileId: file.id,
-                resourceId: resource.id,
-                error: String(error),
-              });
-            })
-          )
-        );
-      })
+    const deletionResults = await Promise.all(
+      files.map((file) =>
+        deleteFileAsset({
+          fileAssetId: file.id,
+          userId: session.user.id,
+          projectId,
+          refreshProject: false,
+        })
+      )
     );
-    await prisma.fileAsset.deleteMany({
-      where: { id: { in: fileIds }, userId: session.user.id, projectId },
-    });
+    const failed = deletionResults.find((result) => !result.deleted);
+    if (failed) {
+      return NextResponse.json(
+        { error: failed.error || "删除文件失败" },
+        { status: failed.error === "NOT_FOUND" ? 404 : 500 }
+      );
+    }
     await invalidateSearchCache(projectId);
     await invalidateFileSelectCache(projectId);
     await refreshProjectIndex({

@@ -89,4 +89,30 @@ describe("project index", () => {
     expect(result.fullLoadFileIds[0]).toBe("file-1");
     expect(result.summaryOnly).toHaveLength(3);
   });
+
+  it("indexes OCR text instead of a stale enhanced version", async () => {
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1", userId: "user-1" });
+    mocks.fileFindMany.mockResolvedValue([
+      {
+        id: "file-1",
+        originalName: "修订讲义.md",
+        category: "讲义",
+        categoryConfidence: 1,
+        status: "parsed",
+        textContent: "current-ocr-token",
+        enhancedContent: "obsolete-enhanced-token",
+        enhancementStatus: "stale",
+        processingMetadata: {},
+      },
+    ]);
+    mocks.projectIndexUpsert.mockResolvedValue({});
+
+    const content = await refreshProjectIndex({
+      userId: "user-1",
+      projectId: "project-1",
+    });
+
+    expect(content).toContain("current-ocr-token");
+    expect(content).not.toContain("obsolete-enhanced-token");
+  });
 });

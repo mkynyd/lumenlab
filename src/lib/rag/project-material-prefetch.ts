@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { buildProjectIndexEntries } from "@/lib/rag/project-index";
+import { getEffectiveFileContent } from "@/lib/files/content-fingerprint";
 
 interface PrefetchFile {
   id: string;
@@ -9,6 +10,7 @@ interface PrefetchFile {
   status: string;
   textContent: string | null;
   enhancedContent: string | null;
+  enhancementStatus: string;
   processingMetadata: unknown;
 }
 
@@ -47,7 +49,7 @@ function compactText(value: string | null | undefined) {
 }
 
 function fileContent(file: PrefetchFile) {
-  return file.enhancedContent || file.textContent || "";
+  return getEffectiveFileContent(file);
 }
 
 function readableFiles(files: PrefetchFile[]) {
@@ -98,6 +100,7 @@ export async function prefetchProjectMaterialForQuickTask(
       status: true,
       textContent: true,
       enhancedContent: true,
+      enhancementStatus: true,
       processingMetadata: true,
     },
   });

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getEffectiveFileContent } from "@/lib/files/content-fingerprint";
 
 export async function readProjectFile(
   userId: string,
@@ -15,12 +16,13 @@ export async function readProjectFile(
       status: true,
       textContent: true,
       enhancedContent: true,
+      enhancementStatus: true,
     },
   });
   if (!file) {
     return { error: "NOT_FOUND" };
   }
-  const text = file.enhancedContent || file.textContent || "";
+  const text = getEffectiveFileContent(file);
   const truncated = text.length > maxChars ? text.slice(0, maxChars) : text;
   return {
     id: file.id,
