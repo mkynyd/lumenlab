@@ -18,6 +18,14 @@ function errorMessage(payload: unknown, fallback: string): string {
   if (typeof error === "string") return error;
   if (!error || typeof error !== "object") return fallback;
 
+  if (
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.trim()
+  ) {
+    return error.message;
+  }
+
   for (const value of Object.values(error)) {
     if (Array.isArray(value) && typeof value[0] === "string") {
       return value[0];

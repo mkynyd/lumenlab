@@ -49,4 +49,28 @@ describe("fetchJson", () => {
 
     await expect(fetchJson("/api/value")).rejects.toThrow("名称不能为空");
   });
+
+  it("surfaces structured API error messages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "idempotency_conflict",
+              message: "请求内容与已有幂等记录不一致",
+            },
+          }),
+          {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      )
+    );
+
+    await expect(fetchJson("/api/value")).rejects.toThrow(
+      "请求内容与已有幂等记录不一致"
+    );
+  });
 });
