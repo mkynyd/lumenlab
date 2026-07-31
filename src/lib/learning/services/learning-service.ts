@@ -261,6 +261,35 @@ type AttemptResultRecord = Prisma.PracticeAttemptGetPayload<{
   include: typeof attemptResultInclude;
 }>;
 
+function wrongAnswerProjectionForHistory(
+  itemLineageId: string,
+  history: AttemptResultRecord[]
+) {
+  const attempts: WrongAnswerAttempt[] = history.map((attempt) => ({
+    id: attempt.id,
+    itemLineageId,
+    mode: attempt.sessionItem.practiceItem.mode,
+    assistanceLevel: attempt.assistanceLevel,
+    spacingSeconds: attempt.spacingSeconds,
+    submittedAt: attempt.submittedAt,
+  }));
+  const evaluations: ProgressEvaluation[] = history.flatMap((attempt) =>
+    attempt.evaluations.map((evaluation) => ({
+      id: evaluation.id,
+      attemptId: evaluation.attemptId,
+      supersedesEvaluationId: evaluation.supersedesEvaluationId,
+      createdAt: evaluation.createdAt,
+      verdict: evaluation.verdict,
+      score: evaluation.score,
+      rubric: evaluation.rubric ? objectJson(evaluation.rubric) : null,
+      confidence: evaluation.confidence,
+      errorType: evaluation.errorType,
+      reason: evaluation.reason,
+    }))
+  );
+  return deriveWrongAnswer({ itemLineageId, attempts, evaluations });
+}
+
 function iso(value: Date | null): string | null {
   return value?.toISOString() ?? null;
 }
@@ -2057,6 +2086,48 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         );
       }
       const dueLineageIds = due.map(({ lineageId }) => lineageId);
+      const attemptHistory = await prisma.practiceAttempt.findMany({
+        where: {
+          userId: command.userId,
+          sessionItem: {
+            is: {
+              practiceItem: {
+                is: {
+                  goalId: command.goalId,
+                  knowledgePoints: {
+                    some: {
+                      knowledgePoint: {
+                        is: { lineageId: { in: dueLineageIds } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
+        include: attemptResultInclude,
+      });
+      const attemptsByItemLineage = new Map<string, AttemptResultRecord[]>();
+      for (const attempt of attemptHistory) {
+        const lineageId = attempt.sessionItem.practiceItem.lineageId;
+        const history = attemptsByItemLineage.get(lineageId) ?? [];
+        history.push(attempt);
+        attemptsByItemLineage.set(lineageId, history);
+      }
+      const wrongAnswerPriority = new Map<string, number>();
+      for (const [itemLineageId, history] of attemptsByItemLineage) {
+        const status = wrongAnswerProjectionForHistory(
+          itemLineageId,
+          history
+        ).status;
+        if (status === "unresolved") {
+          wrongAnswerPriority.set(itemLineageId, 2);
+        } else if (status === "resolved") {
+          wrongAnswerPriority.set(itemLineageId, 1);
+        }
+      }
       const candidates = await prisma.practiceItem.findMany({
         where: {
           goalId: command.goalId,
@@ -2076,9 +2147,14 @@ export function createLearningService(options: CreateLearningServiceOptions) {
           },
         },
       });
+      const prioritizedCandidates = [...candidates].sort(
+        (left, right) =>
+          (wrongAnswerPriority.get(right.lineageId) ?? 0) -
+          (wrongAnswerPriority.get(left.lineageId) ?? 0)
+      );
       const chosen: typeof candidates = [];
       const covered = new Set<string>();
-      for (const candidate of candidates) {
+      for (const candidate of prioritizedCandidates) {
         const covers = candidate.knowledgePoints
           .map(({ knowledgePoint }) => knowledgePoint.lineageId)
           .filter((lineageId) => dueLineageIds.includes(lineageId));
@@ -2158,39 +2234,10 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       const items = (
         await Promise.all(
           [...byLineage.entries()].map(async ([itemLineageId, history]) => {
-            const wrongAnswerAttempts: WrongAnswerAttempt[] = history.map(
-              (attempt) => ({
-                id: attempt.id,
-                itemLineageId,
-                mode: attempt.sessionItem.practiceItem.mode,
-                assistanceLevel: attempt.assistanceLevel,
-                spacingSeconds: attempt.spacingSeconds,
-                submittedAt: attempt.submittedAt,
-              })
-            );
-            const evaluations: ProgressEvaluation[] = history.flatMap(
-              (attempt) =>
-                attempt.evaluations.map((evaluation) => ({
-                  id: evaluation.id,
-                  attemptId: evaluation.attemptId,
-                  supersedesEvaluationId:
-                    evaluation.supersedesEvaluationId,
-                  createdAt: evaluation.createdAt,
-                  verdict: evaluation.verdict,
-                  score: evaluation.score,
-                  rubric: evaluation.rubric
-                    ? objectJson(evaluation.rubric)
-                    : null,
-                  confidence: evaluation.confidence,
-                  errorType: evaluation.errorType,
-                  reason: evaluation.reason,
-                }))
-            );
-            const projection = deriveWrongAnswer({
+            const projection = wrongAnswerProjectionForHistory(
               itemLineageId,
-              attempts: wrongAnswerAttempts,
-              evaluations,
-            });
+              history
+            );
             if (!projection.included) return null;
 
             const latest = history.at(-1)!;

@@ -587,6 +587,38 @@ describe("LearningService goal and scope seam", () => {
       expect(JSON.stringify(answer)).not.toMatch(/answerCriteria|criteria|expected/);
 
       now = new Date("2026-08-02T08:00:00.000Z");
+      const distractorLineage = await prisma.practiceItemLineage.create({
+        data: {
+          goalId: goal.id,
+          stableKey: "kcl-different-question",
+        },
+      });
+      await prisma.practiceItem.create({
+        data: {
+          goalId: goal.id,
+          knowledgeMapId: map.id,
+          lineageId: distractorLineage.id,
+          version: 1,
+          prompt: "流出节点的电流可以忽略吗？",
+          type: "true_false",
+          mode: "evidence_bearing",
+          freshness: "current",
+          createdAt: new Date("2026-08-01T08:00:00.000Z"),
+          answerSpec: {
+            create: {
+              criteria: { kind: "boolean", expected: false },
+              explanation: "节点电流必须满足守恒关系。",
+              graderPolicyVersion: "learning-grading-v1",
+            },
+          },
+          knowledgePoints: {
+            create: { knowledgePointId: point.id },
+          },
+          sourceLinks: {
+            create: { sourceAnchorId: anchor.id },
+          },
+        },
+      });
       await expect(
         service.listReviews({
           userId: owner.id,
@@ -610,6 +642,8 @@ describe("LearningService goal and scope seam", () => {
           limit: 10,
         },
       });
+      // A newer alternate question covers the same point, but an unresolved
+      // wrong answer must prefer the same item lineage for explicit redo.
       expect(review.items[0].practiceItem.lineageId).toBe(itemLineage.id);
 
       const second = await service.submitAttempt({
