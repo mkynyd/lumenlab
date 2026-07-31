@@ -20,6 +20,7 @@ This document tracks the completed Agent Runtime consolidation plus deferred Ski
 - Added stable request hashes and event cursors so HTTP/SSE disconnects can reconnect without duplicating text, messages or already-known tool results.
 - Treats stale approved-tool checkpoints as unknown outcomes and fails safely instead of blindly replaying a possible side effect.
 - Completed authenticated non-production DeepSeek and MiniMax smoke paths, including approval, rejection, automatic continuation and exactly-once cumulative token-usage persistence.
+- Enabled the production learning rollout together with durable execution on 2026-07-31 after an explicit release request; retained fail-safe configuration backup and verified process flags, health checks and restart stability.
 - Added the Project-owned learning domain: Goal, confirmed Scope, versioned Map/Point lineage, source anchors, private answer specifications, append-only attempts/evaluations, mastery/review projection, wrong-answer history, Today and local material-freshness invalidation.
 - Added the preview-gated `/today` and `/projects/[id]/learning` UI with same-item wrong-answer redo and text-equivalent segmented progress.
 - The frozen implementation and release contract is `docs/learning-loop-p0-iteration-plan.md`.
@@ -174,7 +175,7 @@ Add these after the MVP loop, approval UX, and tool-result continuation are stab
 
 - Expand `shadow` from side-effect-free planning comparison to full candidate-output/latency comparison only after provider cost and tool side effects can be safely isolated.
 - Move more prompt/RAG/compression assembly behind focused context interfaces as the Runtime continues to shrink.
-- Exercise long-running Worker and event-retention behavior under production-like concurrency before changing either rollout flag to its default state.
+- Monitor long-running Worker behavior, event retention, approval recovery, error rate and per-run cost now that the production rollout is enabled; retain the configuration rollback path until those operational baselines are established.
 
 ## Multimodal Document Parsing Pipeline — Complete
 

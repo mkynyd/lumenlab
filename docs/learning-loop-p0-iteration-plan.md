@@ -1,6 +1,6 @@
 # LumenLab 学习闭环 P0 迭代计划
 
-> 状态：P0 已实现并完成本地联合验收（2026-07-31）；实际环境仍默认关闭
+> 状态：P0 已实现、完成联合验收并于 2026-07-31 在生产环境启用
 > 计划基线：2026-07-31
 > DeepTutor 调研基线：`HKUDS/DeepTutor@731410e45dd455c34707ad28e001e2b3545c2945`
 > LumenLab 调研基线：`light-ai-chat@524a910`；计划收口时本地 `HEAD` 为安全清理提交 `d73172b`，`origin/main` 仍为 `6e0b766`
@@ -9,7 +9,7 @@
 
 ## 0. 实施与验收回写（2026-07-31）
 
-本计划所定义的学习闭环 P0 与 AgentExecution 可靠执行已完成代码实现、迁移、自动化测试、真实 Provider 冒烟和桌面/移动浏览器验收。`LEARNING_LOOP_ROLLOUT` 仍默认 `off`，本轮没有执行生产部署；从 `preview` 提升到 `default` 仍是独立的发布决策，不由一次本地验收自动触发。
+本计划所定义的学习闭环 P0 与 AgentExecution 可靠执行已完成代码实现、迁移、自动化测试、真实 Provider 冒烟和桌面/移动浏览器验收。代码默认值仍是 `LEARNING_LOOP_ROLLOUT=off`；首次实施收口时没有执行生产部署，后续生产启用属于用户单独授权的发布动作，见 0.5 节。
 
 ### 0.1 实施结果与提交边界
 
@@ -55,8 +55,27 @@
 - P0 的代码与本地联合门禁已经完成；
 - `off` 下普通聊天、Project、资料、Artifact、导出和根路由保持原行为；
 - `preview` 只向显式环境开放学习入口；
-- `default` 仍要求 durable execution 同时开启，并应在非生产并发 soak、事件保留观察和运行指标门槛完成后再决定；
-- 本轮没有执行生产部署，也没有改变现有生产 Feature Flag。
+- `default` 要求 durable execution 同时开启；
+- 首次实施收口没有执行生产部署，也没有改变当时的生产 Feature Flag；后续启用记录如下。
+
+### 0.5 生产启用回写
+
+2026-07-31，在用户明确授权“打开功能并部署”后，生产环境同时设置：
+
+```text
+LEARNING_LOOP_ROLLOUT=default
+AGENT_DURABLE_EXECUTION_ENABLED=true
+```
+
+启用前保留了仅管理员可读的环境配置备份；配置以原子方式更新，并在失败时自动恢复。服务重启后完成以下验证：
+
+- 运行进程读取到两个目标值；
+- systemd 为 `active/running`，稳定性复查期间 PID 未变化、自动重启次数为 `0`；
+- 本机与 HTTPS `/api/health` 均为 `200`，数据库和 Redis 正常；
+- 学习 API 已从功能关闭状态进入正常认证边界；
+- 当前 release 与回滚 release 均保留，部署日志已记录本次 Feature Flag 激活。
+
+本次只覆盖生产环境配置，没有改变仓库中的安全默认值；其他环境未显式设置时仍保持 `off` / `false`。生产启用后应持续观察 Worker、事件保留、审批恢复、错误率和单任务成本，出现高优先级回归时优先恢复环境配置并回滚 release。
 
 ## 1. 计划结论
 
