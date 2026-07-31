@@ -4,12 +4,14 @@ import { createHash } from "node:crypto";
 
 import {
   deriveReviewState,
+  LEARNING_ERROR_TYPES,
   LearningServiceError,
   type AnswerCriteriaDto,
   type AssistanceLevel,
   type ContentFreshness,
   type EvaluationVerdict,
   type LearningClock,
+  type LearningErrorType,
   type LearningIdGenerator,
   type LearningModelGateway,
   type PracticeItemPublicDto,
@@ -19,6 +21,7 @@ import {
   deriveFreshness,
   deriveWrongAnswer,
   projectProgress,
+  resolveActiveEvaluation,
   scheduleReview,
   type ProgressEvaluation,
   type WrongAnswerAttempt,
@@ -35,6 +38,7 @@ import type {
   learningScopeDraftSchema,
   practiceAttemptSubmissionSchema,
 } from "@/lib/learning/validators";
+import type { errorTypeCorrectionCommandSchema } from "@/lib/learning/server/input-schemas";
 import {
   answerCriteriaSchema,
   knowledgeMapGenerationSchema,
@@ -48,6 +52,9 @@ type GoalCreateInput = z.infer<typeof learningGoalCreateSchema>;
 type ScopeDraftInput = z.infer<typeof learningScopeDraftSchema>;
 type ScopeConfirmInput = z.infer<typeof learningScopeConfirmSchema>;
 type AttemptSubmissionInput = z.infer<typeof practiceAttemptSubmissionSchema>;
+type ErrorTypeCorrectionInput = z.infer<
+  typeof errorTypeCorrectionCommandSchema
+>;
 
 export interface IdempotentGenerationInput {
   idempotencyKey: string;
@@ -187,6 +194,83 @@ export interface AttemptSubmissionResult {
   };
 }
 
+export interface LearningErrorTypeCorrectionDto {
+  id: string;
+  evaluationId: string;
+  errorType: LearningErrorType;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface LearningHistoryEvaluationDto {
+  id: string;
+  attemptId: string;
+  verdict: EvaluationVerdict;
+  score: number | null;
+  confidence: number;
+  errorType: string | null;
+  reason: string;
+  policyVersion: string;
+  supersedesEvaluationId: string | null;
+  createdAt: string;
+  corrections: LearningErrorTypeCorrectionDto[];
+}
+
+export interface LearningHistoryEvidenceDto {
+  attempt: {
+    id: string;
+    answer: unknown;
+    assistanceLevel: AssistanceLevel;
+    spacingSeconds: number;
+    submittedAt: string;
+  };
+  session: {
+    id: string;
+    mode: "diagnostic" | "review";
+  };
+  practiceItem: {
+    id: string;
+    lineageId: string;
+    prompt: string;
+    type: string;
+    sourceAnchors: Array<{
+      id: string;
+      fileAssetId: string | null;
+      sourceFileName: string;
+      locator: Record<string, unknown>;
+    }>;
+  };
+  evaluations: LearningHistoryEvaluationDto[];
+  activeEvaluationId: string | null;
+  effectiveErrorType: {
+    value: string;
+    source: "evaluation" | "user_correction";
+    sourceId: string;
+  } | null;
+}
+
+export interface LearningHistoryPointDto extends LearningProgressDto {
+  sourceAnchors: Array<{
+    id: string;
+    fileAssetId: string | null;
+    sourceFileName: string;
+    locator: Record<string, unknown>;
+  }>;
+  evidence: LearningHistoryEvidenceDto[];
+}
+
+export interface LearningHistoryDto {
+  goal: LearningGoalDto;
+  summary: {
+    totalPoints: number;
+    weakPoints: number;
+    dueReviews: number;
+    attempts: number;
+    manualCorrections: number;
+  };
+  points: LearningHistoryPointDto[];
+}
+
 const mapInclude = {
   knowledgePoints: {
     orderBy: { orderIndex: "asc" as const },
@@ -259,6 +343,24 @@ const attemptResultInclude = {
 
 type AttemptResultRecord = Prisma.PracticeAttemptGetPayload<{
   include: typeof attemptResultInclude;
+}>;
+
+const historyAttemptInclude = {
+  evaluations: {
+    orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
+    include: {
+      errorTypeCorrections: {
+        orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
+      },
+    },
+  },
+  sessionItem: {
+    include: sessionItemPrivateInclude,
+  },
+} satisfies Prisma.PracticeAttemptInclude;
+
+type HistoryAttemptRecord = Prisma.PracticeAttemptGetPayload<{
+  include: typeof historyAttemptInclude;
 }>;
 
 function wrongAnswerProjectionForHistory(
@@ -489,6 +591,141 @@ function toEvaluationDto(
     reason: evaluation.reason,
     policyVersion: evaluation.policyVersion,
     createdAt: evaluation.createdAt.toISOString(),
+  };
+}
+
+function toErrorTypeCorrectionDto(correction: {
+  id: string;
+  evaluationId: string;
+  errorType: string;
+  reason: string | null;
+  createdAt: Date;
+}): LearningErrorTypeCorrectionDto {
+  if (!LEARNING_ERROR_TYPES.includes(correction.errorType as LearningErrorType)) {
+    throw new LearningServiceError(
+      "invalid_state",
+      "学习错因记录包含不支持的类型",
+      500
+    );
+  }
+  return {
+    id: correction.id,
+    evaluationId: correction.evaluationId,
+    errorType: correction.errorType as LearningErrorType,
+    reason: correction.reason,
+    createdAt: correction.createdAt.toISOString(),
+  };
+}
+
+function historyProjectionForAttempt(attempt: HistoryAttemptRecord): {
+  activeEvaluationId: string | null;
+  effectiveErrorType: LearningHistoryEvidenceDto["effectiveErrorType"];
+} {
+  const evaluations: ProgressEvaluation[] = attempt.evaluations.map(
+    (evaluation) => ({
+      id: evaluation.id,
+      attemptId: evaluation.attemptId,
+      supersedesEvaluationId: evaluation.supersedesEvaluationId,
+      createdAt: evaluation.createdAt,
+      verdict: evaluation.verdict,
+      score: evaluation.score,
+      rubric: evaluation.rubric ? objectJson(evaluation.rubric) : null,
+      confidence: evaluation.confidence,
+      errorType: evaluation.errorType,
+      reason: evaluation.reason,
+    })
+  );
+  const resolution = resolveActiveEvaluation(attempt.id, evaluations);
+  if (resolution.status !== "active") {
+    return { activeEvaluationId: null, effectiveErrorType: null };
+  }
+
+  const active = resolution.evaluation;
+  const activeEvaluationRecord = attempt.evaluations.find(
+    (evaluation) => evaluation.id === active.id
+  );
+  const latestCorrection = (activeEvaluationRecord?.errorTypeCorrections ?? [])
+    .reduce<
+      HistoryAttemptRecord["evaluations"][number]["errorTypeCorrections"][number] | null
+    >((latest, correction) => {
+      if (
+        latest === null ||
+        correction.createdAt.getTime() > latest.createdAt.getTime() ||
+        (correction.createdAt.getTime() === latest.createdAt.getTime() &&
+          correction.id.localeCompare(latest.id) > 0)
+      ) {
+        return correction;
+      }
+      return latest;
+    }, null);
+
+  if (latestCorrection) {
+    return {
+      activeEvaluationId: active.id,
+      effectiveErrorType: {
+        value: latestCorrection.errorType,
+        source: "user_correction",
+        sourceId: latestCorrection.id,
+      },
+    };
+  }
+  return {
+    activeEvaluationId: active.id,
+    effectiveErrorType: active.errorType
+      ? {
+          value: active.errorType,
+          source: "evaluation",
+          sourceId: active.id,
+        }
+      : null,
+  };
+}
+
+function toHistoryEvidenceDto(
+  attempt: HistoryAttemptRecord
+): LearningHistoryEvidenceDto {
+  const projection = historyProjectionForAttempt(attempt);
+  const practiceItem = attempt.sessionItem.practiceItem;
+  return {
+    attempt: {
+      id: attempt.id,
+      answer: attempt.answer,
+      assistanceLevel: attempt.assistanceLevel,
+      spacingSeconds: attempt.spacingSeconds,
+      submittedAt: attempt.submittedAt.toISOString(),
+    },
+    session: {
+      id: attempt.sessionItem.session.id,
+      mode: attempt.sessionItem.session.mode,
+    },
+    practiceItem: {
+      id: practiceItem.id,
+      lineageId: practiceItem.lineageId,
+      prompt: practiceItem.prompt,
+      type: practiceItem.type,
+      sourceAnchors: practiceItem.sourceLinks.map(({ sourceAnchor }) => ({
+        id: sourceAnchor.id,
+        fileAssetId: sourceAnchor.fileAssetId,
+        sourceFileName: sourceAnchor.sourceFileName,
+        locator: objectJson(sourceAnchor.locator),
+      })),
+    },
+    evaluations: attempt.evaluations.map((evaluation) => ({
+      id: evaluation.id,
+      attemptId: evaluation.attemptId,
+      verdict: evaluation.verdict,
+      score: evaluation.score,
+      confidence: evaluation.confidence,
+      errorType: evaluation.errorType,
+      reason: evaluation.reason,
+      policyVersion: evaluation.policyVersion,
+      supersedesEvaluationId: evaluation.supersedesEvaluationId,
+      createdAt: evaluation.createdAt.toISOString(),
+      corrections: evaluation.errorTypeCorrections.map(
+        toErrorTypeCorrectionDto
+      ),
+    })),
+    ...projection,
   };
 }
 
@@ -2279,6 +2516,226 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         (item): item is NonNullable<typeof item> => item !== null
       );
       return { items };
+    },
+
+    async getHistory(
+      command: GoalCommand & { goalId: string }
+    ): Promise<LearningHistoryDto> {
+      const goal = await requireGoal(
+        command.userId,
+        command.projectId,
+        command.goalId
+      );
+      const map = await prisma.knowledgeMap.findFirst({
+        where: { goalId: command.goalId },
+        orderBy: [{ version: "desc" }, { id: "desc" }],
+        include: mapInclude,
+      });
+      const attempts = await prisma.practiceAttempt.findMany({
+        where: {
+          userId: command.userId,
+          sessionItem: {
+            is: {
+              practiceItem: {
+                is: { goalId: command.goalId },
+              },
+            },
+          },
+        },
+        orderBy: [{ submittedAt: "desc" }, { id: "desc" }],
+        include: historyAttemptInclude,
+      });
+
+      const evidenceByPointLineage = new Map<
+        string,
+        LearningHistoryEvidenceDto[]
+      >();
+      for (const attempt of attempts) {
+        const evidence = toHistoryEvidenceDto(attempt);
+        const lineageIds = new Set(
+          attempt.sessionItem.practiceItem.knowledgePoints.map(
+            ({ knowledgePoint }) => knowledgePoint.lineageId
+          )
+        );
+        for (const lineageId of lineageIds) {
+          const existing = evidenceByPointLineage.get(lineageId) ?? [];
+          existing.push(evidence);
+          evidenceByPointLineage.set(lineageId, existing);
+        }
+      }
+
+      const points: LearningHistoryPointDto[] = map
+        ? await Promise.all(
+            map.knowledgePoints.map(async (point) => ({
+              ...(await toProgressDto({
+                userId: command.userId,
+                goalId: command.goalId,
+                lineageId: point.lineageId,
+                point,
+              })),
+              sourceAnchors: point.sourceLinks.map(({ sourceAnchor }) => ({
+                id: sourceAnchor.id,
+                fileAssetId: sourceAnchor.fileAssetId,
+                sourceFileName: sourceAnchor.sourceFileName,
+                locator: objectJson(sourceAnchor.locator),
+              })),
+              evidence: evidenceByPointLineage.get(point.lineageId) ?? [],
+            }))
+          )
+        : [];
+      const manualCorrections = attempts.reduce(
+        (total, attempt) =>
+          total +
+          attempt.evaluations.reduce(
+            (evaluationTotal, evaluation) =>
+              evaluationTotal + evaluation.errorTypeCorrections.length,
+            0
+          ),
+        0
+      );
+
+      return {
+        goal: toGoalDto(goal),
+        summary: {
+          totalPoints: points.length,
+          weakPoints: points.filter(
+            (point) => point.masteryState === "learning"
+          ).length,
+          dueReviews: points.filter((point) => point.reviewState === "due")
+            .length,
+          attempts: attempts.length,
+          manualCorrections,
+        },
+        points,
+      };
+    },
+
+    async correctEvaluationErrorType(
+      command: GoalCommand & {
+        goalId: string;
+        evaluationId: string;
+        input: ErrorTypeCorrectionInput;
+      }
+    ) {
+      await requireGoal(command.userId, command.projectId, command.goalId);
+      const evaluation = await prisma.attemptEvaluation.findFirst({
+        where: {
+          id: command.evaluationId,
+          attempt: {
+            is: {
+              userId: command.userId,
+              sessionItem: {
+                is: {
+                  practiceItem: {
+                    is: { goalId: command.goalId },
+                  },
+                },
+              },
+            },
+          },
+        },
+        select: { id: true, attemptId: true },
+      });
+      if (!evaluation) {
+        throw new LearningServiceError(
+          "not_found",
+          "学习判定不存在",
+          404
+        );
+      }
+
+      const attemptEvaluations = await prisma.attemptEvaluation.findMany({
+        where: { attemptId: evaluation.attemptId },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+      const activeEvaluation = resolveActiveEvaluation(
+        evaluation.attemptId,
+        attemptEvaluations.map((candidate) => ({
+          id: candidate.id,
+          attemptId: candidate.attemptId,
+          supersedesEvaluationId: candidate.supersedesEvaluationId,
+          createdAt: candidate.createdAt,
+          verdict: candidate.verdict,
+          score: candidate.score,
+          rubric: candidate.rubric ? objectJson(candidate.rubric) : null,
+          confidence: candidate.confidence,
+          errorType: candidate.errorType,
+          reason: candidate.reason,
+        }))
+      );
+      if (
+        activeEvaluation.status !== "active" ||
+        activeEvaluation.evaluation.id !== command.evaluationId
+      ) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "只能修正当前有效的学习判定",
+          409
+        );
+      }
+
+      const reason = command.input.reason ?? null;
+      const existing = await prisma.attemptErrorTypeCorrection.findUnique({
+        where: {
+          userId_idempotencyKey: {
+            userId: command.userId,
+            idempotencyKey: command.input.idempotencyKey,
+          },
+        },
+      });
+      if (existing) {
+        if (
+          existing.evaluationId !== command.evaluationId ||
+          existing.errorType !== command.input.errorType ||
+          existing.reason !== reason
+        ) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于不同的学习修正",
+            409
+          );
+        }
+        return { correction: toErrorTypeCorrectionDto(existing) };
+      }
+
+      try {
+        const correction = await prisma.attemptErrorTypeCorrection.create({
+          data: {
+            id: ids.nextId("attempt-error-type-correction"),
+            evaluationId: command.evaluationId,
+            userId: command.userId,
+            errorType: command.input.errorType,
+            reason,
+            idempotencyKey: command.input.idempotencyKey,
+            createdAt: clock.now(),
+          },
+        });
+        return { correction: toErrorTypeCorrectionDto(correction) };
+      } catch (error) {
+        const raced = await prisma.attemptErrorTypeCorrection.findUnique({
+          where: {
+            userId_idempotencyKey: {
+              userId: command.userId,
+              idempotencyKey: command.input.idempotencyKey,
+            },
+          },
+        });
+        if (
+          raced?.evaluationId === command.evaluationId &&
+          raced.errorType === command.input.errorType &&
+          raced.reason === reason
+        ) {
+          return { correction: toErrorTypeCorrectionDto(raced) };
+        }
+        if (raced) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于不同的学习修正",
+            409
+          );
+        }
+        throw error;
+      }
     },
 
     async getProgress(

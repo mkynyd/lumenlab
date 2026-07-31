@@ -14,6 +14,7 @@ export {
   DEFAULT_PROGRESS_POLICY,
   isResolvedEvaluation,
   projectProgress,
+  resolveActiveEvaluation,
 } from "./progress-projector";
 export type {
   EffectiveErrorType,

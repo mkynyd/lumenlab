@@ -130,6 +130,26 @@ _Avoid_: Duplicate attempt, answer replay
 An assessment of a practice attempt against the practice item's answer criteria. A correction or regrade creates a linked evaluation that supersedes an earlier evaluation without rewriting it.
 _Avoid_: Corrected attempt, overwritten score, mastery state
 
+## Learning Profile
+
+A user-visible, evidence-backed projection of current learning goals, mastery, review state, weak points, and effective human corrections. It is derived only from explicit learning activity and never from casual chat or profile-prompt text.
+_Avoid_: Chat memory, personality profile, hidden learner score
+
+## Manual Learning Correction
+
+An append-only learner statement that corrects an error type, evaluation, or learning-goal fact without rewriting the model-produced record it supersedes.
+_Avoid_: Edited evaluation, overwritten history, chat feedback
+
+## Learning Profile Reset
+
+An explicit boundary after which earlier learning evidence no longer contributes to current profile conclusions or recommendations, while the original attempt history remains auditable. Deleting a Goal or Project remains the operation for deleting its owned learning records.
+_Avoid_: Attempt deletion, mastery reset button, context-summary deletion
+
+## Study Pack
+
+A versioned, sectioned learning artifact assembled from a confirmed outline, current learning evidence, and project source anchors. Each section has an independent lifecycle and can be regenerated without replacing learner-edited sections.
+_Avoid_: One-shot summary, chat answer, Knowledge Map
+
 ## Wrong-Answer Collection
 
 A learning-goal view of practice items with incorrect, partial, or low-confidence attempt evidence. It is derived from the original practice and review records rather than copying questions into a second store.

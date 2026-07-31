@@ -64,6 +64,15 @@ vi.mock("@/lib/hooks/use-learning-progress", () => ({
     useCreateReviewSession(...args),
 }));
 
+const useLearningHistory = vi.fn();
+const useCorrectLearningErrorType = vi.fn();
+
+vi.mock("@/lib/hooks/use-learning-history", () => ({
+  useLearningHistory: (...args: unknown[]) => useLearningHistory(...args),
+  useCorrectLearningErrorType: (...args: unknown[]) =>
+    useCorrectLearningErrorType(...args),
+}));
+
 vi.mock("@/lib/hooks/use-project-files", () => ({
   useProjectFiles: () => ({ data: [], isLoading: false }),
 }));
@@ -101,6 +110,19 @@ function setupReadyState() {
   useWrongAnswers.mockReturnValue(queryResult(fixtureWrongAnswerList.items));
   useReviewQueue.mockReturnValue(queryResult(fixtureReviewList.reviews));
   useLearningSession.mockReturnValue(queryResult(undefined));
+  useLearningHistory.mockReturnValue(
+    queryResult({
+      goal: fixtureGoal,
+      summary: {
+        totalPoints: 0,
+        weakPoints: 0,
+        dueReviews: 0,
+        attempts: 0,
+        manualCorrections: 0,
+      },
+      points: [],
+    })
+  );
 }
 
 describe("LearningPageClient", () => {
@@ -116,6 +138,7 @@ describe("LearningPageClient", () => {
     useRecordAnswerExposure.mockReturnValue(mutationResult());
     useSubmitAttempt.mockReturnValue(mutationResult());
     useCreateReviewSession.mockReturnValue(mutationResult());
+    useCorrectLearningErrorType.mockReturnValue(mutationResult());
   });
 
   it("shows a loading state while goals load", () => {
@@ -226,6 +249,20 @@ describe("LearningPageClient", () => {
     expect(screen.getByText("二叉树遍历")).toBeInTheDocument();
   });
 
+  it("opens the evidence-backed learning profile from the history tab", async () => {
+    const user = userEvent.setup();
+    setupReadyState();
+    render(<LearningPageClient projectId="project-1" />);
+
+    await user.click(screen.getByRole("tab", { name: "档案" }));
+
+    expect(screen.getByRole("tab", { name: "档案" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(screen.getByText("还没有学习档案")).toBeInTheDocument();
+  });
+
   it("starts a diagnostic session from the practice tab", async () => {
     const user = userEvent.setup();
     setupReadyState();
@@ -295,10 +332,10 @@ describe("LearningPageClient", () => {
     progressTab.focus();
     await user.keyboard("{ArrowRight}");
 
-    const mapTab = screen.getByRole("tab", { name: "地图" });
-    expect(mapTab).toHaveAttribute("aria-selected", "true");
-    expect(mapTab).toHaveFocus();
-    expect(mapTab).toHaveAttribute("tabindex", "0");
+    const historyTab = screen.getByRole("tab", { name: "档案" });
+    expect(historyTab).toHaveAttribute("aria-selected", "true");
+    expect(historyTab).toHaveFocus();
+    expect(historyTab).toHaveAttribute("tabindex", "0");
     expect(progressTab).toHaveAttribute("tabindex", "-1");
 
     await user.keyboard("{End}");

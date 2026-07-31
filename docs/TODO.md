@@ -25,6 +25,13 @@ This document tracks the completed Agent Runtime consolidation plus deferred Ski
 - Promoted learning to a preview-gated, first-class `/learning` workspace with Today, existing-project setup, a shadcn Base Calendar schedule, same-item wrong-answer redo and text-equivalent segmented progress. Former `/today` and `/projects/[id]/learning` URLs now preserve compatibility through redirects.
 - The frozen implementation and release contract is `docs/learning-loop-p0-iteration-plan.md`.
 
+## Completed Learning P1-A — Explainable History
+
+- Added an ownership-scoped learning-history read model that joins each current Knowledge Point with mastery, review, freshness, source anchors, append-only attempts, the uniquely active Evaluation and human corrections.
+- Added a strict, idempotent error-type correction API for the active Evaluation only. Corrections append new user evidence, preserve model output, reject cross-tenant IDs and fail closed when the Evaluation chain has no unique active result.
+- Added a first-class「档案」tab with readable evidence, source locations and six learner-facing error categories; internal reason codes, answer criteria, rubric and generation metadata are not rendered.
+- The frozen P1 execution contract and remaining P1-B–P1-E waves are tracked in `docs/learning-p1-iteration-plan.md`; ADR 0007 defines profile projection and reset boundaries.
+
 ## Completed First Slice (historical)
 
 - Added the original `AGENT_ORCHESTRATOR_ENABLED` feature flag. It has since been superseded by `AGENT_RUNTIME_MODE`; see the runtime consolidation above.

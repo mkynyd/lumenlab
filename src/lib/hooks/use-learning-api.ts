@@ -23,7 +23,12 @@ export type {
   HintResultDto,
   ItemFeedbackDto,
   KnowledgeMapDto,
+  LearningErrorTypeCorrectionDto,
   LearningGoalDto,
+  LearningHistoryDto,
+  LearningHistoryEvidenceDto,
+  LearningHistoryEvaluationDto,
+  LearningHistoryPointDto,
   LearningInteractionDto,
   LearningMaterialMode,
   LearningProgressPointDto,
@@ -126,6 +131,14 @@ export const learningUrls = {
     `/api/projects/${projectId}/learning/goals/${goalId}/wrong-answers`,
   progress: (projectId: string, goalId: string) =>
     `/api/projects/${projectId}/learning/goals/${goalId}/progress`,
+  history: (projectId: string, goalId: string) =>
+    `/api/projects/${projectId}/learning/goals/${goalId}/history`,
+  errorTypeCorrections: (
+    projectId: string,
+    goalId: string,
+    evaluationId: string
+  ) =>
+    `/api/projects/${projectId}/learning/goals/${goalId}/evaluations/${evaluationId}/error-type-corrections`,
   today: () => `/api/learning/today`,
 };
 

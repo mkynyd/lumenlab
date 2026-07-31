@@ -738,6 +738,319 @@ describe("LearningService goal and scope seam", () => {
     }
   });
 
+  it("returns evidence-backed history and appends an owned error-type correction", async () => {
+    const { owner, stranger, project } = await createFixture();
+    const service = createLearningService({
+      prisma,
+      clock,
+      ids: createIds(),
+      modelGateway: unusedModelGateway,
+    });
+
+    try {
+      const file = await prisma.fileAsset.create({
+        data: {
+          userId: owner.id,
+          projectId: project.id,
+          filename: "history.md",
+          originalName: "学习档案资料.md",
+          mimeType: "text/markdown",
+          size: 32,
+          storagePath: "integration/history.md",
+          textContent: "节点电流满足守恒关系。",
+          contentFingerprint: "sha256:history-v1",
+          status: "parsed",
+        },
+      });
+      const goal = await service.createGoal({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          title: "理解节点电流",
+          purpose: "验证学习档案",
+          targetDate: null,
+          dailyMinutes: 20,
+          activate: true,
+          idempotencyKey: "history-goal",
+        },
+      });
+      const scope = await prisma.learningScope.create({
+        data: {
+          goalId: goal.id,
+          version: 1,
+          status: "confirmed",
+          definition: { objective: "节点电流" },
+          materialMode: "project_corpus",
+          confirmedAt: clock.now(),
+        },
+      });
+      const map = await prisma.knowledgeMap.create({
+        data: {
+          goalId: goal.id,
+          scopeId: scope.id,
+          version: 1,
+          sourceFingerprint: "sha256:history-map",
+        },
+      });
+      const anchor = await prisma.sourceAnchor.create({
+        data: {
+          projectId: project.id,
+          anchorKey: "history-anchor",
+          fileAssetId: file.id,
+          originalFileAssetId: file.id,
+          sourceFileName: file.originalName,
+          locator: { kind: "paragraph", paragraph: 1 },
+          contentFingerprint: file.contentFingerprint!,
+          excerptHash: "sha256:history-excerpt",
+        },
+      });
+      const pointLineage = await prisma.knowledgePointLineage.create({
+        data: { goalId: goal.id, stableKey: "node-current" },
+      });
+      const point = await prisma.knowledgePoint.create({
+        data: {
+          knowledgeMapId: map.id,
+          lineageId: pointLineage.id,
+          name: "节点电流守恒",
+          kind: "concept",
+          orderIndex: 0,
+          sourceLinks: { create: { sourceAnchorId: anchor.id } },
+        },
+      });
+      const itemLineage = await prisma.practiceItemLineage.create({
+        data: { goalId: goal.id, stableKey: "node-current-check" },
+      });
+      const item = await prisma.practiceItem.create({
+        data: {
+          goalId: goal.id,
+          knowledgeMapId: map.id,
+          lineageId: itemLineage.id,
+          version: 1,
+          prompt: "流入节点的电流是否等于流出节点的电流？",
+          type: "true_false",
+          mode: "evidence_bearing",
+          answerSpec: {
+            create: {
+              criteria: { kind: "boolean", expected: true },
+              explanation: "节点电流满足守恒。",
+              graderPolicyVersion: "learning-grading-v1",
+            },
+          },
+          knowledgePoints: {
+            create: { knowledgePointId: point.id },
+          },
+          sourceLinks: { create: { sourceAnchorId: anchor.id } },
+        },
+      });
+      const session = await prisma.learningSession.create({
+        data: {
+          userId: owner.id,
+          goalId: goal.id,
+          knowledgeMapId: map.id,
+          mode: "diagnostic",
+          status: "completed",
+          startedAt: new Date("2026-07-31T07:50:00.000Z"),
+          completedAt: new Date("2026-07-31T08:00:00.000Z"),
+        },
+      });
+      const sessionItem = await prisma.learningSessionItem.create({
+        data: {
+          sessionId: session.id,
+          practiceItemId: item.id,
+          orderIndex: 0,
+          status: "completed",
+        },
+      });
+      const attempt = await prisma.practiceAttempt.create({
+        data: {
+          userId: owner.id,
+          sessionItemId: sessionItem.id,
+          answer: false,
+          assistanceLevel: "independent",
+          spacingSeconds: 0,
+          idempotencyKey: "history-attempt",
+          submittedAt: new Date("2026-07-31T07:58:00.000Z"),
+        },
+      });
+      const evaluation = await prisma.attemptEvaluation.create({
+        data: {
+          attemptId: attempt.id,
+          verdict: "incorrect",
+          score: 0,
+          confidence: 1,
+          errorType: "knowledge_gap",
+          reason: "boolean_mismatch",
+          policyVersion: "learning-grading-v1",
+          createdAt: new Date("2026-07-31T07:59:00.000Z"),
+        },
+      });
+      await prisma.knowledgePointProgress.create({
+        data: {
+          userId: owner.id,
+          goalId: goal.id,
+          lineageId: pointLineage.id,
+          masteryState: "learning",
+          nextReviewAt: new Date("2026-07-31T08:00:00.000Z"),
+          policyVersion: "progress-v1",
+          evidenceAsOf: evaluation.createdAt,
+        },
+      });
+
+      const initialHistory = await service.getHistory({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      expect(initialHistory).toMatchObject({
+        summary: {
+          totalPoints: 1,
+          weakPoints: 1,
+          dueReviews: 1,
+          attempts: 1,
+          manualCorrections: 0,
+        },
+        points: [
+          {
+            lineageId: pointLineage.id,
+            name: "节点电流守恒",
+            evidence: [
+              {
+                activeEvaluationId: evaluation.id,
+                effectiveErrorType: {
+                  value: "knowledge_gap",
+                  source: "evaluation",
+                },
+                practiceItem: {
+                  sourceAnchors: [
+                    { sourceFileName: "学习档案资料.md" },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      });
+      expect(
+        initialHistory.points[0].evidence[0].practiceItem
+      ).not.toHaveProperty("answerCriteria");
+      expect(
+        initialHistory.points[0].evidence[0].evaluations[0]
+      ).not.toHaveProperty("rubric");
+      expect(initialHistory).not.toHaveProperty("generationMetadata");
+
+      const correctionCommand = {
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        evaluationId: evaluation.id,
+        input: {
+          errorType: "misconception" as const,
+          reason: "我把流入和流出的方向定义混淆了",
+          idempotencyKey: "history-correction",
+        },
+      };
+      const correction = await service.correctEvaluationErrorType(
+        correctionCommand
+      );
+      await expect(
+        service.correctEvaluationErrorType(correctionCommand)
+      ).resolves.toEqual(correction);
+      await expect(
+        service.correctEvaluationErrorType({
+          ...correctionCommand,
+          input: {
+            ...correctionCommand.input,
+            errorType: "method_choice",
+          },
+        })
+      ).rejects.toMatchObject({
+        code: "idempotency_conflict",
+        status: 409,
+      } satisfies Partial<LearningServiceError>);
+
+      const correctedHistory = await service.getHistory({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      expect(correctedHistory.summary.manualCorrections).toBe(1);
+      expect(correctedHistory.points[0].evidence[0]).toMatchObject({
+        activeEvaluationId: evaluation.id,
+        effectiveErrorType: {
+          value: "misconception",
+          source: "user_correction",
+          sourceId: correction.correction.id,
+        },
+        evaluations: [
+          {
+            id: evaluation.id,
+            errorType: "knowledge_gap",
+            corrections: [
+              {
+                id: correction.correction.id,
+                errorType: "misconception",
+              },
+            ],
+          },
+        ],
+      });
+
+      const regrade = await prisma.attemptEvaluation.create({
+        data: {
+          attemptId: attempt.id,
+          verdict: "partial",
+          score: 0.5,
+          confidence: 0.9,
+          errorType: "method_choice",
+          reason: "manual_regrade",
+          policyVersion: "learning-grading-v1",
+          supersedesEvaluationId: evaluation.id,
+          createdAt: new Date("2026-07-31T08:01:00.000Z"),
+        },
+      });
+      const regradedHistory = await service.getHistory({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      expect(regradedHistory.points[0].evidence[0]).toMatchObject({
+        activeEvaluationId: regrade.id,
+        effectiveErrorType: {
+          value: "method_choice",
+          source: "evaluation",
+          sourceId: regrade.id,
+        },
+      });
+      await expect(
+        service.correctEvaluationErrorType({
+          ...correctionCommand,
+          input: {
+            ...correctionCommand.input,
+            idempotencyKey: "superseded-correction",
+          },
+        })
+      ).rejects.toMatchObject({
+        code: "invalid_state",
+        status: 409,
+      } satisfies Partial<LearningServiceError>);
+
+      await expect(
+        service.correctEvaluationErrorType({
+          ...correctionCommand,
+          userId: stranger.id,
+          input: {
+            ...correctionCommand.input,
+            idempotencyKey: "stranger-correction",
+          },
+        })
+      ).rejects.toMatchObject({ code: "not_found", status: 404 });
+    } finally {
+      await prisma.user.deleteMany({
+        where: { id: { in: [owner.id, stranger.id] } },
+      });
+    }
+  });
+
   it("revalidates only objects anchored to changed or deleted material", async () => {
     const { owner, project } = await createFixture();
     const service = createLearningService({

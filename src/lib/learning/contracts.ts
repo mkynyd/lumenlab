@@ -48,6 +48,16 @@ export const EVALUATION_VERDICTS = [
 ] as const;
 export type EvaluationVerdict = (typeof EVALUATION_VERDICTS)[number];
 
+export const LEARNING_ERROR_TYPES = [
+  "knowledge_gap",
+  "misconception",
+  "method_choice",
+  "calculation_or_operation",
+  "reading_or_time",
+  "uncertain_evaluation",
+] as const;
+export type LearningErrorType = (typeof LEARNING_ERROR_TYPES)[number];
+
 export const MASTERY_STATES = ["new", "learning", "mastered"] as const;
 export type MasteryState = (typeof MASTERY_STATES)[number];
 

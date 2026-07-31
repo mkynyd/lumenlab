@@ -44,6 +44,15 @@ export const queryKeys = {
         goalId,
         "progress",
       ] as const,
+    history: (projectId: string, goalId: string) =>
+      [
+        ...learningAll,
+        "projects",
+        projectId,
+        "goals",
+        goalId,
+        "history",
+      ] as const,
     wrongAnswers: (projectId: string, goalId: string) =>
       [
         ...learningAll,

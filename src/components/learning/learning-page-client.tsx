@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/learning/empty-state";
 import { GoalCreateForm } from "@/components/learning/goal-create-form";
 import { KnowledgeMapView } from "@/components/learning/knowledge-map-view";
+import { LearningHistory } from "@/components/learning/learning-history";
 import { friendlyLearningError } from "@/components/learning/learning-error";
 import { LearningProgressSummary } from "@/components/learning/progress-summary";
 import { PracticeSession } from "@/components/learning/practice-session";
@@ -37,7 +38,13 @@ import { ReviewQueue } from "@/components/learning/review-queue";
 import { ScopePanel } from "@/components/learning/scope-panel";
 import { WrongAnswerList } from "@/components/learning/wrong-answer-list";
 
-type LearningTab = "progress" | "map" | "practice" | "wrong" | "review";
+type LearningTab =
+  | "progress"
+  | "history"
+  | "map"
+  | "practice"
+  | "wrong"
+  | "review";
 
 const STEP_TAB: Record<LearningDeepLinkStep, LearningTab> = {
   scope: "progress",
@@ -48,6 +55,7 @@ const STEP_TAB: Record<LearningDeepLinkStep, LearningTab> = {
 
 const TABS: Array<{ id: LearningTab; label: string }> = [
   { id: "progress", label: "进度" },
+  { id: "history", label: "档案" },
   { id: "map", label: "地图" },
   { id: "practice", label: "练习" },
   { id: "wrong", label: "错题" },
@@ -365,6 +373,10 @@ export function LearningPageClient({
                 >
                   {item.id === "progress" ? (
                     <ProgressTab projectId={projectId} goalId={goalId} />
+                  ) : null}
+
+                  {item.id === "history" ? (
+                    <LearningHistory projectId={projectId} goalId={goalId} />
                   ) : null}
 
                   {item.id === "map" ? (
