@@ -95,9 +95,9 @@ describe("skill allowlists align with registered tools (via discovery)", () => {
     expect(skill.allowedRiskLevel).toEqual(["L1", "L2"]);
   });
 
-  it("exam-coach v1.1.0 allows the original tools", () => {
+  it("exam-coach v1.2.0 allows its learning-loop tools", () => {
     const skill = skillRegistry.require("exam-coach");
-    expect(skill.version).toBe("1.1.0");
+    expect(skill.version).toBe("1.2.0");
     assertAllToolsExist(skill, "exam-coach");
   });
 
