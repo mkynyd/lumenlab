@@ -58,7 +58,10 @@ function checkpoint(): AgentCheckpoint {
 }
 
 import { PrismaAgentExecutionStore } from "./prisma-agent-execution-store";
-import type { AgentCheckpoint } from "./agent-execution-store";
+import {
+  parseAgentCheckpoint,
+  type AgentCheckpoint,
+} from "./agent-execution-store";
 
 describe("PrismaAgentExecutionStore", () => {
   beforeEach(() => {
@@ -1351,6 +1354,25 @@ describe("PrismaAgentExecutionStore", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
+  it("accepts completed checkpoints with non-secret token usage counters", () => {
+    expect(() =>
+      parseAgentCheckpoint({
+        ...checkpoint(),
+        output: {
+          text: "stable answer",
+          reasoning: "",
+          usage: {
+            promptTokens: 10,
+            completionTokens: 5,
+            totalTokens: 15,
+            promptCacheHitTokens: 2,
+            promptCacheMissTokens: 8,
+          },
+        },
+      })
+    ).not.toThrow();
+  });
+
   it("rejects non-JSON and provider-private values nested in a pending tool call", async () => {
     const store = new PrismaAgentExecutionStore();
     const base = checkpoint();
@@ -1365,6 +1387,21 @@ describe("PrismaAgentExecutionStore", () => {
             id: "call-1",
             toolId: "web.fetch",
             arguments: { request: { providerResumeToken: "private-token" } },
+          },
+        },
+      })
+    ).rejects.toThrow("Agent checkpoint is invalid");
+
+    await expect(
+      store.create({
+        userId: "user-1",
+        conversationId: "conversation-1",
+        checkpoint: {
+          ...base,
+          pendingToolCall: {
+            id: "call-1",
+            toolId: "web.fetch",
+            arguments: { promptTokens: "private-token" },
           },
         },
       })

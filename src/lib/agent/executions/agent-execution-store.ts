@@ -46,11 +46,32 @@ const durableRequestSchema = z
 const providerPrivateCheckpointKey =
   /(auth|bearer|cookie|token|provider.*(?:resume|continuation|handle)|(?:api|access|refresh)[_-]?key|credential|secret|password|private.*key)/i;
 
+const checkpointUsageCounterKeys = new Set([
+  "promptTokens",
+  "completionTokens",
+  "totalTokens",
+  "promptCacheHitTokens",
+  "promptCacheMissTokens",
+]);
+
+function isCheckpointUsageCounterKey(
+  path: readonly string[],
+  key: string
+): boolean {
+  return (
+    path.length === 2 &&
+    path[0] === "output" &&
+    path[1] === "usage" &&
+    checkpointUsageCounterKeys.has(key)
+  );
+}
+
 export const MAX_AGENT_CHECKPOINT_BYTES = 2_000_000;
 
 function isJsonSerializableCheckpointValue(
   value: unknown,
-  ancestors = new WeakSet<object>()
+  ancestors = new WeakSet<object>(),
+  path: readonly string[] = []
 ): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
@@ -60,8 +81,11 @@ function isJsonSerializableCheckpointValue(
   if (ancestors.has(value)) return false;
   ancestors.add(value);
   if (Array.isArray(value)) {
-    const valid = value.every((nested) =>
-      isJsonSerializableCheckpointValue(nested, ancestors)
+    const valid = value.every((nested, index) =>
+      isJsonSerializableCheckpointValue(nested, ancestors, [
+        ...path,
+        String(index),
+      ])
     );
     ancestors.delete(value);
     return valid;
@@ -71,8 +95,9 @@ function isJsonSerializableCheckpointValue(
   if (prototype !== Object.prototype && prototype !== null) return false;
   const valid = Object.entries(value as Record<string, unknown>).every(
     ([key, nested]) =>
-      !providerPrivateCheckpointKey.test(key) &&
-      isJsonSerializableCheckpointValue(nested, ancestors)
+      (!providerPrivateCheckpointKey.test(key) ||
+        isCheckpointUsageCounterKey(path, key)) &&
+      isJsonSerializableCheckpointValue(nested, ancestors, [...path, key])
   );
   ancestors.delete(value);
   return valid;
