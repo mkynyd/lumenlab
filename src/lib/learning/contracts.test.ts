@@ -104,4 +104,33 @@ describe("learning contracts", () => {
       "generationMetadata"
     );
   });
+
+  it("exposes choice labels without exposing the selected answer", () => {
+    const item: PracticeItemPrivateDto = {
+      id: "item-choice",
+      lineageId: "lineage-choice",
+      version: 1,
+      prompt: "请选择正确选项",
+      type: "single_choice",
+      options: [
+        { id: "option-a", label: "选项 A" },
+        { id: "option-b", label: "选项 B" },
+      ],
+      mode: "evidence_bearing",
+      explanation: "选项 B 与资料一致。",
+      freshness: "current",
+      answerCriteria: {
+        kind: "single_choice",
+        selectedOptionId: "option-b",
+      },
+      generationMetadata: null,
+      sourceAnchors: [],
+    };
+
+    const publicItem = toPublicPracticeItem(item);
+
+    expect(publicItem.options).toEqual(item.options);
+    expect(publicItem).not.toHaveProperty("answerCriteria");
+    expect(JSON.stringify(publicItem)).not.toContain("selectedOptionId");
+  });
 });

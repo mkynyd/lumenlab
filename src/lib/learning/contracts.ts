@@ -97,6 +97,11 @@ export interface PublicSourceAnchorDto {
   excerptHash: string;
 }
 
+export interface PracticeItemOptionDto {
+  id: string;
+  label: string;
+}
+
 export type AnswerCriteriaDto =
   | {
       kind: "single_choice";
@@ -136,6 +141,7 @@ export interface PracticeItemPublicDto {
   version: number;
   prompt: string;
   type: string;
+  options?: readonly PracticeItemOptionDto[] | null;
   mode: PracticeMode;
   freshness: ContentFreshness;
   sourceAnchors: PublicSourceAnchorDto[];
@@ -160,6 +166,7 @@ export function toPublicPracticeItem(
     version: item.version,
     prompt: item.prompt,
     type: item.type,
+    ...(item.options === undefined ? {} : { options: item.options }),
     mode: item.mode,
     freshness: item.freshness,
     sourceAnchors: item.sourceAnchors,
