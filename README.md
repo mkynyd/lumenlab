@@ -47,6 +47,17 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 - 上传 PDF、Office/WPS/iWork 文档、图片、文本和代码文件，自动解析、分块、索引和知识增强。
 - 在对话中勾选项目文件作为上下文，AI 回答基于真实资料。
 
+### 可恢复学习闭环
+
+学习闭环默认关闭，可通过 `LEARNING_LOOP_ROLLOUT=preview` 在本地或小范围环境开启：
+
+- 在现有项目内创建学习目标，确认整库或选定资料范围，再生成带来源锚点的版本化知识点地图。
+- 诊断与复习题在提交前只返回公开题面；答案条件、标准答案和解析保留在服务端。
+- 每次作答追加为独立证据；同一错题可以反复重做并提升掌握状态，不强制生成变式题。
+- 错题集保留作答与判定历史，答对后进入“已解决”区域但仍可回看。
+- “今天”只突出一个下一步，并用分段条展示未开始、学习中、已掌握和到期复习数量，不伪造精确掌握率。
+- 资料重解析或删除只把关联知识标为待验证或不可用，保留不受影响的学习历史。
+
 ### 受控 Agent 模式
 
 入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek 使用 native `web.search` 并在其他工具上保留 adapter 内部 XML/DSML fallback，MiniMax 使用 native `tool_use`，Qwen 使用 DashScope 原生 Function Calling；三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
@@ -58,7 +69,8 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 - L3 每次询问：删除项目资料、导出 Artifact DOCX。
 - Skill 只能收紧权限，不能放宽。
 - 需要确认的工具通过一次性审批令牌（sha256 存储 + `argumentsHash` + user/conversation/tool/request 绑定）授权，模型或客户端在等待期间替换参数会被拒绝。
-- 审批端点原子抢占待执行记录，恢复原项目上下文并真实执行 handler；成功或失败终态会直接回写 UI。拒绝只终结当前 `ToolExecution`，不会执行该工具。
+- 审批端点原子抢占待执行记录，恢复原项目上下文并真实执行 handler；成功或失败终态会直接回写 UI。持久任务在批准或拒绝后重新入队，由 Worker 继续模型回合，拒绝不会执行被拒绝的工具。
+- 开启 `AGENT_DURABLE_EXECUTION_ENABLED=true` 后，聊天任务使用持久化 `AgentExecution`、租约 Worker、严格递增事件序号和 checkpoint；客户端可按事件游标续传，并可查询、取消或重试自己的任务。
 
 ### 内置 Skills
 
@@ -175,11 +187,13 @@ src/
 │   │   └── register/page.tsx
 │   ├── (chat)/                         # 主应用壳层
 │   │   ├── layout.tsx                  # 全局侧边栏布局
+│   │   ├── today/page.tsx              # 跨项目今日学习入口
 │   │   ├── chat/page.tsx               # 普通聊天
 │   │   ├── chat/[id]/page.tsx          # 历史对话
 │   │   ├── projects/page.tsx           # 项目列表
 │   │   ├── projects/new/page.tsx       # 新建项目
 │   │   ├── projects/[id]/page.tsx      # 项目工作台
+│   │   ├── projects/[id]/learning/      # 项目学习闭环
 │   │   ├── settings/page.tsx           # 用户设置
 │   │   └── tools/page.tsx              # 文档工具
 │   └── api/                            # REST API
@@ -189,7 +203,10 @@ src/
 │       │   └── response-stream.ts      # AgentEvent → 兼容 SSE
 │       ├── agent/
 │       │   ├── approve/route.ts        # 一次性审批令牌兑换
-│       │   └── reject/route.ts         # 显式拒绝待执行 ToolExecution
+│       │   ├── reject/route.ts         # 显式拒绝待执行 ToolExecution
+│       │   └── executions/             # 状态、事件续传、取消与重试
+│       ├── learning/today/              # 今日学习聚合
+│       ├── projects/[id]/learning/      # Goal/Scope/Map/Practice/Review API
 │       ├── auth/[...nextauth]/         # NextAuth 认证路由
 │       ├── auth/register/              # 注册码注册
 │       ├── projects/                   # 项目 CRUD
@@ -215,6 +232,7 @@ src/
 │   │   ├── tools/tool-runner.ts        # Policy/审批/执行/审计状态机
 │   │   ├── persistence/                # Conversation / ToolExecution Adapter
 │   │   ├── observability/              # shadow 决策差异
+│   │   ├── executions/                 # 持久任务、Worker、checkpoint 与事件回放
 │   │   ├── types.ts                    # RiskLevel / ToolMetadata / SkillMetadata / ...
 │   │   ├── tool-registry.ts            # 工具注册中心
 │   │   ├── skill-registry.ts           # Skill 注册中心
@@ -225,6 +243,13 @@ src/
 │   │   ├── conversation-loop.ts        # agent-loop 兼容导出
 │   │   ├── preview-builder.ts          # 脱敏 ToolCallPreview
 │   │   └── audit-log.ts                # AgentAuditLog 写入器
+│   ├── learning/                        # 学习合同、服务、判分、证据、复习与 freshness
+│   │   ├── contracts.ts                # 公开/私有 DTO 与领域枚举
+│   │   ├── services/                   # Goal/Scope/Map/Practice/Review 服务
+│   │   ├── policy/                     # 证据、进度、复习、错题与 freshness 政策
+│   │   ├── grading/                    # 确定性与结构化判分
+│   │   ├── freshness/                  # 资料变化适配器
+│   │   └── evals/                      # Golden fixtures 与安全门禁
 │   ├── skills/                         # Skill discovery / migration / Provider-aware tools
 │   │   ├── discovery.ts                # 从 .lumenlab/skills 读取 SKILL.md + policy.json
 │   │   ├── migration.ts                # DiscoveredSkill → SkillMetadata
@@ -394,6 +419,8 @@ cp .env.example .env
 | `REGISTRATION_SYNC_SECRET` | 与 course-ai-regadmin 共享的同步密钥 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | RSA 私钥 (PEM base64) |
 | `AGENT_RUNTIME_MODE` | `legacy` / `shadow` / `new`，默认 `legacy` |
+| `AGENT_DURABLE_EXECUTION_ENABLED` | 持久 Agent Worker 与事件恢复开关，默认 `false` |
+| `LEARNING_LOOP_ROLLOUT` | `off` / `preview` / `default`，默认 `off`；`default` 要求持久执行开启 |
 | `AGENT_PROVIDER_ADAPTER` | `legacy` / `pi`，默认 `legacy`；`pi` 仅用于 DeepSeek / MiniMax POC |
 | `MODEL_QWEN_ENABLED` | Qwen3.7-Plus 灰度开关，默认 `false` |
 | `BAILIAN_WORKSPACE_ID` | 启用 Qwen 聊天时必填 |
@@ -436,6 +463,14 @@ npm run dev
 2. 勾选「选择文件」指定对话上下文。
 3. 可选启用深度推理模式获得慢思考。
 4. AI 回答基于项目资料，不确定内容标注 `[需补充]`。
+
+### 使用学习闭环（预览）
+
+1. 在环境中设置 `LEARNING_LOOP_ROLLOUT=preview`，进入项目侧栏的「学习」。
+2. 创建目标并确认学习范围；未单独选文件时使用项目内全部可读资料。
+3. 生成知识点地图并完成诊断练习。
+4. 从「错题」回看同题重做历史，从「复习」处理到期知识点。
+5. 通过主导航「今日」查看跨项目的唯一下一步和简洁进度。
 
 ### 使用 Agent 模式
 

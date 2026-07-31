@@ -1,11 +1,62 @@
 # LumenLab 学习闭环 P0 迭代计划
 
-> 状态：已确认，可作为后续实现任务的执行合同
+> 状态：P0 已实现并完成本地联合验收（2026-07-31）；实际环境仍默认关闭
 > 计划基线：2026-07-31
 > DeepTutor 调研基线：`HKUDS/DeepTutor@731410e45dd455c34707ad28e001e2b3545c2945`
 > LumenLab 调研基线：`light-ai-chat@524a910`；计划收口时本地 `HEAD` 为安全清理提交 `d73172b`，`origin/main` 仍为 `6e0b766`
-> 本文性质：迭代计划，不代表本文所列功能已经实现
+> 本文性质：冻结合同、实施记录与验收回写；第 5 节保留实施前基线，便于追溯
 > 上游分析：工作区本地 `DeepTutor项目复用与迭代分析报告.md`，不随公开仓库提交；本文保持自包含
+
+## 0. 实施与验收回写（2026-07-31）
+
+本计划所定义的学习闭环 P0 与 AgentExecution 可靠执行已完成代码实现、迁移、自动化测试、真实 Provider 冒烟和桌面/移动浏览器验收。`LEARNING_LOOP_ROLLOUT` 仍默认 `off`，本轮没有执行生产部署；从 `preview` 提升到 `default` 仍是独立的发布决策，不由一次本地验收自动触发。
+
+### 0.1 实施结果与提交边界
+
+| 工作面 | 交付结果 | 主要提交 |
+|---|---|---|
+| 公开文档安全边界 | 清理公开基础设施标识、硬编码开发密码和内部运维材料的 Git 跟踪 | `d73172b` |
+| 领域合同与证据政策 | 冻结 Goal/Scope/Map/Point、Attempt/Evaluation、Mastery/Review、同题重做和 freshness 合同 | `7c058e1`、`17d6056` |
+| Durable Worker | 聊天任务持久化、租约 Worker、checkpoint、事件回放、审批/拒绝后续跑、取消与重试 | `109e8d2`、`2c441dd` |
+| 学习服务与 API | 目标、范围、地图、练习、判分、错题、复习、Today 和局部资料失效 | `a5044b7`、`e4184d0`、`fa252bb` |
+| 质量与发布门禁 | 并发、故障恢复、证据合同、freshness、feature-off 与考试政策版本测试 | `929b595`、`0487d13` |
+| 安全续跑与用量 | 修复 checkpoint 用量字段白名单，并将多回合 token 用量累计后只持久化一次 | `6a1ed48`、`c1a9a10` |
+| API 与大众 UI | 结构化友好错误；学习工作台、错题同题重做、Today、进度条、深链与移动端体验 | `286ecdd`、`9488a22` |
+| 依赖安全 | 在兼容范围内更新 Next.js、Auth.js、Prisma、DOMPurify、PostCSS、fast-uri、adm-zip 等依赖 | `02afc4a` |
+
+以上提交均为路径受限的独立变更；用户已有的 `public/LumenLab-logo-refined.png` 删除未被纳入任何提交。
+
+### 0.2 真实 Provider 与恢复证据
+
+- DeepSeek 与 MiniMax 都完成了非生产、无真实用户资料的普通持久任务，均到达 `completed`。
+- DeepSeek 强制触发 `artifact.save` 后进入等待审批；批准后 Worker 自动续跑到终态，并只创建一次 Artifact。
+- MiniMax 强制触发同一工具后进入等待审批；拒绝后没有执行工具或创建 Artifact，Worker 仍自动续跑到终态。
+- 最终以 DeepSeek 再做一次拒绝路径回归：审批前回合与续跑回合的 token 用量在 checkpoint 中累计，终态只生成一条 `TokenUsage`，且与 Message 和最终 checkpoint 的计数一致。
+- API 的公开 execution DTO 不返回 checkpoint；日志中没有出现凭据、答案条件或用量唯一键冲突。
+
+### 0.3 最终联合门禁
+
+| 门禁 | 结果 |
+|---|---|
+| 全量单元/合同测试 | `209` 个文件、`1146` 个测试通过 |
+| PostgreSQL 集成测试 | `3` 个文件、`14` 个测试通过 |
+| 学习与 UI 定向回归 | `29` 个文件、`204` 个测试通过 |
+| Lint / TypeScript | 零错误 |
+| Prisma | validate、generate 通过；`27` 个迁移全部已应用，无待执行迁移 |
+| 生产构建 | Next.js `16.2.12` 构建通过，生成 `54` 个静态页面 |
+| 浏览器 | feature-off、preview、深链、桌面端与 `390×844` 移动端通过；无横向溢出和控制台错误 |
+| 安全扫描 | 私钥文件 `0`、被跟踪的非示例 `.env` `0`、被跟踪的内部材料 `0`；唯一 provider-key-like 命中是合成测试夹具 |
+| QA 清理 | 一次性用户及其 Project、Artifact、Execution、TokenUsage 已级联删除，复查计数均为 `0` |
+
+生产依赖审计已修复可安全升级的 critical/high 问题。当前仍有 `6` 个上游传递依赖告警（`4` moderate、`2` high）：MCP SDK 下的 Hono 以及 Next.js 自带的 sharp 版本暂时没有兼容修复路径；没有使用会把 Next.js 降级到 14 的 `--force`，也没有加入未经支持的 override。
+
+### 0.4 发布结论
+
+- P0 的代码与本地联合门禁已经完成；
+- `off` 下普通聊天、Project、资料、Artifact、导出和根路由保持原行为；
+- `preview` 只向显式环境开放学习入口；
+- `default` 仍要求 durable execution 同时开启，并应在非生产并发 soak、事件保留观察和运行指标门槛完成后再决定；
+- 本轮没有执行生产部署，也没有改变现有生产 Feature Flag。
 
 ## 1. 计划结论
 
@@ -92,7 +143,9 @@ P0 只有在下面所有条件同时成立时完成：
 - [ADR 0005：Mastery State 与 Review State 分离](adr/0005-separate-mastery-state-from-review-state.md)
 - [ADR 0006：只重验证受资料变化影响的知识](adr/0006-revalidate-only-knowledge-affected-by-material-changes.md)
 
-## 5. 当前代码基线与真实缺口
+## 5. 实施前代码基线与真实缺口（历史）
+
+> 本节冻结的是 2026-07-31 开始实施前的代码快照，用于解释任务拆分与风险判断，不再代表当前状态。实施后的事实与验证证据以第 0 节为准。
 
 ### 5.1 可直接复用的底座
 
@@ -108,7 +161,7 @@ P0 只有在下面所有条件同时成立时完成：
 | Artifact/导出 | `src/app/api/projects/[id]/artifacts/route.ts`、`src/lib/export/**` | P1 Study Pack 复用；P0 错题事实不落 Artifact |
 | 当前工作台 | `src/app/(chat)/projects/[id]/page.tsx`、`src/components/layout/sidebar.tsx` | 主 Agent 在独立组件完成后做单点接线 |
 
-### 5.2 学习域缺口
+### 5.2 实施前学习域缺口
 
 当前 Prisma 没有以下事实：
 
@@ -122,7 +175,7 @@ P0 只有在下面所有条件同时成立时完成：
 
 现有“错题解析”快捷任务或 Artifact 只是生成内容，不是错题集事实源，不能复用为持久化错题状态。
 
-### 5.3 AgentExecution 缺口
+### 5.3 实施前 AgentExecution 缺口
 
 已有：
 

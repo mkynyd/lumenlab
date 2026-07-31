@@ -1,6 +1,6 @@
 # TODO
 
-> Last updated: 2026-07-12
+> Last updated: 2026-07-31
 
 This document tracks the completed Agent Runtime consolidation plus deferred Skill, Tool, and production-hardening work.
 
@@ -13,6 +13,16 @@ This document tracks the completed Agent Runtime consolidation plus deferred Ski
 - Added durable approval execution with token binding, atomic single-use token and execution claims, restored tool context, and terminal tool audit state.
 - Added `AGENT_RUNTIME_MODE=legacy|shadow|new`; `shadow` compares side-effect-free planning decisions, while the old `AGENT_ORCHESTRATOR_ENABLED` variable remains only as a compatibility bridge.
 - Preserved the public `/api/chat` request shape and SSE event protocol while adding runtime/tool protocol version headers.
+
+## Completed Durable Execution and Learning P0
+
+- Connected `AgentExecution` / `AgentExecutionEvent` to chat dispatch, a lease-based Worker, bounded provider-neutral checkpoints, strictly ordered event replay, approval/rejection continuation, cancel/retry routes and public run metrics.
+- Added stable request hashes and event cursors so HTTP/SSE disconnects can reconnect without duplicating text, messages or already-known tool results.
+- Treats stale approved-tool checkpoints as unknown outcomes and fails safely instead of blindly replaying a possible side effect.
+- Completed authenticated non-production DeepSeek and MiniMax smoke paths, including approval, rejection, automatic continuation and exactly-once cumulative token-usage persistence.
+- Added the Project-owned learning domain: Goal, confirmed Scope, versioned Map/Point lineage, source anchors, private answer specifications, append-only attempts/evaluations, mastery/review projection, wrong-answer history, Today and local material-freshness invalidation.
+- Added the preview-gated `/today` and `/projects/[id]/learning` UI with same-item wrong-answer redo and text-equivalent segmented progress.
+- The frozen implementation and release contract is `docs/learning-loop-p0-iteration-plan.md`.
 
 ## Completed First Slice (historical)
 
@@ -162,11 +172,9 @@ Add these after the MVP loop, approval UX, and tool-result continuation are stab
 
 ## Remaining Runtime Hardening
 
-- Run real-provider smoke tests with DeepSeek and MiniMax credentials; the automated adapter and contract suites do not replace an authenticated provider regression.
-- Persist enough suspended-run state to resume provider continuation automatically after an approved tool finishes. The current approval endpoint executes and audits the tool, then the user continues with a new message.
 - Expand `shadow` from side-effect-free planning comparison to full candidate-output/latency comparison only after provider cost and tool side effects can be safely isolated.
 - Move more prompt/RAG/compression assembly behind focused context interfaces as the Runtime continues to shrink.
-- If approval claim and token consumption ever need crash-atomic recovery, combine them under a database transaction or add a reclaimable lease; current conditional claims prevent duplicate execution but leave a narrow interruption window between claims.
+- Exercise long-running Worker and event-retention behavior under production-like concurrency before changing either rollout flag to its default state.
 
 ## Multimodal Document Parsing Pipeline — Complete
 
