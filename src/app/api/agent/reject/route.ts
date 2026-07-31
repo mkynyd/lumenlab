@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/agent/audit-log";
+import { PrismaAgentExecutionStore } from "@/lib/agent/executions/prisma-agent-execution-store";
 
 interface RejectBody {
   executionId: string;
@@ -79,6 +80,13 @@ export async function POST(request: NextRequest) {
     ip: request.headers.get("x-forwarded-for") ?? undefined,
     userAgent: request.headers.get("user-agent") ?? undefined,
   });
+  if (execution.agentExecutionId) {
+    await new PrismaAgentExecutionStore().enqueueAfterApproval({
+      executionId: execution.agentExecutionId,
+      toolExecutionId: execution.id,
+      now: new Date(),
+    });
+  }
 
   return NextResponse.json({ ok: true, executionId: body.executionId });
 }

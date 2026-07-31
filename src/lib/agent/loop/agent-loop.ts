@@ -28,6 +28,7 @@ export interface AgentLoopInput {
     selectedFileIds?: string[];
     skillId?: string;
     runId?: string;
+    agentExecutionId?: string;
     sessionApprovals: Map<string, ApprovalScope>;
   };
   signal: AbortSignal;

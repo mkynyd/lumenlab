@@ -31,24 +31,83 @@ export class PrismaToolExecutionAdapter implements ToolExecutionPersistence {
     }
   }
 
-  propose(input: ToolProposal) {
-    return prisma.toolExecution.create({
+  async propose(input: ToolProposal) {
+    const argumentsHash = hashArguments(input.arguments);
+    if (input.agentExecutionId) {
+      const existing = await prisma.toolExecution.findFirst({
+        where: {
+          agentExecutionId: input.agentExecutionId,
+          toolId: input.tool.toolId,
+          argumentsHash,
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          status: true,
+          resultSummary: true,
+          errorSummary: true,
+        },
+      });
+      if (existing) return persistedProposal(existing);
+    }
+
+    const create = () => prisma.toolExecution.create({
       data: {
+        agentExecutionId: input.agentExecutionId ?? null,
+        providerToolCallId: input.providerToolCallId ?? null,
         userId: input.userId,
         conversationId: input.conversationId,
         skillId: input.skillId ?? null,
         skillVersion: input.skillVersion ?? null,
         toolId: input.tool.toolId,
         normalizedArguments: input.arguments as Prisma.InputJsonValue,
-        argumentsHash: hashArguments(input.arguments),
+        argumentsHash,
         riskLevel: input.riskLevel,
         status: "proposed",
         auditMetadata: {
           executionContext: input.contextSnapshot,
         } as Prisma.InputJsonValue,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        status: true,
+        resultSummary: true,
+        errorSummary: true,
+      },
     });
+    try {
+      return persistedProposal(await create());
+    } catch (error) {
+      if (
+        input.agentExecutionId &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        const existing = await prisma.toolExecution.findFirst({
+          where: {
+            agentExecutionId: input.agentExecutionId,
+            OR: [
+              ...(input.providerToolCallId
+                ? [{ providerToolCallId: input.providerToolCallId }]
+                : []),
+              {
+                toolId: input.tool.toolId,
+                argumentsHash,
+              },
+            ],
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            status: true,
+            resultSummary: true,
+            errorSummary: true,
+          },
+        });
+        if (existing) return persistedProposal(existing);
+      }
+      throw error;
+    }
   }
 
   async markBlocked(
@@ -129,6 +188,22 @@ export class PrismaToolExecutionAdapter implements ToolExecutionPersistence {
     });
   }
 
+  async markExecutingSucceeded(
+    executionId: string,
+    result: Record<string, unknown>
+  ) {
+    const updated = await prisma.toolExecution.updateMany({
+      where: { id: executionId, status: "executing" },
+      data: {
+        status: "succeeded",
+        completedAt: new Date(),
+        resultSummary: result as Prisma.InputJsonValue,
+        errorSummary: Prisma.JsonNull,
+      },
+    });
+    return updated.count === 1;
+  }
+
   async markFailed(
     executionId: string,
     error: { code: string; message: string }
@@ -142,4 +217,45 @@ export class PrismaToolExecutionAdapter implements ToolExecutionPersistence {
       },
     });
   }
+
+  async markExecutingFailed(
+    executionId: string,
+    error: { code: string; message: string }
+  ) {
+    const updated = await prisma.toolExecution.updateMany({
+      where: { id: executionId, status: "executing" },
+      data: {
+        status: "failed",
+        completedAt: new Date(),
+        errorSummary: error as Prisma.InputJsonValue,
+      },
+    });
+    return updated.count === 1;
+  }
+}
+
+function asRecord(value: Prisma.JsonValue | null) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function persistedProposal(input: {
+  id: string;
+  status: string;
+  resultSummary: Prisma.JsonValue | null;
+  errorSummary: Prisma.JsonValue | null;
+}) {
+  const error = asRecord(input.errorSummary);
+  return {
+    id: input.id,
+    status: input.status as import("../types").ToolExecutionStatus,
+    resultSummary: asRecord(input.resultSummary),
+    errorSummary:
+      error &&
+      typeof error.code === "string" &&
+      typeof error.message === "string"
+        ? { code: error.code, message: error.message }
+        : null,
+  };
 }

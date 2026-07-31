@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ALL_CHAT_MODELS, isChatModelEnabled } from "@/lib/chat/model-catalog";
 
 export const sendMessageSchema = z.object({
+  clientRunKey: z.string().uuid().optional(),
   conversationId: z.string().optional(),
   message: z.string().min(1, "消息不能为空").max(200000),
   hiddenPrompt: z.string().min(1).max(200000).optional(),

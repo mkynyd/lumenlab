@@ -1,6 +1,7 @@
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 
 export interface ChatRequestInput {
+  clientRunKey?: string;
   conversationId?: string;
   message: string;
   hiddenPrompt?: string;
@@ -19,6 +20,7 @@ export interface ChatRequestInput {
 
 export function buildChatRequestBody(input: ChatRequestInput): ChatRequestInput {
   const body: ChatRequestInput = {
+    clientRunKey: input.clientRunKey,
     conversationId: input.conversationId,
     message: input.message,
     model: input.model,

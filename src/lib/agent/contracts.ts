@@ -37,6 +37,11 @@ export interface AgentRunInput {
     isQuickTask: boolean;
     materialScope?: MaterialScope;
   };
+  durable?: {
+    executionId: string;
+    userMessageId: string;
+    assistantMessageId: string;
+  };
   signal: AbortSignal;
 }
 
@@ -68,6 +73,7 @@ export interface AgentRun {
     runtimeMode: AgentRuntimeMode;
     runtimeVersion: string;
     toolProtocol: "native" | "native+xml_dsml" | "none";
+    agentExecutionId?: string;
   };
   events: AsyncIterable<AgentRuntimeEvent>;
   completion: Promise<AgentCompletion>;

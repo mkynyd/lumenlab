@@ -18,6 +18,8 @@ import {
   parseAgentCheckpoint,
 } from "./agent-execution-store";
 
+const STALE_APPROVAL_EXECUTION_MS = 5 * 60 * 1_000;
+
 function toExecutionRecord(row: AgentExecution): AgentExecutionRecord {
   return {
     ...row,
@@ -982,6 +984,258 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
       });
       return true;
     });
+  }
+
+  async cancelOwned(input: {
+    executionId: string;
+    userId: string;
+    now: Date;
+  }) {
+    return this.client.$transaction(async (transaction) => {
+      const current = await transaction.agentExecution.findFirst({
+        where: {
+          id: input.executionId,
+          userId: input.userId,
+          status: { in: ["queued", "running", "waiting_approval"] },
+        },
+        select: {
+          status: true,
+          waitingToolExecutionId: true,
+          attempt: true,
+        },
+      });
+      if (!current) return false;
+
+      if (current.waitingToolExecutionId) {
+        await transaction.toolExecution.updateMany({
+          where: {
+            id: current.waitingToolExecutionId,
+            agentExecutionId: input.executionId,
+            userId: input.userId,
+            status: { in: ["proposed", "pending_approval", "approved"] },
+          },
+          data: {
+            status: "cancelled",
+            completedAt: input.now,
+            errorSummary: {
+              code: "AGENT_EXECUTION_CANCELLED",
+              message: "The user cancelled the Agent execution",
+            },
+          },
+        });
+      }
+
+      const [cancelled] =
+        await transaction.agentExecution.updateManyAndReturn({
+          where: {
+            id: input.executionId,
+            userId: input.userId,
+            status: current.status,
+          },
+          data: {
+            status: "cancelled",
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            waitingToolExecutionId: null,
+            failure: {
+              code: "user_cancelled",
+              message: "The user cancelled the Agent execution",
+              retryable: true,
+              attempt: current.attempt,
+            },
+            lastEventSequence: { increment: 1 },
+          },
+          select: { lastEventSequence: true },
+        });
+      if (!cancelled) return false;
+
+      await transaction.agentExecutionEvent.create({
+        data: {
+          executionId: input.executionId,
+          sequence: cancelled.lastEventSequence,
+          key: `run_user_cancelled:${cancelled.lastEventSequence}`,
+          type: "run_cancelled",
+          payload: { failureCode: "user_cancelled" },
+          createdAt: input.now,
+        },
+      });
+      return true;
+    });
+  }
+
+  async retryOwned(input: {
+    executionId: string;
+    userId: string;
+    now: Date;
+    maxAttempts?: number;
+  }) {
+    const maxAttempts = input.maxAttempts ?? 5;
+    if (!Number.isInteger(maxAttempts) || maxAttempts <= 0) {
+      throw new Error("maxAttempts must be a positive integer");
+    }
+
+    return this.client.$transaction(async (transaction) => {
+      const current = await transaction.agentExecution.findFirst({
+        where: {
+          id: input.executionId,
+          userId: input.userId,
+          status: { in: ["failed", "cancelled"] },
+          attempt: { lt: maxAttempts },
+        },
+        select: { status: true, attempt: true },
+      });
+      if (!current) return false;
+
+      const [retried] =
+        await transaction.agentExecution.updateManyAndReturn({
+          where: {
+            id: input.executionId,
+            userId: input.userId,
+            status: current.status,
+            attempt: current.attempt,
+          },
+          data: {
+            status: "queued",
+            scheduledAt: input.now,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            waitingToolExecutionId: null,
+            failure: Prisma.JsonNull,
+            lastEventSequence: { increment: 1 },
+          },
+          select: { lastEventSequence: true },
+        });
+      if (!retried) return false;
+
+      await transaction.agentExecutionEvent.create({
+        data: {
+          executionId: input.executionId,
+          sequence: retried.lastEventSequence,
+          key: `run_user_retry:${retried.lastEventSequence}`,
+          type: "run_retry_scheduled",
+          payload: {
+            attempt: current.attempt,
+            scheduledAt: input.now.toISOString(),
+            requestedBy: "user",
+          },
+          createdAt: input.now,
+        },
+      });
+      return true;
+    });
+  }
+
+  async reconcileWaitingApprovals(input: {
+    now: Date;
+    limit?: number;
+  }) {
+    const limit = input.limit ?? 100;
+    if (!Number.isInteger(limit) || limit <= 0 || limit > 500) {
+      throw new Error("limit must be an integer between 1 and 500");
+    }
+    const candidates = await this.client.agentExecution.findMany({
+      where: {
+        status: "waiting_approval",
+        waitingToolExecutionId: { not: null },
+      },
+      orderBy: { updatedAt: "asc" },
+      take: limit,
+      select: {
+        id: true,
+        waitingToolExecutionId: true,
+        toolExecutions: {
+          where: { status: { not: "proposed" } },
+          select: {
+            id: true,
+            status: true,
+            expiresAt: true,
+            executedAt: true,
+          },
+        },
+      },
+    });
+    let reconciled = 0;
+
+    for (const candidate of candidates) {
+      const tool = candidate.toolExecutions.find(
+        (item) => item.id === candidate.waitingToolExecutionId
+      );
+      if (!tool) continue;
+      if (
+        tool.status === "pending_approval" &&
+        tool.expiresAt &&
+        tool.expiresAt <= input.now
+      ) {
+        if (
+          await this.expireWaitingApproval({
+            executionId: candidate.id,
+            toolExecutionId: tool.id,
+            now: input.now,
+          })
+        ) {
+          reconciled += 1;
+        }
+        continue;
+      }
+      if (
+        tool.status === "executing" &&
+        tool.executedAt &&
+        tool.executedAt.getTime() <=
+          input.now.getTime() - STALE_APPROVAL_EXECUTION_MS
+      ) {
+        const failed = await this.client.toolExecution.updateMany({
+          where: {
+            id: tool.id,
+            agentExecutionId: candidate.id,
+            status: "executing",
+            executedAt: {
+              lte: new Date(
+                input.now.getTime() - STALE_APPROVAL_EXECUTION_MS
+              ),
+            },
+          },
+          data: {
+            status: "failed",
+            completedAt: input.now,
+            errorSummary: {
+              code: "TOOL_EXECUTION_OUTCOME_UNKNOWN",
+              message:
+                "Approved tool execution did not report a terminal result; its side effect was not retried",
+            },
+          },
+        });
+        if (
+          failed.count === 1 &&
+          (await this.enqueueAfterApproval({
+            executionId: candidate.id,
+            toolExecutionId: tool.id,
+            now: input.now,
+          }))
+        ) {
+          reconciled += 1;
+        }
+        continue;
+      }
+      if (
+        [
+          "approved",
+          "succeeded",
+          "failed",
+          "blocked",
+          "rejected",
+          "expired",
+          "cancelled",
+        ].includes(tool.status) &&
+        (await this.enqueueAfterApproval({
+          executionId: candidate.id,
+          toolExecutionId: tool.id,
+          now: input.now,
+        }))
+      ) {
+        reconciled += 1;
+      }
+    }
+    return reconciled;
   }
 
   async appendEvent(input: {

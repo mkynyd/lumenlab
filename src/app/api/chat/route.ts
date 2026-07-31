@@ -11,6 +11,11 @@ import {
   parseChatRequest,
 } from "./request-mapper";
 import { createChatResponse } from "./response-stream";
+import { learningFeatureFlags } from "@/lib/learning/feature-flags";
+import { dispatchDurableChat } from "@/lib/agent/executions/durable-chat-dispatcher";
+import { createDurableReplayResponse } from "@/lib/agent/executions/durable-response-stream";
+import { startAgentExecutionWorker } from "@/lib/agent/executions/durable-agent-runtime";
+import { AgentExecutionStoreError } from "@/lib/agent/executions/agent-execution-store";
 
 export { accumulateAndSave } from "@/lib/agent/runtime";
 
@@ -46,15 +51,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const run = await agentRuntime.run(
-      mapAgentRunInput({
+    const runInput = mapAgentRunInput({
+      userId: session.user.id,
+      parsed,
+      signal: request.signal,
+    });
+    if (
+      learningFeatureFlags.durableExecutionEnabled &&
+      parsed.attachments.length === 0
+    ) {
+      if (!parsed.body.clientRunKey) {
+        return NextResponse.json(
+          { error: "启用持久执行时缺少 clientRunKey" },
+          { status: 400 }
+        );
+      }
+      const dispatched = await dispatchDurableChat({
         userId: session.user.id,
-        parsed,
+        clientRunKey: parsed.body.clientRunKey,
+        runInput,
+      });
+      startAgentExecutionWorker();
+      return createDurableReplayResponse({
+        store: dispatched.store,
+        execution: dispatched.execution,
+        userId: session.user.id,
         signal: request.signal,
-      })
-    );
+        format: "chat",
+        chatHeaders: true,
+      });
+    }
+
+    const run = await agentRuntime.run(runInput);
     return createChatResponse(run);
   } catch (error) {
+    if (error instanceof AgentExecutionStoreError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        {
+          status:
+            error.code === "execution_not_found"
+              ? 404
+              : error.code === "idempotency_key_reused" ||
+                  error.code === "conversation_execution_in_progress"
+                ? 409
+                : 400,
+        }
+      );
+    }
     if (error instanceof AgentRuntimeError) {
       return NextResponse.json(
         { error: error.message, ...error.details },

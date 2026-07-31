@@ -32,6 +32,7 @@ export interface ToolInvocationRequest {
     selectedFileIds?: string[];
     skillId?: string;
     runId?: string;
+    agentExecutionId?: string;
     signal?: AbortSignal;
     sessionApprovals: Map<string, ApprovalScope>;
   };
@@ -127,7 +128,15 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
             : {}),
           ...(request.context.runId ? { runId: request.context.runId } : {}),
         },
+        ...(request.context.agentExecutionId
+          ? {
+              agentExecutionId: request.context.agentExecutionId,
+              providerToolCallId: request.call.id,
+            }
+          : {}),
       });
+      const resumed = resumePersistedToolExecution(execution, emit);
+      if (resumed) return resumed;
       await audit(dependencies, request, execution.id, "tool_proposed", "info", {
         riskLevel: tool.riskLevel,
       });
@@ -248,6 +257,50 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
       emit({ type: "tool_completed", executionId: execution.id, resultSummary: summary });
       return { status: "succeeded", executionId: execution.id, summary };
     },
+  };
+}
+
+function resumePersistedToolExecution(
+  execution: Awaited<
+    ReturnType<ToolExecutionPersistence["propose"]>
+  >,
+  emit: (event: AgentEvent) => void
+): ToolRunResult | null {
+  if (!execution.status || execution.status === "proposed") return null;
+  if (execution.status === "succeeded") {
+    const summary = execution.resultSummary ?? {};
+    emit({
+      type: "tool_completed",
+      executionId: execution.id,
+      resultSummary: summary,
+    });
+    return {
+      status: "succeeded",
+      executionId: execution.id,
+      summary,
+    };
+  }
+  if (execution.status === "pending_approval") {
+    return {
+      status: "pending_approval",
+      executionId: execution.id,
+    };
+  }
+  const error = execution.errorSummary ?? {
+    code: "TOOL_EXECUTION_ALREADY_TERMINAL",
+    message: `工具执行已处于 ${execution.status} 状态`,
+  };
+  emit({
+    type: "tool_failed",
+    executionId: execution.id,
+    errorCode: error.code,
+    error: error.message,
+  });
+  return {
+    status: execution.status === "blocked" ? "blocked" : "failed",
+    executionId: execution.id,
+    code: error.code,
+    error: error.message,
   };
 }
 

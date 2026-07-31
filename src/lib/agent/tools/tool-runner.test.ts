@@ -84,6 +84,72 @@ describe("ToolRunner", () => {
     ]);
   });
 
+  it("reuses a terminal durable tool result without repeating the handler", async () => {
+    const operations: string[] = [];
+    const tool = metadata("project_files.list");
+    const runner = createToolRunner({
+      resolveTool: () => tool,
+      resolveSkill: () => undefined,
+      evaluatePolicy: async () => allow(tool),
+      loadUserScopes: async () => [],
+      issueApproval: async () => {
+        throw new Error("terminal executions must not request approval");
+      },
+      persistence: {
+        loadSessionApprovals: async () => new Map(),
+        propose: async (input) => {
+          expect(input).toMatchObject({
+            agentExecutionId: "agent-run-1",
+            providerToolCallId: "provider-call-1",
+          });
+          return {
+            id: "tool-execution-1",
+            status: "succeeded",
+            resultSummary: { files: ["notes.md"] },
+          };
+        },
+        markBlocked: async () => {},
+        claimPendingAsBlocked: async () => true,
+        markPendingApproval: async () => {},
+        claimApprovedExecution: async () => true,
+        markExecuting: async () => {},
+        markSucceeded: async () => {},
+        markFailed: async () => {},
+      },
+      execute: async () => {
+        operations.push("handler");
+        return { ok: true, result: {} };
+      },
+      audit: async () => {
+        operations.push("audit");
+      },
+    });
+
+    const result = await runner.run(
+      {
+        call: {
+          id: "provider-call-1",
+          toolId: tool.toolId,
+          arguments: { projectId: "project-1" },
+        },
+        context: {
+          userId: "user-1",
+          conversationId: "conversation-1",
+          agentExecutionId: "agent-run-1",
+          sessionApprovals: new Map(),
+        },
+      },
+      (event) => operations.push(`emit:${event.type}`)
+    );
+
+    expect(result).toEqual({
+      status: "succeeded",
+      executionId: "tool-execution-1",
+      summary: { files: ["notes.md"] },
+    });
+    expect(operations).toEqual(["emit:tool_completed"]);
+  });
+
   it.each([
     ["L2", true],
     ["L3", false],

@@ -34,8 +34,172 @@ import {
 import { exportArtifactAsDocx } from "./artifact-export/docx";
 import { activateSkill, buildActivateSkillEnum } from "../agent/skill-activate-handler";
 import { parsePlanUpdate } from "../agent/plan";
+import { learningService } from "@/lib/learning/services";
+import { practiceAttemptSubmissionSchema } from "@/lib/learning/validators";
+
+const LEARNING_TOOLS: ToolMetadata[] = [
+  {
+    toolId: "learning.goal.upsert",
+    name: "创建学习目标",
+    description: "在当前项目中创建并激活一个可追踪的学习目标。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        purpose: { type: "string" },
+        targetDate: { type: "string" },
+        dailyMinutes: { type: "integer" },
+        idempotencyKey: { type: "string" },
+      },
+      required: ["title", "idempotencyKey"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L2",
+    isReadOnly: false,
+    hasExternalSideEffect: false,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: false,
+    estimatedCost: "free",
+    defaultApprovalMode: "ask_first",
+    allowedSkillIds: [],
+    auditLevel: "standard",
+    requiredScopes: ["project.write"],
+  },
+  {
+    toolId: "learning.map.generate",
+    name: "生成知识地图",
+    description: "基于当前项目已经确认的学习范围生成版本化知识地图。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string" },
+        idempotencyKey: { type: "string" },
+      },
+      required: ["goalId", "idempotencyKey"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L2",
+    isReadOnly: false,
+    hasExternalSideEffect: true,
+    isReversible: true,
+    containsSensitiveData: true,
+    requiresNetwork: true,
+    estimatedCost: "model-call",
+    defaultApprovalMode: "ask_first",
+    allowedSkillIds: [],
+    auditLevel: "standard",
+    requiredScopes: ["project.read", "project.write"],
+  },
+  {
+    toolId: "learning.practice.create",
+    name: "创建诊断练习",
+    description: "为当前学习目标创建 5–10 题诊断练习，不返回答案判据。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string" },
+        idempotencyKey: { type: "string" },
+      },
+      required: ["goalId", "idempotencyKey"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L2",
+    isReadOnly: false,
+    hasExternalSideEffect: true,
+    isReversible: true,
+    containsSensitiveData: true,
+    requiresNetwork: true,
+    estimatedCost: "model-call",
+    defaultApprovalMode: "ask_first",
+    allowedSkillIds: [],
+    auditLevel: "standard",
+    requiredScopes: ["project.read", "project.write"],
+  },
+  {
+    toolId: "learning.attempt.submit",
+    name: "提交练习答案",
+    description: "向指定学习会话题目提交答案并更新服务端学习证据。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" },
+        sessionItemId: { type: "string" },
+        answer: {},
+        idempotencyKey: { type: "string" },
+      },
+      required: [
+        "sessionId",
+        "sessionItemId",
+        "answer",
+        "idempotencyKey",
+      ],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L2",
+    isReadOnly: false,
+    hasExternalSideEffect: false,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: false,
+    estimatedCost: "free",
+    defaultApprovalMode: "ask_first",
+    allowedSkillIds: [],
+    auditLevel: "standard",
+    requiredScopes: ["project.write"],
+  },
+  {
+    toolId: "learning.review.next",
+    name: "创建下一组复习",
+    description: "从当前学习目标的到期项创建下一组复习会话。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string" },
+        limit: { type: "integer" },
+        idempotencyKey: { type: "string" },
+      },
+      required: ["goalId", "idempotencyKey"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L2",
+    isReadOnly: false,
+    hasExternalSideEffect: false,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: false,
+    estimatedCost: "free",
+    defaultApprovalMode: "ask_first",
+    allowedSkillIds: [],
+    auditLevel: "standard",
+    requiredScopes: ["project.read", "project.write"],
+  },
+  {
+    toolId: "learning.progress.read",
+    name: "读取学习进度",
+    description: "读取 new、learning、mastered、due 和资料新鲜度状态数量。",
+    inputSchema: {
+      type: "object",
+      properties: { goalId: { type: "string" } },
+      required: ["goalId"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L1",
+    isReadOnly: true,
+    hasExternalSideEffect: false,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: false,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "minimal",
+    requiredScopes: ["project.read"],
+  },
+];
 
 const TOOLS: ToolMetadata[] = [
+  ...LEARNING_TOOLS,
   {
     toolId: "plan.update",
     name: "更新任务计划",
@@ -630,6 +794,80 @@ export function registerBuiltinTools(): void {
   registerToolHandler("plan.update", async (_ctx, args) => ({
     ...parsePlanUpdate(args),
   }));
+  registerToolHandler("learning.goal.upsert", async (ctx, args) => {
+    const projectId = requireLearningProject(ctx.projectId);
+    const goal = await learningService.createGoal({
+      userId: ctx.userId,
+      projectId,
+      input: {
+        title: String(args.title ?? ""),
+        ...(args.purpose ? { purpose: String(args.purpose) } : {}),
+        ...(args.targetDate ? { targetDate: String(args.targetDate) } : {}),
+        ...(args.dailyMinutes
+          ? { dailyMinutes: Number(args.dailyMinutes) }
+          : {}),
+        activate: true,
+        idempotencyKey: String(args.idempotencyKey ?? ""),
+      },
+    });
+    return { goal };
+  });
+  registerToolHandler("learning.map.generate", async (ctx, args) => {
+    const projectId = requireLearningProject(ctx.projectId);
+    const map = await learningService.generateMap({
+      userId: ctx.userId,
+      projectId,
+      goalId: String(args.goalId ?? ""),
+      input: { idempotencyKey: String(args.idempotencyKey ?? "") },
+    });
+    return { map };
+  });
+  registerToolHandler("learning.practice.create", async (ctx, args) => {
+    const projectId = requireLearningProject(ctx.projectId);
+    const session = await learningService.createDiagnosticSession({
+      userId: ctx.userId,
+      projectId,
+      goalId: String(args.goalId ?? ""),
+      input: { idempotencyKey: String(args.idempotencyKey ?? "") },
+    });
+    return { session };
+  });
+  registerToolHandler("learning.attempt.submit", async (ctx, args) => {
+    const projectId = requireLearningProject(ctx.projectId);
+    const input = practiceAttemptSubmissionSchema.parse({
+      answer: args.answer,
+      idempotencyKey: String(args.idempotencyKey ?? ""),
+    });
+    const result = await learningService.submitAttempt({
+      userId: ctx.userId,
+      projectId,
+      sessionId: String(args.sessionId ?? ""),
+      sessionItemId: String(args.sessionItemId ?? ""),
+      input,
+    });
+    return { result };
+  });
+  registerToolHandler("learning.review.next", async (ctx, args) => {
+    const projectId = requireLearningProject(ctx.projectId);
+    const session = await learningService.createReviewSession({
+      userId: ctx.userId,
+      projectId,
+      goalId: String(args.goalId ?? ""),
+      input: {
+        limit: Math.min(50, Math.max(1, Number(args.limit ?? 10))),
+        idempotencyKey: String(args.idempotencyKey ?? ""),
+      },
+    });
+    return { session };
+  });
+  registerToolHandler("learning.progress.read", async (ctx, args) => {
+    const projectId = requireLearningProject(ctx.projectId);
+    return learningService.getProgress({
+      userId: ctx.userId,
+      projectId,
+      goalId: String(args.goalId ?? ""),
+    });
+  });
 
   // Discovery may not have run at module-load time; ensureDiscovery refreshes
   // this schema again after it replaces the skill registry.
@@ -638,3 +876,10 @@ export function registerBuiltinTools(): void {
 
 // 模块副作用注册：导入即生效
 registerBuiltinTools();
+
+function requireLearningProject(projectId: string | undefined): string {
+  if (!projectId) {
+    throw new Error("学习工具只能在已验证的项目上下文中运行");
+  }
+  return projectId;
+}

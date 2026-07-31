@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 
 type ExecutionRow = {
   id: string;
+  agentExecutionId?: string | null;
   userId: string;
   conversationId: string;
   skillId: string | null;
@@ -45,6 +46,7 @@ const state = vi.hoisted(() => ({
   audits: [] as Array<Record<string, unknown>>,
   nextTokenId: 1,
   scopeLoadHook: null as null | (() => Promise<void>),
+  enqueueAfterApproval: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -177,6 +179,30 @@ vi.mock("@/lib/db", () => ({
         return data;
       }),
     },
+    agentExecution: {
+      findFirst: vi.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            id: string;
+            userId: string;
+            status: string;
+            waitingToolExecutionId: string;
+          };
+        }) =>
+          where.userId === state.authenticatedUserId
+            ? { id: where.id }
+            : null
+      ),
+    },
+  },
+}));
+vi.mock("@/lib/agent/executions/prisma-agent-execution-store", () => ({
+  PrismaAgentExecutionStore: class {
+    enqueueAfterApproval(input: unknown) {
+      return state.enqueueAfterApproval(input);
+    }
   },
 }));
 
@@ -199,6 +225,8 @@ describe("POST /api/agent/approve", () => {
     state.audits.length = 0;
     state.nextTokenId = 1;
     state.scopeLoadHook = null;
+    state.enqueueAfterApproval.mockReset();
+    state.enqueueAfterApproval.mockResolvedValue(true);
   });
 
   it("does not consume a token before validating ToolExecution ownership", async () => {
@@ -384,6 +412,36 @@ describe("POST /api/agent/approve", () => {
       approvalScope: "once",
       resultSummary: { saved: true, title: "真实标题" },
     });
+  });
+
+  it("allows a tokenless durable approval and automatically resumes its run", async () => {
+    const args = { projectId: "project-1", title: "持久任务" };
+    registerToolHandler("approval_test.durable", async () => ({ saved: true }));
+    state.executions.set(
+      "execution-durable",
+      execution({
+        id: "execution-durable",
+        agentExecutionId: "run-1",
+        toolId: "approval_test.durable",
+        riskLevel: "L2",
+        args,
+      })
+    );
+
+    const response = await POST(
+      approveRequest({
+        executionId: "execution-durable",
+        scope: "once",
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(state.enqueueAfterApproval).toHaveBeenCalledWith({
+      executionId: "run-1",
+      toolExecutionId: "execution-durable",
+      now: expect.any(Date),
+    });
+    expect(state.tokens.size).toBe(0);
   });
 
   it.each([
@@ -656,6 +714,7 @@ describe("POST /api/agent/approve", () => {
 
 function execution(input: {
   id: string;
+  agentExecutionId?: string;
   userId?: string;
   conversationId?: string;
   toolId?: string;
@@ -670,6 +729,7 @@ function execution(input: {
   ensureToolRegistered(toolId, riskLevel, input.requiredScopes ?? []);
   return {
     id: input.id,
+    agentExecutionId: input.agentExecutionId ?? null,
     userId: input.userId ?? "user-1",
     conversationId: input.conversationId ?? "conversation-1",
     skillId: null,

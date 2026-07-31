@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   readSSEStream,
+  SSEExecutionError,
   type UsageInfo,
 } from "@/lib/sse-client";
 import {
@@ -260,6 +261,7 @@ export function useChat(options: UseChatOptions = {}) {
       const attachments = input.attachments || [];
       const content = input.content.trim() || (attachments.length > 0 ? "请阅读附件。" : "");
       if (!content.trim() && attachments.length === 0) return;
+      const clientRunKey = crypto.randomUUID();
 
       // Abort any still-attached foreground stream before sending a new message.
       abortRef.current?.abort();
@@ -311,6 +313,7 @@ export function useChat(options: UseChatOptions = {}) {
         abortRef.current = controller;
 
         const requestBody = buildChatRequestBody({
+          clientRunKey,
           conversationId,
           message: content.trim(),
           hiddenPrompt: input.hiddenPrompt,
@@ -342,7 +345,18 @@ export function useChat(options: UseChatOptions = {}) {
           fetchOptions.body = JSON.stringify(requestBody);
         }
 
-        const response = await fetch("/api/chat", fetchOptions);
+        let response: Response;
+        try {
+          response = await fetch("/api/chat", fetchOptions);
+        } catch (requestError) {
+          if (attachments.length > 0 || controller.signal.aborted) {
+            throw requestError;
+          }
+          // A transport can fail before response headers arrive even though
+          // the durable dispatch committed. Retrying with the same key returns
+          // the same AgentExecution and message pair.
+          response = await fetch("/api/chat", fetchOptions);
+        }
 
         if (!response.ok) {
           throw new Error(await readChatError(response));
@@ -378,6 +392,7 @@ export function useChat(options: UseChatOptions = {}) {
 
         const reader = response.body?.getReader();
         if (!reader) throw new Error("No response body");
+        const agentExecutionId = response.headers.get("X-Agent-Execution-Id");
 
         const responseMessageId = response.headers.get("X-Message-Id");
         if (responseMessageId && responseMessageId !== streamingId) {
@@ -394,9 +409,12 @@ export function useChat(options: UseChatOptions = {}) {
 
         let fullContent = "";
         let fullReasoning = "";
+        let lastEventSequence = 0;
 
-        const result = await readSSEStream(
-          reader,
+        const consumeStream = (
+          activeReader: ReadableStreamDefaultReader<Uint8Array>
+        ) => readSSEStream(
+          activeReader,
           (chunk) => {
             if (chunk.done) return;
 
@@ -418,6 +436,9 @@ export function useChat(options: UseChatOptions = {}) {
           );
           },
           {
+            onEventId: (sequence) => {
+              lastEventSequence = Math.max(lastEventSequence, sequence);
+            },
             onAgentEvent: (event) => {
               if (event.type === "plan_updated") {
                 setAgentSession((current) => ({ ...current, plan: event.plan }));
@@ -541,6 +562,37 @@ export function useChat(options: UseChatOptions = {}) {
             },
           }
         );
+        let result;
+        let activeReader = reader;
+        let reconnectAttempts = 0;
+        while (true) {
+          try {
+            result = await consumeStream(activeReader);
+            if (result.done || !agentExecutionId) break;
+          } catch (streamError) {
+            if (
+              streamError instanceof SSEExecutionError ||
+              !agentExecutionId ||
+              controller.signal.aborted
+            ) {
+              throw streamError;
+            }
+          }
+          reconnectAttempts += 1;
+          if (reconnectAttempts > 3) {
+            throw new Error("连接中断次数过多，请稍后从对话继续");
+          }
+          const replayResponse = await fetch(
+            `/api/agent/executions/${encodeURIComponent(agentExecutionId)}/events?format=chat&afterSequence=${lastEventSequence}`,
+            { signal: controller.signal }
+          );
+          if (!replayResponse.ok) {
+            throw new Error(await readChatError(replayResponse));
+          }
+          const replayReader = replayResponse.body?.getReader();
+          if (!replayReader) throw new Error("No replay response body");
+          activeReader = replayReader;
+        }
 
         // Stream complete
         if (result.usage) {

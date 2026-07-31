@@ -53,6 +53,11 @@ description: 苏格拉底导师：三阶段引导式提问（引导问题-关键
 
 - 用户问"这道题在我的笔记第几页" → `project_files.read` + `project_rag.search`
 - 用户想保存推导过程 → `artifact.save`（type=general）
+- 项目学习闭环已启用且用户要长期学习 → 用 `learning.goal.upsert`、
+  `learning.map.generate` 和 `learning.practice.create` 建立可追踪练习；
+- 用户提交答案 → 用 `learning.attempt.submit` 保存真实证据，再依据服务端反馈继续追问；
+- 查看掌握度或安排复习 → 用 `learning.progress.read` / `learning.review.next`，
+  不自行推测分数、掌握度或到期时间；
 - 用户要降重 / 校对 → 仍走三段引导，不要直接改稿
 
 ## 风格

@@ -69,6 +69,7 @@ describe("AgentExecutionWorker", () => {
       claimNext: vi.fn().mockResolvedValue(execution),
       recoverExpired: vi.fn(),
       renewLease: vi.fn(),
+      reconcileWaitingApprovals: vi.fn().mockResolvedValue(0),
     };
     const runner = {
       run: vi.fn().mockResolvedValue({ state: "completed" }),
@@ -104,6 +105,7 @@ describe("AgentExecutionWorker", () => {
       claimNext: vi.fn().mockResolvedValue(execution),
       recoverExpired: vi.fn(),
       renewLease: vi.fn().mockResolvedValue(false),
+      reconcileWaitingApprovals: vi.fn().mockResolvedValue(0),
     };
     const runner = {
       run: vi.fn(
@@ -150,6 +152,7 @@ describe("AgentExecutionWorker", () => {
       claimNext: vi.fn().mockResolvedValue(null),
       recoverExpired: vi.fn().mockResolvedValue(2),
       renewLease: vi.fn(),
+      reconcileWaitingApprovals: vi.fn().mockResolvedValue(0),
     };
     const runner = { run: vi.fn() };
     const worker = new AgentExecutionWorker({
@@ -189,6 +192,7 @@ describe("AgentExecutionWorker", () => {
         .mockResolvedValue(null),
       recoverExpired: vi.fn().mockResolvedValue(0),
       renewLease: vi.fn().mockResolvedValue(true),
+      reconcileWaitingApprovals: vi.fn().mockResolvedValue(0),
     };
     const runner = {
       run: vi.fn(

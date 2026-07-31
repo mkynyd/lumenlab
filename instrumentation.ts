@@ -14,4 +14,18 @@ export async function register() {
       error: error instanceof Error ? error.message : String(error),
     });
   }
+
+  if (process.env.AGENT_DURABLE_EXECUTION_ENABLED === "true") {
+    try {
+      const { startAgentExecutionWorker } = await import(
+        "@/lib/agent/executions/durable-agent-runtime"
+      );
+      const result = startAgentExecutionWorker();
+      logger.info("Agent execution worker ready", result);
+    } catch (error) {
+      logger.error("Failed to start Agent execution worker", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }

@@ -117,9 +117,14 @@ export class PrismaConversationAdapter implements ConversationPersistence {
     });
   }
 
-  loadHistory(conversationId: string) {
+  loadHistory(conversationId: string, excludeMessageIds: string[] = []) {
     return prisma.message.findMany({
-      where: { conversationId },
+      where: {
+        conversationId,
+        ...(excludeMessageIds.length > 0
+          ? { id: { notIn: excludeMessageIds } }
+          : {}),
+      },
       orderBy: { createdAt: "asc" },
       select: { role: true, content: true },
     });

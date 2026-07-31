@@ -192,6 +192,7 @@ function buildAllowedTools(input: {
     for (const tool of toolRegistry.list()) {
       if (
         tool.toolId.startsWith("project_") ||
+        tool.toolId.startsWith("learning.") ||
         tool.toolId.startsWith("artifact.") ||
         tool.toolId.startsWith("reference.") ||
         tool.toolId.startsWith("arxiv.")
@@ -271,7 +272,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   const hiddenPrompt = input.prompt.hiddenPrompt;
   const attachments = input.prompt.attachments;
   const model = input.model.requestedModel;
-  const runId = randomUUID();
+  const runId = input.durable?.executionId ?? randomUUID();
   const runMetrics = new AgentRunMetricsCollector({
     runId,
     model,
@@ -755,13 +756,20 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
 
   // 7. 获取对话历史
-  const history = await conversationPersistence.loadHistory(conversation.id);
+  const history = await conversationPersistence.loadHistory(
+    conversation.id,
+    input.durable
+      ? [input.durable.userMessageId, input.durable.assistantMessageId]
+      : []
+  );
 
   // 9. 保存用户消息
-  await conversationPersistence.createUserMessage({
-    conversationId: conversation.id,
-    content: message,
-  });
+  if (!input.durable) {
+    await conversationPersistence.createUserMessage({
+      conversationId: conversation.id,
+      content: message,
+    });
+  }
 
   let orchestratorToolContext = "";
   const preludeAttemptedCalls: Array<{
@@ -810,6 +818,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
                 selectedFileIds: uniqueFileIds,
                 skillId: skillRoute.activeSkillId ?? undefined,
                 runId,
+                agentExecutionId: input.durable?.executionId,
                 signal: input.signal,
                 sessionApprovals,
               },
@@ -1054,6 +1063,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           selectedFileIds: uniqueFileIds,
           skillId: skillRoute.activeSkillId ?? undefined,
           runId,
+          agentExecutionId: input.durable?.executionId,
           sessionApprovals,
         },
         signal: input.signal,
@@ -1084,10 +1094,12 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
 
   const messageSources = orchestratorSources.length > 0 ? orchestratorSources : legacySources;
-  const assistantMessage = await conversationPersistence.createAssistantMessage({
-    conversationId: conversation.id,
-    sources: messageSources,
-  });
+  const assistantMessage = input.durable
+    ? { id: input.durable.assistantMessageId }
+    : await conversationPersistence.createAssistantMessage({
+        conversationId: conversation.id,
+        sources: messageSources,
+      });
 
   const [eventStream, persistenceStream] = streamResult.events.tee();
   const completion = accumulateAndSaveEvents(
@@ -1100,7 +1112,8 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     streamResult.getUsage,
     messageSources,
     loopResult.status,
-    conversationPersistence
+    conversationPersistence,
+    Boolean(input.durable)
   )
     .then(async (result) => {
       runMetrics.recordUsage(result.usage);
@@ -1133,6 +1146,9 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     runtimeMode: agentRuntimeMode,
     runtimeVersion: "1",
     toolProtocol: adapter.toolProtocol(activeTools),
+    ...(input.durable
+      ? { agentExecutionId: input.durable.executionId }
+      : {}),
   };
 
   return {
@@ -1326,7 +1342,8 @@ async function accumulateAndSaveEvents(
   } | null,
   sources: AgentSource[],
   completionStatus: AgentCompletion["status"],
-  persistence: ConversationPersistence
+  persistence: ConversationPersistence,
+  preserveEmptyMessage = false
 ): Promise<AgentCompletion> {
   const reader = stream.getReader();
   let fullContent = "";
@@ -1389,6 +1406,17 @@ async function accumulateAndSaveEvents(
       totalTokens: usage?.total_tokens ?? promptTokens + completionTokens,
     }).catch((err) => {
       logger.error("Token 用量记录失败", { error: String(err) });
+    });
+  } else if (preserveEmptyMessage) {
+    await persistence.completeAssistantMessage({
+      messageId,
+      content: "（模型未输出正文）",
+      reasoningContent: null,
+      tokenCount: null,
+      provider,
+      cacheHitTokens: null,
+      cacheMissTokens: null,
+      sources,
     });
   } else {
     await persistence.deleteMessage(messageId).catch(() => {});

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "category": "learning",
   "display_name": "苏格拉底导师",
   "trust_level": "builtin",
@@ -8,6 +8,12 @@
     "project_files.list",
     "project_files.read",
     "project_rag.search",
+    "learning.goal.upsert",
+    "learning.map.generate",
+    "learning.practice.create",
+    "learning.attempt.submit",
+    "learning.review.next",
+    "learning.progress.read",
     "artifact.save",
     "artifact.list"
   ],

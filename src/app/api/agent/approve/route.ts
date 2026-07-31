@@ -22,10 +22,11 @@ import { evaluatePolicy } from "@/lib/agent/policy-engine";
 import { skillRegistry } from "@/lib/agent/skill-registry";
 import { toolRegistry } from "@/lib/agent/tool-registry";
 import { ensureDiscovery } from "@/lib/skills/registry";
+import { PrismaAgentExecutionStore } from "@/lib/agent/executions/prisma-agent-execution-store";
 import "@/lib/tools/registry";
 
 interface ApproveBody {
-  token: string;
+  token?: string;
   executionId: string;
   scope?: "once" | "session";
 }
@@ -43,8 +44,8 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
   }
-  if (!body.token || !body.executionId) {
-    return NextResponse.json({ error: "缺少必要字段" }, { status: 400 });
+  if (!body.executionId) {
+    return NextResponse.json({ error: "缺少 executionId" }, { status: 400 });
   }
 
   const execution = await prisma.toolExecution.findUnique({
@@ -59,6 +60,28 @@ export async function POST(request: NextRequest) {
       { status: 409 }
     );
   }
+  const durableParent = execution.agentExecutionId
+    ? await prisma.agentExecution.findFirst({
+        where: {
+          id: execution.agentExecutionId,
+          userId,
+          status: "waiting_approval",
+          waitingToolExecutionId: execution.id,
+        },
+        select: { id: true },
+      })
+    : null;
+  if (!body.token && !durableParent) {
+    return NextResponse.json({ error: "缺少审批 token" }, { status: 400 });
+  }
+  const resumeDurableParent = async () => {
+    if (!durableParent || !execution.agentExecutionId) return;
+    await new PrismaAgentExecutionStore().enqueueAfterApproval({
+      executionId: execution.agentExecutionId,
+      toolExecutionId: execution.id,
+      now: new Date(),
+    });
+  };
 
   const scope = body.scope ?? "once";
   if (scope !== "once" && scope !== "session") {
@@ -106,6 +129,7 @@ export async function POST(request: NextRequest) {
       ip: request.headers.get("x-forwarded-for") ?? undefined,
       userAgent: request.headers.get("user-agent") ?? undefined,
     });
+    await resumeDurableParent();
     return NextResponse.json(
       { ok: false, reason: reasonCode },
       { status: 403 }
@@ -160,34 +184,43 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await consumeApprovalToken(body.token, normalizedArguments, {
-    userId,
-    conversationId: execution.conversationId,
-    toolId: execution.toolId,
-    requestId: execution.id,
-  });
-  if (!result.ok) {
+  const tokenResult = body.token
+    ? await consumeApprovalToken(body.token, normalizedArguments, {
+        userId,
+        conversationId: execution.conversationId,
+        toolId: execution.toolId,
+        requestId: execution.id,
+      })
+    : null;
+  if (tokenResult && !tokenResult.ok) {
     await recordAuditEvent({
       userId,
       eventType: "approval_denied",
       severity: "warn",
-      payload: { reason: result.reason, executionId: body.executionId },
+      payload: { reason: tokenResult.reason, executionId: body.executionId },
       ip: request.headers.get("x-forwarded-for") ?? undefined,
       userAgent: request.headers.get("user-agent") ?? undefined,
     });
     return NextResponse.json(
-      { ok: false, reason: result.reason },
+      { ok: false, reason: tokenResult.reason },
       { status: 400 }
     );
   }
 
-  if (result.requestId !== body.executionId) {
+  if (
+    tokenResult?.ok &&
+    tokenResult.requestId !== body.executionId
+  ) {
     const reason = "executionId 与 token 绑定请求不一致";
     await recordAuditEvent({
       userId,
       eventType: "approval_denied",
       severity: "warn",
-      payload: { reason, executionId: body.executionId, expectedRequestId: result.requestId },
+      payload: {
+        reason,
+        executionId: body.executionId,
+        expectedRequestId: tokenResult.requestId,
+      },
       ip: request.headers.get("x-forwarded-for") ?? undefined,
       userAgent: request.headers.get("user-agent") ?? undefined,
     });
@@ -230,18 +263,20 @@ export async function POST(request: NextRequest) {
     userAgent: request.headers.get("user-agent") ?? undefined,
   });
 
-  await recordAuditEvent({
-    userId,
-    conversationId: execution.conversationId,
-    toolExecutionId: execution.id,
-    skillId: execution.skillId ?? undefined,
-    toolId: execution.toolId,
-    eventType: "token_consumed",
-    severity: "info",
-    payload: { tokenRecordId: result.recordId },
-    ip: request.headers.get("x-forwarded-for") ?? undefined,
-    userAgent: request.headers.get("user-agent") ?? undefined,
-  });
+  if (tokenResult?.ok) {
+    await recordAuditEvent({
+      userId,
+      conversationId: execution.conversationId,
+      toolExecutionId: execution.id,
+      skillId: execution.skillId ?? undefined,
+      toolId: execution.toolId,
+      eventType: "token_consumed",
+      severity: "info",
+      payload: { tokenRecordId: tokenResult.recordId },
+      ip: request.headers.get("x-forwarded-for") ?? undefined,
+      userAgent: request.headers.get("user-agent") ?? undefined,
+    });
+  }
 
   await recordAuditEvent({
     userId,
@@ -263,7 +298,7 @@ export async function POST(request: NextRequest) {
       conversationId: execution.conversationId,
       projectId,
       selectedFileIds,
-      signal: request.signal,
+      ...(durableParent ? {} : { signal: request.signal }),
     },
     normalizedArguments
   );
@@ -273,7 +308,17 @@ export async function POST(request: NextRequest) {
       code: executed.errorCode ?? "HANDLER_ERROR",
       message: executed.errorMessage ?? "工具执行失败",
     };
-    await persistence.markFailed(execution.id, error);
+    const persisted = await persistence.markExecutingFailed(
+      execution.id,
+      error
+    );
+    if (!persisted) {
+      await resumeDurableParent();
+      return NextResponse.json(
+        { ok: false, reason: "EXECUTION_OUTCOME_ALREADY_RECONCILED" },
+        { status: 409 }
+      );
+    }
     await recordAuditEvent({
       userId,
       conversationId: execution.conversationId,
@@ -286,6 +331,7 @@ export async function POST(request: NextRequest) {
       ip: request.headers.get("x-forwarded-for") ?? undefined,
       userAgent: request.headers.get("user-agent") ?? undefined,
     });
+    await resumeDurableParent();
     return NextResponse.json({
       ok: false,
       status: "failed",
@@ -296,7 +342,17 @@ export async function POST(request: NextRequest) {
   }
 
   const resultSummary = executed.result ?? {};
-  await persistence.markSucceeded(execution.id, resultSummary);
+  const persisted = await persistence.markExecutingSucceeded(
+    execution.id,
+    resultSummary
+  );
+  if (!persisted) {
+    await resumeDurableParent();
+    return NextResponse.json(
+      { ok: false, reason: "EXECUTION_OUTCOME_ALREADY_RECONCILED" },
+      { status: 409 }
+    );
+  }
   await recordAuditEvent({
     userId,
     conversationId: execution.conversationId,
@@ -309,6 +365,7 @@ export async function POST(request: NextRequest) {
     ip: request.headers.get("x-forwarded-for") ?? undefined,
     userAgent: request.headers.get("user-agent") ?? undefined,
   });
+  await resumeDurableParent();
 
   return NextResponse.json({
     ok: true,

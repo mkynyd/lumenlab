@@ -214,4 +214,256 @@ describe("PrismaAgentExecutionStore PostgreSQL concurrency", () => {
       await prismaA.user.delete({ where: { id: user.id } });
     }
   });
+
+  it("cancels an owned queued run without deleting its stable message pair", async () => {
+    const { user, conversation } = await fixture();
+    try {
+      const store = new PrismaAgentExecutionStore(prismaA);
+      const dispatched = await store.createOrGetByClientRunKey({
+        userId: user.id,
+        clientRunKey: `client-${randomUUID()}`,
+        requestHash: "sha256:cancel-owned",
+        conversation: {
+          id: conversation.id,
+          title: "Existing",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: true,
+        },
+        userMessageContent: "Cancel this run",
+        checkpoint: checkpoint(),
+      });
+
+      await expect(
+        store.cancelOwned({
+          executionId: dispatched.execution.id,
+          userId: user.id,
+          now: new Date("2026-07-31T00:00:05.000Z"),
+        })
+      ).resolves.toBe(true);
+      await expect(
+        prismaA.agentExecution.findUniqueOrThrow({
+          where: { id: dispatched.execution.id },
+          select: { status: true, lastEventSequence: true },
+        })
+      ).resolves.toEqual({ status: "cancelled", lastEventSequence: 2 });
+      await expect(
+        prismaA.message.count({
+          where: {
+            id: {
+              in: [
+                dispatched.execution.userMessageId!,
+                dispatched.execution.assistantMessageId!,
+              ],
+            },
+          },
+        })
+      ).resolves.toBe(2);
+    } finally {
+      await prismaA.user.delete({ where: { id: user.id } });
+    }
+  });
+
+  it("requeues an owned terminal run with a new durable sequence", async () => {
+    const { user, conversation } = await fixture();
+    try {
+      const store = new PrismaAgentExecutionStore(prismaA);
+      const dispatched = await store.createOrGetByClientRunKey({
+        userId: user.id,
+        clientRunKey: `client-${randomUUID()}`,
+        requestHash: "sha256:user-retry",
+        conversation: {
+          id: conversation.id,
+          title: "Existing",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: true,
+        },
+        userMessageContent: "Retry this run",
+        checkpoint: checkpoint(),
+      });
+      await prismaA.agentExecution.update({
+        where: { id: dispatched.execution.id },
+        data: {
+          status: "failed",
+          failure: {
+            code: "provider_error",
+            message: "temporary",
+            retryable: true,
+          },
+        },
+      });
+
+      await expect(
+        store.retryOwned({
+          executionId: dispatched.execution.id,
+          userId: user.id,
+          now: new Date("2026-07-31T00:00:05.000Z"),
+        })
+      ).resolves.toBe(true);
+      await expect(
+        prismaA.agentExecution.findUniqueOrThrow({
+          where: { id: dispatched.execution.id },
+          select: { status: true, failure: true, lastEventSequence: true },
+        })
+      ).resolves.toEqual({
+        status: "queued",
+        failure: null,
+        lastEventSequence: 2,
+      });
+    } finally {
+      await prismaA.user.delete({ where: { id: user.id } });
+    }
+  });
+
+  it("expires a waiting approval and automatically puts its run back in the queue", async () => {
+    const { user, conversation } = await fixture();
+    try {
+      const store = new PrismaAgentExecutionStore(prismaA);
+      const dispatched = await store.createOrGetByClientRunKey({
+        userId: user.id,
+        clientRunKey: `client-${randomUUID()}`,
+        requestHash: "sha256:approval-expiry",
+        conversation: {
+          id: conversation.id,
+          title: "Existing",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: true,
+        },
+        userMessageContent: "Wait for approval",
+        checkpoint: checkpoint(),
+        scheduledAt: new Date("2026-07-31T00:00:00.000Z"),
+      });
+      const claimed = await store.claimNext({
+        workerId: "worker-expiry",
+        now: new Date("2026-07-31T00:00:01.000Z"),
+        leaseMs: 30_000,
+      });
+      const tool = await prismaA.toolExecution.create({
+        data: {
+          agentExecutionId: dispatched.execution.id,
+          providerToolCallId: "provider-tool-expiry",
+          conversationId: conversation.id,
+          userId: user.id,
+          toolId: "artifact.save",
+          normalizedArguments: {},
+          argumentsHash: "sha256:arguments",
+          riskLevel: "L2",
+          status: "pending_approval",
+          expiresAt: new Date("2026-07-31T00:00:02.000Z"),
+        },
+      });
+      await expect(
+        store.markWaitingForApproval({
+          executionId: dispatched.execution.id,
+          workerId: "worker-expiry",
+          toolExecutionId: tool.id,
+          checkpoint: checkpoint(),
+          now: new Date("2026-07-31T00:00:01.500Z"),
+        })
+      ).resolves.toBe(true);
+
+      await expect(
+        store.reconcileWaitingApprovals({
+          now: new Date("2026-07-31T00:00:03.000Z"),
+        })
+      ).resolves.toBe(1);
+      await expect(
+        prismaA.agentExecution.findUniqueOrThrow({
+          where: { id: dispatched.execution.id },
+          select: { status: true },
+        })
+      ).resolves.toEqual({ status: "queued" });
+      await expect(
+        prismaA.toolExecution.findUniqueOrThrow({
+          where: { id: tool.id },
+          select: { status: true },
+        })
+      ).resolves.toEqual({ status: "expired" });
+      expect(claimed?.id).toBe(dispatched.execution.id);
+    } finally {
+      await prismaA.user.delete({ where: { id: user.id } });
+    }
+  });
+
+  it("does not blindly retry a stale approved tool with an unknown outcome", async () => {
+    const { user, conversation } = await fixture();
+    try {
+      const store = new PrismaAgentExecutionStore(prismaA);
+      const dispatched = await store.createOrGetByClientRunKey({
+        userId: user.id,
+        clientRunKey: `client-${randomUUID()}`,
+        requestHash: "sha256:approval-unknown-outcome",
+        conversation: {
+          id: conversation.id,
+          title: "Existing",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: true,
+        },
+        userMessageContent: "Run an approved side effect",
+        checkpoint: checkpoint(),
+        scheduledAt: new Date("2026-07-31T00:00:00.000Z"),
+      });
+      await store.claimNext({
+        workerId: "worker-unknown-outcome",
+        now: new Date("2026-07-31T00:00:01.000Z"),
+        leaseMs: 30_000,
+      });
+      const tool = await prismaA.toolExecution.create({
+        data: {
+          agentExecutionId: dispatched.execution.id,
+          providerToolCallId: "provider-tool-unknown-outcome",
+          conversationId: conversation.id,
+          userId: user.id,
+          toolId: "artifact.save",
+          normalizedArguments: {},
+          argumentsHash: "sha256:unknown-outcome-arguments",
+          riskLevel: "L2",
+          status: "pending_approval",
+          expiresAt: new Date("2026-07-31T00:10:00.000Z"),
+        },
+      });
+      await expect(
+        store.markWaitingForApproval({
+          executionId: dispatched.execution.id,
+          workerId: "worker-unknown-outcome",
+          toolExecutionId: tool.id,
+          checkpoint: checkpoint(),
+          now: new Date("2026-07-31T00:00:01.500Z"),
+        })
+      ).resolves.toBe(true);
+      await prismaA.toolExecution.update({
+        where: { id: tool.id },
+        data: {
+          status: "executing",
+          executedAt: new Date("2026-07-31T00:00:02.000Z"),
+        },
+      });
+
+      await expect(
+        store.reconcileWaitingApprovals({
+          now: new Date("2026-07-31T00:06:00.000Z"),
+        })
+      ).resolves.toBe(1);
+      await expect(
+        prismaA.agentExecution.findUniqueOrThrow({
+          where: { id: dispatched.execution.id },
+          select: { status: true },
+        })
+      ).resolves.toEqual({ status: "queued" });
+      await expect(
+        prismaA.toolExecution.findUniqueOrThrow({
+          where: { id: tool.id },
+          select: { status: true, errorSummary: true },
+        })
+      ).resolves.toEqual({
+        status: "failed",
+        errorSummary: {
+          code: "TOOL_EXECUTION_OUTCOME_UNKNOWN",
+          message:
+            "Approved tool execution did not report a terminal result; its side effect was not retried",
+        },
+      });
+    } finally {
+      await prismaA.user.delete({ where: { id: user.id } });
+    }
+  });
 });

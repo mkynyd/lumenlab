@@ -88,6 +88,8 @@ A 评估（时间 / 资料） → B 学习计划 → C 复习材料 → D 实战
 ### Step 4 -- 实战策略
 
 - 用 `project_files.read` 抽取 past paper / problem set 的题目；
+- 在项目学习闭环已经启用时，优先用 `learning.practice.create` 创建诊断练习，
+  用 `learning.attempt.submit` 保存同一道题的真实作答证据；不要自行伪造分数或掌握度；
 - **模拟考试条件**：限时、不查笔记、安静环境；
 - 让用户先做（不要直接给答案）；
 - 用户提交答案后再分析，标记三档：
@@ -100,6 +102,8 @@ A 评估（时间 / 资料） → B 学习计划 → C 复习材料 → D 实战
 ### Step 5 -- 弱项复盘
 
 回到 Step 4，循环直到用户说够了。每次复盘都要生成一张 `quick_memory` 卡覆盖弱项。
+需要安排到期复习时，用 `learning.review.next`；读取掌握度时只用
+`learning.progress.read` 的服务端结果。同一题重做属于有效错题复习，不要求生成变式题。
 
 ### Step 6 -- 考前清单
 

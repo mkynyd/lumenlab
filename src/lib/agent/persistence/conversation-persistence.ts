@@ -59,7 +59,10 @@ export interface ConversationPersistence {
     conversationId: string;
     skillId: string;
   }): Promise<void>;
-  loadHistory(conversationId: string): Promise<ConversationHistoryMessage[]>;
+  loadHistory(
+    conversationId: string,
+    excludeMessageIds?: string[]
+  ): Promise<ConversationHistoryMessage[]>;
   createUserMessage(input: {
     conversationId: string;
     content: string;

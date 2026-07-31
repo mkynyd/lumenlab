@@ -10,7 +10,7 @@ import type { AgentExecutionRetryPolicy } from "./retry-policy";
 
 type WorkerStore = Pick<
   AgentExecutionStore,
-  "claimNext" | "recoverExpired" | "renewLease"
+  "claimNext" | "recoverExpired" | "renewLease" | "reconcileWaitingApprovals"
 >;
 
 type WorkerRunner = Pick<AgentExecutionRunner, "run">;
@@ -134,6 +134,7 @@ export class AgentExecutionWorker {
   }
 
   async drainOnce(): Promise<boolean> {
+    await this.store.reconcileWaitingApprovals({ now: this.now(), limit: 100 });
     const execution = await this.store.claimNext({
       workerId: this.workerId,
       now: this.now(),

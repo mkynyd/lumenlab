@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   updateMany: vi.fn(),
   recordAuditEvent: vi.fn(),
+  enqueueAfterApproval: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -19,6 +20,13 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/agent/audit-log", () => ({
   recordAuditEvent: mocks.recordAuditEvent,
+}));
+vi.mock("@/lib/agent/executions/prisma-agent-execution-store", () => ({
+  PrismaAgentExecutionStore: class {
+    enqueueAfterApproval(input: unknown) {
+      return mocks.enqueueAfterApproval(input);
+    }
+  },
 }));
 
 import { POST } from "./route";
@@ -37,6 +45,7 @@ describe("POST /api/agent/reject", () => {
     });
     mocks.updateMany.mockResolvedValue({ count: 1 });
     mocks.recordAuditEvent.mockResolvedValue(undefined);
+    mocks.enqueueAfterApproval.mockResolvedValue(true);
   });
 
   it("claims the pending execution conditionally before recording rejection", async () => {
@@ -83,6 +92,27 @@ describe("POST /api/agent/reject", () => {
 
     expect(response.status).toBe(404);
     expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("automatically requeues the durable parent after rejection", async () => {
+    mocks.findUnique.mockResolvedValue({
+      id: "execution-1",
+      agentExecutionId: "run-1",
+      userId: "user-1",
+      conversationId: "conversation-1",
+      skillId: null,
+      toolId: "project_files.delete",
+      status: "pending_approval",
+    });
+
+    const response = await POST(request({ executionId: "execution-1" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.enqueueAfterApproval).toHaveBeenCalledWith({
+      executionId: "run-1",
+      toolExecutionId: "execution-1",
+      now: expect.any(Date),
+    });
   });
 });
 

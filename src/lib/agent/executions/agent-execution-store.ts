@@ -20,6 +20,29 @@ const normalizedMessageSchema = z
   })
   .strict();
 
+const durableRequestSchema = z
+  .object({
+    message: z.string().min(1).max(200_000),
+    hiddenPrompt: z.string().min(1).max(200_000).optional(),
+    model: z.enum([
+      "deepseek-v4-pro",
+      "deepseek-v4-flash",
+      "minimax-m3",
+      "qwen3.7-plus",
+    ]),
+    thinkingEnabled: z.boolean(),
+    reasoningEffort: z.enum(["high", "max"]),
+    webSearchActive: z.boolean(),
+    manualSkillId: z.string().min(1).optional(),
+    skillOff: z.boolean(),
+    mode: z
+      .enum(["experiment", "review", "coding", "general"])
+      .optional(),
+    isQuickTask: z.boolean(),
+    materialScope: z.enum(["project-corpus", "none"]).optional(),
+  })
+  .strict();
+
 const providerPrivateCheckpointKey =
   /(auth|bearer|cookie|token|provider.*(?:resume|continuation|handle)|(?:api|access|refresh)[_-]?key|credential|secret|password|private.*key)/i;
 
@@ -79,6 +102,24 @@ export const agentCheckpointSchema = z
       })
       .strict(),
     allowedToolIds: z.array(z.string().min(1)),
+    request: durableRequestSchema.optional(),
+    output: z
+      .object({
+        text: z.string(),
+        reasoning: z.string(),
+        usage: z
+          .object({
+            promptTokens: z.number().int().nonnegative(),
+            completionTokens: z.number().int().nonnegative(),
+            totalTokens: z.number().int().nonnegative(),
+            promptCacheHitTokens: z.number().int().nonnegative().optional(),
+            promptCacheMissTokens: z.number().int().nonnegative().optional(),
+          })
+          .strict()
+          .nullable(),
+      })
+      .strict()
+      .optional(),
     pendingToolCall: z
       .object({
         id: z.string().min(1),
@@ -256,6 +297,21 @@ export interface AgentExecutionStore {
     toolExecutionId: string;
     now: Date;
   }): Promise<boolean>;
+  cancelOwned(input: {
+    executionId: string;
+    userId: string;
+    now: Date;
+  }): Promise<boolean>;
+  retryOwned(input: {
+    executionId: string;
+    userId: string;
+    now: Date;
+    maxAttempts?: number;
+  }): Promise<boolean>;
+  reconcileWaitingApprovals(input: {
+    now: Date;
+    limit?: number;
+  }): Promise<number>;
   appendEvent(input: {
     executionId: string;
     workerId: string;

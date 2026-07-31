@@ -1,4 +1,9 @@
-import type { PolicyDecision, RiskLevel, ToolMetadata } from "../types";
+import type {
+  PolicyDecision,
+  RiskLevel,
+  ToolExecutionStatus,
+  ToolMetadata,
+} from "../types";
 
 export interface ToolProposal {
   userId: string;
@@ -13,6 +18,15 @@ export interface ToolProposal {
     selectedFileIds?: string[];
     runId?: string;
   };
+  agentExecutionId?: string;
+  providerToolCallId?: string;
+}
+
+export interface PersistedToolProposal {
+  id: string;
+  status?: ToolExecutionStatus;
+  resultSummary?: Record<string, unknown> | null;
+  errorSummary?: { code: string; message: string } | null;
 }
 
 export interface ToolExecutionPersistence {
@@ -20,7 +34,7 @@ export interface ToolExecutionPersistence {
     userId: string;
     conversationId: string;
   }): Promise<Map<string, "session">>;
-  propose(input: ToolProposal): Promise<{ id: string }>;
+  propose(input: ToolProposal): Promise<PersistedToolProposal>;
   markBlocked(
     executionId: string,
     error: { code: string; message: string }
