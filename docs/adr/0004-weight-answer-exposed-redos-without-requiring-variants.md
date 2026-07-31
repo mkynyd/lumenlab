@@ -1,0 +1,3 @@
+# Weight answer-exposed redos without requiring variants
+
+Redoing the same Practice Item after seeing its Answer Criteria will remain eligible to improve and eventually establish mastery; a variant item is not mandatory. Each attempt records an Assistance Level of independent, hinted, or answer exposed together with actual spacing, while a versioned mastery policy gives immediate assisted redos less Evidence Strength than later independent or spaced success. Exact weights remain replaceable policy rather than fixed product truth, preserving the educational value of working a wrong answer again without treating answer replay as full evidence.

@@ -40,6 +40,8 @@ export async function registerFromDiscovery(): Promise<number> {
       const metadata = discoveredToMetadata(skill);
       skillRegistry.register(metadata);
     }
+    const { refreshActivateSkillSchema } = await import("../tools/registry");
+    refreshActivateSkillSchema();
 
     console.log(
       `[SkillRegistry] Registered ${result.skills.length} skills from discovery ` +

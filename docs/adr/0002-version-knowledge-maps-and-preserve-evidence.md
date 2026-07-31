@@ -1,0 +1,3 @@
+# Version knowledge maps and preserve learning evidence
+
+Knowledge Maps and their Knowledge Point versions will be persisted rather than regenerated as disposable conversation content. A stable lineage identifier connects an unchanged logical Knowledge Point across map versions, while practice and evaluation evidence remains bound to the exact version that produced it; changes to Project Material mark affected learning objects stale and regeneration creates a new version instead of overwriting history, trading additional lineage and version management for traceable learning state across sessions.

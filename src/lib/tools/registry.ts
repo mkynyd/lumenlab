@@ -499,6 +499,19 @@ const TOOLS: ToolMetadata[] = [
 
 let registered = false;
 
+export function refreshActivateSkillSchema(): void {
+  const activateTool = toolRegistry.get("skill.activate");
+  if (!activateTool) return;
+  const skillIds = buildActivateSkillEnum();
+  (activateTool.inputSchema as Record<string, unknown>).properties = {
+    name: {
+      type: "string",
+      enum: skillIds,
+      description: "要激活的技能名称",
+    },
+  };
+}
+
 export function registerBuiltinTools(): void {
   if (registered) return;
   registered = true;
@@ -618,18 +631,9 @@ export function registerBuiltinTools(): void {
     ...parsePlanUpdate(args),
   }));
 
-  // 动态更新 activate_skill 的 enum（在 skills 注册完成后）
-  const activateTool = toolRegistry.get("skill.activate");
-  if (activateTool) {
-    const skillIds = buildActivateSkillEnum();
-    (activateTool.inputSchema as Record<string, unknown>).properties = {
-      name: {
-        type: "string",
-        enum: skillIds,
-        description: "要激活的技能名称",
-      },
-    };
-  }
+  // Discovery may not have run at module-load time; ensureDiscovery refreshes
+  // this schema again after it replaces the skill registry.
+  refreshActivateSkillSchema();
 }
 
 // 模块副作用注册：导入即生效

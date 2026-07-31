@@ -15,37 +15,42 @@ datasource db {
 // ============================================================
 
 model User {
-  id                  String   @id @default(cuid())
-  email               String   @unique
-  passwordHash        String
-  name                String?
-  avatarPreset        String   @default("lumen")
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  passwordHash          String
+  name                  String?
+  avatarPreset          String    @default("lumen")
   avatarStorageProvider String?
-  avatarObjectKey     String?
-  avatarMimeType      String?
-  avatarUpdatedAt     DateTime?
-  accessStatus        String   @default("active")
-  credentialProfileId String?
-  planTier            String   @default("premium") // free | pro | premium
-  planCredits         Int      @default(0)         // 当前周期总信用点额度；0 表示 A 测期间不限制
-  creditsUsed         Int      @default(0)         // 当前周期已用信用点
-  cycleStartedAt      DateTime @default(now())     // 当前 30 天周期开始时间
-  scopes              String[] @default(["project.read", "project.write", "artifact.read", "artifact.write"]) // Agent 工具权限作用域
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  avatarObjectKey       String?
+  avatarMimeType        String?
+  avatarUpdatedAt       DateTime?
+  accessStatus          String    @default("active")
+  credentialProfileId   String?
+  planTier              String    @default("premium") // free | pro | premium
+  planCredits           Int       @default(0) // 当前周期总信用点额度；0 表示 A 测期间不限制
+  creditsUsed           Int       @default(0) // 当前周期已用信用点
+  cycleStartedAt        DateTime  @default(now()) // 当前 30 天周期开始时间
+  scopes                String[]  @default(["project.read", "project.write", "artifact.read", "artifact.write"]) // Agent 工具权限作用域
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  apiKeys             ApiKey[]
-  conversations       Conversation[]
-  projects            Project[]
-  files               FileAsset[]
-  chunks              DocumentChunk[]
-  artifacts           Artifact[]
-  documentConversions DocumentConversion[]
-  tokenUsages         TokenUsage[]
-  agentExecutions     AgentExecution[]
-  credentialProfile   CredentialProfile?      @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
-  redemption          RegistrationRedemption?
-  profilePrompt       String?
+  apiKeys              ApiKey[]
+  conversations        Conversation[]
+  projects             Project[]
+  files                FileAsset[]
+  chunks               DocumentChunk[]
+  artifacts            Artifact[]
+  documentConversions  DocumentConversion[]
+  tokenUsages          TokenUsage[]
+  agentExecutions      AgentExecution[]
+  learningGoals        LearningGoal[]
+  learningSessions     LearningSession[]
+  practiceAttempts     PracticeAttempt[]
+  errorTypeCorrections AttemptErrorTypeCorrection[]
+  knowledgeProgress    KnowledgePointProgress[]
+  credentialProfile    CredentialProfile?           @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
+  redemption           RegistrationRedemption?
+  profilePrompt        String?
 
   @@index([email])
   @@index([credentialProfileId])
@@ -200,29 +205,31 @@ model Message {
   cacheMissTokens  Int?
   sources          Json?
   subtype          String? // e.g. "context-summary"
-  metadata         Json?  // 压缩摘要的额外信息
+  metadata         Json? // 压缩摘要的额外信息
   createdAt        DateTime @default(now())
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  artifacts    Artifact[]
-  tokenUsage   TokenUsage?
+  conversation                      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  artifacts                         Artifact[]
+  tokenUsage                        TokenUsage?
+  agentExecutionsAsUserMessage      AgentExecution[] @relation("AgentExecutionUserMessage")
+  agentExecutionsAsAssistantMessage AgentExecution[] @relation("AgentExecutionAssistantMessage")
 
   @@index([conversationId])
 }
 
 model TokenUsage {
-  id                    String   @id @default(cuid())
-  userId                String
-  conversationId        String?
-  messageId             String?  @unique
-  model                 String
-  provider              String
-  inputCacheHitTokens   Int      @default(0)
-  inputCacheMissTokens  Int      @default(0)
-  outputTokens          Int      @default(0)
-  totalTokens           Int      @default(0)
-  creditsConsumed       Int      @default(0)
-  createdAt             DateTime @default(now())
+  id                   String   @id @default(cuid())
+  userId               String
+  conversationId       String?
+  messageId            String?  @unique
+  model                String
+  provider             String
+  inputCacheHitTokens  Int      @default(0)
+  inputCacheMissTokens Int      @default(0)
+  outputTokens         Int      @default(0)
+  totalTokens          Int      @default(0)
+  creditsConsumed      Int      @default(0)
+  createdAt            DateTime @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
@@ -249,14 +256,16 @@ model Project {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversations Conversation[]
-  files         FileAsset[]
-  chunks        DocumentChunk[]
-  artifacts     Artifact[]
-  projectIndex  ProjectIndex?
-  quickActions  QuickAction[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations   Conversation[]
+  files           FileAsset[]
+  chunks          DocumentChunk[]
+  artifacts       Artifact[]
+  projectIndex    ProjectIndex?
+  quickActions    QuickAction[]
   agentExecutions AgentExecution[]
+  learningGoals   LearningGoal[]
+  sourceAnchors   SourceAnchor[]
 
   @@index([userId])
 }
@@ -275,17 +284,19 @@ model FileAsset {
   enhancedContent    String?
   enhancementStatus  String   @default("none") // none, enhancing, enhanced, stale, failed
   processingMetadata Json?
+  contentFingerprint String?
   status             String   @default("uploaded") // uploaded, parsed, failed
   category           String?
   categoryConfidence Float?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project   Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  chunks    DocumentChunk[]
-  resources FileAssetResource[]
-  parseJob  FileParseJob?
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chunks        DocumentChunk[]
+  resources     FileAssetResource[]
+  parseJob      FileParseJob?
+  sourceAnchors SourceAnchor[]
 
   @@index([userId])
   @@index([projectId])
@@ -332,10 +343,10 @@ model Artifact {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project      Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  conversation Conversation?       @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      Message?            @relation(fields: [messageId], references: [id], onDelete: SetNull)
   references   ReferenceListItem[]
 
   @@index([userId])
@@ -346,12 +357,12 @@ model Artifact {
 }
 
 model DocumentConversion {
-  id                    String   @id @default(cuid())
+  id                    String    @id @default(cuid())
   userId                String
   title                 String
   originalName          String
   markdownContent       String
-  status                String   @default("completed")
+  status                String    @default("completed")
   fileSize              Int?
   pageCount             Int?
   metadata              Json?
@@ -361,8 +372,8 @@ model DocumentConversion {
   exportGeneratedAt     DateTime?
   exportFingerprint     String?
   exportRendererVersion String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   user   User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   assets DocumentConversionAsset[]
@@ -406,20 +417,20 @@ model FileAssetResource {
 }
 
 model FileParseJob {
-  id            String   @id @default(cuid())
-  userId        String
-  fileAssetId   String   @unique
-  status        String   @default("pending")
-  stage         String   @default("pending")
-  attempt       Int      @default(0)
-  strategy      String?
-  costEstimate  Int?
-  startedAt     DateTime?
-  completedAt   DateTime?
-  error         String?
-  warnings      String[] @default([])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String    @id @default(cuid())
+  userId       String
+  fileAssetId  String    @unique
+  status       String    @default("pending")
+  stage        String    @default("pending")
+  attempt      Int       @default(0)
+  strategy     String?
+  costEstimate Int?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  error        String?
+  warnings     String[]  @default([])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   fileAsset FileAsset @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
 
@@ -436,7 +447,7 @@ model DocumentChunk {
   title       String?
   content     String
   contentHash String?
-  chunkIndex  Int     @default(0)
+  chunkIndex  Int      @default(0)
   tokenCount  Int?
   metadata    Json?
   mediaUrls   String[] @default([])
@@ -447,9 +458,10 @@ model DocumentChunk {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project   Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  fileAsset FileAsset? @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileAsset     FileAsset?     @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
+  sourceAnchors SourceAnchor[]
 
   @@index([userId])
   @@index([projectId])
@@ -458,13 +470,13 @@ model DocumentChunk {
 }
 
 model QueryEmbeddingCache {
-  id         String   @id @default(cuid())
+  id         String                      @id @default(cuid())
   userId     String
   namespace  String
   promptHash String
   promptText String
   embedding  Unsupported("vector(1024)")
-  createdAt  DateTime @default(now())
+  createdAt  DateTime                    @default(now())
   expiresAt  DateTime
 
   @@unique([namespace, promptHash])
@@ -474,14 +486,14 @@ model QueryEmbeddingCache {
 }
 
 model SemanticResponseCache {
-  id           String   @id @default(cuid())
+  id           String                      @id @default(cuid())
   userId       String
   namespace    String
   promptHash   String
   responseType String
   responseJson String
   embedding    Unsupported("vector(1024)")
-  createdAt    DateTime @default(now())
+  createdAt    DateTime                    @default(now())
   expiresAt    DateTime
 
   @@index([userId])
@@ -516,17 +528,17 @@ model SkillPackage {
 }
 
 model ConversationSkill {
-  id             String    @id @default(cuid())
-  conversationId String
-  skillId        String
-  version        String
-  source         String?
+  id                 String    @id @default(cuid())
+  conversationId     String
+  skillId            String
+  version            String
+  source             String?
   statusAtActivation String?
-  confidence     Float?
-  reason         String?
-  missingInfo    Json?
-  activatedAt    DateTime  @default(now())
-  deactivatedAt  DateTime?
+  confidence         Float?
+  reason             String?
+  missingInfo        Json?
+  activatedAt        DateTime  @default(now())
+  deactivatedAt      DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -558,6 +570,8 @@ model ToolDefinition {
 
 model ToolExecution {
   id                  String    @id @default(cuid())
+  agentExecutionId    String?
+  providerToolCallId  String?
   conversationId      String
   userId              String
   skillId             String?
@@ -579,6 +593,10 @@ model ToolExecution {
   errorSummary        Json?
   auditMetadata       Json?
 
+  agentExecution AgentExecution? @relation(fields: [agentExecutionId], references: [id], onDelete: Cascade)
+
+  @@unique([agentExecutionId, providerToolCallId])
+  @@index([agentExecutionId])
   @@index([conversationId, createdAt])
   @@index([userId, status])
   @@index([status, expiresAt])
@@ -631,29 +649,39 @@ enum AgentExecutionStatus {
 }
 
 model AgentExecution {
-  id                     String   @id @default(cuid())
+  id                     String               @id @default(cuid())
   userId                 String
+  clientRunKey           String?
+  requestHash            String?
+  userMessageId          String?              @unique
+  assistantMessageId     String?              @unique
   conversationId         String
   projectId              String?
   status                 AgentExecutionStatus @default(queued)
   checkpoint             Json?
   waitingToolExecutionId String?
-  scheduledAt            DateTime @default(now())
+  scheduledAt            DateTime             @default(now())
   leaseOwner             String?
   leaseExpiresAt         DateTime?
-  attempt                Int      @default(0)
-  lastEventSequence      Int      @default(0)
+  attempt                Int                  @default(0)
+  lastEventSequence      Int                  @default(0)
   failure                Json?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
 
-  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  project      Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  events       AgentExecutionEvent[]
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation     Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userMessage      Message?              @relation("AgentExecutionUserMessage", fields: [userMessageId], references: [id], onDelete: SetNull)
+  assistantMessage Message?              @relation("AgentExecutionAssistantMessage", fields: [assistantMessageId], references: [id], onDelete: SetNull)
+  project          Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  events           AgentExecutionEvent[]
+  toolExecutions   ToolExecution[]
+  learningSessions LearningSession[]
 
+  @@unique([userId, clientRunKey])
   @@index([userId, createdAt])
   @@index([conversationId, createdAt])
+  @@index([conversationId, status])
   @@index([projectId])
   @@index([status, scheduledAt])
   @@index([status, leaseExpiresAt])
@@ -674,6 +702,450 @@ model AgentExecutionEvent {
   @@unique([executionId, sequence])
   @@unique([executionId, key])
   @@index([executionId, createdAt])
+}
+
+// ============================================================
+// Learning loop — goals, versioned evidence, practice, and review
+// ============================================================
+
+enum LearningGoalStatus {
+  active
+  paused
+  completed
+  replaced
+}
+
+enum LearningScopeStatus {
+  draft
+  confirmed
+}
+
+enum LearningMaterialMode {
+  project_corpus
+  selected_files
+}
+
+enum PracticeMode {
+  evidence_bearing
+  feedback_only
+}
+
+enum PracticeItemType {
+  single_choice
+  multiple_choice
+  true_false
+  numeric
+  short_answer
+  long_answer
+  proof
+  open_design
+}
+
+enum AssistanceLevel {
+  independent
+  hinted
+  answer_exposed
+}
+
+enum EvaluationVerdict {
+  correct
+  partial
+  incorrect
+  uncertain
+}
+
+enum MasteryState {
+  new
+  learning
+  mastered
+}
+
+enum ContentFreshness {
+  current
+  needs_revalidation
+  unsupported
+}
+
+enum LearningSessionMode {
+  diagnostic
+  review
+}
+
+enum LearningSessionStatus {
+  draft
+  ready
+  in_progress
+  completed
+  cancelled
+}
+
+enum LearningSessionItemStatus {
+  pending
+  in_progress
+  completed
+  skipped
+}
+
+enum PracticeInteractionType {
+  hint_revealed
+  answer_revealed
+}
+
+model LearningGoal {
+  id             String             @id @default(cuid())
+  userId         String
+  projectId      String
+  title          String
+  purpose        String?
+  targetDate     DateTime?
+  dailyMinutes   Int?
+  status         LearningGoalStatus @default(active)
+  idempotencyKey String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  user          User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scopes        LearningScope[]
+  knowledgeMaps KnowledgeMap[]
+  pointLineages KnowledgePointLineage[]
+  itemLineages  PracticeItemLineage[]
+  practiceItems PracticeItem[]
+  sessions      LearningSession[]
+  progress      KnowledgePointProgress[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([projectId, status])
+  @@index([userId, createdAt])
+}
+
+model LearningScope {
+  id           String               @id @default(cuid())
+  goalId       String
+  version      Int
+  status       LearningScopeStatus  @default(draft)
+  definition   Json
+  materialMode LearningMaterialMode
+  fileIds      String[]             @default([])
+  materialGaps Json?
+  confirmedAt  DateTime?
+  createdAt    DateTime             @default(now())
+
+  goal          LearningGoal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  knowledgeMaps KnowledgeMap[]
+
+  @@unique([goalId, version])
+  @@index([goalId, status])
+}
+
+model KnowledgeMap {
+  id                 String   @id @default(cuid())
+  goalId             String
+  scopeId            String
+  version            Int
+  requestKey         String?
+  generationMetadata Json?
+  sourceFingerprint  String
+  createdAt          DateTime @default(now())
+
+  goal            LearningGoal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  scope           LearningScope     @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  knowledgePoints KnowledgePoint[]
+  practiceItems   PracticeItem[]
+  sessions        LearningSession[]
+
+  @@unique([goalId, version])
+  @@unique([goalId, requestKey])
+  @@index([scopeId])
+}
+
+model KnowledgePointLineage {
+  id                  String   @id @default(cuid())
+  goalId              String
+  stableKey           String
+  predecessorMetadata Json?
+  createdAt           DateTime @default(now())
+
+  goal     LearningGoal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  versions KnowledgePoint[]
+  progress KnowledgePointProgress[]
+
+  @@unique([goalId, stableKey])
+  @@index([goalId])
+}
+
+model KnowledgePoint {
+  id             String           @id @default(cuid())
+  knowledgeMapId String
+  lineageId      String
+  name           String
+  kind           String
+  orderIndex     Int
+  freshness      ContentFreshness @default(current)
+  createdAt      DateTime         @default(now())
+
+  knowledgeMap KnowledgeMap                 @relation(fields: [knowledgeMapId], references: [id], onDelete: Cascade)
+  lineage      KnowledgePointLineage        @relation(fields: [lineageId], references: [id], onDelete: Cascade)
+  sourceLinks  KnowledgePointSourceAnchor[]
+  itemLinks    PracticeItemKnowledgePoint[]
+
+  @@unique([knowledgeMapId, lineageId])
+  @@unique([knowledgeMapId, orderIndex])
+  @@index([lineageId])
+  @@index([knowledgeMapId, freshness])
+}
+
+model SourceAnchor {
+  id                      String   @id @default(cuid())
+  projectId               String
+  anchorKey               String
+  fileAssetId             String?
+  documentChunkId         String?
+  originalFileAssetId     String
+  originalDocumentChunkId String?
+  sourceFileName          String
+  locator                 Json
+  contentFingerprint      String
+  excerptHash             String
+  createdAt               DateTime @default(now())
+
+  project         Project                      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileAsset       FileAsset?                   @relation(fields: [fileAssetId], references: [id], onDelete: SetNull)
+  documentChunk   DocumentChunk?               @relation(fields: [documentChunkId], references: [id], onDelete: SetNull)
+  knowledgePoints KnowledgePointSourceAnchor[]
+  practiceItems   PracticeItemSourceAnchor[]
+
+  @@unique([projectId, anchorKey])
+  @@index([projectId])
+  @@index([fileAssetId])
+  @@index([documentChunkId])
+  @@index([originalFileAssetId])
+  @@index([contentFingerprint])
+}
+
+model KnowledgePointSourceAnchor {
+  knowledgePointId String
+  sourceAnchorId   String
+
+  knowledgePoint KnowledgePoint @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+  sourceAnchor   SourceAnchor   @relation(fields: [sourceAnchorId], references: [id], onDelete: Cascade)
+
+  @@id([knowledgePointId, sourceAnchorId])
+  @@index([sourceAnchorId])
+}
+
+model PracticeItemLineage {
+  id                  String   @id @default(cuid())
+  goalId              String
+  stableKey           String
+  predecessorMetadata Json?
+  createdAt           DateTime @default(now())
+
+  goal     LearningGoal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  versions PracticeItem[]
+
+  @@unique([goalId, stableKey])
+  @@index([goalId])
+}
+
+model PracticeItem {
+  id                 String           @id @default(cuid())
+  goalId             String
+  knowledgeMapId     String
+  lineageId          String
+  version            Int
+  prompt             String
+  type               PracticeItemType
+  options            Json?
+  mode               PracticeMode
+  generationMetadata Json?
+  freshness          ContentFreshness @default(current)
+  createdAt          DateTime         @default(now())
+
+  goal            LearningGoal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  knowledgeMap    KnowledgeMap                 @relation(fields: [knowledgeMapId], references: [id], onDelete: Cascade)
+  lineage         PracticeItemLineage          @relation(fields: [lineageId], references: [id], onDelete: Cascade)
+  answerSpec      PracticeItemAnswerSpec?
+  knowledgePoints PracticeItemKnowledgePoint[]
+  sourceLinks     PracticeItemSourceAnchor[]
+  sessionItems    LearningSessionItem[]
+
+  @@unique([lineageId, version])
+  @@index([goalId, createdAt])
+  @@index([knowledgeMapId])
+  @@index([freshness])
+}
+
+model PracticeItemAnswerSpec {
+  id                  String   @id @default(cuid())
+  practiceItemId      String   @unique
+  criteria            Json
+  explanation         String
+  graderPolicyVersion String
+  createdAt           DateTime @default(now())
+
+  practiceItem PracticeItem @relation(fields: [practiceItemId], references: [id], onDelete: Cascade)
+}
+
+model PracticeItemKnowledgePoint {
+  practiceItemId   String
+  knowledgePointId String
+  weight           Float  @default(1)
+
+  practiceItem   PracticeItem   @relation(fields: [practiceItemId], references: [id], onDelete: Cascade)
+  knowledgePoint KnowledgePoint @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+
+  @@id([practiceItemId, knowledgePointId])
+  @@index([knowledgePointId])
+}
+
+model PracticeItemSourceAnchor {
+  practiceItemId String
+  sourceAnchorId String
+
+  practiceItem PracticeItem @relation(fields: [practiceItemId], references: [id], onDelete: Cascade)
+  sourceAnchor SourceAnchor @relation(fields: [sourceAnchorId], references: [id], onDelete: Cascade)
+
+  @@id([practiceItemId, sourceAnchorId])
+  @@index([sourceAnchorId])
+}
+
+model LearningSession {
+  id               String                @id @default(cuid())
+  userId           String
+  goalId           String
+  knowledgeMapId   String
+  mode             LearningSessionMode
+  status           LearningSessionStatus @default(draft)
+  idempotencyKey   String?
+  agentExecutionId String?               @unique
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal           LearningGoal          @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  knowledgeMap   KnowledgeMap          @relation(fields: [knowledgeMapId], references: [id], onDelete: Cascade)
+  agentExecution AgentExecution?       @relation(fields: [agentExecutionId], references: [id], onDelete: SetNull)
+  items          LearningSessionItem[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([goalId, createdAt])
+  @@index([userId, status])
+  @@index([knowledgeMapId])
+}
+
+model LearningSessionItem {
+  id             String                    @id @default(cuid())
+  sessionId      String
+  practiceItemId String
+  orderIndex     Int
+  status         LearningSessionItemStatus @default(pending)
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  session      LearningSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  practiceItem PracticeItem               @relation(fields: [practiceItemId], references: [id], onDelete: Cascade)
+  interactions PracticeInteractionEvent[]
+  attempts     PracticeAttempt[]
+
+  @@unique([sessionId, orderIndex])
+  @@unique([sessionId, practiceItemId])
+  @@index([practiceItemId])
+}
+
+model PracticeInteractionEvent {
+  id             String                  @id @default(cuid())
+  sessionItemId  String
+  type           PracticeInteractionType
+  idempotencyKey String
+  metadata       Json?
+  createdAt      DateTime                @default(now())
+
+  sessionItem LearningSessionItem @relation(fields: [sessionItemId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionItemId, idempotencyKey])
+  @@index([sessionItemId, createdAt])
+}
+
+model PracticeAttempt {
+  id              String          @id @default(cuid())
+  userId          String
+  sessionItemId   String
+  answer          Json
+  assistanceLevel AssistanceLevel
+  spacingSeconds  Int
+  idempotencyKey  String
+  submittedAt     DateTime        @default(now())
+  createdAt       DateTime        @default(now())
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionItem LearningSessionItem @relation(fields: [sessionItemId], references: [id], onDelete: Cascade)
+  evaluations AttemptEvaluation[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([sessionItemId, submittedAt])
+}
+
+model AttemptEvaluation {
+  id                     String            @id @default(cuid())
+  attemptId              String
+  verdict                EvaluationVerdict
+  score                  Float?
+  rubric                 Json?
+  confidence             Float
+  errorType              String?
+  reason                 String
+  modelVersion           String?
+  policyVersion          String
+  supersedesEvaluationId String?           @unique
+  createdAt              DateTime          @default(now())
+
+  attempt              PracticeAttempt              @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  supersedes           AttemptEvaluation?           @relation("AttemptEvaluationSupersession", fields: [supersedesEvaluationId, attemptId], references: [id, attemptId], onDelete: Restrict)
+  supersededBy         AttemptEvaluation[]          @relation("AttemptEvaluationSupersession")
+  errorTypeCorrections AttemptErrorTypeCorrection[]
+
+  @@unique([id, attemptId])
+  @@index([attemptId, createdAt])
+}
+
+model AttemptErrorTypeCorrection {
+  id             String   @id @default(cuid())
+  evaluationId   String
+  userId         String
+  errorType      String
+  reason         String?
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+
+  evaluation AttemptEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, idempotencyKey])
+  @@index([evaluationId, createdAt])
+}
+
+model KnowledgePointProgress {
+  id            String       @id @default(cuid())
+  userId        String
+  goalId        String
+  lineageId     String
+  masteryState  MasteryState @default(new)
+  nextReviewAt  DateTime?
+  policyVersion String
+  evidenceAsOf  DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal    LearningGoal          @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  lineage KnowledgePointLineage @relation(fields: [lineageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, goalId, lineageId])
+  @@index([goalId, masteryState])
+  @@index([userId, nextReviewAt])
 }
 
 model UserToolPreference {

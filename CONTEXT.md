@@ -1,5 +1,145 @@
 # Context Glossary
 
+## Project
+
+A user-owned context that groups project material, conversations, saved artifacts, and optional learning goals under one lifecycle boundary.
+_Avoid_: Course, lesson container, folder
+
+## Learning Goal
+
+A specific learning outcome pursued with the material and activity inside one project. Any project may opt into learning goals without changing its project type; a project may retain multiple historical goals, but has at most one active learning goal in P0.
+_Avoid_: Course, project type, study artifact
+
+## Active Learning Goal
+
+The single learning goal that currently governs a project's learning priorities and today's work. Completing, pausing, or replacing it preserves the evidence accumulated under earlier goals.
+_Avoid_: Active course, current project
+
+## Learning Scope
+
+The confirmed topics, chapters, or assessment boundaries covered by a learning goal. A learning scope may cover all readable project material or an explicitly narrowed subset, and records material gaps instead of filling them with outside knowledge.
+_Avoid_: Selected files, project description, model context
+
+## Draft Learning Scope
+
+A system-proposed learning scope derived from readable project material when the learner has not supplied one. It does not govern diagnostic work until the learner confirms or narrows it.
+_Avoid_: Inferred syllabus, active scope
+
+## Knowledge Map
+
+A versioned decomposition of a confirmed learning scope into knowledge points. Regenerating a map preserves earlier versions so their learning evidence remains interpretable.
+_Avoid_: Outline artifact, topic list, generated summary
+
+## Knowledge Point
+
+The smallest named unit whose practice and review evidence is tracked. Its stable lineage identity survives Knowledge Map regeneration when the supported concept is unchanged, while each map keeps an immutable version-specific snapshot.
+_Avoid_: Document chunk, heading, quiz
+
+## Knowledge Point Version
+
+The immutable snapshot of a Knowledge Point inside one Knowledge Map version. Practice and evaluation evidence binds to this version; unchanged snapshots can share the same lineage identity across maps without rewriting historical evidence.
+_Avoid_: Mutable knowledge point, latest topic, copied mastery state
+
+## Mastery State
+
+The evidence-derived learning state of a knowledge point: new, learning, or mastered. It is independent from whether review is currently due.
+_Avoid_: Review status, model confidence, exam score
+
+## Review State
+
+The scheduling state of a knowledge point: unscheduled, scheduled, or due. A mastered knowledge point may still be due for review.
+_Avoid_: Mastery state, wrong-answer status
+
+## Learning Progress Summary
+
+A compact, approximate view of how a learning goal's knowledge points are distributed across mastery states, with due review shown separately. It communicates direction without claiming a precise mastery probability or exam grade.
+_Avoid_: Mastery percentage, predicted grade, completion score
+
+## Content Freshness
+
+The relationship between a learning object and the current version of its supporting project material: current, needs revalidation, or unsupported. It is independent from mastery and review state.
+_Avoid_: Parse status, mastery reset, cache freshness
+
+## Needs Revalidation
+
+A content freshness state for a knowledge point affected by changed project material. Historical evidence remains available, but the point does not count as currently mastered until new-version evidence revalidates it.
+_Avoid_: Unmastered, deleted, failed review
+
+## Unsupported Knowledge Point
+
+A knowledge point whose supporting project material is no longer available and has no replacement source anchor. It remains historical but cannot produce new evidence-bearing practice.
+_Avoid_: Missing retrieval result, stale cache
+
+## Source Anchor
+
+A reference from a learning object to the specific project material location that supports it. A source anchor is evidence of origin, not the learning object itself.
+_Avoid_: Citation label, selected file, retrieved context
+
+## Practice Item
+
+A versioned question or task used to gather evidence about one or more knowledge points. Its prompt, answer criteria, and source anchors are fixed for the lifetime of that version.
+_Avoid_: Quick task, chat prompt, artifact
+
+## Practice Item Lineage
+
+The stable identity connecting revisions of the same logical practice item. A wording or source-anchor refresh may preserve lineage only when the assessed knowledge and answer semantics remain the same; a changed learning target or materially changed answer criteria starts a new lineage.
+_Avoid_: Prompt hash, item version, automatic paraphrase group
+
+## Evidence-Bearing Practice Item
+
+A practice item whose evaluation is eligible to influence mastery because it can be graded deterministically or with a structured short-answer rubric.
+_Avoid_: Graded chat, scored artifact, mastery result
+
+## Feedback-Only Practice Item
+
+A practice item that may receive instructional feedback but cannot change mastery in P0, including long-form essays, proofs, and open design work.
+_Avoid_: Failed assessment, ungraded attempt
+
+## Answer Criteria
+
+The versioned correct answer, accepted values, or rubric used to evaluate a practice item. Answer criteria belong to the item version and are not themselves evidence of learner mastery.
+_Avoid_: Model opinion, explanation, mastery threshold
+
+## Practice Attempt
+
+An immutable answer submitted for a specific practice item version. Repeating the work creates another attempt rather than replacing earlier evidence.
+_Avoid_: Draft answer, latest answer, editable score
+
+## Assisted Attempt
+
+A practice attempt made after answer criteria were exposed or with instructional help. It remains learning evidence, but carries less mastery weight than an independent attempt made after meaningful spacing.
+_Avoid_: Invalid attempt, failed attempt
+
+## Assistance Level
+
+The help context of a practice attempt: independent, hinted, or answer exposed. Together with actual spacing, it determines evidence strength under a versioned mastery policy.
+_Avoid_: Difficulty, correctness, mastery state
+
+## Evidence Strength
+
+The relative contribution an evaluated attempt makes to mastery under a named policy version. It is derived from correctness, assistance level, and spacing rather than written directly by the model.
+_Avoid_: Raw score, model confidence, permanent weight
+
+## Spaced Redo
+
+A new practice attempt on the same practice item after a review interval. Repeated spaced success on the same item may establish mastery without requiring a variant question.
+_Avoid_: Duplicate attempt, answer replay
+
+## Attempt Evaluation
+
+An assessment of a practice attempt against the practice item's answer criteria. A correction or regrade creates a linked evaluation that supersedes an earlier evaluation without rewriting it.
+_Avoid_: Corrected attempt, overwritten score, mastery state
+
+## Wrong-Answer Collection
+
+A learning-goal view of practice items with incorrect, partial, or low-confidence attempt evidence. It is derived from the original practice and review records rather than copying questions into a second store.
+_Avoid_: Question bank copy, mistake artifact, deleted failures
+
+## Resolved Wrong Answer
+
+A wrong-answer collection item whose later evidence satisfies the current resolution policy. It remains visible in learning history but no longer receives unresolved-item priority.
+_Avoid_: Deleted wrong answer, mastered knowledge point
+
 ## Project Material
 
 Files uploaded into a project and parsed into model-readable content. Project material is not the same as chat history, user profile background, or saved artifacts.

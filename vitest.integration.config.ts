@@ -11,14 +11,11 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
-    exclude: [
-      "**/node_modules/**",
-      "**/.next/**",
-      "**/dist/**",
-      "**/.worktrees/**",
-      "**/*.integration.test.ts",
-    ],
+    environment: "node",
+    include: ["src/**/*.integration.test.ts"],
+    fileParallelism: false,
+    maxWorkers: 1,
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
   },
 });
