@@ -11,7 +11,12 @@ import type { AgentRuntimeEvent } from "@/lib/agent/runtime-events";
 import { runAgentRuntime } from "@/lib/agent/runtime";
 import type { AgentEvent, ToolCallPreview } from "@/lib/agent/types";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
+import { mergeAgentUsage } from "@/lib/agent/usage";
 import { logger } from "@/lib/logger";
+import {
+  recordTokenUsage,
+  type RecordTokenUsageInput,
+} from "@/lib/tokens";
 import type {
   AgentCheckpoint,
   AgentExecutionRecord,
@@ -123,6 +128,7 @@ function runInputFromExecution(
       executionId: execution.id,
       userMessageId: execution.userMessageId,
       assistantMessageId: execution.assistantMessageId,
+      ...(checkpoint.usage ? { priorUsage: checkpoint.usage } : {}),
     },
     signal,
   };
@@ -266,13 +272,14 @@ function checkpointWithOutput(input: {
   const base = { ...input.checkpoint };
   delete base.pendingToolCall;
   delete base.output;
+  delete base.usage;
   return {
     ...base,
     round: input.checkpoint.round + 1,
     output: {
       text: sanitizeModelText(input.text) || "（模型未输出正文）",
       reasoning: sanitizeModelText(input.reasoning),
-      usage: input.usage,
+      usage: mergeAgentUsage(input.checkpoint.usage, input.usage),
     },
   };
 }
@@ -281,18 +288,62 @@ function waitingCheckpoint(input: {
   checkpoint: AgentCheckpoint;
   toolExecutionId: string;
   toolId: string;
+  usage: AgentUsage | null;
 }): AgentCheckpoint {
   const base = { ...input.checkpoint };
+  const usage = mergeAgentUsage(input.checkpoint.usage, input.usage);
   delete base.output;
   return {
     ...base,
     round: input.checkpoint.round + 1,
+    ...(usage ? { usage } : {}),
     pendingToolCall: {
       id: input.toolExecutionId,
       toolId: input.toolId,
       arguments: { toolExecutionId: input.toolExecutionId },
     },
   };
+}
+
+type DurableUsageRecorder = (
+  input: RecordTokenUsageInput
+) => Promise<unknown>;
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "P2002"
+  );
+}
+
+async function persistCompletedUsage(
+  execution: AgentExecutionRecord,
+  usage: AgentUsage | null,
+  recordUsage: DurableUsageRecorder
+) {
+  const checkpoint = execution.checkpoint;
+  if (!usage || !execution.assistantMessageId || !checkpoint) return;
+  try {
+    await recordUsage({
+      userId: execution.userId,
+      conversationId: execution.conversationId,
+      messageId: execution.assistantMessageId,
+      model: checkpoint.request?.model ?? checkpoint.model.name,
+      provider: checkpoint.model.provider,
+      inputCacheHitTokens: usage.promptCacheHitTokens ?? 0,
+      inputCacheMissTokens: Math.max(
+        usage.promptCacheMissTokens ?? 0,
+        usage.promptTokens - (usage.promptCacheHitTokens ?? 0),
+        0
+      ),
+      outputTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+    });
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) throw error;
+  }
 }
 
 function isOperationalEvent(event: AgentRuntimeEvent): event is AgentEvent {
@@ -307,8 +358,10 @@ function isOperationalEvent(event: AgentRuntimeEvent): event is AgentEvent {
 
 export function createDurableAgentExecutionHandler(input: {
   run?: (runInput: AgentRunInput) => ReturnType<typeof runAgentRuntime>;
+  recordUsage?: DurableUsageRecorder;
 } = {}): AgentExecutionHandler {
   const run = input.run ?? runAgentRuntime;
+  const recordUsage = input.recordUsage ?? recordTokenUsage;
 
   return async (context) => {
     const checkpoint = context.execution.checkpoint;
@@ -321,6 +374,11 @@ export function createDurableAgentExecutionHandler(input: {
       };
     }
     if (checkpoint.output) {
+      await persistCompletedUsage(
+        context.execution,
+        checkpoint.output.usage,
+        recordUsage
+      );
       await appendOutput(context, checkpoint);
       return { kind: "completed", checkpoint };
     }
@@ -364,6 +422,7 @@ export function createDurableAgentExecutionHandler(input: {
           checkpoint,
           toolExecutionId: approval.executionId,
           toolId: approval.preview.toolId,
+          usage: completion.usage ?? streamedUsage,
         }),
       };
     }
@@ -383,6 +442,11 @@ export function createDurableAgentExecutionHandler(input: {
       usage: completion.usage ?? streamedUsage,
     });
     await context.saveCheckpoint(finalCheckpoint);
+    await persistCompletedUsage(
+      context.execution,
+      finalCheckpoint.output?.usage ?? null,
+      recordUsage
+    );
     await appendOutput(context, finalCheckpoint);
     return { kind: "completed", checkpoint: finalCheckpoint };
   };

@@ -1373,6 +1373,26 @@ describe("PrismaAgentExecutionStore", () => {
     ).not.toThrow();
   });
 
+  it("accepts cumulative token usage counters on an approval checkpoint", () => {
+    expect(() =>
+      parseAgentCheckpoint({
+        ...checkpoint(),
+        usage: {
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+          promptCacheHitTokens: 2,
+          promptCacheMissTokens: 8,
+        },
+        pendingToolCall: {
+          id: "call-1",
+          toolId: "artifact.save",
+          arguments: { toolExecutionId: "call-1" },
+        },
+      })
+    ).not.toThrow();
+  });
+
   it("rejects non-JSON and provider-private values nested in a pending tool call", async () => {
     const store = new PrismaAgentExecutionStore();
     const base = checkpoint();

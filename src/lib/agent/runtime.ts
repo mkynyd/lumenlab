@@ -66,6 +66,7 @@ import type {
   AgentUsage,
 } from "@/lib/agent/contracts";
 import type { AgentRuntimeEvent } from "@/lib/agent/runtime-events";
+import { mergeAgentUsage } from "@/lib/agent/usage";
 import { compareRuntimeDecisions } from "@/lib/agent/observability/runtime-shadow";
 import { buildInitialAgentPlan, finalizeAgentPlan } from "@/lib/agent/plan";
 import { AgentRunMetricsCollector } from "@/lib/agent/observability/agent-run-metrics";
@@ -1113,7 +1114,9 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     messageSources,
     loopResult.status,
     conversationPersistence,
-    Boolean(input.durable)
+    Boolean(input.durable),
+    !input.durable,
+    input.durable?.priorUsage ?? null
   )
     .then(async (result) => {
       runMetrics.recordUsage(result.usage);
@@ -1310,7 +1313,12 @@ export async function accumulateAndSave(
   } | null,
   sources: AgentSource[] = [],
   completionStatus: AgentCompletion["status"] = "completed",
-  persistence: ConversationPersistence = new PrismaConversationAdapter()
+  persistence: ConversationPersistence = new PrismaConversationAdapter(),
+  options: {
+    preserveEmptyMessage?: boolean;
+    persistTokenUsage?: boolean;
+    priorUsage?: AgentUsage | null;
+  } = {}
 ): Promise<AgentCompletion> {
   return accumulateAndSaveEvents(
     normalizeProviderEventStream(stream),
@@ -1322,7 +1330,10 @@ export async function accumulateAndSave(
     getUsage,
     sources,
     completionStatus,
-    persistence
+    persistence,
+    options.preserveEmptyMessage ?? false,
+    options.persistTokenUsage ?? true,
+    options.priorUsage ?? null
   );
 }
 
@@ -1343,7 +1354,9 @@ async function accumulateAndSaveEvents(
   sources: AgentSource[],
   completionStatus: AgentCompletion["status"],
   persistence: ConversationPersistence,
-  preserveEmptyMessage = false
+  preserveEmptyMessage = false,
+  persistTokenUsage = true,
+  priorUsage: AgentUsage | null = null
 ): Promise<AgentCompletion> {
   const reader = stream.getReader();
   let fullContent = "";
@@ -1365,8 +1378,8 @@ async function accumulateAndSaveEvents(
     reader.releaseLock();
   }
 
-  if (fullContent || fullReasoning) {
-    const usage = getUsage();
+  const usage = getUsage();
+  if (usage) {
     const promptTokens = usage?.prompt_tokens ?? 0;
     const completionTokens = usage?.completion_tokens ?? 0;
     const hitTokens = usage?.prompt_cache_hit_tokens ?? 0;
@@ -1382,40 +1395,46 @@ async function accumulateAndSaveEvents(
       promptCacheHitTokens: hitTokens,
       promptCacheMissTokens: missTokens,
     };
+  }
+  const persistedUsage = mergeAgentUsage(priorUsage, completionUsage);
+
+  if (fullContent || fullReasoning) {
 
     await persistence.completeAssistantMessage({
       messageId,
       content: sanitizeModelText(fullContent) || "（模型未输出正文）",
       reasoningContent: sanitizeModelText(fullReasoning) || null,
-      tokenCount: usage?.total_tokens ?? null,
+      tokenCount: persistedUsage?.totalTokens ?? null,
       provider,
-      cacheHitTokens: hitTokens || null,
-      cacheMissTokens: missTokens || null,
+      cacheHitTokens: persistedUsage?.promptCacheHitTokens || null,
+      cacheMissTokens: persistedUsage?.promptCacheMissTokens || null,
       sources,
     });
 
-    await recordTokenUsage({
-      userId,
-      conversationId,
-      messageId,
-      model,
-      provider,
-      inputCacheHitTokens: hitTokens,
-      inputCacheMissTokens: missTokens,
-      outputTokens: completionTokens,
-      totalTokens: usage?.total_tokens ?? promptTokens + completionTokens,
-    }).catch((err) => {
-      logger.error("Token 用量记录失败", { error: String(err) });
-    });
+    if (persistTokenUsage && completionUsage) {
+      await recordTokenUsage({
+        userId,
+        conversationId,
+        messageId,
+        model,
+        provider,
+        inputCacheHitTokens: completionUsage.promptCacheHitTokens ?? 0,
+        inputCacheMissTokens: completionUsage.promptCacheMissTokens ?? 0,
+        outputTokens: completionUsage.completionTokens,
+        totalTokens: completionUsage.totalTokens,
+      }).catch((err) => {
+        logger.error("Token 用量记录失败", { error: String(err) });
+      });
+    }
   } else if (preserveEmptyMessage) {
     await persistence.completeAssistantMessage({
       messageId,
       content: "（模型未输出正文）",
       reasoningContent: null,
-      tokenCount: null,
+      tokenCount: persistedUsage?.totalTokens ?? null,
       provider,
-      cacheHitTokens: null,
-      cacheMissTokens: null,
+      cacheHitTokens: persistedUsage?.promptCacheHitTokens || null,
+      cacheMissTokens: persistedUsage?.promptCacheMissTokens || null,
       sources,
     });
   } else {

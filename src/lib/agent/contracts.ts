@@ -41,6 +41,7 @@ export interface AgentRunInput {
     executionId: string;
     userMessageId: string;
     assistantMessageId: string;
+    priorUsage?: AgentUsage;
   };
   signal: AbortSignal;
 }

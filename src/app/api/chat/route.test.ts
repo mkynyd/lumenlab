@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   streamChat: vi.fn(),
   streamMiniMaxChat: vi.fn(),
   completeChat: vi.fn(),
+  createTextMessage: vi.fn(),
   runWebSearch: vi.fn(),
 }));
 
@@ -95,6 +96,7 @@ vi.mock("@/lib/deepseek", () => ({
   },
   streamChat: mocks.streamChat,
   completeChat: mocks.completeChat,
+  createTextMessage: mocks.createTextMessage,
 }));
 
 vi.mock("@/lib/chat/minimax-chat", () => ({
@@ -791,6 +793,62 @@ describe("accumulateAndSave", () => {
         outputTokens: 1143,
       }),
     });
+  });
+
+  it("defers durable round usage and persists cumulative message counters", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { content: "续跑完成" } }] })}\n\n`
+          )
+        );
+        controller.close();
+      },
+    });
+
+    const completion = await accumulateAndSave(
+      stream,
+      "conversation-1",
+      "message-1",
+      "user-1",
+      "deepseek-v4-pro",
+      "deepseek",
+      () => ({
+        prompt_tokens: 20,
+        completion_tokens: 7,
+        total_tokens: 27,
+      }),
+      [],
+      "completed",
+      undefined,
+      {
+        preserveEmptyMessage: true,
+        persistTokenUsage: false,
+        priorUsage: {
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+        },
+      }
+    );
+
+    expect(completion.usage).toEqual({
+      promptTokens: 20,
+      completionTokens: 7,
+      totalTokens: 27,
+      promptCacheHitTokens: 0,
+      promptCacheMissTokens: 20,
+    });
+    expect(mocks.messageUpdate).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: expect.objectContaining({
+        tokenCount: 42,
+        cacheHitTokens: null,
+        cacheMissTokens: 30,
+      }),
+    });
+    expect(mocks.tokenUsageCreate).not.toHaveBeenCalled();
   });
 
   it("persists partial text before propagating a provider stream failure", async () => {

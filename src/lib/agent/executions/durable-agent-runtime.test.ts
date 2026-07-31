@@ -56,7 +56,15 @@ function execution(currentCheckpoint = checkpoint()): AgentExecutionRecord {
   };
 }
 
-function run(events: AgentRun["events"], status: "completed" | "awaiting_approval"): AgentRun {
+function run(
+  events: AgentRun["events"],
+  status: "completed" | "awaiting_approval",
+  usage = {
+    promptTokens: 10,
+    completionTokens: 5,
+    totalTokens: 15,
+  }
+): AgentRun {
   return {
     metadata: {
       conversationId: "conversation-1",
@@ -75,11 +83,7 @@ function run(events: AgentRun["events"], status: "completed" | "awaiting_approva
       messageId: "message-assistant",
       provider: "deepseek",
       model: "deepseek-v4-pro",
-      usage: {
-        promptTokens: 10,
-        completionTokens: 5,
-        totalTokens: 15,
-      },
+      usage,
       sources: [],
     }),
   };
@@ -103,7 +107,10 @@ describe("durable Agent runtime bridge", () => {
     );
     const saved: AgentCheckpoint[] = [];
     const appended: Array<{ key: string; type: string; payload?: unknown }> = [];
-    const handler = createDurableAgentExecutionHandler({ run: runMock });
+    const handler = createDurableAgentExecutionHandler({
+      run: runMock,
+      recordUsage: vi.fn(),
+    });
     const result = await handler({
       execution: execution(),
       signal: new AbortController().signal,
@@ -149,7 +156,10 @@ describe("durable Agent runtime bridge", () => {
     };
     const runMock = vi.fn();
     const appended: Array<{ key: string }> = [];
-    const result = await createDurableAgentExecutionHandler({ run: runMock })({
+    const result = await createDurableAgentExecutionHandler({
+      run: runMock,
+      recordUsage: vi.fn(),
+    })({
       execution: execution(current),
       signal: new AbortController().signal,
       saveCheckpoint: vi.fn(),
@@ -196,7 +206,10 @@ describe("durable Agent runtime bridge", () => {
       )
     );
     const appended: Array<{ payload?: unknown }> = [];
-    const result = await createDurableAgentExecutionHandler({ run: runMock })({
+    const result = await createDurableAgentExecutionHandler({
+      run: runMock,
+      recordUsage: vi.fn(),
+    })({
       execution: execution(),
       signal: new AbortController().signal,
       saveCheckpoint: vi.fn(),
@@ -218,6 +231,125 @@ describe("durable Agent runtime bridge", () => {
     const serialized = JSON.stringify(appended);
     expect(serialized).not.toContain("must-not-persist");
     expect(serialized).not.toContain('"token"');
+  });
+
+  it("carries approval-round usage into the final durable usage record", async () => {
+    const waitingRun = vi.fn(async () =>
+      run(
+        (async function* () {
+          yield {
+            type: "approval_required" as const,
+            executionId: "tool-execution-1",
+            preview: {
+              toolId: "artifact.save",
+              toolName: "Save artifact",
+              summary: "Save a study note",
+              affectedResources: [],
+              sendsToExternal: false,
+              isReversible: true,
+              dataTypes: ["markdown"],
+            },
+            token: "must-not-persist",
+            expiresAt: 1_785_456_000_000,
+            canApproveSession: true,
+          };
+        })(),
+        "awaiting_approval"
+      )
+    );
+    const waiting = await createDurableAgentExecutionHandler({
+      run: waitingRun,
+      recordUsage: vi.fn(),
+    })({
+      execution: execution(),
+      signal: new AbortController().signal,
+      saveCheckpoint: vi.fn(),
+      appendEvent: vi.fn(),
+    });
+    expect(waiting).toMatchObject({
+      kind: "waiting_approval",
+      checkpoint: {
+        usage: {
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+        },
+      },
+    });
+    if (waiting.kind !== "waiting_approval") {
+      throw new Error("expected waiting approval checkpoint");
+    }
+
+    const recordUsage = vi.fn().mockResolvedValue({ id: "usage-1" });
+    const saved: AgentCheckpoint[] = [];
+    const completed = await createDurableAgentExecutionHandler({
+      run: vi.fn(async () =>
+        run(
+          (async function* () {
+            yield { type: "text_delta" as const, text: "Saved" };
+          })(),
+          "completed",
+          {
+            promptTokens: 20,
+            completionTokens: 7,
+            totalTokens: 27,
+          }
+        )
+      ),
+      recordUsage,
+    })({
+      execution: execution(waiting.checkpoint),
+      signal: new AbortController().signal,
+      saveCheckpoint: async (value) => {
+        saved.push(value);
+      },
+      appendEvent: vi.fn(),
+    });
+
+    expect(completed).toMatchObject({ kind: "completed" });
+    expect(saved[0].output?.usage).toEqual({
+      promptTokens: 30,
+      completionTokens: 12,
+      totalTokens: 42,
+      promptCacheHitTokens: 0,
+      promptCacheMissTokens: 30,
+    });
+    expect(recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: "message-assistant",
+        inputCacheMissTokens: 30,
+        outputTokens: 12,
+        totalTokens: 42,
+      })
+    );
+  });
+
+  it("treats a replayed durable usage unique conflict as already recorded", async () => {
+    const current: AgentCheckpoint = {
+      ...checkpoint(),
+      output: {
+        text: "stable answer",
+        reasoning: "",
+        usage: {
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+        },
+      },
+    };
+    const recordUsage = vi.fn().mockRejectedValue({ code: "P2002" });
+    const result = await createDurableAgentExecutionHandler({
+      run: vi.fn(),
+      recordUsage,
+    })({
+      execution: execution(current),
+      signal: new AbortController().signal,
+      saveCheckpoint: vi.fn(),
+      appendEvent: vi.fn(),
+    });
+
+    expect(result).toEqual({ kind: "completed", checkpoint: current });
+    expect(recordUsage).toHaveBeenCalledOnce();
   });
 
   it("builds a provider-neutral request checkpoint without attachments", () => {

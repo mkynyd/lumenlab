@@ -59,9 +59,10 @@ function isCheckpointUsageCounterKey(
   key: string
 ): boolean {
   return (
-    path.length === 2 &&
-    path[0] === "output" &&
-    path[1] === "usage" &&
+    ((path.length === 1 && path[0] === "usage") ||
+      (path.length === 2 &&
+        path[0] === "output" &&
+        path[1] === "usage")) &&
     checkpointUsageCounterKeys.has(key)
   );
 }
@@ -103,6 +104,16 @@ function isJsonSerializableCheckpointValue(
   return valid;
 }
 
+const checkpointUsageSchema = z
+  .object({
+    promptTokens: z.number().int().nonnegative(),
+    completionTokens: z.number().int().nonnegative(),
+    totalTokens: z.number().int().nonnegative(),
+    promptCacheHitTokens: z.number().int().nonnegative().optional(),
+    promptCacheMissTokens: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
 export const agentCheckpointSchema = z
   .object({
     version: z.literal(1),
@@ -128,20 +139,12 @@ export const agentCheckpointSchema = z
       .strict(),
     allowedToolIds: z.array(z.string().min(1)),
     request: durableRequestSchema.optional(),
+    usage: checkpointUsageSchema.optional(),
     output: z
       .object({
         text: z.string(),
         reasoning: z.string(),
-        usage: z
-          .object({
-            promptTokens: z.number().int().nonnegative(),
-            completionTokens: z.number().int().nonnegative(),
-            totalTokens: z.number().int().nonnegative(),
-            promptCacheHitTokens: z.number().int().nonnegative().optional(),
-            promptCacheMissTokens: z.number().int().nonnegative().optional(),
-          })
-          .strict()
-          .nullable(),
+        usage: checkpointUsageSchema.nullable(),
       })
       .strict()
       .optional(),
