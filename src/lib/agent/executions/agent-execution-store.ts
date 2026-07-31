@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
+import type { AgentExecutionErrorCode } from "./contracts";
 
 export const AGENT_EXECUTION_STATUSES = [
   "queued",
@@ -22,22 +23,36 @@ const normalizedMessageSchema = z
 const providerPrivateCheckpointKey =
   /(auth|bearer|cookie|token|provider.*(?:resume|continuation|handle)|(?:api|access|refresh)[_-]?key|credential|secret|password|private.*key)/i;
 
-function isJsonSerializableCheckpointValue(value: unknown): boolean {
+export const MAX_AGENT_CHECKPOINT_BYTES = 2_000_000;
+
+function isJsonSerializableCheckpointValue(
+  value: unknown,
+  ancestors = new WeakSet<object>()
+): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) {
-    return value.every(isJsonSerializableCheckpointValue);
-  }
   if (typeof value !== "object") return false;
+
+  if (ancestors.has(value)) return false;
+  ancestors.add(value);
+  if (Array.isArray(value)) {
+    const valid = value.every((nested) =>
+      isJsonSerializableCheckpointValue(nested, ancestors)
+    );
+    ancestors.delete(value);
+    return valid;
+  }
 
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return false;
-  return Object.entries(value as Record<string, unknown>).every(
+  const valid = Object.entries(value as Record<string, unknown>).every(
     ([key, nested]) =>
       !providerPrivateCheckpointKey.test(key) &&
-      isJsonSerializableCheckpointValue(nested)
+      isJsonSerializableCheckpointValue(nested, ancestors)
   );
+  ancestors.delete(value);
+  return valid;
 }
 
 export const agentCheckpointSchema = z
@@ -45,9 +60,24 @@ export const agentCheckpointSchema = z
     version: z.literal(1),
     messages: z.array(normalizedMessageSchema),
     round: z.number().int().nonnegative(),
-    model: z.object({ provider: z.string().min(1), name: z.string().min(1) }).strict(),
-    skill: z.object({ id: z.string().min(1).nullable(), version: z.string().min(1).nullable() }).strict(),
-    rag: z.object({ sourceIds: z.array(z.string().min(1)), selectedFileIds: z.array(z.string().min(1)).default([]) }).strict(),
+    model: z
+      .object({
+        provider: z.string().min(1),
+        name: z.string().min(1),
+      })
+      .strict(),
+    skill: z
+      .object({
+        id: z.string().min(1).nullable(),
+        version: z.string().min(1).nullable(),
+      })
+      .strict(),
+    rag: z
+      .object({
+        sourceIds: z.array(z.string().min(1)),
+        selectedFileIds: z.array(z.string().min(1)).default([]),
+      })
+      .strict(),
     allowedToolIds: z.array(z.string().min(1)),
     pendingToolCall: z
       .object({
@@ -64,11 +94,11 @@ export type AgentCheckpoint = z.infer<typeof agentCheckpointSchema>;
 
 export function parseAgentCheckpoint(value: unknown): AgentCheckpoint {
   const parsed = agentCheckpointSchema.safeParse(value);
-  if (
-    !parsed.success ||
-    (parsed.data.pendingToolCall !== undefined &&
-      !isJsonSerializableCheckpointValue(parsed.data.pendingToolCall.arguments))
-  ) {
+  if (!parsed.success || !isJsonSerializableCheckpointValue(parsed.data)) {
+    throw new Error("Agent checkpoint is invalid");
+  }
+  const serialized = JSON.stringify(parsed.data);
+  if (Buffer.byteLength(serialized, "utf8") > MAX_AGENT_CHECKPOINT_BYTES) {
     throw new Error("Agent checkpoint is invalid");
   }
   return parsed.data;
@@ -77,6 +107,10 @@ export function parseAgentCheckpoint(value: unknown): AgentCheckpoint {
 export type AgentExecutionRecord = {
   id: string;
   userId: string;
+  clientRunKey: string | null;
+  requestHash: string | null;
+  userMessageId: string | null;
+  assistantMessageId: string | null;
   conversationId: string;
   projectId: string | null;
   status: AgentExecutionStatus;
@@ -102,6 +136,38 @@ export type AgentExecutionEventRecord = {
   createdAt: Date;
 };
 
+export class AgentExecutionStoreError extends Error {
+  constructor(
+    public readonly code: AgentExecutionErrorCode,
+    message: string
+  ) {
+    super(message);
+    this.name = "AgentExecutionStoreError";
+  }
+}
+
+export type CreateOrGetAgentExecutionInput = {
+  userId: string;
+  clientRunKey: string;
+  requestHash: string;
+  conversation: {
+    id?: string;
+    projectId?: string | null;
+    title: string;
+    model: string;
+    thinkingEnabled: boolean;
+  };
+  userMessageContent: string;
+  assistantMessageSources?: Prisma.InputJsonValue;
+  checkpoint: AgentCheckpoint;
+  scheduledAt?: Date;
+};
+
+export type CreateOrGetAgentExecutionResult = {
+  execution: AgentExecutionRecord;
+  created: boolean;
+};
+
 export interface AgentExecutionStore {
   create(input: {
     userId: string;
@@ -110,17 +176,68 @@ export interface AgentExecutionStore {
     checkpoint: AgentCheckpoint;
     scheduledAt?: Date;
   }): Promise<AgentExecutionRecord>;
+  createOrGetByClientRunKey(
+    input: CreateOrGetAgentExecutionInput
+  ): Promise<CreateOrGetAgentExecutionResult>;
+  getOwnedExecution(input: {
+    executionId: string;
+    userId: string;
+  }): Promise<AgentExecutionRecord | null>;
+  listEventsAfter(input: {
+    executionId: string;
+    userId: string;
+    afterSequence: number;
+    limit?: number;
+  }): Promise<AgentExecutionEventRecord[] | null>;
   claimNext(input: {
     workerId: string;
     now: Date;
     leaseMs: number;
   }): Promise<AgentExecutionRecord | null>;
-  recoverExpired(input: { now: Date }): Promise<number>;
+  recoverExpired(input: {
+    now: Date;
+    maxAttempts?: number;
+    retryDelayMs?: (attempt: number) => number;
+  }): Promise<number>;
   renewLease(input: {
     executionId: string;
     workerId: string;
     now: Date;
     leaseMs: number;
+  }): Promise<boolean>;
+  saveCheckpoint(input: {
+    executionId: string;
+    workerId: string;
+    checkpoint: AgentCheckpoint;
+    now: Date;
+  }): Promise<boolean>;
+  markCompleted(input: {
+    executionId: string;
+    workerId: string;
+    now: Date;
+    checkpoint?: AgentCheckpoint;
+  }): Promise<boolean>;
+  markFailed(input: {
+    executionId: string;
+    workerId: string;
+    failure: Prisma.InputJsonValue;
+    now: Date;
+    checkpoint?: AgentCheckpoint;
+  }): Promise<boolean>;
+  markCancelled(input: {
+    executionId: string;
+    workerId: string;
+    failure?: Prisma.InputJsonValue;
+    now: Date;
+    checkpoint?: AgentCheckpoint;
+  }): Promise<boolean>;
+  scheduleRetry(input: {
+    executionId: string;
+    workerId: string;
+    failure: Prisma.InputJsonValue;
+    scheduledAt: Date;
+    now: Date;
+    checkpoint?: AgentCheckpoint;
   }): Promise<boolean>;
   markWaitingForApproval(input: {
     executionId: string;
@@ -134,11 +251,17 @@ export interface AgentExecutionStore {
     toolExecutionId: string;
     now: Date;
   }): Promise<boolean>;
+  expireWaitingApproval(input: {
+    executionId: string;
+    toolExecutionId: string;
+    now: Date;
+  }): Promise<boolean>;
   appendEvent(input: {
     executionId: string;
+    workerId: string;
     key: string;
     type: string;
     payload?: Prisma.InputJsonValue;
-    now?: Date;
+    now: Date;
   }): Promise<AgentExecutionEventRecord>;
 }
