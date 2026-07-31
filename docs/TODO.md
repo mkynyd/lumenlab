@@ -1,6 +1,6 @@
 # TODO
 
-> Last updated: 2026-07-31
+> Last updated: 2026-08-01
 
 This document tracks the completed Agent Runtime consolidation plus deferred Skill, Tool, and production-hardening work.
 
@@ -22,7 +22,7 @@ This document tracks the completed Agent Runtime consolidation plus deferred Ski
 - Completed authenticated non-production DeepSeek and MiniMax smoke paths, including approval, rejection, automatic continuation and exactly-once cumulative token-usage persistence.
 - Enabled the production learning rollout together with durable execution on 2026-07-31 after an explicit release request; retained fail-safe configuration backup and verified process flags, health checks and restart stability.
 - Added the Project-owned learning domain: Goal, confirmed Scope, versioned Map/Point lineage, source anchors, private answer specifications, append-only attempts/evaluations, mastery/review projection, wrong-answer history, Today and local material-freshness invalidation.
-- Added the preview-gated `/today` and `/projects/[id]/learning` UI with same-item wrong-answer redo and text-equivalent segmented progress.
+- Promoted learning to a preview-gated, first-class `/learning` workspace with Today, existing-project setup, a shadcn Base Calendar schedule, same-item wrong-answer redo and text-equivalent segmented progress. Former `/today` and `/projects/[id]/learning` URLs now preserve compatibility through redirects.
 - The frozen implementation and release contract is `docs/learning-loop-p0-iteration-plan.md`.
 
 ## Completed First Slice (historical)

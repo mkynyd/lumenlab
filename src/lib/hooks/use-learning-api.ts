@@ -58,7 +58,7 @@ import { queryKeys } from "@/lib/query-keys";
 
 /**
  * Deep-link `step` values used by the server's today hrefs
- * (`/projects/<id>/learning?goal=..&step=..`). Distinct vocabulary from
+ * (`/learning?project=<id>&goal=..&step=..`). Distinct vocabulary from
  * `TodayNextActionType` — do not conflate the two.
  */
 export const LEARNING_DEEP_LINK_STEPS = [

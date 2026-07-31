@@ -23,8 +23,9 @@ export function MobileFloatingNav({
   learningNavigationVisible = false,
 }: MobileFloatingNavProps) {
   const pathname = usePathname();
-  const activeMode = pathname?.startsWith("/today")
-    ? "today"
+  const activeMode =
+    pathname?.startsWith("/learning") || pathname?.startsWith("/today")
+      ? "learning"
     : pathname?.startsWith("/projects")
       ? "projects"
       : pathname?.startsWith("/chat")
@@ -57,16 +58,16 @@ export function MobileFloatingNav({
       >
         {learningNavigationVisible && (
           <Link
-            href="/today"
-            aria-current={activeMode === "today" ? "page" : undefined}
+            href="/learning"
+            aria-current={activeMode === "learning" ? "page" : undefined}
             className={cn(
               modeClassName,
-              activeMode === "today"
+              activeMode === "learning"
                 ? "bg-[var(--color-panel)] text-[var(--color-text-primary)]"
                 : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
             )}
           >
-            今日
+            学习
           </Link>
         )}
         <Link

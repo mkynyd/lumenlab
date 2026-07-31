@@ -468,7 +468,7 @@ export const fixtureToday: LearningTodayResponse = {
       summary: fixtureProgressSummary,
       nextAction: {
         type: "review",
-        href: "/projects/project-1/learning?goal=goal-1&step=review",
+        href: "/learning?project=project-1&goal=goal-1&step=review",
         dueCount: 4,
       },
     },

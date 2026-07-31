@@ -22,8 +22,8 @@ export function ChatShell({
     ? "projects"
     : pathname.startsWith("/tools")
       ? "tools"
-      : pathname.startsWith("/today")
-        ? "today"
+      : pathname.startsWith("/learning") || pathname.startsWith("/today")
+        ? "learning"
         : "chat";
   const isInsideProject = /^\/projects\/[^/]+/.test(pathname || "");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);

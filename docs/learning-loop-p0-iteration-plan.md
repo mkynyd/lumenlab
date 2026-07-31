@@ -596,6 +596,17 @@ Today 按以下优先级选择一个明确下一步：
 - 没有 Goal 的历史 Project API 响应保持兼容；
 - feature flag `off` 时不增加默认导航噪音。
 
+### 10.6 P0 上线后的独立学习工作区演进（2026-08-01 已实施）
+
+真实使用反馈表明，学习入口若只表现为 Project 内的图标，会让完整闭环在信息架构上显得附属且难发现。前端因此升级为独立 `/learning` 工作区，同时保持 ADR 0001 的后端边界不变：
+
+- 主导航使用一级「学习」入口；`default` rollout 的登录后默认页改为 `/learning`；
+- 学习总览同时展示 Today 唯一下一步、已有 Project 列表和月度复习日历；
+- 用户在学习区选择已有 Project 后，直接完成 Goal、Scope、Map、Practice、错题与复习，不必先进入 Project 工作台；
+- 日历采用 shadcn Base Calendar，目标日期、到期复习和下一次计划复习均有文本等价事件列表；
+- `/today` 与 `/projects/[id]/learning` 仅作为兼容入口，校验参数后跳转到 `/learning`；
+- Project 继续负责资料所有权、授权与生命周期，未引入第二套 Course/Material 容器。
+
 ## 11. AgentExecution 可靠性实施合同
 
 ### 11.1 ID 与事件合同冻结

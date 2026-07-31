@@ -40,7 +40,7 @@ function makeGoalEntry(
     summary: fixtureProgressSummary,
     nextAction: {
       type: "review",
-      href: "/projects/project-1/learning?goal=goal-1&step=review",
+      href: "/learning?project=project-1&goal=goal-1&step=review",
       dueCount: 4,
     },
     ...overrides,
@@ -71,9 +71,9 @@ describe("TodayView", () => {
     render(<TodayView />);
 
     expect(screen.getByText("今天没有安排的学习任务")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "查看项目" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "选择学习项目" })).toHaveAttribute(
       "href",
-      "/projects"
+      "/learning#learning-projects"
     );
   });
 
@@ -87,7 +87,7 @@ describe("TodayView", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "去复习" })).toHaveAttribute(
       "href",
-      "/projects/project-1/learning?goal=goal-1&step=review"
+      "/learning?project=project-1&goal=goal-1&step=review"
     );
   });
 
@@ -99,14 +99,14 @@ describe("TodayView", () => {
           goal: { ...fixtureGoal, id: "goal-scope", title: "范围待确认目标" },
           nextAction: {
             type: "confirm_scope",
-            href: "/projects/project-1/learning?goal=goal-scope&step=scope",
+            href: "/learning?project=project-1&goal=goal-scope&step=scope",
           },
         }),
         makeGoalEntry({
           goal: { ...fixtureGoal, id: "goal-review", title: "到期复习目标" },
           nextAction: {
             type: "review",
-            href: "/projects/project-1/learning?goal=goal-review&step=review",
+            href: "/learning?project=project-1&goal=goal-review&step=review",
             dueCount: 2,
           },
         }),
@@ -120,7 +120,7 @@ describe("TodayView", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "去复习" })).toHaveAttribute(
       "href",
-      "/projects/project-1/learning?goal=goal-review&step=review"
+      "/learning?project=project-1&goal=goal-review&step=review"
     );
     expect(screen.queryByText("确认学习范围")).not.toBeInTheDocument();
   });
@@ -132,7 +132,7 @@ describe("TodayView", () => {
         makeGoalEntry({
           nextAction: {
             type: "continue_learning",
-            href: "/projects/project-1/learning?goal=goal-1",
+            href: "/learning?project=project-1&goal=goal-1",
             nextReviewAt: null,
           },
         }),
@@ -157,7 +157,7 @@ describe("TodayView", () => {
     const enterLink = screen.getByRole("link", { name: "进入学习" });
     expect(enterLink).toHaveAttribute(
       "href",
-      "/projects/project-1/learning?goal=goal-1"
+      "/learning?project=project-1&goal=goal-1"
     );
   });
 

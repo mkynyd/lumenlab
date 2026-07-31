@@ -2405,28 +2405,28 @@ export function createLearningService(options: CreateLearningServiceOptions) {
                 dueCount?: number;
                 nextReviewAt?: string | null;
               };
-          const baseHref = `/projects/${goal.projectId}/learning`;
+          const baseHref = `/learning?project=${encodeURIComponent(goal.projectId)}`;
           if (!scope || scope.status !== "confirmed") {
             nextAction = {
               type: "confirm_scope",
-              href: `${baseHref}?goal=${goal.id}&step=scope`,
+              href: `${baseHref}&goal=${goal.id}&step=scope`,
             };
           } else if (!map) {
             nextAction = {
               type: "generate_map",
-              href: `${baseHref}?goal=${goal.id}&step=map`,
+              href: `${baseHref}&goal=${goal.id}&step=map`,
             };
           } else if (
             points.every((point) => point.evidenceAsOf === null)
           ) {
             nextAction = {
               type: "start_diagnostic",
-              href: `${baseHref}?goal=${goal.id}&step=diagnostic`,
+              href: `${baseHref}&goal=${goal.id}&step=diagnostic`,
             };
           } else if (summary.due > 0) {
             nextAction = {
               type: "review",
-              href: `${baseHref}?goal=${goal.id}&step=review`,
+              href: `${baseHref}&goal=${goal.id}&step=review`,
               dueCount: summary.due,
             };
           } else {
@@ -2436,7 +2436,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
               .sort()[0] ?? null;
             nextAction = {
               type: "continue_learning",
-              href: `${baseHref}?goal=${goal.id}`,
+              href: `${baseHref}&goal=${goal.id}`,
               nextReviewAt: scheduled,
             };
           }

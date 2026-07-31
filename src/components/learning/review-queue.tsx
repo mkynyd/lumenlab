@@ -81,7 +81,7 @@ export function ReviewQueue({ projectId, goalId, className }: ReviewQueueProps) 
           reviewKeyRef.current = null;
           if (data?.session) {
             router.push(
-              `/projects/${projectId}/learning?session=${data.session.id}`
+              `/learning?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(data.session.id)}`
             );
           }
         },

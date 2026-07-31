@@ -83,7 +83,7 @@ describe("ReviewQueue", () => {
       expect.objectContaining({ onSuccess: expect.any(Function) })
     );
     expect(router.push).toHaveBeenCalledWith(
-      "/projects/project-1/learning?session=session-9"
+      "/learning?project=project-1&session=session-9"
     );
   });
 

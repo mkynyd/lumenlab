@@ -104,8 +104,9 @@ export function Sidebar({
   const router = useRouter();
   const pathname = usePathname();
   const { data: session } = useSession();
-  const activeSection = pathname.startsWith("/today")
-    ? "today"
+  const activeSection =
+    pathname.startsWith("/learning") || pathname.startsWith("/today")
+      ? "learning"
     : pathname.startsWith("/projects")
       ? "projects"
       : pathname.startsWith("/tools")
@@ -153,7 +154,7 @@ export function Sidebar({
   const isLoading =
     activeSection === "chat"
       ? conversationsQuery.isPending
-      : activeSection === "projects" || activeSection === "today"
+      : activeSection === "projects" || activeSection === "learning"
         ? projectsQuery.isPending
         : conversionsQuery.isPending;
 
@@ -182,10 +183,10 @@ export function Sidebar({
     setConversionDeleteTarget(conversion);
   }
 
-  function openSection(section: "today" | "chat" | "projects" | "tools") {
+  function openSection(section: "learning" | "chat" | "projects" | "tools") {
     onExpand();
     onClose();
-    if (section === "today") router.push("/today");
+    if (section === "learning") router.push("/learning");
     else if (section === "chat") router.push("/chat");
     else if (section === "projects") router.push("/projects");
     else router.push("/tools");
@@ -198,6 +199,12 @@ export function Sidebar({
       return;
     }
     router.push(activeSection === "chat" ? "/chat" : "/projects/new");
+  }
+
+  function projectDestination(projectId: string) {
+    return activeSection === "learning"
+      ? `/learning?project=${encodeURIComponent(projectId)}`
+      : `/projects/${projectId}`;
   }
 
   function openAccountSurface(surface: "profile" | "settings") {
@@ -342,16 +349,16 @@ export function Sidebar({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   type="button"
-                  onClick={() => openSection("today")}
-                  isActive={activeSection === "today"}
+                  onClick={() => openSection("learning")}
+                  isActive={activeSection === "learning"}
                   className={cn(
                     "h-11 font-normal lg:h-9",
                     collapsed && "lg:justify-center lg:px-0"
                   )}
                   aria-current={
-                    activeSection === "today" ? "page" : undefined
+                    activeSection === "learning" ? "page" : undefined
                   }
-                  title={collapsed ? "今日学习" : undefined}
+                  title={collapsed ? "学习" : undefined}
                 >
                   <CalendarCheck2 strokeWidth={1.8} />
                   <span
@@ -360,7 +367,7 @@ export function Sidebar({
                       collapsed && "lg:hidden"
                     )}
                   >
-                    今日学习
+                    学习
                   </span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -445,7 +452,7 @@ export function Sidebar({
               <SidebarGroupLabel className="h-7 px-2 pb-0 text-[11px] font-normal uppercase tracking-[0.06em]">
                 {activeSection === "chat"
                   ? "最近对话"
-                  : activeSection === "today"
+                  : activeSection === "learning"
                     ? "学习项目"
                   : activeSection === "tools"
                     ? "最近转换"
@@ -601,7 +608,7 @@ export function Sidebar({
                     <ContextMenuTrigger asChild>
                       <SidebarMenuItem>
                         <SidebarMenuButton asChild isActive={activeProjectId === project.id} className="min-h-10">
-                          <Link href={`/projects/${project.id}`} onClick={onClose}>
+                          <Link href={projectDestination(project.id)} onClick={onClose}>
                             <Folder strokeWidth={2} />
                             <span>{project.name}</span>
                           </Link>
@@ -612,11 +619,11 @@ export function Sidebar({
                       <ContextMenuItem
                         onSelect={() => {
                           onClose();
-                          router.push(`/projects/${project.id}`);
+                          router.push(projectDestination(project.id));
                         }}
                       >
                         <Folder strokeWidth={2} />
-                        打开项目
+                        {activeSection === "learning" ? "设置学习" : "打开项目"}
                       </ContextMenuItem>
                       <ContextMenuItem
                         variant="destructive"

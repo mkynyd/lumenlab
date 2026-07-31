@@ -91,7 +91,7 @@ export function TodayView({ className }: TodayViewProps) {
         description="从一个现有项目开始学习"
         action={
           <Button asChild>
-            <Link href="/projects">查看项目</Link>
+            <Link href="/learning#learning-projects">选择学习项目</Link>
           </Button>
         }
       />
@@ -117,7 +117,7 @@ export function TodayView({ className }: TodayViewProps) {
               </div>
               <Button asChild variant="ghost">
                 <Link
-                  href={`/projects/${project.id}/learning?goal=${encodeURIComponent(goal.id)}`}
+                  href={`/learning?project=${encodeURIComponent(project.id)}&goal=${encodeURIComponent(goal.id)}`}
                 >
                   进入学习
                 </Link>

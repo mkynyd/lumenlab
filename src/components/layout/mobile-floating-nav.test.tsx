@@ -31,19 +31,23 @@ describe("MobileFloatingNav", () => {
     expect(screen.getByRole("link", { name: "项目" })).not.toHaveAttribute(
       "aria-current"
     );
-    expect(screen.queryByRole("link", { name: "今日" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "学习" })).not.toBeInTheDocument();
   });
 
-  it("shows Today only for a server-authorized learning rollout", () => {
-    navigation.pathname = "/today";
+  it("shows Learning only for a server-authorized learning rollout", () => {
+    navigation.pathname = "/learning";
     const { rerender } = render(<MobileFloatingNav />);
 
-    expect(screen.queryByRole("link", { name: "今日" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "学习" })).not.toBeInTheDocument();
 
     rerender(<MobileFloatingNav learningNavigationVisible />);
-    expect(screen.getByRole("link", { name: "今日" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "学习" })).toHaveAttribute(
       "aria-current",
       "page"
+    );
+    expect(screen.getByRole("link", { name: "学习" })).toHaveAttribute(
+      "href",
+      "/learning"
     );
   });
 

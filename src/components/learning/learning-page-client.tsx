@@ -56,10 +56,12 @@ const TABS: Array<{ id: LearningTab; label: string }> = [
 
 export interface LearningPageClientProps {
   projectId: string;
+  projectName?: string | null;
   initialGoalId?: string | null;
   initialStep?: LearningDeepLinkStep | null;
   initialSessionId?: string | null;
   rollout?: LearningLoopRollout;
+  embedded?: boolean;
 }
 
 function HistoricalGoalRow({
@@ -98,10 +100,12 @@ function HistoricalGoalRow({
 
 export function LearningPageClient({
   projectId,
+  projectName = null,
   initialGoalId = null,
   initialStep = null,
   initialSessionId = null,
   rollout = "preview",
+  embedded = false,
 }: LearningPageClientProps) {
   const goalsQuery = useLearningGoals(projectId);
   const goals = goalsQuery.data ?? [];
@@ -206,9 +210,14 @@ export function LearningPageClient({
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 py-6 md:py-8">
-        <header className="mb-6 flex items-center gap-3">
+    <div className={cn(!embedded && "h-full overflow-y-auto")}>
+      <div
+        className={cn(
+          "mx-auto w-full",
+          embedded ? "max-w-none" : "max-w-3xl px-4 py-6 md:py-8"
+        )}
+      >
+        {!embedded ? <header className="mb-6 flex items-center gap-3">
           <Link
             href={`/projects/${projectId}`}
             aria-label="返回项目"
@@ -226,7 +235,7 @@ export function LearningPageClient({
               </p>
             ) : null}
           </div>
-        </header>
+        </header> : null}
 
         {stage === "loading" ? (
           <p
@@ -264,7 +273,7 @@ export function LearningPageClient({
                 开始学习
               </h2>
               <p className="mb-4 text-sm text-[var(--color-text-secondary)]">
-                为这个项目设置一个学习目标，系统会基于项目资料生成知识点地图和诊断练习。
+                为{projectName ? `「${projectName}」` : "这个项目"}设置学习目标，系统会基于所选项目资料生成知识点地图和诊断练习。
               </p>
               <GoalCreateForm projectId={projectId} />
             </section>

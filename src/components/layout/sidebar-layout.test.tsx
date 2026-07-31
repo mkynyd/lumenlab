@@ -83,7 +83,7 @@ describe("main workspace navigation layout", () => {
     expect(screen.queryByRole("button", { name: "文档" })).not.toBeInTheDocument();
   });
 
-  it("keeps Today hidden until the server-authorized rollout is visible", () => {
+  it("keeps Learning hidden until the server-authorized rollout is visible", () => {
     const props = {
       mobileOpen: false,
       collapsed: false,
@@ -93,12 +93,12 @@ describe("main workspace navigation layout", () => {
     const { rerender } = render(<Sidebar {...props} />);
 
     expect(
-      screen.queryByRole("button", { name: "今日学习" })
+      screen.queryByRole("button", { name: "学习" })
     ).not.toBeInTheDocument();
 
-    mocks.usePathname.mockReturnValue("/today");
+    mocks.usePathname.mockReturnValue("/learning");
     rerender(<Sidebar {...props} learningNavigationVisible />);
-    expect(screen.getByRole("button", { name: "今日学习" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "学习" })).toHaveAttribute(
       "aria-current",
       "page"
     );

@@ -21,7 +21,7 @@ function makeEntry(
     summary: fixtureProgressSummary,
     nextAction: {
       type,
-      href: `/projects/project-1/learning?goal=goal-1&step=${type}`,
+      href: `/learning?project=project-1&goal=goal-1&step=${type}`,
       ...nextActionOverrides,
     },
   };
@@ -50,7 +50,7 @@ describe("NextActionCard", () => {
   );
 
   it("passes the server href through unchanged", () => {
-    const href = "/projects/project-1/learning?goal=goal-1&step=review";
+    const href = "/learning?project=project-1&goal=goal-1&step=review";
     render(<NextActionCard entry={makeEntry("review", { href })} />);
 
     expect(screen.getByRole("link")).toHaveAttribute("href", href);

@@ -174,7 +174,7 @@ export function ProjectSidebar({
               className="shrink-0 text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
             >
               <Link
-                href={`/projects/${project.id}/learning`}
+                href={`/learning?project=${encodeURIComponent(project.id)}`}
                 aria-label="打开项目学习中心"
               >
                 <GraduationCap size={15} strokeWidth={1.8} />

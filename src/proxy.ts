@@ -10,6 +10,7 @@ export const config = {
     "/register",
     "/home",
     "/docs/:path*",
+    "/learning/:path*",
     "/today/:path*",
     "/chat/:path*",
     "/settings/:path*",
