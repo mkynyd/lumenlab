@@ -63,6 +63,7 @@ import {
 } from "iconoir-react";
 import {
   BarChart3,
+  CalendarCheck2,
   ChevronDown,
   LogOut,
   PanelLeftClose,
@@ -85,6 +86,7 @@ interface SidebarProps {
   mobileOpen: boolean;
   collapsed: boolean;
   hiddenOnDesktop?: boolean;
+  learningNavigationVisible?: boolean;
   onClose: () => void;
   onExpand: () => void;
   onCollapse?: () => void;
@@ -94,6 +96,7 @@ export function Sidebar({
   mobileOpen,
   collapsed,
   hiddenOnDesktop = false,
+  learningNavigationVisible = false,
   onClose,
   onExpand,
   onCollapse,
@@ -101,13 +104,15 @@ export function Sidebar({
   const router = useRouter();
   const pathname = usePathname();
   const { data: session } = useSession();
-  const activeSection = pathname.startsWith("/projects")
-    ? "projects"
-    : pathname.startsWith("/tools")
-      ? "tools"
-      : pathname.startsWith("/usage")
-        ? "usage"
-        : "chat";
+  const activeSection = pathname.startsWith("/today")
+    ? "today"
+    : pathname.startsWith("/projects")
+      ? "projects"
+      : pathname.startsWith("/tools")
+        ? "tools"
+        : pathname.startsWith("/usage")
+          ? "usage"
+          : "chat";
   const conversationsQuery = useConversations();
   const projectsQuery = useProjects();
   const conversionsQuery = useConversions();
@@ -148,7 +153,7 @@ export function Sidebar({
   const isLoading =
     activeSection === "chat"
       ? conversationsQuery.isPending
-      : activeSection === "projects"
+      : activeSection === "projects" || activeSection === "today"
         ? projectsQuery.isPending
         : conversionsQuery.isPending;
 
@@ -177,10 +182,11 @@ export function Sidebar({
     setConversionDeleteTarget(conversion);
   }
 
-  function openSection(section: "chat" | "projects" | "tools") {
+  function openSection(section: "today" | "chat" | "projects" | "tools") {
     onExpand();
     onClose();
-    if (section === "chat") router.push("/chat");
+    if (section === "today") router.push("/today");
+    else if (section === "chat") router.push("/chat");
     else if (section === "projects") router.push("/projects");
     else router.push("/tools");
   }
@@ -332,6 +338,33 @@ export function Sidebar({
 
         <SidebarGroup className="mx-2 mb-1 mt-1 w-auto shrink-0 p-0">
           <SidebarMenu aria-label="工作空间导航" className="gap-0.5">
+            {learningNavigationVisible && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  type="button"
+                  onClick={() => openSection("today")}
+                  isActive={activeSection === "today"}
+                  className={cn(
+                    "h-11 font-normal lg:h-9",
+                    collapsed && "lg:justify-center lg:px-0"
+                  )}
+                  aria-current={
+                    activeSection === "today" ? "page" : undefined
+                  }
+                  title={collapsed ? "今日学习" : undefined}
+                >
+                  <CalendarCheck2 strokeWidth={1.8} />
+                  <span
+                    className={cn(
+                      "whitespace-nowrap",
+                      collapsed && "lg:hidden"
+                    )}
+                  >
+                    今日学习
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
               <SidebarMenuButton
                 type="button"
@@ -412,6 +445,8 @@ export function Sidebar({
               <SidebarGroupLabel className="h-7 px-2 pb-0 text-[11px] font-normal uppercase tracking-[0.06em]">
                 {activeSection === "chat"
                   ? "最近对话"
+                  : activeSection === "today"
+                    ? "学习项目"
                   : activeSection === "tools"
                     ? "最近转换"
                     : "最近项目"}

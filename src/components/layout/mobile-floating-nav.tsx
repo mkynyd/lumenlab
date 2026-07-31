@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 interface MobileFloatingNavProps {
   onMenuToggle?: () => void;
   mobileSidebarOpen?: boolean;
+  learningNavigationVisible?: boolean;
 }
 
 /**
@@ -19,13 +20,20 @@ interface MobileFloatingNavProps {
 export function MobileFloatingNav({
   onMenuToggle,
   mobileSidebarOpen = false,
+  learningNavigationVisible = false,
 }: MobileFloatingNavProps) {
   const pathname = usePathname();
-  const activeMode = pathname?.startsWith("/projects")
-    ? "projects"
-    : pathname?.startsWith("/chat")
-      ? "chat"
-      : null;
+  const activeMode = pathname?.startsWith("/today")
+    ? "today"
+    : pathname?.startsWith("/projects")
+      ? "projects"
+      : pathname?.startsWith("/chat")
+        ? "chat"
+        : null;
+  const modeClassName = cn(
+    "inline-flex h-9 items-center justify-center rounded-full px-3 text-[13px] font-medium transition-[background-color,color,transform] duration-200 active:scale-[0.98] motion-reduce:transition-none",
+    learningNavigationVisible ? "min-w-[4.25rem]" : "min-w-[5.5rem]"
+  );
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-3 z-40 flex items-center justify-center px-3 lg:hidden">
@@ -47,11 +55,25 @@ export function MobileFloatingNav({
         aria-label="主要工作模式"
         className="pointer-events-auto flex items-center rounded-full bg-[var(--color-interaction-active)] p-0.5 shadow-[var(--shadow-pill)]"
       >
+        {learningNavigationVisible && (
+          <Link
+            href="/today"
+            aria-current={activeMode === "today" ? "page" : undefined}
+            className={cn(
+              modeClassName,
+              activeMode === "today"
+                ? "bg-[var(--color-panel)] text-[var(--color-text-primary)]"
+                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            )}
+          >
+            今日
+          </Link>
+        )}
         <Link
           href="/chat"
           aria-current={activeMode === "chat" ? "page" : undefined}
           className={cn(
-            "inline-flex h-9 min-w-[5.5rem] items-center justify-center rounded-full px-4 text-[13px] font-medium transition-[background-color,color,transform] duration-200 active:scale-[0.98] motion-reduce:transition-none",
+            modeClassName,
             activeMode === "chat"
               ? "bg-[var(--color-panel)] text-[var(--color-text-primary)]"
               : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -63,7 +85,7 @@ export function MobileFloatingNav({
           href="/projects"
           aria-current={activeMode === "projects" ? "page" : undefined}
           className={cn(
-            "inline-flex h-9 min-w-[5.5rem] items-center justify-center rounded-full px-4 text-[13px] font-medium transition-[background-color,color,transform] duration-200 active:scale-[0.98] motion-reduce:transition-none",
+            modeClassName,
             activeMode === "projects"
               ? "bg-[var(--color-panel)] text-[var(--color-text-primary)]"
               : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"

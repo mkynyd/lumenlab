@@ -1,3 +1,5 @@
+const learningAll = ["learning"] as const;
+
 export const queryKeys = {
   conversations: {
     all: ["conversations"] as const,
@@ -22,6 +24,45 @@ export const queryKeys = {
   conversions: {
     all: ["conversions"] as const,
     detail: (id: string) => ["conversions", id] as const,
+  },
+  learning: {
+    all: learningAll,
+    goals: (projectId: string) =>
+      [...learningAll, "projects", projectId, "goals"] as const,
+    scope: (projectId: string, goalId: string) =>
+      [...learningAll, "projects", projectId, "goals", goalId, "scope"] as const,
+    map: (projectId: string, goalId: string) =>
+      [...learningAll, "projects", projectId, "goals", goalId, "map"] as const,
+    session: (projectId: string, sessionId: string) =>
+      [...learningAll, "projects", projectId, "sessions", sessionId] as const,
+    progress: (projectId: string, goalId: string) =>
+      [
+        ...learningAll,
+        "projects",
+        projectId,
+        "goals",
+        goalId,
+        "progress",
+      ] as const,
+    wrongAnswers: (projectId: string, goalId: string) =>
+      [
+        ...learningAll,
+        "projects",
+        projectId,
+        "goals",
+        goalId,
+        "wrong-answers",
+      ] as const,
+    reviews: (projectId: string, goalId: string) =>
+      [
+        ...learningAll,
+        "projects",
+        projectId,
+        "goals",
+        goalId,
+        "reviews",
+      ] as const,
+    today: () => [...learningAll, "today"] as const,
   },
   userProfile: ["user-profile"] as const,
   keys: ["api-keys"] as const,

@@ -1,0 +1,110 @@
+"use client";
+
+import { useState, type ReactNode } from "react";
+import { SessionProvider } from "next-auth/react";
+import { usePathname } from "next/navigation";
+
+import { MobileFloatingNav } from "@/components/layout/mobile-floating-nav";
+import { Sidebar } from "@/components/layout/sidebar";
+import { LearningFeatureProvider } from "@/components/providers/learning-feature-provider";
+import { QueryProvider } from "@/components/providers/query-provider";
+import { cn } from "@/lib/utils";
+
+export function ChatShell({
+  children,
+  learningNavigationVisible,
+}: {
+  children: ReactNode;
+  learningNavigationVisible: boolean;
+}) {
+  const pathname = usePathname();
+  const section = pathname.startsWith("/projects")
+    ? "projects"
+    : pathname.startsWith("/tools")
+      ? "tools"
+      : pathname.startsWith("/today")
+        ? "today"
+        : "chat";
+  const isInsideProject = /^\/projects\/[^/]+/.test(pathname || "");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [userCollapsed, setUserCollapsed] = useState(false);
+  // 项目页把整个主导航让给项目资料栏；离开后恢复用户在其他工作区的偏好。
+  const sidebarCollapsed = isInsideProject || userCollapsed;
+
+  function toggleSidebar() {
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      if (isInsideProject) return;
+      setUserCollapsed((current) => !current);
+      return;
+    }
+
+    setMobileSidebarOpen((current) => !current);
+  }
+
+  return (
+    <SessionProvider>
+      <QueryProvider>
+        <LearningFeatureProvider
+          navigationVisible={learningNavigationVisible}
+        >
+          <a
+            href="#workbench-main"
+            className={cn(
+              "sr-only focus:not-sr-only",
+              "fixed left-2 top-2 z-[100]",
+              "rounded-[var(--radius-md)] bg-[var(--color-accent)] px-3 py-2",
+              "text-sm font-medium text-[var(--color-accent-contrast)]",
+              "focus:outline-none focus-visible:outline-none"
+            )}
+          >
+            跳到主内容
+          </a>
+          <div className="flex h-dvh min-h-svh overflow-hidden bg-[var(--color-bg)]">
+            <Sidebar
+              mobileOpen={mobileSidebarOpen}
+              collapsed={sidebarCollapsed}
+              hiddenOnDesktop={isInsideProject}
+              learningNavigationVisible={learningNavigationVisible}
+              onClose={() => setMobileSidebarOpen(false)}
+              onExpand={() => {
+                if (isInsideProject) return;
+                setUserCollapsed(false);
+              }}
+              onCollapse={() => {
+                if (isInsideProject) return;
+                setUserCollapsed(true);
+              }}
+            />
+            <div
+              className={cn(
+                "flex min-w-0 flex-1 flex-col overflow-hidden",
+                "transition-transform duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none",
+                // 移动端抽屉展开时，内容区整体右移（ChatGPT 式视差推动）
+                mobileSidebarOpen && "max-lg:translate-x-[min(20rem,85vw)]"
+              )}
+            >
+              {!isInsideProject && (
+                <MobileFloatingNav
+                  learningNavigationVisible={learningNavigationVisible}
+                  mobileSidebarOpen={mobileSidebarOpen}
+                  onMenuToggle={toggleSidebar}
+                />
+              )}
+              <main
+                key={section}
+                id="workbench-main"
+                className={cn(
+                  "workbench-view-enter flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--color-bg)]",
+                  // 移动端为悬浮胶囊留出落位空间；桌面端无顶栏，正文全高
+                  !isInsideProject && "pt-16 lg:pt-0"
+                )}
+              >
+                {children}
+              </main>
+            </div>
+          </div>
+        </LearningFeatureProvider>
+      </QueryProvider>
+    </SessionProvider>
+  );
+}

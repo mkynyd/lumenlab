@@ -31,6 +31,20 @@ describe("MobileFloatingNav", () => {
     expect(screen.getByRole("link", { name: "项目" })).not.toHaveAttribute(
       "aria-current"
     );
+    expect(screen.queryByRole("link", { name: "今日" })).not.toBeInTheDocument();
+  });
+
+  it("shows Today only for a server-authorized learning rollout", () => {
+    navigation.pathname = "/today";
+    const { rerender } = render(<MobileFloatingNav />);
+
+    expect(screen.queryByRole("link", { name: "今日" })).not.toBeInTheDocument();
+
+    rerender(<MobileFloatingNav learningNavigationVisible />);
+    expect(screen.getByRole("link", { name: "今日" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
   });
 
   it("stays hidden on desktop viewports", () => {

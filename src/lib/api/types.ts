@@ -1,4 +1,36 @@
 import type { AgentSource } from "@/lib/agent/sources";
+import type {
+  AssistanceLevel,
+  ContentFreshness,
+  EvaluationVerdict,
+  MasteryState,
+  PracticeItemOptionDto,
+  PracticeItemPublicDto,
+  ReviewState,
+} from "@/lib/learning/contracts";
+import type {
+  AttemptSubmissionResult,
+  KnowledgeMapDto,
+  LearningGoalDto,
+  LearningInteractionDto,
+  LearningProgressDto,
+  LearningScopeDto,
+  LearningSessionDto,
+} from "@/lib/learning/services/learning-service";
+
+export type {
+  AssistanceLevel,
+  ContentFreshness,
+  EvaluationVerdict,
+  KnowledgeMapDto,
+  LearningGoalDto,
+  LearningInteractionDto,
+  LearningScopeDto,
+  MasteryState,
+  PracticeItemOptionDto,
+  PracticeItemPublicDto,
+  ReviewState,
+};
 
 export interface ConversationSummary {
   id: string;
@@ -141,4 +173,110 @@ export interface ConversionDetail extends ConversionSummary {
   fileSize: number | null;
   metadata: Record<string, unknown> | null;
   updatedAt: string;
+}
+
+export type LearningMaterialMode = "project_corpus" | "selected_files";
+
+export type PracticeItemClientDto = PracticeItemPublicDto;
+export type PracticeOptionDto = PracticeItemOptionDto;
+export type LearningSessionItemClientDto = LearningSessionDto["items"][number];
+export type LearningSessionClientDto = LearningSessionDto;
+
+/** Post-submit feedback; answer criteria never cross the public boundary. */
+export interface ItemFeedbackDto {
+  practiceItem: PracticeItemPublicDto;
+  explanation: string | null;
+}
+
+export interface HintResultDto {
+  interaction: LearningInteractionDto;
+  hint: string;
+}
+
+export interface AnswerExposureResultDto {
+  interaction: LearningInteractionDto;
+  feedback: ItemFeedbackDto;
+}
+
+export type AttemptEvaluationDto = AttemptSubmissionResult["evaluation"];
+export type AttemptResultDto = AttemptSubmissionResult;
+export type LearningProgressPointDto = LearningProgressDto;
+
+export interface LearningProgressSummaryDto {
+  total: number;
+  new: number;
+  learning: number;
+  mastered: number;
+  due: number;
+  needsRevalidation: number;
+  unsupported: number;
+}
+
+export interface LearningProgressResponse {
+  summary: LearningProgressSummaryDto;
+  points: LearningProgressPointDto[];
+}
+
+export type ReviewEntryDto = LearningProgressPointDto & {
+  reviewState: "due";
+};
+
+export interface ReviewListResponse {
+  reviews: ReviewEntryDto[];
+}
+
+export interface WrongAnswerAttemptDto {
+  id: string;
+  answer: unknown;
+  assistanceLevel: AssistanceLevel;
+  spacingSeconds: number;
+  submittedAt: string;
+  evaluations: AttemptEvaluationDto[];
+}
+
+export interface WrongAnswerItemDto {
+  policyVersion: string;
+  itemLineageId: string;
+  status: "resolved" | "unresolved";
+  latestVerdict: EvaluationVerdict;
+  triggeringAttemptIds: readonly string[];
+  resolutionAttemptIds: readonly string[];
+  feedback: ItemFeedbackDto;
+  knowledgePoints: Array<{
+    id: string;
+    lineageId: string;
+    name: string;
+  }>;
+  attempts: WrongAnswerAttemptDto[];
+  progress: LearningProgressPointDto[];
+}
+
+export interface WrongAnswerListResponse {
+  items: WrongAnswerItemDto[];
+}
+
+export type TodayNextActionType =
+  | "confirm_scope"
+  | "generate_map"
+  | "start_diagnostic"
+  | "review"
+  | "continue_learning";
+
+export interface TodayNextActionDto {
+  type: TodayNextActionType;
+  href: string;
+  dueCount?: number;
+  nextReviewAt?: string | null;
+}
+
+export interface LearningTodayGoalDto {
+  goal: LearningGoalDto;
+  project: { id: string; name: string };
+  summary: LearningProgressSummaryDto;
+  nextAction: TodayNextActionDto;
+}
+
+export interface LearningTodayResponse {
+  asOf: string;
+  goals: LearningTodayGoalDto[];
 }

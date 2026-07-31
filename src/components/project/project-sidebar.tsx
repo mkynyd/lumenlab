@@ -61,6 +61,8 @@ import {
 import { ProjectDetailModal } from "@/components/project/project-detail-modal";
 import { useProjectFiles } from "@/lib/hooks/use-project-files";
 import { useProjectArtifacts } from "@/lib/hooks/use-artifacts";
+import { useLearningFeatureVisibility } from "@/components/providers/learning-feature-provider";
+import { GraduationCap } from "lucide-react";
 
 interface ProjectData {
   id: string;
@@ -120,6 +122,7 @@ export function ProjectSidebar({
   onShowVectorLibrary,
   className,
 }: ProjectSidebarProps) {
+  const learningNavigationVisible = useLearningFeatureVisibility();
   const filesQuery = useProjectFiles(project.id, project.files || []);
   const files = filesQuery.data || project.files || [];
   const failedCount = files.filter((file) => file.status === "failed").length;
@@ -163,6 +166,21 @@ export function ProjectSidebar({
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">
             {project.name}
           </h2>
+          {learningNavigationVisible && (
+            <Button
+              asChild
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 text-[var(--color-text-tertiary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+            >
+              <Link
+                href={`/projects/${project.id}/learning`}
+                aria-label="打开项目学习中心"
+              >
+                <GraduationCap size={15} strokeWidth={1.8} />
+              </Link>
+            </Button>
+          )}
           <button
             type="button"
             onClick={() => setDetailOpen(true)}

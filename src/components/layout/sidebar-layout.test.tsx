@@ -83,6 +83,27 @@ describe("main workspace navigation layout", () => {
     expect(screen.queryByRole("button", { name: "文档" })).not.toBeInTheDocument();
   });
 
+  it("keeps Today hidden until the server-authorized rollout is visible", () => {
+    const props = {
+      mobileOpen: false,
+      collapsed: false,
+      onClose: vi.fn(),
+      onExpand: vi.fn(),
+    };
+    const { rerender } = render(<Sidebar {...props} />);
+
+    expect(
+      screen.queryByRole("button", { name: "今日学习" })
+    ).not.toBeInTheDocument();
+
+    mocks.usePathname.mockReturnValue("/today");
+    rerender(<Sidebar {...props} learningNavigationVisible />);
+    expect(screen.getByRole("button", { name: "今日学习" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+  });
+
   it("can remove the desktop main navigation while preserving the mobile drawer", () => {
     const props = { mobileOpen: false, onClose: vi.fn(), onExpand: vi.fn() };
     render(<Sidebar {...props} collapsed hiddenOnDesktop />);
