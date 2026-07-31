@@ -59,7 +59,7 @@ export function ModelSelector({
   disabled = false,
   compact = false,
   className,
-  availableModels = ["deepseek-v4-pro", "deepseek-v4-flash", "minimax-m3"],
+  availableModels = ["deepseek-v4-flash", "deepseek-v4-pro", "minimax-m3"],
 }: ModelSelectorProps) {
   const models = MODELS.filter((item) => availableModels.includes(item.value));
   const current = models.find((item) => item.value === model) ?? models[0];

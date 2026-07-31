@@ -65,9 +65,12 @@ export class DeepSeekError extends Error {
 }
 
 export function mapDeepSeekModel(model: string): string {
-  return model === "deepseek-v4-pro"
-    ? "claude-opus-4-8"
-    : "claude-sonnet-4-6";
+  // DeepSeek's official model IDs are accepted by its Anthropic-compatible
+  // endpoint. Keep the fallback on the fast lane so internal callers cannot
+  // accidentally send an unsupported alias and silently get another model.
+  return model === "deepseek-v4-pro" || model === "deepseek-v4-flash"
+    ? model
+    : "deepseek-v4-flash";
 }
 
 function createClient(apiKey: string) {
@@ -172,6 +175,9 @@ export async function completeChat(
       messages: history,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(params.thinking?.type === "enabled" ? { thinking: { type: "enabled" } as any } : {}),
+      ...(params.thinking?.type === "enabled" && params.reasoning_effort
+        ? { output_config: { effort: params.reasoning_effort } }
+        : {}),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(params.tools?.length ? { tools: params.tools as any } : {}),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -252,6 +258,9 @@ export async function streamChat(
       ...(params.thinking?.type === "enabled"
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ? { thinking: { type: "enabled" } as any }
+        : {}),
+      ...(params.thinking?.type === "enabled" && params.reasoning_effort
+        ? { output_config: { effort: params.reasoning_effort } }
         : {}),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(params.tools?.length ? { tools: params.tools as any } : {}),

@@ -169,7 +169,7 @@ model Conversation {
   userId             String
   projectId          String? // nullable — existing chats without project remain valid
   title              String   @default("New Chat")
-  model              String   @default("deepseek-v4-pro")
+  model              String   @default("deepseek-v4-flash")
   modelLock          String?
   thinkingEnabled    Boolean  @default(true)
   activeSkillId      String?
@@ -250,7 +250,7 @@ model Project {
   name            String
   description     String?
   type            String   @default("general") // experiment, review, coding, general
-  defaultModel    String   @default("deepseek-v4-pro")
+  defaultModel    String   @default("deepseek-v4-flash")
   thinkingEnabled Boolean  @default(true)
   systemPrompt    String?
   createdAt       DateTime @default(now())

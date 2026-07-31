@@ -27,9 +27,10 @@ async function readStreamText(stream: ReadableStream<Uint8Array>) {
 }
 
 describe("mapDeepSeekModel", () => {
-  it("maps UI model ids to DeepSeek Anthropic aliases", () => {
-    expect(mapDeepSeekModel("deepseek-v4-pro")).toBe("claude-opus-4-8");
-    expect(mapDeepSeekModel("deepseek-v4-flash")).toBe("claude-sonnet-4-6");
+  it("passes official DeepSeek V4 model ids to the Anthropic-compatible API", () => {
+    expect(mapDeepSeekModel("deepseek-v4-pro")).toBe("deepseek-v4-pro");
+    expect(mapDeepSeekModel("deepseek-v4-flash")).toBe("deepseek-v4-flash");
+    expect(mapDeepSeekModel("unknown-model")).toBe("deepseek-v4-flash");
   });
 });
 
@@ -65,6 +66,7 @@ describe("streamChat", () => {
         { role: "user", content: "hi" },
       ],
       thinking: { type: "enabled" },
+      reasoning_effort: "max",
     });
 
     const body = await readStreamText(result.stream);
@@ -75,6 +77,12 @@ describe("streamChat", () => {
     expect(result.getToolCalls()).toEqual([]);
     expect(result.getRawContent()).toContain(
       '<tool_calls><invoke name="project_files.list">'
+    );
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "deepseek-v4-pro",
+        output_config: { effort: "max" },
+      })
     );
   });
 

@@ -26,7 +26,7 @@ LumenLab 是面向大学生与通用学习者的项目化 AI 工作台。用户�
 
 ### 对话与模型
 
-- DeepSeek V4 Pro / Flash：文字对话、推理、原生 `web.search` 与内部 Tool fallback。
+- DeepSeek V4 Flash（默认）/ Pro：文字对话、推理、原生 `web.search` 与内部 Tool fallback；请求使用官方模型 ID，Responses API 当前以 Flash 为支持线路。
 - MiniMax M3：文字与多模态对话、图片 OCR、PDF 项目解析、原生 Tool continuation。
 - Qwen3.7-Plus：默认关闭的灰度模型；启用后支持文本输出与图像、视频理解，使用 DashScope 原生多模态与 Function Calling。
 - Provider 协议默认由项目自有 Adapter 承接；`AGENT_PROVIDER_ADAPTER=pi` 可把 DeepSeek / MiniMax 切到 `@earendil-works/pi-ai@0.80.7` 隔离 POC，Qwen 保持自有 Bailian Adapter。

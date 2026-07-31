@@ -1,6 +1,6 @@
 export const DEFAULT_CHAT_MODELS = [
-  "deepseek-v4-pro",
   "deepseek-v4-flash",
+  "deepseek-v4-pro",
   "minimax-m3",
 ] as const;
 

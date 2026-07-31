@@ -83,7 +83,7 @@
 
 - 描述：返回当前部署和当前账号实际可用的聊天模型。Qwen 只有在灰度开关、百炼工作空间和用户凭据都可用时才会出现。
 - 认证：需登录。
-- 响应：`{ models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'minimax-m3', 'qwen3.7-plus'?] }`
+- 响应：`{ models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'minimax-m3', 'qwen3.7-plus'?] }`
 
 ### `POST /api/chat`
 

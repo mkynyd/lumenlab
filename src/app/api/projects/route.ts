@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       name: body.name,
       description: body.description || null,
       type: body.type,
-      defaultModel: body.defaultModel || "deepseek-v4-pro",
+      defaultModel: body.defaultModel || "deepseek-v4-flash",
       thinkingEnabled: body.thinkingEnabled ?? true,
       quickActions: {
         create: [

@@ -15,7 +15,7 @@ import { completeChat, type DeepSeekMessage } from "@/lib/deepseek";
 import { getRedis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 
-const SEARCH_MODEL = "deepseek-v4-pro";
+const SEARCH_MODEL = "deepseek-v4-flash";
 const SEARCH_MAX_TOKENS = 4096;
 const CACHE_TTL_SECONDS = 60;
 const SEARCH_TIMEOUT_MS = 10_000;

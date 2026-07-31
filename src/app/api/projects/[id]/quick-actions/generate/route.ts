@@ -63,7 +63,7 @@ export async function POST(
   try {
     const apiKey = await getProviderApiKey(session.user.id, "deepseek");
     const output = await createTextMessage(apiKey, {
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash",
       temperature: 0.2,
       maxTokens: 1000,
       system:

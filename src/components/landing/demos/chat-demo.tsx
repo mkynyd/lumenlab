@@ -119,7 +119,7 @@ function ChatDemoInputDock() {
               <Paperclip size={17} strokeWidth={2} />
             </button>
             <ModelSelector
-              model="deepseek-v4-pro"
+              model="deepseek-v4-flash"
               onChange={() => {}}
               reasoningEffort="max"
               onReasoningEffortChange={() => {}}

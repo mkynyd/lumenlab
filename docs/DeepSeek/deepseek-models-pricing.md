@@ -1,5 +1,12 @@
 # DeepSeek 模型与价格
 
+## 当前接入说明
+
+- 项目请求使用官方模型 ID：`deepseek-v4-flash` / `deepseek-v4-pro`，不再使用 `claude-*` 兼容别名。
+- Anthropic 兼容接口使用 `https://api.deepseek.com/anthropic`；Responses API 使用 `https://api.deepseek.com`。
+- DeepSeek 官方 Responses API 当前仅支持 `deepseek-v4-flash`，因此 LumenLab 将 V4 Flash 设为默认快速/轻量线路，V4 Pro 仍保留为可选模型。
+- 已有项目或对话中明确选择的 V4 Pro 不会被迁移脚本强制改写。
+
 ## DeepSeek-V4-Pro
 
 - **模型名**: `deepseek-v4-pro`
