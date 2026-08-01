@@ -58,6 +58,8 @@ import {
 } from "@/lib/learning/validators";
 import { z } from "zod";
 import { getEffectiveFileContent } from "@/lib/files/content-fingerprint";
+import type { ParseQualityReport } from "@/lib/document-pipeline/quality-checker";
+import { gateHighConfidenceGeneration } from "@/lib/document-pipeline/quality-gate";
 
 type GoalCreateInput = z.infer<typeof learningGoalCreateSchema>;
 type ScopeDraftInput = z.infer<typeof learningScopeDraftSchema>;
@@ -1116,6 +1118,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         enhancedContent: true,
         enhancementStatus: true,
         contentFingerprint: true,
+        processingMetadata: true,
       },
     });
     const sourceFileById = new Map(
@@ -1137,12 +1140,16 @@ export function createLearningService(options: CreateLearningServiceOptions) {
           409
         );
       }
+      const processingMetadata = file.processingMetadata
+        ? objectJson(file.processingMetadata)
+        : null;
       return {
         handle: anchor.anchorKey,
         fileAssetId: anchor.fileAssetId,
         title: anchor.sourceFileName,
         content,
         contentFingerprint: anchor.contentFingerprint,
+        parseReport: processingMetadata?.parseReport,
       };
     });
     if (sources.length === 0) {
@@ -1152,6 +1159,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         409
       );
     }
+    gateSourceQuality(sources);
     return { anchors, sources };
   }
 
@@ -1208,6 +1216,30 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       );
     }
     return scope;
+  }
+
+  /**
+   * P1-C gate: reject high-confidence generation when any source file's parse
+   * report signals low quality (text coverage, failed images, warnings).
+   * Files without a report (legacy parses) pass — the gate only applies to
+   * parses that produced one.
+   */
+  function gateSourceQuality(
+    sources: Array<{ title: string; parseReport?: unknown }>
+  ): void {
+    const failures = sources.flatMap((source) => {
+      const decision = gateHighConfidenceGeneration(
+        source.parseReport as ParseQualityReport | null | undefined
+      );
+      return decision.allowed ? [] : [`${source.title}（${decision.reason}）`];
+    });
+    if (failures.length > 0) {
+      throw new LearningServiceError(
+        "source_unsupported",
+        `部分资料解析质量不足，无法生成高置信度内容，请重新解析后重试：${failures.join("；")}`,
+        409
+      );
+    }
   }
 
   /**
@@ -1280,6 +1312,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         enhancedContent: true,
         enhancementStatus: true,
         contentFingerprint: true,
+        processingMetadata: true,
       },
     });
     if (
@@ -1322,11 +1355,15 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         contentFingerprint: file.contentFingerprint,
         excerptHash: sha256(content),
       });
+      const processingMetadata = file.processingMetadata
+        ? objectJson(file.processingMetadata)
+        : null;
       return {
         ...snapshot,
         handle,
         title: file.originalName,
         content,
+        parseReport: processingMetadata?.parseReport,
       };
     });
   }
@@ -2231,6 +2268,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         projectId: command.projectId,
         scope,
       });
+      gateSourceQuality(sources);
       const generated = knowledgeMapGenerationSchema.parse(
         await modelGateway.generateKnowledgeMap({
           userId: command.userId,
@@ -2443,6 +2481,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
           enhancedContent: true,
           enhancementStatus: true,
           contentFingerprint: true,
+          processingMetadata: true,
         },
       });
       const sourceFileById = new Map(
@@ -2464,6 +2503,9 @@ export function createLearningService(options: CreateLearningServiceOptions) {
             409
           );
         }
+        const processingMetadata = file.processingMetadata
+          ? objectJson(file.processingMetadata)
+          : null;
         return {
           handle: anchor.anchorKey,
           fileAssetId: anchor.fileAssetId,
@@ -2471,8 +2513,10 @@ export function createLearningService(options: CreateLearningServiceOptions) {
           content,
           contentFingerprint: anchor.contentFingerprint,
           locator: anchor.locator,
+          parseReport: processingMetadata?.parseReport,
         };
       });
+      gateSourceQuality(practiceSources);
       const generatedItems = z
         .object({
           items: z.array(practiceItemGenerationSchema).min(5).max(10),

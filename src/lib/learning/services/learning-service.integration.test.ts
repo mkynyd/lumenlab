@@ -877,6 +877,107 @@ describe("LearningService goal and scope seam", () => {
     }
   });
 
+  it("rejects map generation when a source parse report signals low quality", async () => {
+    const { owner, project } = await createFixture();
+    const file = await prisma.fileAsset.create({
+      data: {
+        userId: owner.id,
+        projectId: project.id,
+        filename: "low-quality.md",
+        originalName: "低质量扫描件.md",
+        mimeType: "text/markdown",
+        size: 4096,
+        storagePath: "integration/low-quality.md",
+        textContent: "基尔霍夫电流定律。",
+        contentFingerprint: "sha256:low-quality-v1",
+        status: "parsed",
+        processingMetadata: {
+          parseReport: {
+            textCoverageRatio: 0.12,
+            imageRetainedCount: 4,
+            imageAnalyzedCount: 0,
+            imageSkippedCount: 0,
+            failedImageCount: 4,
+            tableCount: 0,
+            formulaCount: 0,
+            warningCount: 5,
+            checks: [{ rule: "non_empty_content", passed: true }],
+          },
+        },
+      },
+    });
+    const modelGateway: LearningModelGateway = {
+      generateKnowledgeMap: async () => {
+        throw new Error("must not be called");
+      },
+      generatePracticeItems: async () => {
+        throw new Error("not used");
+      },
+      evaluateAttempt: async () => {
+        throw new Error("not used");
+      },
+      generateStudyPackSection: async () => {
+        throw new Error("not used");
+      },
+    };
+    const service = createLearningService({
+      prisma,
+      clock,
+      ids: createIds(),
+      modelGateway,
+    });
+    try {
+      const goal = await service.createGoal({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          title: "低质量门禁",
+          purpose: null,
+          targetDate: null,
+          dailyMinutes: 30,
+          activate: true,
+          idempotencyKey: "quality-goal",
+        },
+      });
+      await service.saveScopeDraft({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          expectedVersion: 0,
+          definition: { objective: "低质量门禁" },
+          materialMode: "project_corpus",
+          fileIds: [],
+          materialGaps: [],
+          idempotencyKey: "quality-scope",
+        },
+      });
+      await service.confirmScope({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          expectedVersion: 1,
+          idempotencyKey: "quality-scope-confirm",
+        },
+      });
+      await expect(
+        service.generateMap({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: goal.id,
+          input: { idempotencyKey: "quality-map-1" },
+        })
+      ).rejects.toMatchObject({
+        code: "source_unsupported",
+        status: 409,
+      });
+      expect(file.id).toBeDefined();
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
   it("returns evidence-backed history and appends an owned error-type correction", async () => {
     const { owner, stranger, project } = await createFixture();
     const service = createLearningService({
