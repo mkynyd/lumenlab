@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createIdempotencyKey } from "@/lib/hooks/use-learning-api";
@@ -136,11 +137,11 @@ export function GoalCreateForm({
           >
             目标日期
           </label>
-          <Input
+          <DatePicker
             id={`${fieldId}-target-date`}
-            type="date"
-            value={targetDate}
-            onChange={(event) => setTargetDate(event.target.value)}
+            value={targetDate || null}
+            onChange={(value) => setTargetDate(value ?? "")}
+            placeholder="选择目标日期（可选）"
           />
         </div>
         <div>

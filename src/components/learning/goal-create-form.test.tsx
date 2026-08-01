@@ -36,9 +36,10 @@ describe("GoalCreateForm", () => {
 
     await user.type(screen.getByLabelText("目标标题"), "数据结构期末冲刺");
     await user.type(screen.getByLabelText("用途"), "两周后考试");
-    fireEvent.change(screen.getByLabelText("目标日期"), {
-      target: { value: "2026-08-14" },
-    });
+    // shadcn Calendar 日期选择：打开弹出层并选中当月 14 号
+    // （day 按钮的可访问名称是完整日期，如 "Friday, August 14th, 2026"）。
+    await user.click(screen.getByLabelText("目标日期"));
+    await user.click(screen.getByRole("button", { name: /14/ }));
     fireEvent.change(screen.getByLabelText("每天投入分钟"), {
       target: { value: "45" },
     });
@@ -47,10 +48,14 @@ describe("GoalCreateForm", () => {
 
     expect(mutate).toHaveBeenCalledTimes(1);
     const variables = mutate.mock.calls[0][0] as Record<string, unknown>;
+    const now = new Date();
+    const expectedTargetDate = `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}-14`;
     expect(variables).toEqual({
       title: "数据结构期末冲刺",
       purpose: "两周后考试",
-      targetDate: "2026-08-14",
+      targetDate: expectedTargetDate,
       dailyMinutes: 45,
       idempotencyKey: expect.any(String),
     });
