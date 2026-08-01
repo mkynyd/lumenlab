@@ -7,17 +7,29 @@ import type { LearningHistoryDto } from "@/lib/hooks/use-learning-api";
 import {
   useCorrectLearningErrorType,
   useLearningHistory,
+  useRegradeEvaluation,
+  useResetLearningProfile,
+  useReviseGoal,
 } from "@/lib/hooks/use-learning-history";
 
 vi.mock("@/lib/hooks/use-learning-history", () => ({
   useLearningHistory: vi.fn(),
   useCorrectLearningErrorType: vi.fn(),
+  useRegradeEvaluation: vi.fn(),
+  useResetLearningProfile: vi.fn(),
+  useReviseGoal: vi.fn(),
 }));
 
 const mockUseLearningHistory = vi.mocked(useLearningHistory);
 const mockUseCorrectLearningErrorType = vi.mocked(useCorrectLearningErrorType);
+const mockUseRegradeEvaluation = vi.mocked(useRegradeEvaluation);
+const mockUseResetLearningProfile = vi.mocked(useResetLearningProfile);
+const mockUseReviseGoal = vi.mocked(useReviseGoal);
 
 const correctMutate = vi.fn();
+const regradeMutate = vi.fn();
+const resetMutate = vi.fn();
+const reviseMutate = vi.fn();
 
 const fixtureHistory: LearningHistoryDto = {
   goal: {
@@ -51,6 +63,7 @@ const fixtureHistory: LearningHistoryDto = {
       reviewState: "due",
       policyVersion: "v1",
       evidenceAsOf: "2026-07-30T00:00:00.000Z",
+      resetAt: null,
       sourceAnchors: [
         {
           id: "anchor-1",
@@ -118,6 +131,7 @@ const fixtureHistory: LearningHistoryDto = {
             source: "user_correction",
             sourceId: "corr-1",
           },
+          resetBefore: false,
         },
       ],
     },
@@ -158,8 +172,26 @@ beforeAll(() => {
 describe("LearningHistory", () => {
   beforeEach(() => {
     correctMutate.mockReset();
+    regradeMutate.mockReset();
+    resetMutate.mockReset();
+    reviseMutate.mockReset();
     mockUseCorrectLearningErrorType.mockReturnValue({
       mutate: correctMutate,
+      isPending: false,
+      isError: false,
+    } as any);
+    mockUseRegradeEvaluation.mockReturnValue({
+      mutate: regradeMutate,
+      isPending: false,
+      isError: false,
+    } as any);
+    mockUseResetLearningProfile.mockReturnValue({
+      mutate: resetMutate,
+      isPending: false,
+      isError: false,
+    } as any);
+    mockUseReviseGoal.mockReturnValue({
+      mutate: reviseMutate,
       isPending: false,
       isError: false,
     } as any);
@@ -378,5 +410,104 @@ describe("LearningHistory", () => {
     render(<LearningHistory projectId="project-1" goalId="goal-1" />);
 
     expect(screen.getByText("还没有学习档案")).toBeInTheDocument();
+  });
+
+  it("重置前记录带标记且不提供修正与纠正入口", () => {
+    mockQuery({
+      data: {
+        ...fixtureHistory,
+        points: [
+          {
+            ...fixtureHistory.points[0],
+            resetAt: "2026-08-01T08:00:00.000Z",
+            evidence: [
+              { ...fixtureHistory.points[0].evidence[0], resetBefore: true },
+            ],
+          },
+        ],
+      },
+    });
+
+    render(<LearningHistory projectId="project-1" goalId="goal-1" />);
+
+    expect(screen.getByText("重置前记录")).toBeInTheDocument();
+    expect(screen.getByText(/不再影响当前掌握度与推荐/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "错因类型" })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("纠正判定")).not.toBeInTheDocument();
+  });
+
+  it("纠正判定携带判定、错因与说明提交", async () => {
+    mockQuery({ data: fixtureHistory });
+    const user = userEvent.setup();
+
+    render(<LearningHistory projectId="project-1" goalId="goal-1" />);
+
+    await user.click(screen.getByText("纠正判定"));
+    await user.click(
+      screen.getByRole("combobox", { name: "纠正后的判定" })
+    );
+    await user.click(await screen.findByRole("option", { name: "回答正确" }));
+    await user.click(
+      screen.getByRole("combobox", { name: "纠正错因" })
+    );
+    await user.click(await screen.findByRole("option", { name: "概念误解" }));
+    await user.type(
+      screen.getByLabelText("纠正说明"),
+      "标准答案应为正确"
+    );
+    await user.click(screen.getByRole("button", { name: "保存纠正" }));
+
+    expect(regradeMutate).toHaveBeenCalledTimes(1);
+    const [variables] = regradeMutate.mock.calls[0];
+    expect(variables).toMatchObject({
+      evaluationId: "eval-1",
+      verdict: "correct",
+      errorType: "misconception",
+      reason: "标准答案应为正确",
+    });
+    expect(typeof variables.idempotencyKey).toBe("string");
+  });
+
+  it("重置知识点需要两次点击确认", async () => {
+    mockQuery({ data: fixtureHistory });
+    const user = userEvent.setup();
+
+    render(<LearningHistory projectId="project-1" goalId="goal-1" />);
+
+    await user.click(screen.getByText("重置该知识点"));
+    expect(resetMutate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByText("再次点击确认重置该知识点"));
+    expect(resetMutate).toHaveBeenCalledTimes(1);
+    const [variables] = resetMutate.mock.calls[0];
+    expect(variables).toMatchObject({
+      scope: { kind: "point", goalId: "goal-1", lineageId: "lineage-1" },
+    });
+  });
+
+  it("编辑学习目标时先提供说明再保存修订", async () => {
+    mockQuery({ data: fixtureHistory });
+    const user = userEvent.setup();
+
+    render(<LearningHistory projectId="project-1" goalId="goal-1" />);
+
+    await user.click(screen.getByText("编辑学习目标"));
+    await user.clear(screen.getByLabelText("学习目标标题"));
+    await user.type(screen.getByLabelText("学习目标标题"), "数据结构总复习");
+    await user.type(
+      screen.getByLabelText("修订说明"),
+      "复习范围扩大"
+    );
+    await user.click(screen.getByRole("button", { name: "保存修订" }));
+
+    expect(reviseMutate).toHaveBeenCalledTimes(1);
+    const [variables] = reviseMutate.mock.calls[0];
+    expect(variables).toMatchObject({
+      title: "数据结构总复习",
+      reason: "复习范围扩大",
+    });
+    expect(typeof variables.idempotencyKey).toBe("string");
   });
 });

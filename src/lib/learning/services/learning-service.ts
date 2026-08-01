@@ -26,11 +26,11 @@ import {
   type ProgressEvaluation,
   type WrongAnswerAttempt,
 } from "@/lib/learning/policy";
-import type {
-  LearningGoalStatus,
-  LearningMaterialMode,
+import {
   Prisma,
-  PrismaClient,
+  type LearningGoalStatus,
+  type LearningMaterialMode,
+  type PrismaClient,
 } from "@/generated/prisma/client";
 import type {
   learningGoalCreateSchema,
@@ -38,7 +38,12 @@ import type {
   learningScopeDraftSchema,
   practiceAttemptSubmissionSchema,
 } from "@/lib/learning/validators";
-import type { errorTypeCorrectionCommandSchema } from "@/lib/learning/server/input-schemas";
+import type {
+  errorTypeCorrectionCommandSchema,
+  goalRevisionCommandSchema,
+  profileResetCommandSchema,
+  regradeCommandSchema,
+} from "@/lib/learning/server/input-schemas";
 import {
   answerCriteriaSchema,
   knowledgeMapGenerationSchema,
@@ -55,6 +60,9 @@ type AttemptSubmissionInput = z.infer<typeof practiceAttemptSubmissionSchema>;
 type ErrorTypeCorrectionInput = z.infer<
   typeof errorTypeCorrectionCommandSchema
 >;
+type RegradeInput = z.infer<typeof regradeCommandSchema>;
+type GoalRevisionInput = z.infer<typeof goalRevisionCommandSchema>;
+type ProfileResetInput = z.infer<typeof profileResetCommandSchema>;
 
 export interface IdempotentGenerationInput {
   idempotencyKey: string;
@@ -202,6 +210,43 @@ export interface LearningErrorTypeCorrectionDto {
   createdAt: string;
 }
 
+export interface LearningRegradeDto {
+  id: string;
+  attemptId: string;
+  verdict: EvaluationVerdict;
+  score: number | null;
+  confidence: number;
+  errorType: string | null;
+  reason: string;
+  policyVersion: string;
+  supersedesEvaluationId: string;
+  createdAt: string;
+}
+
+export interface LearningGoalRevisionDto {
+  id: string;
+  goalId: string;
+  title: string;
+  purpose: string | null;
+  targetDate: string | null;
+  dailyMinutes: number | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export type LearningProfileResetScope =
+  | { kind: "user" }
+  | { kind: "goal"; goalId: string }
+  | { kind: "point"; goalId: string; lineageId: string };
+
+export interface LearningProfileResetDto {
+  id: string;
+  scope: LearningProfileResetScope;
+  reason: string | null;
+  createdAt: string;
+  affectedPointCount: number;
+}
+
 export interface LearningHistoryEvaluationDto {
   id: string;
   attemptId: string;
@@ -247,6 +292,8 @@ export interface LearningHistoryEvidenceDto {
     source: "evaluation" | "user_correction";
     sourceId: string;
   } | null;
+  /** True when this evidence predates the latest profile reset boundary. */
+  resetBefore: boolean;
 }
 
 export interface LearningHistoryPointDto extends LearningProgressDto {
@@ -257,6 +304,8 @@ export interface LearningHistoryPointDto extends LearningProgressDto {
     locator: Record<string, unknown>;
   }>;
   evidence: LearningHistoryEvidenceDto[];
+  /** Latest profile reset boundary for this point, null when never reset. */
+  resetAt: string | null;
 }
 
 export interface LearningHistoryDto {
@@ -617,6 +666,86 @@ function toErrorTypeCorrectionDto(correction: {
   };
 }
 
+function toGoalRevisionDto(revision: {
+  id: string;
+  goalId: string;
+  title: string;
+  purpose: string | null;
+  targetDate: Date | null;
+  dailyMinutes: number | null;
+  reason: string | null;
+  createdAt: Date;
+}): LearningGoalRevisionDto {
+  return {
+    id: revision.id,
+    goalId: revision.goalId,
+    title: revision.title,
+    purpose: revision.purpose,
+    targetDate: iso(revision.targetDate),
+    dailyMinutes: revision.dailyMinutes,
+    reason: revision.reason,
+    createdAt: revision.createdAt.toISOString(),
+  };
+}
+
+function toRegradeDto(regrade: {
+  id: string;
+  attemptId: string;
+  verdict: string;
+  score: number | null;
+  confidence: number;
+  errorType: string | null;
+  reason: string;
+  policyVersion: string;
+  supersedesEvaluationId: string | null;
+  createdAt: Date;
+}): LearningRegradeDto {
+  if (regrade.supersedesEvaluationId === null) {
+    throw new LearningServiceError(
+      "invalid_state",
+      "判定纠正记录缺少被纠正的判定",
+      500
+    );
+  }
+  return {
+    id: regrade.id,
+    attemptId: regrade.attemptId,
+    verdict: regrade.verdict as EvaluationVerdict,
+    score: regrade.score,
+    confidence: regrade.confidence,
+    errorType: regrade.errorType,
+    reason: regrade.reason,
+    policyVersion: regrade.policyVersion,
+    supersedesEvaluationId: regrade.supersedesEvaluationId,
+    createdAt: regrade.createdAt.toISOString(),
+  };
+}
+
+function toProfileResetDto(
+  reset: {
+    id: string;
+    goalId: string | null;
+    lineageId: string | null;
+    reason: string | null;
+    createdAt: Date;
+  },
+  affectedPointCount: number
+): LearningProfileResetDto {
+  const scope: LearningProfileResetScope =
+    reset.goalId !== null && reset.lineageId !== null
+      ? { kind: "point", goalId: reset.goalId, lineageId: reset.lineageId }
+      : reset.goalId !== null
+        ? { kind: "goal", goalId: reset.goalId }
+        : { kind: "user" };
+  return {
+    id: reset.id,
+    scope,
+    reason: reset.reason,
+    createdAt: reset.createdAt.toISOString(),
+    affectedPointCount,
+  };
+}
+
 function historyProjectionForAttempt(attempt: HistoryAttemptRecord): {
   activeEvaluationId: string | null;
   effectiveErrorType: LearningHistoryEvidenceDto["effectiveErrorType"];
@@ -683,7 +812,7 @@ function historyProjectionForAttempt(attempt: HistoryAttemptRecord): {
 
 function toHistoryEvidenceDto(
   attempt: HistoryAttemptRecord
-): LearningHistoryEvidenceDto {
+): Omit<LearningHistoryEvidenceDto, "resetBefore"> {
   const projection = historyProjectionForAttempt(attempt);
   const practiceItem = attempt.sessionItem.practiceItem;
   return {
@@ -1050,6 +1179,121 @@ export function createLearningService(options: CreateLearningServiceOptions) {
     });
   }
 
+  /**
+   * Latest profile reset boundary affecting this (user, goal, lineage) triple.
+   * User-scoped resets (goalId null) apply to every goal; goal-scoped resets
+   * (lineageId null) apply to every point of that goal; point-scoped resets
+   * apply only to that lineage. Evidence predating the boundary never reaches
+   * current mastery, review, wrong-answer, or recommendation projections.
+   */
+  async function resolveProfileResetCutoff(
+    userId: string,
+    goalId: string,
+    lineageId: string
+  ): Promise<Date | null> {
+    const resets = await prisma.learningProfileReset.findMany({
+      where: {
+        userId,
+        OR: [
+          { goalId: null, lineageId: null },
+          { goalId, lineageId: null },
+          { goalId, lineageId },
+        ],
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { createdAt: true },
+    });
+    return resets[0]?.createdAt ?? null;
+  }
+
+  function lineageAttemptsFilter(
+    userId: string,
+    goalId: string,
+    lineageId: string,
+    cutoff: Date | null
+  ): Prisma.PracticeAttemptWhereInput {
+    return {
+      userId,
+      ...(cutoff === null ? {} : { submittedAt: { gt: cutoff } }),
+      sessionItem: {
+        is: {
+          practiceItem: {
+            is: {
+              goalId,
+              knowledgePoints: {
+                some: {
+                  knowledgePoint: {
+                    is: { lineageId },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+  }
+
+  function toProgressEvaluation(evaluation: {
+    id: string;
+    attemptId: string;
+    supersedesEvaluationId: string | null;
+    createdAt: Date;
+    verdict: string;
+    score: number | null;
+    rubric: Prisma.JsonValue | null;
+    confidence: number;
+    errorType: string | null;
+    reason: string;
+  }): ProgressEvaluation {
+    return {
+      id: evaluation.id,
+      attemptId: evaluation.attemptId,
+      supersedesEvaluationId: evaluation.supersedesEvaluationId,
+      createdAt: evaluation.createdAt,
+      verdict: evaluation.verdict as EvaluationVerdict,
+      score: evaluation.score,
+      rubric: evaluation.rubric ? objectJson(evaluation.rubric) : null,
+      confidence: evaluation.confidence,
+      errorType: evaluation.errorType,
+      reason: evaluation.reason,
+    };
+  }
+
+  /** Latest reset boundary per lineage, applying user > goal > point scopes. */
+  async function resolveCutoffsByLineage(
+    userId: string,
+    goalId: string,
+    lineageIds: readonly string[]
+  ): Promise<Map<string, Date>> {
+    const resets = await prisma.learningProfileReset.findMany({
+      where: {
+        userId,
+        OR: [
+          { goalId: null, lineageId: null },
+          { goalId, lineageId: null },
+          { goalId, lineageId: { in: [...lineageIds] } },
+        ],
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { lineageId: true, createdAt: true },
+    });
+    const cutoffs = new Map<string, Date>();
+    for (const reset of resets) {
+      if (reset.lineageId !== null) {
+        cutoffs.set(reset.lineageId, reset.createdAt);
+        continue;
+      }
+      for (const lineageId of lineageIds) {
+        const existing = cutoffs.get(lineageId);
+        if (existing === undefined || reset.createdAt > existing) {
+          cutoffs.set(lineageId, reset.createdAt);
+        }
+      }
+    }
+    return cutoffs;
+  }
+
   async function toProgressDto(command: {
     userId: string;
     goalId: string;
@@ -1117,25 +1361,18 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       );
     }
 
+    const resetCutoff = await resolveProfileResetCutoff(
+      command.userId,
+      command.goalId,
+      command.lineageId
+    );
     const attempts = await prisma.practiceAttempt.findMany({
-      where: {
-        userId: command.userId,
-        sessionItem: {
-          is: {
-            practiceItem: {
-              is: {
-                knowledgePoints: {
-                  some: {
-                    knowledgePoint: {
-                      is: { lineageId: command.lineageId },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      where: lineageAttemptsFilter(
+        command.userId,
+        command.goalId,
+        command.lineageId,
+        resetCutoff
+      ),
       orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
       include: {
         sessionItem: {
@@ -1254,6 +1491,86 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       goalId: command.goalId,
       lineageId: command.lineageId,
       point,
+    });
+  }
+
+  /**
+   * Reprojects a single lineage from current on-disk evidence, honoring the
+   * profile reset boundary. Used after a human regrade changes the effective
+   * verdict of the latest attempt. When no post-reset evidence exists the
+   * progress row is reset to the empty projection instead of scheduling a
+   * review from stale evidence.
+   */
+  async function reprojectLineage(
+    userId: string,
+    goalId: string,
+    lineageId: string
+  ): Promise<LearningProgressDto> {
+    const cutoff = await resolveProfileResetCutoff(userId, goalId, lineageId);
+    const latest = await prisma.practiceAttempt.findFirst({
+      where: lineageAttemptsFilter(userId, goalId, lineageId, cutoff),
+      orderBy: [{ submittedAt: "desc" }, { id: "desc" }],
+      include: {
+        sessionItem: {
+          select: {
+            practiceItem: { select: { mode: true } },
+          },
+        },
+        evaluations: {
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        },
+      },
+    });
+    if (!latest) {
+      await prisma.knowledgePointProgress.upsert({
+        where: {
+          userId_goalId_lineageId: { userId, goalId, lineageId },
+        },
+        create: {
+          id: ids.nextId("knowledge-point-progress"),
+          userId,
+          goalId,
+          lineageId,
+          masteryState: "new",
+          nextReviewAt: null,
+          policyVersion: "progress-v1",
+          evidenceAsOf: null,
+        },
+        update: {
+          masteryState: "new",
+          nextReviewAt: null,
+          evidenceAsOf: null,
+        },
+      });
+      const point = await latestPointForLineage(goalId, lineageId);
+      if (!point) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "题目关联的知识点版本不存在",
+          409
+        );
+      }
+      return toProgressDto({ userId, goalId, lineageId, point });
+    }
+    const resolution = resolveActiveEvaluation(
+      latest.id,
+      latest.evaluations.map(toProgressEvaluation)
+    );
+    return projectLineageProgress({
+      userId,
+      goalId,
+      lineageId,
+      latestAttempt: {
+        mode: latest.sessionItem.practiceItem.mode,
+        assistanceLevel: latest.assistanceLevel,
+        spacingSeconds: latest.spacingSeconds,
+      },
+      latestEvaluation: {
+        verdict:
+          resolution.status === "active"
+            ? resolution.evaluation.verdict
+            : "uncertain",
+      },
     });
   }
 
@@ -2323,25 +2640,21 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         );
       }
       const dueLineageIds = due.map(({ lineageId }) => lineageId);
+      const reviewCutoffs = await resolveCutoffsByLineage(
+        command.userId,
+        command.goalId,
+        dueLineageIds
+      );
       const attemptHistory = await prisma.practiceAttempt.findMany({
         where: {
-          userId: command.userId,
-          sessionItem: {
-            is: {
-              practiceItem: {
-                is: {
-                  goalId: command.goalId,
-                  knowledgePoints: {
-                    some: {
-                      knowledgePoint: {
-                        is: { lineageId: { in: dueLineageIds } },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
+          OR: dueLineageIds.map((lineageId) =>
+            lineageAttemptsFilter(
+              command.userId,
+              command.goalId,
+              lineageId,
+              reviewCutoffs.get(lineageId) ?? null
+            )
+          ),
         },
         orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
         include: attemptResultInclude,
@@ -2460,8 +2773,29 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
         include: attemptResultInclude,
       });
+      const pointLineageIds = [
+        ...new Set(
+          attempts.flatMap((attempt) =>
+            attempt.sessionItem.practiceItem.knowledgePoints.map(
+              ({ knowledgePoint }) => knowledgePoint.lineageId
+            )
+          )
+        ),
+      ];
+      const cutoffs = await resolveCutoffsByLineage(
+        command.userId,
+        command.goalId,
+        pointLineageIds
+      );
       const byLineage = new Map<string, AttemptResultRecord[]>();
       for (const attempt of attempts) {
+        const resetBefore = attempt.sessionItem.practiceItem.knowledgePoints.some(
+          ({ knowledgePoint }) => {
+            const cutoff = cutoffs.get(knowledgePoint.lineageId);
+            return cutoff !== undefined && attempt.submittedAt <= cutoff;
+          }
+        );
+        if (resetBefore) continue;
         const lineageId = attempt.sessionItem.practiceItem.lineageId;
         const group = byLineage.get(lineageId) ?? [];
         group.push(attempt);
@@ -2546,17 +2880,36 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         include: historyAttemptInclude,
       });
 
+      const lineageIds =
+        map?.knowledgePoints.map((point) => point.lineageId) ?? [];
+      const resetCutoffByLineage = await resolveCutoffsByLineage(
+        command.userId,
+        command.goalId,
+        lineageIds
+      );
+
+      const resetBeforeByAttemptId = new Map<string, boolean>();
       const evidenceByPointLineage = new Map<
         string,
         LearningHistoryEvidenceDto[]
       >();
       for (const attempt of attempts) {
-        const evidence = toHistoryEvidenceDto(attempt);
         const lineageIds = new Set(
           attempt.sessionItem.practiceItem.knowledgePoints.map(
             ({ knowledgePoint }) => knowledgePoint.lineageId
           )
         );
+        const cutoffs = [...lineageIds]
+          .map((lineageId) => resetCutoffByLineage.get(lineageId))
+          .filter((cutoff): cutoff is Date => cutoff !== undefined);
+        const resetBefore = cutoffs.some(
+          (cutoff) => attempt.submittedAt <= cutoff
+        );
+        resetBeforeByAttemptId.set(attempt.id, resetBefore);
+        const evidence: LearningHistoryEvidenceDto = {
+          ...toHistoryEvidenceDto(attempt),
+          resetBefore,
+        };
         for (const lineageId of lineageIds) {
           const existing = evidenceByPointLineage.get(lineageId) ?? [];
           existing.push(evidence);
@@ -2580,10 +2933,16 @@ export function createLearningService(options: CreateLearningServiceOptions) {
                 locator: objectJson(sourceAnchor.locator),
               })),
               evidence: evidenceByPointLineage.get(point.lineageId) ?? [],
+              resetAt: iso(
+                resetCutoffByLineage.get(point.lineageId) ?? null
+              ),
             }))
           )
         : [];
-      const manualCorrections = attempts.reduce(
+      const activeAttempts = attempts.filter(
+        (attempt) => !resetBeforeByAttemptId.get(attempt.id)
+      );
+      const manualCorrections = activeAttempts.reduce(
         (total, attempt) =>
           total +
           attempt.evaluations.reduce(
@@ -2603,7 +2962,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
           ).length,
           dueReviews: points.filter((point) => point.reviewState === "due")
             .length,
-          attempts: attempts.length,
+          attempts: activeAttempts.length,
           manualCorrections,
         },
         points,
@@ -2731,6 +3090,539 @@ export function createLearningService(options: CreateLearningServiceOptions) {
           throw new LearningServiceError(
             "idempotency_conflict",
             "该幂等键已用于不同的学习修正",
+            409
+          );
+        }
+        throw error;
+      }
+    },
+
+    async regradeEvaluation(
+      command: GoalCommand & {
+        goalId: string;
+        evaluationId: string;
+        input: RegradeInput;
+      }
+    ): Promise<{
+      regrade: LearningRegradeDto;
+      progress: LearningProgressDto[];
+    }> {
+      await requireGoal(command.userId, command.projectId, command.goalId);
+      const evaluation = await prisma.attemptEvaluation.findFirst({
+        where: {
+          id: command.evaluationId,
+          attempt: {
+            is: {
+              userId: command.userId,
+              sessionItem: {
+                is: {
+                  practiceItem: {
+                    is: { goalId: command.goalId },
+                  },
+                },
+              },
+            },
+          },
+        },
+        include: {
+          attempt: {
+            include: {
+              sessionItem: {
+                include: {
+                  practiceItem: {
+                    include: {
+                      knowledgePoints: {
+                        include: {
+                          knowledgePoint: {
+                            select: { lineageId: true },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!evaluation) {
+        throw new LearningServiceError(
+          "not_found",
+          "学习判定不存在",
+          404
+        );
+      }
+
+      const score =
+        command.input.verdict === "correct"
+          ? 1
+          : command.input.verdict === "partial"
+            ? 0.5
+            : command.input.verdict === "incorrect"
+              ? 0
+              : null;
+      const reason = command.input.reason;
+      const errorType = command.input.errorType ?? null;
+      const existing = await prisma.attemptEvaluation.findUnique({
+        where: {
+          attemptId_idempotencyKey: {
+            attemptId: evaluation.attemptId,
+            idempotencyKey: command.input.idempotencyKey,
+          },
+        },
+      });
+      if (existing) {
+        if (
+          existing.supersedesEvaluationId !== command.evaluationId ||
+          existing.verdict !== command.input.verdict ||
+          existing.errorType !== errorType ||
+          existing.reason !== reason
+        ) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于不同的判定纠正",
+            409
+          );
+        }
+        const pointLineageIds = [
+          ...new Set(
+            evaluation.attempt.sessionItem.practiceItem.knowledgePoints.map(
+              ({ knowledgePoint }) => knowledgePoint.lineageId
+            )
+          ),
+        ];
+        return {
+          regrade: toRegradeDto(existing),
+          progress: await Promise.all(
+            pointLineageIds.map((lineageId) =>
+              reprojectLineage(
+                command.userId,
+                command.goalId,
+                lineageId
+              )
+            )
+          ),
+        };
+      }
+
+      const attemptEvaluations = await prisma.attemptEvaluation.findMany({
+        where: { attemptId: evaluation.attemptId },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+      const activeEvaluation = resolveActiveEvaluation(
+        evaluation.attemptId,
+        attemptEvaluations.map(toProgressEvaluation)
+      );
+      if (
+        activeEvaluation.status !== "active" ||
+        activeEvaluation.evaluation.id !== command.evaluationId
+      ) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "只能纠正当前有效的学习判定",
+          409
+        );
+      }
+
+      const pointLineageIds = [
+        ...new Set(
+          evaluation.attempt.sessionItem.practiceItem.knowledgePoints.map(
+            ({ knowledgePoint }) => knowledgePoint.lineageId
+          )
+        ),
+      ];
+      const cutoffs = await resolveCutoffsByLineage(
+        command.userId,
+        command.goalId,
+        pointLineageIds
+      );
+      const resetBefore = pointLineageIds.some((lineageId) => {
+        const cutoff = cutoffs.get(lineageId);
+        return (
+          cutoff !== undefined &&
+          evaluation.attempt.submittedAt <= cutoff
+        );
+      });
+      if (resetBefore) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "该作答位于重置边界之前，无法纠正判定",
+          409
+        );
+      }
+
+      let regrade: Prisma.AttemptEvaluationGetPayload<Record<string, never>>;
+      try {
+        regrade = await prisma.$transaction(async (tx) => {
+          return tx.attemptEvaluation.create({
+            data: {
+              id: ids.nextId("attempt-evaluation"),
+              attemptId: evaluation.attemptId,
+              verdict: command.input.verdict,
+              score,
+              rubric: Prisma.JsonNull,
+              confidence: 1,
+              errorType,
+              reason,
+              modelVersion: null,
+              policyVersion: "manual-regrade-v1",
+              supersedesEvaluationId: command.evaluationId,
+              idempotencyKey: command.input.idempotencyKey,
+              createdAt: clock.now(),
+            },
+          });
+        });
+      } catch (error) {
+        const raced = await prisma.attemptEvaluation.findUnique({
+          where: {
+            attemptId_idempotencyKey: {
+              attemptId: evaluation.attemptId,
+              idempotencyKey: command.input.idempotencyKey,
+            },
+          },
+        });
+        if (
+          raced &&
+          raced.supersedesEvaluationId === command.evaluationId &&
+          raced.verdict === command.input.verdict &&
+          raced.errorType === errorType &&
+          raced.reason === reason
+        ) {
+          regrade = raced;
+        } else if (raced) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于不同的判定纠正",
+            409
+          );
+        } else {
+          const superseded = await prisma.attemptEvaluation.findFirst({
+            where: { supersedesEvaluationId: command.evaluationId },
+            select: { id: true },
+          });
+          if (superseded) {
+            throw new LearningServiceError(
+              "invalid_state",
+              "该判定已被纠正，请刷新后查看",
+              409
+            );
+          }
+          throw error;
+        }
+      }
+
+      return {
+        regrade: toRegradeDto(regrade),
+        progress: await Promise.all(
+          pointLineageIds.map((lineageId) =>
+            reprojectLineage(command.userId, command.goalId, lineageId)
+          )
+        ),
+      };
+    },
+
+    async reviseGoal(
+      command: GoalCommand & {
+        goalId: string;
+        input: GoalRevisionInput;
+      }
+    ): Promise<{
+      goal: LearningGoalDto;
+      revision: LearningGoalRevisionDto;
+    }> {
+      const goal = await requireGoal(
+        command.userId,
+        command.projectId,
+        command.goalId
+      );
+      const reason = command.input.reason;
+      const existing = await prisma.learningGoalRevision.findUnique({
+        where: {
+          userId_idempotencyKey: {
+            userId: command.userId,
+            idempotencyKey: command.input.idempotencyKey,
+          },
+        },
+      });
+      if (existing) {
+        const matches =
+          existing.goalId === command.goalId &&
+          (command.input.title === undefined ||
+            existing.title === command.input.title) &&
+          (command.input.purpose === undefined ||
+            existing.purpose === (command.input.purpose ?? null)) &&
+          (command.input.targetDate === undefined ||
+            (existing.targetDate === null
+              ? command.input.targetDate === null
+              : existing.targetDate.toISOString() ===
+                command.input.targetDate)) &&
+          (command.input.dailyMinutes === undefined ||
+            existing.dailyMinutes === (command.input.dailyMinutes ?? null)) &&
+          existing.reason === reason;
+        if (!matches) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于不同的学习目标修订",
+            409
+          );
+        }
+        return {
+          goal: toGoalDto({
+            ...goal,
+            title: existing.title,
+            purpose: existing.purpose,
+            targetDate: existing.targetDate,
+            dailyMinutes: existing.dailyMinutes,
+          } as never),
+          revision: toGoalRevisionDto(existing),
+        };
+      }
+      const targetDate =
+        command.input.targetDate === undefined
+          ? undefined
+          : command.input.targetDate === null
+            ? null
+            : new Date(command.input.targetDate);
+      const changes: {
+        title?: string;
+        purpose?: string | null;
+        targetDate?: Date | null;
+        dailyMinutes?: number | null;
+      } = {};
+      if (
+        command.input.title !== undefined &&
+        command.input.title !== goal.title
+      ) {
+        changes.title = command.input.title;
+      }
+      if (
+        command.input.purpose !== undefined &&
+        (command.input.purpose ?? null) !== goal.purpose
+      ) {
+        changes.purpose = command.input.purpose ?? null;
+      }
+      if (
+        targetDate !== undefined &&
+        (targetDate === null ? null : iso(targetDate)) !==
+          iso(goal.targetDate)
+      ) {
+        changes.targetDate = targetDate;
+      }
+      if (
+        command.input.dailyMinutes !== undefined &&
+        (command.input.dailyMinutes ?? null) !== goal.dailyMinutes
+      ) {
+        changes.dailyMinutes = command.input.dailyMinutes ?? null;
+      }
+      if (Object.keys(changes).length === 0) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "没有需要修改的学习目标内容",
+          400
+        );
+      }
+      const next = {
+        title: changes.title ?? goal.title,
+        purpose:
+          changes.purpose === undefined ? goal.purpose : changes.purpose,
+        targetDate:
+          changes.targetDate === undefined
+            ? goal.targetDate
+            : changes.targetDate,
+        dailyMinutes:
+          changes.dailyMinutes === undefined
+            ? goal.dailyMinutes
+            : changes.dailyMinutes,
+      };
+
+      try {
+        const [updated, revision] = await prisma.$transaction(async (tx) => {
+          const updatedGoal = await tx.learningGoal.update({
+            where: { id: command.goalId },
+            data: changes,
+          });
+          const revisionRow = await tx.learningGoalRevision.create({
+            data: {
+              id: ids.nextId("learning-goal-revision"),
+              goalId: command.goalId,
+              userId: command.userId,
+              title: next.title,
+              purpose: next.purpose,
+              targetDate: next.targetDate,
+              dailyMinutes: next.dailyMinutes,
+              reason,
+              idempotencyKey: command.input.idempotencyKey,
+              createdAt: clock.now(),
+            },
+          });
+          return [updatedGoal, revisionRow] as const;
+        });
+        return { goal: toGoalDto(updated), revision: toGoalRevisionDto(revision) };
+      } catch (error) {
+        const raced = await prisma.learningGoalRevision.findUnique({
+          where: {
+            userId_idempotencyKey: {
+              userId: command.userId,
+              idempotencyKey: command.input.idempotencyKey,
+            },
+          },
+        });
+        if (
+          raced &&
+          raced.goalId === command.goalId &&
+          raced.title === next.title &&
+          raced.purpose === next.purpose &&
+          iso(raced.targetDate) === iso(next.targetDate) &&
+          raced.dailyMinutes === next.dailyMinutes &&
+          raced.reason === reason
+        ) {
+          return {
+            goal: toGoalDto({ ...goal, ...next } as never),
+            revision: toGoalRevisionDto(raced),
+          };
+        }
+        if (raced) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于不同的学习目标修订",
+            409
+          );
+        }
+        throw error;
+      }
+    },
+
+    async resetProfile(
+      command: {
+        userId: string;
+        projectId?: string;
+        input: ProfileResetInput;
+      }
+    ): Promise<{ reset: LearningProfileResetDto }> {
+      const scope = command.input.scope;
+      let goalId: string | null = null;
+      let lineageId: string | null = null;
+      if (scope.kind === "goal" || scope.kind === "point") {
+        if (!command.projectId) {
+          throw new LearningServiceError(
+            "invalid_state",
+            "重置学习画像缺少项目上下文",
+            400
+          );
+        }
+        await requireGoal(command.userId, command.projectId, scope.goalId);
+        goalId = scope.goalId;
+      }
+      if (scope.kind === "point") {
+        const lineage = await prisma.knowledgePointLineage.findFirst({
+          where: {
+            id: scope.lineageId,
+            goalId: scope.goalId,
+          },
+          select: { id: true },
+        });
+        if (!lineage) {
+          throw new LearningServiceError(
+            "not_found",
+            "学习知识点不存在",
+            404
+          );
+        }
+        lineageId = scope.lineageId;
+      }
+
+      const reason = command.input.reason ?? null;
+      const progressWhere: Prisma.KnowledgePointProgressWhereInput =
+        goalId === null
+          ? { userId: command.userId }
+          : lineageId === null
+            ? { userId: command.userId, goalId }
+            : { userId: command.userId, goalId, lineageId };
+
+      const existing = await prisma.learningProfileReset.findUnique({
+        where: {
+          userId_idempotencyKey: {
+            userId: command.userId,
+            idempotencyKey: command.input.idempotencyKey,
+          },
+        },
+      });
+      if (existing) {
+        if (
+          existing.goalId !== goalId ||
+          existing.lineageId !== lineageId ||
+          existing.reason !== reason
+        ) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于不同的画像重置",
+            409
+          );
+        }
+        const affectedPointCount = await prisma.knowledgePointProgress.count({
+          where: progressWhere,
+        });
+        return {
+          reset: toProfileResetDto(existing, affectedPointCount),
+        };
+      }
+
+      try {
+        const [reset, affectedPointCount] = await prisma.$transaction(
+          async (tx) => {
+            const created = await tx.learningProfileReset.create({
+              data: {
+                id: ids.nextId("learning-profile-reset"),
+                userId: command.userId,
+                goalId,
+                lineageId,
+                reason,
+                idempotencyKey: command.input.idempotencyKey,
+                createdAt: clock.now(),
+              },
+            });
+            const result = await tx.knowledgePointProgress.updateMany({
+              where: progressWhere,
+              data: {
+                masteryState: "new",
+                nextReviewAt: null,
+                evidenceAsOf: null,
+              },
+            });
+            return [created, result.count] as const;
+          }
+        );
+        return {
+          reset: toProfileResetDto(reset, affectedPointCount),
+        };
+      } catch (error) {
+        const raced = await prisma.learningProfileReset.findUnique({
+          where: {
+            userId_idempotencyKey: {
+              userId: command.userId,
+              idempotencyKey: command.input.idempotencyKey,
+            },
+          },
+        });
+        if (
+          raced &&
+          raced.goalId === goalId &&
+          raced.lineageId === lineageId &&
+          raced.reason === reason
+        ) {
+          const affectedPointCount =
+            await prisma.knowledgePointProgress.count({
+              where: progressWhere,
+            });
+          return {
+            reset: toProfileResetDto(raced, affectedPointCount),
+          };
+        }
+        if (raced) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于不同的画像重置",
             409
           );
         }

@@ -25,15 +25,20 @@ export type {
   KnowledgeMapDto,
   LearningErrorTypeCorrectionDto,
   LearningGoalDto,
+  LearningGoalRevisionDto,
   LearningHistoryDto,
   LearningHistoryEvidenceDto,
   LearningHistoryEvaluationDto,
   LearningHistoryPointDto,
   LearningInteractionDto,
   LearningMaterialMode,
+  LearningProfileResetDto,
+  LearningProfileResetScope,
+  LearningProgressDto,
   LearningProgressPointDto,
   LearningProgressResponse,
   LearningProgressSummaryDto,
+  LearningRegradeDto,
   LearningScopeDto,
   LearningSessionClientDto,
   LearningSessionItemClientDto,
@@ -139,6 +144,17 @@ export const learningUrls = {
     evaluationId: string
   ) =>
     `/api/projects/${projectId}/learning/goals/${goalId}/evaluations/${evaluationId}/error-type-corrections`,
+  regrades: (
+    projectId: string,
+    goalId: string,
+    evaluationId: string
+  ) =>
+    `/api/projects/${projectId}/learning/goals/${goalId}/evaluations/${evaluationId}/regrades`,
+  revisions: (projectId: string, goalId: string) =>
+    `/api/projects/${projectId}/learning/goals/${goalId}/revisions`,
+  profileResets: (projectId: string, goalId: string) =>
+    `/api/projects/${projectId}/learning/goals/${goalId}/profile-resets`,
+  userProfileResets: () => `/api/learning/profile-resets`,
   today: () => `/api/learning/today`,
 };
 

@@ -1,6 +1,6 @@
 # LumenLab 学习闭环 P1 迭代执行计划
 
-> 状态：执行中（P1-A 已完成，P1-B–P1-E 待执行）
+> 状态：执行中（P1-A、P1-B 已完成，P1-C–P1-E 待执行）
 > 决策冻结：2026-08-01
 > 基线提交：`af57d83`
 > 前置合同：`docs/learning-loop-p0-iteration-plan.md`
@@ -133,6 +133,16 @@ Study Pack 归属一个 Project 和 Learning Goal，包含 Outline 与多个 Sec
 - 删除/重置/旧摘要复活回归测试。
 
 验收：重置后当前状态回到无证据投影，旧 context summary 不得恢复弱点；历史中明确区分重置前记录。
+
+完成记录（2026-08-01）：
+
+- 已新增 `AttemptEvaluation.idempotencyKey`（`@@unique([attemptId, idempotencyKey])`）、`LearningGoalRevision`、`LearningProfileReset`（user/goal/point 三 scope，nullable goal/lineage 外键级联删除）及迁移 `20260801090000_learning_p1b_profile_resets`。
+- `/regrades` 追加 superseding Evaluation：DB `supersedesEvaluationId @unique` 防并发 fork，幂等键先于 active 校验命中，重置前证据拒绝纠正（409）。
+- `/revisions` 保存 Goal 修订快照：幂等重试先于变更检测返回既有 revision；无实际变更 400。
+- `/profile-resets`（goal/point scope，路由校验 scope 归属）+ `/api/learning/profile-resets`（user scope）：事务内写 reset event 并重置 `KnowledgePointProgress`；幂等重试复用同键记录并返回受影响点数。
+- 投影 cutoff：`resolveCutoffsByLineage` 按 user > goal > point 取最新边界；`projectLineageProgress`、`createReviewSession` 优先级投影、`listWrongAnswers`、regrade 后 `reprojectLineage` 全部只消费 cutoff 之后证据；`getHistory` 返回每点 `resetAt` 与逐条 `resetBefore`，摘要只统计边界后活跃证据，重置前记录明确标记且不提供修正/纠正入口。
+- 前端档案页新增「纠正判定」编辑器（判定 + 可选错因 + 必填说明）、「编辑学习目标」修订面板、「重置该知识点 / 重置本学习画像 / 重置全部学习画像」两次点击确认控件、「画像已重置」与「重置前记录」徽标。
+- 验收通过：全量单元测试 `220` 文件 / `1178` 项、PostgreSQL 集成测试 `19` 项（新增 7 项覆盖 regrade 幂等/越权/非 active/重置边界、revision、reset 三 scope、防复活回归）、route 测试 `11` 项；Lint、TypeScript、Next.js 生产构建和 `git diff --check` 全绿。真实浏览器覆盖桌面与 `390×844` 移动端：纠正判定 201 后判定链追加且掌握度重投影、重置后进度回到无证据投影、重置前记录带徽标且无修正入口，无水平溢出或新增控制台告警。
 
 ### Wave P1-C：精细来源与原子重建
 

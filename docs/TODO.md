@@ -32,6 +32,16 @@ This document tracks the completed Agent Runtime consolidation plus deferred Ski
 - Added a first-class「档案」tab with readable evidence, source locations and six learner-facing error categories; internal reason codes, answer criteria, rubric and generation metadata are not rendered.
 - The frozen P1 execution contract and remaining P1-B–P1-E waves are tracked in `docs/learning-p1-iteration-plan.md`; ADR 0007 defines profile projection and reset boundaries.
 
+## Completed Learning P1-B — Verdict Corrections, Goal Revisions and Profile Resets
+
+- Added `AttemptEvaluation.idempotencyKey` (unique per attempt), `LearningGoalRevision` snapshots and `LearningProfileReset` events with user/goal/point scopes; migration `20260801090000_learning_p1b_profile_resets`.
+- Added a superseding regrade API (`/regrades`) that appends a new Evaluation through a single chain, rejects forks via the database unique constraint, is idempotent on `(attemptId, idempotencyKey)` and refuses to regrade evidence predating a reset boundary.
+- Added Goal revision API (`/revisions`) that updates the Goal and keeps a human-readable snapshot with a required reason; idempotent retries short-circuit before change detection.
+- Added profile reset APIs (`/profile-resets` per goal, `/api/learning/profile-resets` per user) that write a reset event and atomically reset affected projections to the empty state.
+- Every projection path now consumes only evidence after the latest reset boundary (`user > goal > point`); `getHistory` returns per-point `resetAt` and per-evidence `resetBefore` so the UI marks pre-reset records and withholds correction/regrade controls on them. Old summaries cannot resurrect cleared weak points.
+- Added「档案」UI: verdict correction editor, goal revision editor, point/goal/user reset controls with double-click confirmation, and「画像已重置」/「重置前记录」badges.
+- The frozen contract and remaining P1-C–P1-E waves are tracked in `docs/learning-p1-iteration-plan.md`.
+
 ## Completed First Slice (historical)
 
 - Added the original `AGENT_ORCHESTRATOR_ENABLED` feature flag. It has since been superseded by `AGENT_RUNTIME_MODE`; see the runtime consolidation above.

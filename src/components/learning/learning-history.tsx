@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
+  EVALUATION_VERDICTS,
   LEARNING_ERROR_TYPES,
   type AssistanceLevel,
   type EvaluationVerdict,
@@ -16,12 +17,16 @@ import {
 import {
   useCorrectLearningErrorType,
   useLearningHistory,
+  useRegradeEvaluation,
+  useResetLearningProfile,
+  useReviseGoal,
 } from "@/lib/hooks/use-learning-history";
 import { EmptyState } from "@/components/learning/empty-state";
 import { getEvaluationReasonLabel } from "@/components/learning/evaluation-copy";
 import { FreshnessBadge } from "@/components/learning/freshness-badge";
 import { MasteryPill } from "@/components/learning/mastery-pill";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -29,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 export interface LearningHistoryProps {
   projectId: string;
@@ -235,6 +241,146 @@ function ErrorTypeCorrectionEditor({
   );
 }
 
+interface RegradeEditorProps {
+  projectId: string;
+  goalId: string;
+  evaluationId: string;
+}
+
+/**
+ * Manual verdict correction on the active evaluation. Appends a superseding
+ * evaluation through the regrade API; the original evaluation stays visible
+ * in the chain. The idempotency key is stable across retries of the same
+ * action and rotates on success.
+ */
+function RegradeEditor({
+  projectId,
+  goalId,
+  evaluationId,
+}: RegradeEditorProps) {
+  const regrade = useRegradeEvaluation(projectId, goalId);
+  const [verdict, setVerdict] = useState<EvaluationVerdict | null>(null);
+  const [errorType, setErrorType] = useState<LearningErrorType | null>(null);
+  const [reason, setReason] = useState("");
+  const [saved, setSaved] = useState(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
+
+  const canSave = verdict !== null && reason.trim().length > 0;
+
+  const save = () => {
+    if (!canSave || regrade.isPending) {
+      return;
+    }
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = createIdempotencyKey();
+    }
+    setSaved(false);
+    regrade.mutate(
+      {
+        evaluationId,
+        verdict,
+        ...(errorType === null ? {} : { errorType }),
+        reason: reason.trim(),
+        idempotencyKey: idempotencyKeyRef.current,
+      },
+      {
+        onSuccess: () => {
+          idempotencyKeyRef.current = null;
+          setSaved(true);
+        },
+      }
+    );
+  };
+
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={verdict ?? ""}
+          onValueChange={(value) => {
+            if (verdict !== value) {
+              idempotencyKeyRef.current = null;
+            }
+            setVerdict(value as EvaluationVerdict);
+            setSaved(false);
+          }}
+          disabled={regrade.isPending}
+        >
+          <SelectTrigger aria-label="纠正后的判定" size="sm" className="min-w-32">
+            <SelectValue placeholder="纠正为" />
+          </SelectTrigger>
+          <SelectContent>
+            {EVALUATION_VERDICTS.map((verdictOption) => (
+              <SelectItem key={verdictOption} value={verdictOption}>
+                {VERDICT_LABELS[verdictOption]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={errorType ?? ""}
+          onValueChange={(value) => {
+            if (errorType !== value) {
+              idempotencyKeyRef.current = null;
+            }
+            setErrorType(value as LearningErrorType);
+            setSaved(false);
+          }}
+          disabled={regrade.isPending}
+        >
+          <SelectTrigger aria-label="纠正错因" size="sm" className="min-w-32">
+            <SelectValue placeholder="错因（可选）" />
+          </SelectTrigger>
+          <SelectContent>
+            {LEARNING_ERROR_TYPES.map((errorTypeOption) => (
+              <SelectItem key={errorTypeOption} value={errorTypeOption}>
+                {ERROR_TYPE_LABELS[errorTypeOption]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Textarea
+        aria-label="纠正说明"
+        value={reason}
+        onChange={(event) => {
+          if (reason !== event.target.value) {
+            idempotencyKeyRef.current = null;
+          }
+          setReason(event.target.value);
+          setSaved(false);
+        }}
+        placeholder="说明为什么纠正这个判定（必填）"
+        disabled={regrade.isPending}
+        className="min-h-16 text-sm"
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={save}
+          disabled={!canSave || regrade.isPending}
+        >
+          {regrade.isPending ? "保存中…" : "保存纠正"}
+        </Button>
+        <div aria-live="polite">
+          {regrade.isError && (
+            <p role="alert" className="text-xs text-[var(--color-error)]">
+              保存纠正失败，请重试。
+            </p>
+          )}
+          {saved && !regrade.isPending && !regrade.isError && (
+            <p role="status" className="text-xs text-[var(--color-text-secondary)]">
+              已保存纠正，掌握度与复习安排已更新。
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface EvidenceItemProps {
   evidence: LearningHistoryEvidenceDto;
   projectId: string;
@@ -255,11 +401,17 @@ function EvidenceItem({ evidence, projectId, goalId }: EvidenceItemProps) {
   const latestCorrection = activeEvaluation?.corrections.length
     ? activeEvaluation.corrections[activeEvaluation.corrections.length - 1]
     : null;
+  const [regradeOpen, setRegradeOpen] = useState(false);
 
   return (
     <li className="min-w-0">
       <details>
         <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-secondary)]">
+          {evidence.resetBefore && (
+            <span className="mr-1.5 rounded-full bg-[var(--color-accent-muted)] px-2 py-0.5 text-[var(--color-accent)]">
+              重置前记录
+            </span>
+          )}
           {formatDate(evidence.attempt.submittedAt)} ·{" "}
           {SESSION_MODE_LABELS[evidence.session.mode]} ·{" "}
           {activeEvaluation
@@ -284,6 +436,9 @@ function EvidenceItem({ evidence, projectId, goalId }: EvidenceItemProps) {
             ) : (
               <li>判定链暂不可用，本次作答不会影响当前档案。</li>
             )}
+            {evidence.resetBefore && (
+              <li>该记录位于画像重置边界之前，不再影响当前掌握度与推荐。</li>
+            )}
             {effectiveLabel && (
               <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span>有效错因：{effectiveLabel}</span>
@@ -303,16 +458,69 @@ function EvidenceItem({ evidence, projectId, goalId }: EvidenceItemProps) {
               )}
           </ul>
           <SourceAnchorText anchors={evidence.practiceItem.sourceAnchors} />
-          {activeEvaluation && (
-            <ErrorTypeCorrectionEditor
-              projectId={projectId}
-              goalId={goalId}
-              evaluationId={activeEvaluation.id}
-            />
+          {activeEvaluation && !evidence.resetBefore && (
+            <>
+              <ErrorTypeCorrectionEditor
+                projectId={projectId}
+                goalId={goalId}
+                evaluationId={activeEvaluation.id}
+              />
+              <div className="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  className="self-start text-xs font-medium text-[var(--color-accent)]"
+                  onClick={() => setRegradeOpen((open) => !open)}
+                >
+                  {regradeOpen ? "收起纠正判定" : "纠正判定"}
+                </button>
+                {regradeOpen && (
+                  <RegradeEditor
+                    projectId={projectId}
+                    goalId={goalId}
+                    evaluationId={activeEvaluation.id}
+                  />
+                )}
+              </div>
+            </>
           )}
         </div>
       </details>
     </li>
+  );
+}
+
+interface PointResetButtonProps {
+  projectId: string;
+  goalId: string;
+  lineageId: string;
+}
+
+function PointResetButton({
+  projectId,
+  goalId,
+  lineageId,
+}: PointResetButtonProps) {
+  const reset = useResetLearningProfile(projectId, goalId);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const perform = () => {
+    if (!confirmed) {
+      setConfirmed(true);
+      return;
+    }
+    setConfirmed(false);
+    reset.mutate({ scope: { kind: "point", goalId, lineageId } });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={perform}
+      disabled={reset.isPending}
+      className="text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+    >
+      {confirmed ? "再次点击确认重置该知识点" : "重置该知识点"}
+    </button>
   );
 }
 
@@ -337,6 +545,16 @@ function HistoryPoint({ point, projectId, goalId }: HistoryPointProps) {
             ? ` · ${formatDate(point.nextReviewAt)}`
             : ""}
         </span>
+        {point.resetAt && (
+          <span className="rounded-full bg-[var(--color-accent-muted)] px-2 py-0.5 text-[var(--color-accent)]">
+            画像已重置 · {formatDate(point.resetAt)}
+          </span>
+        )}
+        <PointResetButton
+          projectId={projectId}
+          goalId={goalId}
+          lineageId={point.lineageId}
+        />
       </div>
       <SourceAnchorText anchors={point.sourceAnchors} />
       {point.evidence.length === 0 ? (
@@ -356,6 +574,225 @@ function HistoryPoint({ point, projectId, goalId }: HistoryPointProps) {
         </ul>
       )}
     </li>
+  );
+}
+
+interface GoalRevisionEditorProps {
+  projectId: string;
+  goalId: string;
+  goalTitle: string;
+}
+
+function GoalRevisionEditor({
+  projectId,
+  goalId,
+  goalTitle,
+}: GoalRevisionEditorProps) {
+  const revise = useReviseGoal(projectId, goalId);
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(goalTitle);
+  const [purpose, setPurpose] = useState("");
+  const [dailyMinutes, setDailyMinutes] = useState("");
+  const [reason, setReason] = useState("");
+  const [saved, setSaved] = useState(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
+
+  const canSave = reason.trim().length > 0;
+
+  const save = () => {
+    if (!canSave || revise.isPending) {
+      return;
+    }
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = createIdempotencyKey();
+    }
+    setSaved(false);
+    const variables: Parameters<typeof revise.mutate>[0] = {
+      reason: reason.trim(),
+      idempotencyKey: idempotencyKeyRef.current,
+    };
+    if (title.trim().length > 0 && title.trim() !== goalTitle) {
+      variables.title = title.trim();
+    }
+    if (purpose.trim().length > 0) {
+      variables.purpose = purpose.trim();
+    }
+    const parsedMinutes = Number(dailyMinutes);
+    if (Number.isFinite(parsedMinutes) && parsedMinutes > 0) {
+      variables.dailyMinutes = parsedMinutes;
+    }
+    revise.mutate(variables, {
+      onSuccess: () => {
+        idempotencyKeyRef.current = null;
+        setSaved(true);
+      },
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        className="self-start text-xs font-medium text-[var(--color-accent)]"
+        onClick={() => setOpen((current) => !current)}
+      >
+        {open ? "收起编辑学习目标" : "编辑学习目标"}
+      </button>
+      {open && (
+        <div className="flex flex-col gap-1.5">
+          <Input
+            aria-label="学习目标标题"
+            value={title}
+            onChange={(event) => {
+              if (title !== event.target.value) {
+                idempotencyKeyRef.current = null;
+              }
+              setTitle(event.target.value);
+              setSaved(false);
+            }}
+            disabled={revise.isPending}
+          />
+          <Input
+            aria-label="学习目的"
+            value={purpose}
+            onChange={(event) => {
+              if (purpose !== event.target.value) {
+                idempotencyKeyRef.current = null;
+              }
+              setPurpose(event.target.value);
+              setSaved(false);
+            }}
+            placeholder="学习目的（可选）"
+            disabled={revise.isPending}
+          />
+          <Input
+            aria-label="每日学习分钟数"
+            type="number"
+            min={1}
+            max={1440}
+            value={dailyMinutes}
+            onChange={(event) => {
+              if (dailyMinutes !== event.target.value) {
+                idempotencyKeyRef.current = null;
+              }
+              setDailyMinutes(event.target.value);
+              setSaved(false);
+            }}
+            placeholder="每日学习分钟数（可选）"
+            disabled={revise.isPending}
+          />
+          <Textarea
+            aria-label="修订说明"
+            value={reason}
+            onChange={(event) => {
+              if (reason !== event.target.value) {
+                idempotencyKeyRef.current = null;
+              }
+              setReason(event.target.value);
+              setSaved(false);
+            }}
+            placeholder="说明为什么修改学习目标（必填）"
+            disabled={revise.isPending}
+            className="min-h-16 text-sm"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={save}
+              disabled={!canSave || revise.isPending}
+            >
+              {revise.isPending ? "保存中…" : "保存修订"}
+            </Button>
+            <div aria-live="polite">
+              {revise.isError && (
+                <p role="alert" className="text-xs text-[var(--color-error)]">
+                  保存修订失败，请重试。
+                </p>
+              )}
+              {saved && !revise.isPending && !revise.isError && (
+                <p role="status" className="text-xs text-[var(--color-text-secondary)]">
+                  已保存修订。
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ProfileResetControlsProps {
+  projectId: string;
+  goalId: string;
+}
+
+function ProfileResetControls({
+  projectId,
+  goalId,
+}: ProfileResetControlsProps) {
+  const resetGoal = useResetLearningProfile(projectId, goalId);
+  const resetAll = useResetLearningProfile(projectId, goalId);
+  const [pendingKind, setPendingKind] = useState<"goal" | "user" | null>(null);
+
+  const perform = (kind: "goal" | "user") => {
+    if (pendingKind !== kind) {
+      setPendingKind(kind);
+      return;
+    }
+    setPendingKind(null);
+    if (kind === "goal") {
+      resetGoal.mutate({
+        scope: { kind: "goal", goalId },
+      });
+    } else {
+      resetAll.mutate({ scope: { kind: "user" } });
+    }
+  };
+
+  const isBusy = resetGoal.isPending || resetAll.isPending;
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-tertiary)]">
+      <button
+        type="button"
+        onClick={() => perform("goal")}
+        disabled={isBusy}
+        className="font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+      >
+        {pendingKind === "goal"
+          ? "再次点击确认重置本学习画像"
+          : "重置本学习画像"}
+      </button>
+      <span aria-hidden="true">·</span>
+      <button
+        type="button"
+        onClick={() => perform("user")}
+        disabled={isBusy}
+        className="font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+      >
+        {pendingKind === "user"
+          ? "再次点击确认重置全部学习画像"
+          : "重置全部学习画像"}
+      </button>
+      <div aria-live="polite">
+        {(resetGoal.isError || resetAll.isError) && (
+          <p role="alert" className="text-[var(--color-error)]">
+            重置失败，请重试。
+          </p>
+        )}
+        {!isBusy &&
+          !resetGoal.isError &&
+          !resetAll.isError &&
+          pendingKind === null && (
+            <p className="text-[var(--color-text-tertiary)]">
+              重置后旧证据不再影响掌握度与推荐，历史记录仍会保留。
+            </p>
+          )}
+      </div>
+    </div>
   );
 }
 
@@ -420,14 +857,22 @@ export function LearningHistory({
 
   return (
     <div className={cn("flex w-full min-w-0 flex-col gap-3", className)}>
-      <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
-        {history.goal.title}
-      </h2>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+          {history.goal.title}
+        </h2>
+        <GoalRevisionEditor
+          projectId={projectId}
+          goalId={goalId}
+          goalTitle={history.goal.title}
+        />
+      </div>
       <p className="text-xs text-[var(--color-text-secondary)]">
         知识点 {summary.totalPoints} · 薄弱点 {summary.weakPoints} · 到期复习{" "}
         {summary.dueReviews} · 作答 {summary.attempts} 次 · 人工修正{" "}
         {summary.manualCorrections} 次
       </p>
+      <ProfileResetControls projectId={projectId} goalId={goalId} />
       <ul className="flex flex-col divide-y divide-[var(--color-border-light)]">
         {history.points.map((point) => (
           <HistoryPoint

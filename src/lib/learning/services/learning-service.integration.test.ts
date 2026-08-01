@@ -65,15 +65,16 @@ async function createFixture() {
   return { owner, stranger, project };
 }
 
-describe("LearningService goal and scope seam", () => {
-  beforeAll(async () => {
-    await prisma.$queryRaw`SELECT 1`;
-  });
+beforeAll(async () => {
+  await prisma.$queryRaw`SELECT 1`;
+});
 
-  afterAll(async () => {
-    await prisma.$disconnect();
-    await pool.end();
-  });
+afterAll(async () => {
+  await prisma.$disconnect();
+  await pool.end();
+});
+
+describe("LearningService goal and scope seam", () => {
 
   it("creates historical goals and confirms only an owned draft scope", async () => {
     const { owner, stranger, project } = await createFixture();
@@ -1348,6 +1349,589 @@ describe("LearningService goal and scope seam", () => {
           select: { freshness: true },
         })
       ).resolves.toEqual({ freshness: "needs_revalidation" });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+});
+
+describe("P1-B regrades, goal revisions, and profile resets", () => {
+  async function setupP1bScenario() {
+    const { owner, stranger, project } = await createFixture();
+    let now = new Date("2026-08-01T08:00:00.000Z");
+    const clock: LearningClock = { now: () => now };
+    const service = createLearningService({
+      prisma,
+      clock,
+      ids: createIds(),
+      modelGateway: unusedModelGateway,
+    });
+    const suffix = randomUUID();
+    const goal = await prisma.learningGoal.create({
+      data: {
+        userId: owner.id,
+        projectId: project.id,
+        title: "电路基础",
+        purpose: null,
+        targetDate: null,
+        dailyMinutes: 30,
+      },
+    });
+    const scope = await prisma.learningScope.create({
+      data: {
+        goalId: goal.id,
+        version: 1,
+        status: "confirmed",
+        definition: { objective: "诊断" },
+        materialMode: "project_corpus",
+        confirmedAt: now,
+      },
+    });
+    const map = await prisma.knowledgeMap.create({
+      data: {
+        goalId: goal.id,
+        scopeId: scope.id,
+        version: 1,
+        sourceFingerprint: "sha256:p1b-map",
+      },
+    });
+    const file = await prisma.fileAsset.create({
+      data: {
+        userId: owner.id,
+        projectId: project.id,
+        filename: "p1b.md",
+        originalName: "节点定律.md",
+        mimeType: "text/markdown",
+        size: 32,
+        storagePath: "integration/p1b.md",
+        textContent: "流入节点的电流等于流出节点的电流。",
+        contentFingerprint: "sha256:p1b-v1",
+        status: "parsed",
+      },
+    });
+    const anchor = await prisma.sourceAnchor.create({
+      data: {
+        projectId: project.id,
+        anchorKey: `p1b-anchor-${suffix}`,
+        fileAssetId: file.id,
+        originalFileAssetId: file.id,
+        sourceFileName: file.originalName,
+        locator: { kind: "file" },
+        contentFingerprint: file.contentFingerprint!,
+        excerptHash: "sha256:p1b-excerpt",
+      },
+    });
+    const pointLineage = await prisma.knowledgePointLineage.create({
+      data: { goalId: goal.id, stableKey: `kcl-${suffix}` },
+    });
+    const point = await prisma.knowledgePoint.create({
+      data: {
+        knowledgeMapId: map.id,
+        lineageId: pointLineage.id,
+        name: "节点电流定律",
+        kind: "concept",
+        orderIndex: 0,
+        sourceLinks: { create: { sourceAnchorId: anchor.id } },
+      },
+    });
+    const itemLineage = await prisma.practiceItemLineage.create({
+      data: { goalId: goal.id, stableKey: `kcl-boolean-${suffix}` },
+    });
+    const item = await prisma.practiceItem.create({
+      data: {
+        goalId: goal.id,
+        knowledgeMapId: map.id,
+        lineageId: itemLineage.id,
+        version: 1,
+        prompt: "节点中的电流满足守恒关系吗？",
+        type: "true_false",
+        mode: "evidence_bearing",
+        freshness: "current",
+        answerSpec: {
+          create: {
+            criteria: { kind: "boolean", expected: true },
+            explanation: "依据基尔霍夫电流定律。",
+            graderPolicyVersion: "learning-grading-v1",
+          },
+        },
+        knowledgePoints: { create: { knowledgePointId: point.id } },
+        sourceLinks: { create: { sourceAnchorId: anchor.id } },
+      },
+    });
+    const session = await prisma.learningSession.create({
+      data: {
+        userId: owner.id,
+        goalId: goal.id,
+        knowledgeMapId: map.id,
+        mode: "diagnostic",
+        status: "ready",
+        idempotencyKey: `p1b-session-${suffix}`,
+        items: { create: { practiceItemId: item.id, orderIndex: 0 } },
+      },
+      include: { items: true },
+    });
+    const submit = (answer: boolean, idempotencyKey: string) =>
+      service.submitAttempt({
+        userId: owner.id,
+        projectId: project.id,
+        sessionId: session.id,
+        sessionItemId: session.items[0].id,
+        input: { idempotencyKey, answer },
+      });
+    const advance = (milliseconds: number) => {
+      now = new Date(now.getTime() + milliseconds);
+    };
+    return {
+      owner,
+      stranger,
+      project,
+      service,
+      goal,
+      pointLineage,
+      itemLineage,
+      session,
+      submit,
+      advance,
+      suffix,
+    };
+  }
+
+  it("regrades append a superseding evaluation and reproject progress", async () => {
+    const { owner, stranger, project, service, goal, submit } =
+      await setupP1bScenario();
+    try {
+      const first = await submit(false, "p1b-attempt-1");
+      expect(first.evaluation.verdict).toBe("incorrect");
+
+      const regraded = await service.regradeEvaluation({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        evaluationId: first.evaluation.id,
+        input: {
+          verdict: "correct",
+          errorType: "misconception",
+          reason: "判定有误，应为正确",
+          idempotencyKey: "p1b-regrade-1",
+        },
+      });
+      expect(regraded.regrade).toMatchObject({
+        verdict: "correct",
+        errorType: "misconception",
+        supersedesEvaluationId: first.evaluation.id,
+        policyVersion: "manual-regrade-v1",
+      });
+      expect(regraded.progress).toHaveLength(1);
+
+      const evaluations = await prisma.attemptEvaluation.findMany({
+        where: { attemptId: first.attempt.id },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+      expect(evaluations).toHaveLength(2);
+      expect(evaluations[0].id).toBe(first.evaluation.id);
+      expect(evaluations[1].supersedesEvaluationId).toBe(
+        first.evaluation.id
+      );
+
+      const history = await service.getHistory({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      expect(history.points[0].evidence[0].evaluations).toHaveLength(2);
+      expect(history.points[0].evidence[0].activeEvaluationId).toBe(
+        regraded.regrade.id
+      );
+
+      await expect(
+        service.regradeEvaluation({
+          userId: stranger.id,
+          projectId: project.id,
+          goalId: goal.id,
+          evaluationId: first.evaluation.id,
+          input: {
+            verdict: "correct",
+            reason: "越权纠正",
+            idempotencyKey: "p1b-regrade-stranger",
+          },
+        })
+      ).rejects.toMatchObject({ code: "not_found", status: 404 });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("regrades are idempotent and reject conflicts on non-active evaluations", async () => {
+    const { owner, project, service, goal, submit } = await setupP1bScenario();
+    try {
+      const first = await submit(false, "p1b-attempt-2");
+      const input = {
+        verdict: "correct" as const,
+        reason: "判定有误",
+        idempotencyKey: "p1b-regrade-2",
+      };
+      const applied = await service.regradeEvaluation({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        evaluationId: first.evaluation.id,
+        input,
+      });
+      await expect(
+        service.regradeEvaluation({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: goal.id,
+          evaluationId: first.evaluation.id,
+          input,
+        })
+      ).resolves.toEqual(applied);
+
+      await expect(
+        service.regradeEvaluation({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: goal.id,
+          evaluationId: first.evaluation.id,
+          input: {
+            verdict: "incorrect",
+            reason: "判定有误",
+            idempotencyKey: "p1b-regrade-2",
+          },
+        })
+      ).rejects.toMatchObject({
+        code: "idempotency_conflict",
+        status: 409,
+      });
+
+      // The superseded evaluation is no longer active and cannot be regraded
+      // again through a fresh key.
+      await expect(
+        service.regradeEvaluation({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: goal.id,
+          evaluationId: first.evaluation.id,
+          input: {
+            verdict: "partial",
+            reason: "再次纠正",
+            idempotencyKey: "p1b-regrade-3",
+          },
+        })
+      ).rejects.toMatchObject({ code: "invalid_state", status: 409 });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("rejects regrading evidence that predates a reset boundary", async () => {
+    const { owner, project, service, goal, submit } = await setupP1bScenario();
+    try {
+      const first = await submit(false, "p1b-attempt-3");
+      await service.resetProfile({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          scope: { kind: "goal", goalId: goal.id },
+          reason: "重新开始",
+          idempotencyKey: "p1b-reset-before-regrade",
+        },
+      });
+      await expect(
+        service.regradeEvaluation({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: goal.id,
+          evaluationId: first.evaluation.id,
+          input: {
+            verdict: "correct",
+            reason: "尝试纠正重置前的记录",
+            idempotencyKey: "p1b-regrade-old",
+          },
+        })
+      ).rejects.toMatchObject({ code: "invalid_state", status: 409 });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("revises goals with a revision snapshot, idempotency and conflict semantics", async () => {
+    const { owner, project, service, goal } = await setupP1bScenario();
+    try {
+      const revised = await service.reviseGoal({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          title: "电路基础进阶",
+          purpose: "准备期末考试",
+          reason: "学习目标调整",
+          idempotencyKey: "p1b-revise-1",
+        },
+      });
+      expect(revised.goal).toMatchObject({
+        title: "电路基础进阶",
+        purpose: "准备期末考试",
+      });
+      expect(revised.revision).toMatchObject({
+        goalId: goal.id,
+        title: "电路基础进阶",
+        purpose: "准备期末考试",
+        reason: "学习目标调整",
+      });
+
+      const snapshotCount = await prisma.learningGoalRevision.count({
+        where: { goalId: goal.id },
+      });
+      expect(snapshotCount).toBe(1);
+
+      await expect(
+        service.reviseGoal({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: goal.id,
+          input: {
+            title: "电路基础进阶",
+            purpose: "准备期末考试",
+            reason: "学习目标调整",
+            idempotencyKey: "p1b-revise-1",
+          },
+        })
+      ).resolves.toEqual(revised);
+
+      await expect(
+        service.reviseGoal({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: goal.id,
+          input: {
+            title: "完全不同",
+            reason: "学习目标调整",
+            idempotencyKey: "p1b-revise-1",
+          },
+        })
+      ).rejects.toMatchObject({
+        code: "idempotency_conflict",
+        status: 409,
+      });
+
+      await expect(
+        service.reviseGoal({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: goal.id,
+          input: {
+            title: "电路基础进阶",
+            reason: "没有实际变化",
+            idempotencyKey: "p1b-revise-2",
+          },
+        })
+      ).rejects.toMatchObject({ code: "invalid_state", status: 400 });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("goal resets clear projections and never resurrect old evidence", async () => {
+    const { owner, project, service, goal, submit, advance } =
+      await setupP1bScenario();
+    try {
+      await submit(false, "p1b-attempt-4");
+      const progressBefore = await service.getProgress({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      expect(progressBefore.points[0].masteryState).toBe("learning");
+
+      const reset = await service.resetProfile({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          scope: { kind: "goal", goalId: goal.id },
+          reason: "重新开始",
+          idempotencyKey: "p1b-reset-goal",
+        },
+      });
+      expect(reset.reset).toMatchObject({
+        scope: { kind: "goal", goalId: goal.id },
+        reason: "重新开始",
+      });
+      expect(reset.reset.affectedPointCount).toBe(1);
+
+      const progressAfter = await service.getProgress({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      expect(progressAfter.points[0]).toMatchObject({
+        masteryState: "new",
+        nextReviewAt: null,
+        evidenceAsOf: null,
+      });
+
+      // New evidence after the boundary participates normally.
+      advance(3_600_000);
+      await submit(true, "p1b-attempt-5");
+      const history = await service.getHistory({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      expect(history.points[0].resetAt).not.toBeNull();
+      expect(history.points[0].evidence).toHaveLength(2);
+      const [newEvidence, oldEvidence] = history.points[0].evidence;
+      expect(newEvidence.resetBefore).toBe(false);
+      expect(oldEvidence.resetBefore).toBe(true);
+      expect(history.summary.attempts).toBe(1);
+
+      const wrong = await service.listWrongAnswers({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      const attemptIds = wrong.items.flatMap((item) =>
+        item.attempts.map((attempt) => attempt.id)
+      );
+      expect(attemptIds).toHaveLength(0);
+
+      // The active projection still honors the boundary after another
+      // projection pass (reproject after regrade path).
+      const latestProgress = await service.getProgress({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      expect(latestProgress.points[0].evidenceAsOf).not.toBeNull();
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("point and user scopes reset exactly the intended projections", async () => {
+    const { owner, project, service, goal, pointLineage, submit, suffix } =
+      await setupP1bScenario();
+    try {
+      // A second lineage so point scope can be distinguished from goal scope.
+      const secondLineage = await prisma.knowledgePointLineage.create({
+        data: { goalId: goal.id, stableKey: `kcl-second-${suffix}` },
+      });
+      await prisma.knowledgePoint.create({
+        data: {
+          knowledgeMapId: (
+            await prisma.knowledgeMap.findFirstOrThrow({
+              where: { goalId: goal.id },
+            })
+          ).id,
+          lineageId: secondLineage.id,
+          name: "欧姆定律",
+          kind: "concept",
+          orderIndex: 1,
+        },
+      });
+
+      await submit(false, "p1b-attempt-6");
+      await service.resetProfile({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          scope: { kind: "point", goalId: goal.id, lineageId: pointLineage.id },
+          reason: "只重置第一个知识点",
+          idempotencyKey: "p1b-reset-point",
+        },
+      });
+      const progress = await service.getProgress({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      const byLineage = new Map(
+        progress.points.map((point) => [point.lineageId, point])
+      );
+      expect(byLineage.get(pointLineage.id)).toMatchObject({
+        masteryState: "new",
+      });
+
+      await service.resetProfile({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          scope: { kind: "user" },
+          reason: "全部重置",
+          idempotencyKey: "p1b-reset-user",
+        },
+      });
+      const progressAfterUserReset = await service.getProgress({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+      });
+      for (const point of progressAfterUserReset.points) {
+        expect(point.masteryState).toBe("new");
+      }
+
+      // Same key with a different scope conflicts.
+      await expect(
+        service.resetProfile({
+          userId: owner.id,
+          projectId: project.id,
+          input: {
+            scope: { kind: "goal", goalId: goal.id },
+            reason: "全部重置",
+            idempotencyKey: "p1b-reset-user",
+          },
+        })
+      ).rejects.toMatchObject({
+        code: "idempotency_conflict",
+        status: 409,
+      });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("resets are idempotent and reject cross-tenant goals", async () => {
+    const { owner, stranger, project, service, goal, suffix } =
+      await setupP1bScenario();
+    try {
+      const input = {
+        scope: { kind: "goal" as const, goalId: goal.id },
+        reason: "重新开始",
+        idempotencyKey: `p1b-reset-${suffix}`,
+      };
+      const applied = await service.resetProfile({
+        userId: owner.id,
+        projectId: project.id,
+        input,
+      });
+      await expect(
+        service.resetProfile({ userId: owner.id, projectId: project.id, input })
+      ).resolves.toEqual(applied);
+
+      const strangerProject = await prisma.project.create({
+        data: {
+          userId: stranger.id,
+          name: "Stranger fixture project",
+        },
+      });
+      const strangerGoal = await prisma.learningGoal.create({
+        data: {
+          userId: stranger.id,
+          projectId: strangerProject.id,
+          title: "别人的目标",
+        },
+      });
+      await expect(
+        service.resetProfile({
+          userId: owner.id,
+          projectId: project.id,
+          input: {
+            scope: { kind: "goal", goalId: strangerGoal.id },
+            reason: "越权重置",
+            idempotencyKey: "p1b-reset-stranger",
+          },
+        })
+      ).rejects.toMatchObject({ code: "not_found", status: 404 });
     } finally {
       await prisma.user.delete({ where: { id: owner.id } });
     }

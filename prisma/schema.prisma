@@ -48,6 +48,8 @@ model User {
   practiceAttempts     PracticeAttempt[]
   errorTypeCorrections AttemptErrorTypeCorrection[]
   knowledgeProgress    KnowledgePointProgress[]
+  goalRevisions        LearningGoalRevision[]
+  profileResets        LearningProfileReset[]
   credentialProfile    CredentialProfile?           @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption           RegistrationRedemption?
   profilePrompt        String?
@@ -813,10 +815,31 @@ model LearningGoal {
   practiceItems PracticeItem[]
   sessions      LearningSession[]
   progress      KnowledgePointProgress[]
+  revisions     LearningGoalRevision[]
+  profileResets LearningProfileReset[]
 
   @@unique([userId, idempotencyKey])
   @@index([projectId, status])
   @@index([userId, createdAt])
+}
+
+model LearningGoalRevision {
+  id             String    @id @default(cuid())
+  goalId         String
+  userId         String
+  title          String
+  purpose        String?
+  targetDate     DateTime?
+  dailyMinutes   Int?
+  reason         String?
+  idempotencyKey String
+  createdAt      DateTime  @default(now())
+
+  goal LearningGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, idempotencyKey])
+  @@index([goalId, createdAt])
 }
 
 model LearningScope {
@@ -866,9 +889,10 @@ model KnowledgePointLineage {
   predecessorMetadata Json?
   createdAt           DateTime @default(now())
 
-  goal     LearningGoal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  versions KnowledgePoint[]
-  progress KnowledgePointProgress[]
+  goal          LearningGoal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  versions      KnowledgePoint[]
+  progress      KnowledgePointProgress[]
+  profileResets LearningProfileReset[]
 
   @@unique([goalId, stableKey])
   @@index([goalId])
@@ -1100,6 +1124,7 @@ model AttemptEvaluation {
   modelVersion           String?
   policyVersion          String
   supersedesEvaluationId String?           @unique
+  idempotencyKey         String?
   createdAt              DateTime          @default(now())
 
   attempt              PracticeAttempt              @relation(fields: [attemptId], references: [id], onDelete: Cascade)
@@ -1108,6 +1133,7 @@ model AttemptEvaluation {
   errorTypeCorrections AttemptErrorTypeCorrection[]
 
   @@unique([id, attemptId])
+  @@unique([attemptId, idempotencyKey])
   @@index([attemptId, createdAt])
 }
 
@@ -1146,6 +1172,24 @@ model KnowledgePointProgress {
   @@unique([userId, goalId, lineageId])
   @@index([goalId, masteryState])
   @@index([userId, nextReviewAt])
+}
+
+model LearningProfileReset {
+  id             String   @id @default(cuid())
+  userId         String
+  goalId         String?
+  lineageId      String?
+  reason         String?
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+
+  user    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal    LearningGoal?          @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  lineage KnowledgePointLineage? @relation(fields: [lineageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, goalId, createdAt])
+  @@index([userId, lineageId, createdAt])
 }
 
 model UserToolPreference {
