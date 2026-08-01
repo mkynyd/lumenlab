@@ -4,6 +4,16 @@
 
 This document tracks the completed Agent Runtime consolidation plus deferred Skill, Tool, and production-hardening work.
 
+## Completed Learning P1-C — Precise Sources and Atomic Rebuilds
+
+- Frozen locator v2 as a strict discriminated union (`file` / `page` / `block` / `range`) in `validators.ts`; legacy free-form locators remain tolerated by the anchor snapshot schema.
+- `buildSourceSnapshots` resolves block-annotated DocumentChunks per file (by `fileAssetId`, current parse) and promotes anchors to `{ kind: "block", blockId, pageNumber? }` with `documentChunkId` backfilled; falls back to file-level locators when no block metadata exists.
+- Chunk metadata now carries a stable `blockKey` (sha256 of blockId:index:content) and a chunk-level `contentFingerprint` for cross-rebuild comparison.
+- `createDocumentChunks` rebuilds atomically: delete + create run inside an interactive transaction (rollback keeps the previous index on failure); search-cache invalidation stays outside the transaction.
+- New `quality-gate.ts` gates high-confidence generation (knowledge maps, diagnostic items, study pack sections) on `ParseQualityReport`: text coverage < 0.5, > 3 failed images, or > 10 warnings reject with 409; legacy files without reports pass.
+- New `coverage.ts` classifies `covered` / `retrieval_miss` / `material_absent` with a corpus-wide keyword fallback; learning-domain generation errors now distinguish "material missing" from "material exists but mis-referenced".
+- Verification: 1202 unit tests, 30 PostgreSQL integration tests, lint/tsc/build/diff-check green; commits `64a33d2`, `465df8f`, `3a1925f`, `33ae403` pushed to origin/main.
+
 ## Completed Runtime Consolidation
 
 - Reduced `/api/chat` to authentication, rate limiting, request mapping, `AgentRuntime.run()`, and SSE response adaptation.

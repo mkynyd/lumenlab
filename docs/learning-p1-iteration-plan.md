@@ -1,6 +1,6 @@
 # LumenLab 学习闭环 P1 迭代执行计划
 
-> 状态：执行中（P1-A、P1-B、P1-D 已完成，P1-C、P1-E 待执行）
+> 状态：执行中（P1-A、P1-B、P1-C、P1-D 已完成，P1-E 待执行）
 > 决策冻结：2026-08-01
 > 基线提交：`af57d83`
 > 前置合同：`docs/learning-loop-p0-iteration-plan.md`
@@ -153,6 +153,16 @@ Study Pack 归属一个 Project 和 Learning Goal，包含 Outline 与多个 Sec
 - 覆盖报告区分 `material_absent` 与 `retrieval_miss`。
 
 验收：来源可定位；低质量解析不能产生高置信度题目；失败重建不破坏上一可用索引。
+
+完成记录（2026-08-01，执行细节见 `docs/learning-p1c-execution-plan.md` §0 修正记录）：
+
+- 已冻结 locator v2 判别联合（`sourceLocatorSchema`：file/page/block/range，`.strict()`），`sourceAnchorSnapshotSchema` 保持 v2 严格 + 旧自由 JSON 兼容。
+- `buildSourceSnapshots` 新增 `resolveBlockLocators`：按 `fileAssetId` 反查当前解析的 block-annotated chunk（取首个 `metadata.blockId` 非空），locator 提升为 `{ kind: "block", blockId, pageNumber? }` 并回填 `documentChunkId`；反查不到降级 `{ kind: "file" }` 不抛错。前端档案页来源展示支持 v2 判别格式（第 N 页 · 块）。
+- chunk 增加稳定 key：`metadata.blockKey`（sha256(blockId:index:content) 前 24 位，同解析内稳定）与 `metadata.contentFingerprint`（chunk 自身内容指纹，跨重建对比用）。
+- `createDocumentChunks` 的 deleteMany + createMany 包进 interactive transaction，失败整体回滚保留旧索引；`invalidateSearchCache` 留在事务外。集成测试验证注入失败后旧 chunk 行数不变、正常重建无残留半成品。
+- 新增 `src/lib/document-pipeline/quality-gate.ts`：`gateHighConfidenceGeneration` 默认规则 `textCoverageRatio < 0.5 || failedImageCount > 3 || warningCount > 10` 拒绝，report 缺失（存量数据）放行；接入 `generateMap`、`createDiagnosticSession`、`buildStudyPackSources` 三处生成路径，拒绝时抛 409 `source_unsupported`。parseReport 经 pipeline → mergeMetadata 已持久化于 `processingMetadata.parseReport`，无需额外写入。
+- 新增 `src/lib/rag/coverage.ts`：`classifyCoverage` 三分类（命中 → `covered`；仅 keyword 兜底命中 → `retrieval_miss`；零命中 → `material_absent`），`generateMap`/`createDiagnosticSession` 的无效 handle 错误按分类给出不同 message（"未找到对应内容，请补充资料" vs "可能存在对应内容，请重新生成"）。聊天 RAG 接入为可选增强，本次未做（检索读取路径不动）。
+- 验收通过：全量单元测试 `223` 文件 / `1202` 项、PostgreSQL 集成测试 `4` 文件 / `30` 项（新增 locator v2 校验、chunk 反查提升、事务回滚、质量门禁拒绝、覆盖报告两类 message）；Lint、TypeScript、Next.js 生产构建和 `git diff --check` 全绿。已推送 `64a33d2` / `465df8f` / `3a1925f` / `33ae403`。
 
 ### Wave P1-D：Study Pack
 
