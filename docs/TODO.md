@@ -4,6 +4,15 @@
 
 This document tracks the completed Agent Runtime consolidation plus deferred Skill, Tool, and production-hardening work.
 
+## Completed Learning P1-E — Release Quality Gates
+
+- Added `src/lib/learning/evals/p1/release-gates.ts`: 15 deterministic release-gate cases across five domains (answer leakage, authorization, source integrity, projection, idempotency), all free of user data / DB / real providers, so CI can execute them.
+- Added two P1 projection golden cases: regrade supersession keeps a single active evaluation; a forked evaluation chain fails closed (`evaluation_fork` exclusion).
+- Added `compareReleaseGates` baseline/candidate comparison: any gate that passed the frozen baseline but fails in the candidate blocks the release (exit 1).
+- Added `scripts/evaluate-learning-release.ts` (`npm run eval:learning`): deterministic run + baseline comparison against the committed `reports/learning-release-baseline.json`, aggregated by gate / item type / failure stage; `--update-baseline` refreshes the baseline; `--provider <name> --userId <id>` is the manual real-provider workflow (fixed-course fixtures through the DeepSeek learning gateway, schema + source-handle contract checks) that CI never triggers. `scripts/tsconfig.eval.json` maps `server-only` to the test stub for script runs only.
+- Run manifests are anonymized (no user data, no passwords, no content) and record environment / model / commit SHA. CI workflow unchanged.
+- Verification: 1206 unit tests green, `npm run eval:learning` 15/15 with a committed baseline and no-regression exit 0; commit `257e439` pushed. P1-A through P1-E are now all complete.
+
 ## Completed Learning P1-C — Precise Sources and Atomic Rebuilds
 
 - Frozen locator v2 as a strict discriminated union (`file` / `page` / `block` / `range`) in `validators.ts`; legacy free-form locators remain tolerated by the anchor snapshot schema.

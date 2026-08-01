@@ -1,6 +1,6 @@
 # LumenLab 学习闭环 P1 迭代执行计划
 
-> 状态：执行中（P1-A、P1-B、P1-C、P1-D 已完成，P1-E 待执行）
+> 状态：全部完成（P1-A、P1-B、P1-C、P1-D、P1-E 均已完成）
 > 决策冻结：2026-08-01
 > 基线提交：`af57d83`
 > 前置合同：`docs/learning-loop-p0-iteration-plan.md`
@@ -190,6 +190,15 @@ Study Pack 归属一个 Project 和 Learning Goal，包含 Outline 与多个 Sec
 - CI 继续只跑确定性、安全和 schema 门禁。
 
 验收：候选版本若出现答案泄漏、越权、来源下降、错误投影或幂等回归则阻止发布。
+
+完成记录（2026-08-01）：
+
+- 新增 `src/lib/learning/evals/p1/release-gates.ts`：确定性发布门禁 runner，五类门禁 15 个 case（答案泄漏：DTO 不携带 answerCriteria/explanation/generationMetadata、模型输出拒绝未知泄漏字段；越权：作答提交拒绝客户端注入服务端字段、regrade 拒绝注入 attemptId、profile reset scope 严格；来源下降：locator v2 形状、指纹确定性 + `sha256:v1:` 前缀、模型伪造指纹/哈希拒绝、block locator anchor 快照；错误投影：golden 策略基线全绿；幂等：四个写命令强制 idempotencyKey）。全部无用户数据、无 DB、无真实 Provider，CI 可直接执行。
+- golden fixtures 新增 2 个 P1 投影契约：regrade supersession 单链保持唯一 active；fork 链 fail-closed（excluded `evaluation_fork`）。
+- 新增 `compareReleaseGates`：按 case id 对比基线，基线通过 → 候选失败即 regression（阻止发布），反向为 improvement。
+- 新增 `scripts/evaluate-learning-release.ts`（`npm run eval:learning`）：默认跑确定性门禁并与提交进仓库的 `reports/learning-release-baseline.json` 对比，有回归 exit 1；`--update-baseline` 更新基线；按门禁/条目类型/失败阶段三组聚合输出；`--provider <name> --userId <id>` 为手动 workflow，用固定课程 fixtures 调真实 DeepSeek 学习网关并校验输出契约（schema、source handle 引用），CI 永不触发。`scripts/tsconfig.eval.json` 仅为脚本运行提供 server-only 测试桩解析，不影响 Next 构建。
+- run manifest 匿名（无 userId/password/正文），标注 environment/model/commitSha；CI workflow 未改动（继续只跑 lint/tsc/迁移演练/测试/build）。
+- 验收通过：全量单元测试 `223` 文件 / `1206` 项（新增 golden 2 项 + release gates 2 项）；`npm run eval:learning` 15/15 通过并生成基线，对比无回归 exit 0；Lint、TypeScript、Next.js 生产构建和 `git diff --check` 全绿。已推送 `257e439`。P1 五个 wave 至此全部完成。
 
 ## 7. 并行修改边界
 
