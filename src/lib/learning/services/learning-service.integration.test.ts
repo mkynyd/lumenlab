@@ -978,6 +978,144 @@ describe("LearningService goal and scope seam", () => {
     }
   });
 
+  it("distinguishes material_absent from retrieval_miss in coverage errors", async () => {
+    const { owner, project } = await createFixture();
+    const absentFile = await prisma.fileAsset.create({
+      data: {
+        userId: owner.id,
+        projectId: project.id,
+        filename: "no-topic.md",
+        originalName: "无该主题资料.md",
+        mimeType: "text/markdown",
+        size: 128,
+        storagePath: "integration/no-topic.md",
+        textContent: "只讨论直流电路的基础概念。",
+        contentFingerprint: "sha256:no-topic-v1",
+        status: "parsed",
+      },
+    });
+    // 资料中有基尔霍夫电流定律的 chunk（供 retrieval_miss 场景的 keyword 兜底命中）。
+    await prisma.documentChunk.createMany({
+      data: [
+        {
+          id: "chunk-topic-0",
+          userId: owner.id,
+          projectId: project.id,
+          fileAssetId: absentFile.id,
+          content: "基尔霍夫电流定律：流入节点的电流等于流出节点的电流。",
+          contentHash: "hash-topic",
+          chunkIndex: 0,
+          metadata: { blockId: "blk-topic", pageNumber: 1 },
+        },
+      ],
+    });
+    let returnHandle = "unknown-handle";
+    const modelGateway: LearningModelGateway = {
+      async generateKnowledgeMap() {
+        return {
+          points: [
+            {
+              stableKey: "coverage-point",
+              name:
+                returnHandle === "unknown-handle"
+                  ? "傅里叶变换"
+                  : "基尔霍夫电流定律",
+              kind: "concept",
+              order: 0,
+              sourceHandles: [returnHandle],
+            },
+          ],
+        };
+      },
+      generatePracticeItems: async () => {
+        throw new Error("not used");
+      },
+      evaluateAttempt: async () => {
+        throw new Error("not used");
+      },
+      generateStudyPackSection: async () => {
+        throw new Error("not used");
+      },
+    };
+    const service = createLearningService({
+      prisma,
+      clock,
+      ids: createIds(),
+      modelGateway,
+    });
+    const setupGoal = async (idempotencyKey: string) => {
+      const goal = await service.createGoal({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          title: "覆盖报告",
+          purpose: null,
+          targetDate: null,
+          dailyMinutes: 30,
+          activate: true,
+          idempotencyKey: `${idempotencyKey}-goal`,
+        },
+      });
+      await service.saveScopeDraft({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          expectedVersion: 0,
+          definition: { objective: "覆盖报告" },
+          materialMode: "project_corpus",
+          fileIds: [],
+          materialGaps: [],
+          idempotencyKey: `${idempotencyKey}-scope`,
+        },
+      });
+      await service.confirmScope({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          expectedVersion: 1,
+          idempotencyKey: `${idempotencyKey}-confirm`,
+        },
+      });
+      return goal;
+    };
+    try {
+      // material_absent: 主题在资料中完全不存在。
+      const first = await setupGoal("coverage-absent");
+      await expect(
+        service.generateMap({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: first.id,
+          input: { idempotencyKey: "coverage-absent-map" },
+        })
+      ).rejects.toMatchObject({
+        code: "source_unsupported",
+        status: 409,
+        message: expect.stringContaining("未找到对应内容"),
+      });
+
+      // retrieval_miss: 资料中存在主题（chunk 命中），但模型引用了无效 handle。
+      returnHandle = "unknown-handle-again";
+      const second = await setupGoal("coverage-miss");
+      await expect(
+        service.generateMap({
+          userId: owner.id,
+          projectId: project.id,
+          goalId: second.id,
+          input: { idempotencyKey: "coverage-miss-map" },
+        })
+      ).rejects.toMatchObject({
+        code: "source_unsupported",
+        status: 409,
+        message: expect.stringContaining("可能存在对应内容"),
+      });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
   it("returns evidence-backed history and appends an owned error-type correction", async () => {
     const { owner, stranger, project } = await createFixture();
     const service = createLearningService({

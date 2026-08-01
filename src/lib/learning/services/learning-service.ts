@@ -60,6 +60,7 @@ import { z } from "zod";
 import { getEffectiveFileContent } from "@/lib/files/content-fingerprint";
 import type { ParseQualityReport } from "@/lib/document-pipeline/quality-checker";
 import { gateHighConfidenceGeneration } from "@/lib/document-pipeline/quality-gate";
+import { classifyCoverage } from "@/lib/rag/coverage";
 
 type GoalCreateInput = z.infer<typeof learningGoalCreateSchema>;
 type ScopeDraftInput = z.infer<typeof learningScopeDraftSchema>;
@@ -2292,9 +2293,20 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       );
       for (const point of generated.points) {
         if (point.sourceHandles.some((handle) => !sourceByHandle.has(handle))) {
+          const verdict = await classifyCoverage({
+            userId: command.userId,
+            projectId: command.projectId,
+            query: point.name,
+            retrievalResults: sources.map((source) => ({
+              fileAssetId: source.fileAssetId,
+              content: source.content,
+            })),
+          });
           throw new LearningServiceError(
             "source_unsupported",
-            "知识点引用了未确认的资料来源",
+            verdict === "material_absent"
+              ? `知识点「${point.name}」在当前资料中未找到对应内容，请补充资料后重试`
+              : `知识点「${point.name}」在当前资料中可能存在对应内容但未被正确引用，请重新生成知识点地图`,
             409
           );
         }
@@ -2533,15 +2545,32 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         map.knowledgePoints.map((point) => [point.lineage.stableKey, point])
       );
       for (const item of generatedItems) {
+        const invalidHandle = item.sourceHandles.find(
+          (handle) => !anchors.has(handle)
+        );
         if (
-          item.sourceHandles.some((handle) => !anchors.has(handle)) ||
+          invalidHandle ||
           item.knowledgePointStableKeys.some(
             (stableKey) => !pointByStableKey.has(stableKey)
           )
         ) {
+          const verdict =
+            invalidHandle === undefined
+              ? "covered"
+              : await classifyCoverage({
+                  userId: command.userId,
+                  projectId: command.projectId,
+                  query: item.prompt,
+                  retrievalResults: practiceSources.map((source) => ({
+                    fileAssetId: source.fileAssetId,
+                    content: source.content,
+                  })),
+                });
           throw new LearningServiceError(
             "source_unsupported",
-            "诊断题引用了当前地图以外的来源或知识点",
+            verdict === "material_absent"
+              ? "部分题目在当前资料中未找到对应内容，请补充资料后重试"
+              : "诊断题引用了当前地图以外的来源或知识点",
             409
           );
         }
