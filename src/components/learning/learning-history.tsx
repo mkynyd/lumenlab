@@ -101,6 +101,39 @@ type SourceAnchorShape = {
 export function formatSourceLocator(
   locator: Record<string, unknown>
 ): string | null {
+  // Locator v2 discriminated formats (P1-C): block / page / range.
+  if (locator.kind === "block") {
+    const parts: string[] = [];
+    const pageNumber = locator.pageNumber;
+    if (typeof pageNumber === "number" && Number.isFinite(pageNumber)) {
+      parts.push(`第 ${pageNumber} 页`);
+    }
+    const blockId = locator.blockId;
+    if (typeof blockId === "string" && blockId.trim().length > 0) {
+      parts.push(`块 ${blockId.trim()}`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+  if (locator.kind === "page") {
+    const parts: string[] = [];
+    const page = locator.page;
+    if (typeof page === "number" && Number.isFinite(page)) {
+      parts.push(`第 ${page} 页`);
+    }
+    const paragraph = locator.paragraph;
+    if (typeof paragraph === "number" && Number.isFinite(paragraph)) {
+      parts.push(`第 ${paragraph} 段`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+  if (locator.kind === "range") {
+    const page = locator.page;
+    if (typeof page === "number" && Number.isFinite(page)) {
+      return `第 ${page} 页 · ${String(locator.start)}-${String(locator.end)}`;
+    }
+    return `${String(locator.start)}-${String(locator.end)}`;
+  }
+  // Legacy flat formats.
   const page = locator.page;
   if (typeof page === "number" && Number.isFinite(page)) {
     return `第 ${page} 页`;

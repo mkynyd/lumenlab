@@ -6,6 +6,8 @@ import {
   learningScopeDraftSchema,
   practiceAttemptSubmissionSchema,
   practiceItemGenerationSchema,
+  sourceAnchorSnapshotSchema,
+  sourceLocatorSchema,
 } from "@/lib/learning/validators";
 
 describe("learning model-output validators", () => {
@@ -112,6 +114,57 @@ describe("learning model-output validators", () => {
         knowledgePointStableKeys: ["kirchhoff-current-law"],
       })
     ).toThrow();
+  });
+
+  it("accepts locator v2 discriminated formats and rejects unknown shapes", () => {
+    expect(sourceLocatorSchema.parse({ kind: "file" })).toEqual({
+      kind: "file",
+    });
+    expect(
+      sourceLocatorSchema.parse({ kind: "page", page: 3, paragraph: 2 })
+    ).toEqual({ kind: "page", page: 3, paragraph: 2 });
+    expect(
+      sourceLocatorSchema.parse({
+        kind: "block",
+        blockId: "blk_7f3a",
+        pageNumber: 5,
+      })
+    ).toEqual({ kind: "block", blockId: "blk_7f3a", pageNumber: 5 });
+    expect(
+      sourceLocatorSchema.parse({ kind: "range", start: 0, end: 120 })
+    ).toEqual({ kind: "range", start: 0, end: 120 });
+    expect(() =>
+      sourceLocatorSchema.parse({ kind: "block", pageNumber: 5 })
+    ).toThrow();
+    expect(() =>
+      sourceLocatorSchema.parse({ kind: "page", page: 0 })
+    ).toThrow();
+    expect(() =>
+      sourceLocatorSchema.parse({ kind: "range", start: -1, end: 5 })
+    ).toThrow();
+    expect(() =>
+      sourceLocatorSchema.parse({ kind: "range", start: 0, end: 0 })
+    ).toThrow();
+    expect(() =>
+      sourceLocatorSchema.parse({ kind: "paragraph", index: 2 })
+    ).toThrow();
+  });
+
+  it("finds a block locator eligible inside a source anchor snapshot", () => {
+    const snapshot = sourceAnchorSnapshotSchema.parse({
+      projectId: "project-1",
+      anchorKey: "sha256:anchor-1",
+      fileAssetId: "file-1",
+      sourceFileName: "电路原理.md",
+      documentChunkId: "chunk-9",
+      locator: { kind: "block", blockId: "blk_7f3a", pageNumber: 5 },
+      contentFingerprint: "sha256:v1:abcdef123456",
+      excerptHash: "sha256:excerpt-1",
+    });
+    expect(snapshot.locator).toMatchObject({
+      kind: "block",
+      blockId: "blk_7f3a",
+    });
   });
 
   it("rejects client attempts that try to inject grading or assistance state", () => {

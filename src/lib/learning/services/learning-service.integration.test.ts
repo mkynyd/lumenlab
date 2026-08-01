@@ -745,6 +745,138 @@ describe("LearningService goal and scope seam", () => {
     }
   });
 
+  it("resolves block-level locators from current chunks when generating a map", async () => {
+    const { owner, project } = await createFixture();
+    const file = await prisma.fileAsset.create({
+      data: {
+        userId: owner.id,
+        projectId: project.id,
+        filename: "blocked.md",
+        originalName: "分块资料.md",
+        mimeType: "text/markdown",
+        size: 128,
+        storagePath: "integration/blocked.md",
+        textContent:
+          "第一章 直流电路。基尔霍夫电流定律：流入节点的电流等于流出节点的电流。",
+        contentFingerprint: "sha256:blocked-v1",
+        status: "parsed",
+      },
+    });
+    await prisma.documentChunk.createMany({
+      data: [
+        {
+          id: "chunk-blocked-0",
+          userId: owner.id,
+          projectId: project.id,
+          fileAssetId: file.id,
+          content: "第一章 直流电路。",
+          contentHash: "hash-a",
+          chunkIndex: 0,
+          metadata: { blockId: "blk-0", pageNumber: 1, sourceType: "paragraph" },
+        },
+        {
+          id: "chunk-blocked-1",
+          userId: owner.id,
+          projectId: project.id,
+          fileAssetId: file.id,
+          content: "基尔霍夫电流定律：流入节点的电流等于流出节点的电流。",
+          contentHash: "hash-b",
+          chunkIndex: 1,
+          metadata: { blockId: "blk-1", pageNumber: 2, sourceType: "paragraph" },
+        },
+      ],
+    });
+    const modelGateway: LearningModelGateway = {
+      async generateKnowledgeMap(input) {
+        const source = (
+          input as { sources: Array<{ handle: string }> }
+        ).sources[0];
+        return {
+          points: [
+            {
+              stableKey: "kirchhoff-current-law",
+              name: "基尔霍夫电流定律",
+              kind: "concept",
+              order: 0,
+              sourceHandles: [source.handle],
+            },
+          ],
+        };
+      },
+      generatePracticeItems: async () => {
+        throw new Error("not used");
+      },
+      evaluateAttempt: async () => {
+        throw new Error("not used");
+      },
+      generateStudyPackSection: async () => {
+        throw new Error("not used");
+      },
+    };
+    const service = createLearningService({
+      prisma,
+      clock,
+      ids: createIds(),
+      modelGateway,
+    });
+    try {
+      const goal = await service.createGoal({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          title: "分块定位",
+          purpose: null,
+          targetDate: null,
+          dailyMinutes: 30,
+          activate: true,
+          idempotencyKey: "blocked-goal",
+        },
+      });
+      await service.saveScopeDraft({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          expectedVersion: 0,
+          definition: { objective: "分块定位" },
+          materialMode: "project_corpus",
+          fileIds: [],
+          materialGaps: [],
+          idempotencyKey: "blocked-scope",
+        },
+      });
+      await service.confirmScope({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          expectedVersion: 1,
+          idempotencyKey: "blocked-scope-confirm",
+        },
+      });
+      const map = await service.generateMap({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: { idempotencyKey: "blocked-map-1" },
+      });
+      expect(map).toMatchObject({
+        points: [{ stableKey: "kirchhoff-current-law" }],
+      });
+      const anchor = await prisma.sourceAnchor.findFirstOrThrow({
+        where: { projectId: project.id, fileAssetId: file.id },
+      });
+      expect(anchor.documentChunkId).toBe("chunk-blocked-0");
+      expect(anchor.locator).toEqual({
+        kind: "block",
+        blockId: "blk-0",
+        pageNumber: 1,
+      });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
   it("returns evidence-backed history and appends an owned error-type correction", async () => {
     const { owner, stranger, project } = await createFixture();
     const service = createLearningService({

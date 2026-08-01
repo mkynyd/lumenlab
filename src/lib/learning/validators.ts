@@ -19,7 +19,45 @@ const stableKeySchema = z
   .max(160)
   .regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/);
 
-const locatorSchema = z.record(z.string().min(1).max(80), z.unknown());
+/**
+ * Locator v2 — precise source positions frozen by P1-C. `file` remains the
+ * fallback for files without block-annotated chunks; `page` / `block` / `range`
+ * are written by the learning service after resolving current DocumentChunk
+ * metadata, never accepted from the model.
+ */
+export const sourceLocatorSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("file") }).strict(),
+  z
+    .object({
+      kind: z.literal("page"),
+      page: z.number().int().positive(),
+      paragraph: z.number().int().positive().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("block"),
+      blockId: z.string().trim().min(1),
+      pageNumber: z.number().int().positive().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("range"),
+      start: z.number().int().nonnegative(),
+      end: z.number().int().positive(),
+      page: z.number().int().positive().optional(),
+    })
+    .strict(),
+]);
+
+export type SourceLocator = z.infer<typeof sourceLocatorSchema>;
+
+/** Accepts locator v2 strictly, but tolerates legacy free-form locators. */
+const locatorSchema = z.union([
+  sourceLocatorSchema,
+  z.record(z.string().min(1).max(80), z.unknown()),
+]);
 
 export const learningGoalStatusSchema = z.enum(LEARNING_GOAL_STATUSES);
 export const learningScopeStatusSchema = z.enum(LEARNING_SCOPE_STATUSES);

@@ -37,6 +37,7 @@ import type {
   learningScopeConfirmSchema,
   learningScopeDraftSchema,
   practiceAttemptSubmissionSchema,
+  SourceLocator,
 } from "@/lib/learning/validators";
 import type {
   errorTypeCorrectionCommandSchema,
@@ -1209,6 +1210,52 @@ export function createLearningService(options: CreateLearningServiceOptions) {
     return scope;
   }
 
+  /**
+   * Resolve the first block-annotated DocumentChunk per file so source anchors
+   * can point at a precise block instead of the whole file. Chunks are rebuilt
+   * on every parse, so matching is by fileAssetId (the current parse) — stale
+   * anchors are already rejected upstream by contentFingerprint checks, and
+   * files without block metadata (plain text, missing chunks) simply fall back
+   * to a file-level locator.
+   */
+  async function resolveBlockLocators(
+    fileIds: string[]
+  ): Promise<Map<string, { documentChunkId: string; locator: SourceLocator }>> {
+    const byFile = new Map<
+      string,
+      { documentChunkId: string; locator: SourceLocator }
+    >();
+    if (fileIds.length === 0) return byFile;
+    const chunks = await prisma.documentChunk.findMany({
+      where: { fileAssetId: { in: fileIds } },
+      select: {
+        id: true,
+        fileAssetId: true,
+        chunkIndex: true,
+        metadata: true,
+      },
+      orderBy: [{ chunkIndex: "asc" }, { id: "asc" }],
+    });
+    for (const chunk of chunks) {
+      if (!chunk.fileAssetId || byFile.has(chunk.fileAssetId)) continue;
+      const metadata = chunk.metadata ? objectJson(chunk.metadata) : null;
+      const blockId = metadata?.blockId;
+      if (typeof blockId !== "string" || !blockId.trim()) continue;
+      const pageNumber = metadata?.pageNumber;
+      byFile.set(chunk.fileAssetId, {
+        documentChunkId: chunk.id,
+        locator: {
+          kind: "block",
+          blockId: blockId.trim(),
+          ...(typeof pageNumber === "number" && Number.isFinite(pageNumber)
+            ? { pageNumber }
+            : {}),
+        },
+      });
+    }
+    return byFile;
+  }
+
   async function buildSourceSnapshots(command: {
     userId: string;
     projectId: string;
@@ -1246,6 +1293,9 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       );
     }
 
+    const blockLocators = await resolveBlockLocators(
+      files.map((file) => file.id)
+    );
     return files.map((file) => {
       const content =
         file.enhancementStatus === "enhanced" && file.enhancedContent
@@ -1261,13 +1311,14 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       const handle = sha256(
         `${command.projectId}\n${file.id}\n${file.contentFingerprint}`
       );
+      const block = blockLocators.get(file.id);
       const snapshot = sourceAnchorSnapshotSchema.parse({
         projectId: command.projectId,
         anchorKey: handle,
         fileAssetId: file.id,
         sourceFileName: file.originalName,
-        documentChunkId: null,
-        locator: { kind: "file" },
+        documentChunkId: block?.documentChunkId ?? null,
+        locator: block?.locator ?? { kind: "file" },
         contentFingerprint: file.contentFingerprint,
         excerptHash: sha256(content),
       });
