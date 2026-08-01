@@ -72,6 +72,23 @@ export const queryKeys = {
         "reviews",
       ] as const,
     today: () => [...learningAll, "today"] as const,
+    studyPacks: (projectId: string, goalId: string) =>
+      [
+        ...learningAll,
+        "projects",
+        projectId,
+        "goals",
+        goalId,
+        "study-packs",
+      ] as const,
+    studyPack: (projectId: string, packId: string) =>
+      [
+        ...learningAll,
+        "projects",
+        projectId,
+        "study-packs",
+        packId,
+      ] as const,
   },
   userProfile: ["user-profile"] as const,
   keys: ["api-keys"] as const,

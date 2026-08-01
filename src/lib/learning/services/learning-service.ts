@@ -43,6 +43,11 @@ import type {
   goalRevisionCommandSchema,
   profileResetCommandSchema,
   regradeCommandSchema,
+  createStudyPackSchema,
+  generateStudyPackSchema,
+  publishStudyPackSchema,
+  saveStudyPackSectionSchema,
+  updateStudyPackOutlineSchema,
 } from "@/lib/learning/server/input-schemas";
 import {
   answerCriteriaSchema,
@@ -63,6 +68,13 @@ type ErrorTypeCorrectionInput = z.infer<
 type RegradeInput = z.infer<typeof regradeCommandSchema>;
 type GoalRevisionInput = z.infer<typeof goalRevisionCommandSchema>;
 type ProfileResetInput = z.infer<typeof profileResetCommandSchema>;
+type CreateStudyPackInput = z.infer<typeof createStudyPackSchema>;
+type UpdateStudyPackOutlineInput = z.infer<
+  typeof updateStudyPackOutlineSchema
+>;
+type GenerateStudyPackInput = z.infer<typeof generateStudyPackSchema>;
+type SaveStudyPackSectionInput = z.infer<typeof saveStudyPackSectionSchema>;
+type PublishStudyPackInput = z.infer<typeof publishStudyPackSchema>;
 
 export interface IdempotentGenerationInput {
   idempotencyKey: string;
@@ -247,6 +259,49 @@ export interface LearningProfileResetDto {
   affectedPointCount: number;
 }
 
+export type StudyPackOutlineItemDto = {
+  key: string;
+  title: string;
+  description: string | null;
+};
+
+export type StudyPackSectionStatus =
+  | "draft"
+  | "queued"
+  | "generating"
+  | "ready"
+  | "failed"
+  | "stale";
+
+export interface StudyPackSectionDto {
+  id: string;
+  key: string;
+  orderIndex: number;
+  title: string;
+  description: string | null;
+  status: StudyPackSectionStatus;
+  /** Effective content: the user's edited version when present. */
+  content: string | null;
+  userEdited: boolean;
+  userEditedAt: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudyPackDto {
+  id: string;
+  goalId: string;
+  title: string;
+  outline: StudyPackOutlineItemDto[];
+  outlineStatus: "draft" | "confirmed";
+  sourceFingerprint: string;
+  publishedArtifactId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sections: StudyPackSectionDto[];
+}
+
 export interface LearningHistoryEvaluationDto {
   id: string;
   attemptId: string;
@@ -407,6 +462,16 @@ const historyAttemptInclude = {
     include: sessionItemPrivateInclude,
   },
 } satisfies Prisma.PracticeAttemptInclude;
+
+const studyPackInclude = {
+  sections: {
+    orderBy: [{ orderIndex: "asc" as const }, { key: "asc" as const }],
+  },
+} satisfies Prisma.StudyPackInclude;
+
+type StudyPackRecord = Prisma.StudyPackGetPayload<{
+  include: typeof studyPackInclude;
+}>;
 
 type HistoryAttemptRecord = Prisma.PracticeAttemptGetPayload<{
   include: typeof historyAttemptInclude;
@@ -746,6 +811,41 @@ function toProfileResetDto(
   };
 }
 
+function toStudyPackSectionDto(
+  section: StudyPackRecord["sections"][number]
+): StudyPackSectionDto {
+  const userEdited = section.userEditedContent !== null;
+  return {
+    id: section.id,
+    key: section.key,
+    orderIndex: section.orderIndex,
+    title: section.title,
+    description: section.description,
+    status: section.status,
+    content: userEdited ? section.userEditedContent : section.content,
+    userEdited,
+    userEditedAt: iso(section.userEditedAt),
+    failureReason: section.failureReason,
+    createdAt: section.createdAt.toISOString(),
+    updatedAt: section.updatedAt.toISOString(),
+  };
+}
+
+function toStudyPackDto(pack: StudyPackRecord): StudyPackDto {
+  return {
+    id: pack.id,
+    goalId: pack.goalId,
+    title: pack.title,
+    outline: pack.outline as unknown as StudyPackOutlineItemDto[],
+    outlineStatus: pack.outlineStatus,
+    sourceFingerprint: pack.sourceFingerprint,
+    publishedArtifactId: pack.publishedArtifactId,
+    createdAt: pack.createdAt.toISOString(),
+    updatedAt: pack.updatedAt.toISOString(),
+    sections: pack.sections.map(toStudyPackSectionDto),
+  };
+}
+
 function historyProjectionForAttempt(attempt: HistoryAttemptRecord): {
   activeEvaluationId: string | null;
   effectiveErrorType: LearningHistoryEvidenceDto["effectiveErrorType"];
@@ -941,6 +1041,157 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       throw new LearningServiceError("not_found", "学习目标不存在", 404);
     }
     return goal;
+  }
+
+  async function requireStudyPack(
+    userId: string,
+    projectId: string,
+    packId: string
+  ): Promise<StudyPackRecord> {
+    await requireProject(userId, projectId);
+    const pack = await prisma.studyPack.findFirst({
+      where: {
+        id: packId,
+        userId,
+        goal: { is: { projectId } },
+      },
+      include: studyPackInclude,
+    });
+    if (!pack) {
+      throw new LearningServiceError(
+        "not_found",
+        "学习资料包不存在",
+        404
+      );
+    }
+    return pack;
+  }
+
+  async function requireStudyPackSection(
+    pack: StudyPackRecord,
+    sectionId: string
+  ): Promise<StudyPackRecord["sections"][number]> {
+    const section = pack.sections.find(
+      (candidate) => candidate.id === sectionId
+    );
+    if (!section) {
+      throw new LearningServiceError(
+        "not_found",
+        "资料包章节不存在",
+        404
+      );
+    }
+    return section;
+  }
+
+  async function buildStudyPackSources(command: {
+    userId: string;
+    projectId: string;
+    map: MapRecord;
+  }) {
+    const anchors = new Map<
+      string,
+      MapRecord["knowledgePoints"][number]["sourceLinks"][number]["sourceAnchor"]
+    >();
+    for (const point of command.map.knowledgePoints) {
+      for (const link of point.sourceLinks) {
+        anchors.set(link.sourceAnchor.anchorKey, link.sourceAnchor);
+      }
+    }
+    const anchorRecords = [...anchors.values()];
+    const sourceFiles = await prisma.fileAsset.findMany({
+      where: {
+        id: {
+          in: anchorRecords.flatMap((anchor) =>
+            anchor.fileAssetId ? [anchor.fileAssetId] : []
+          ),
+        },
+        userId: command.userId,
+        projectId: command.projectId,
+      },
+      select: {
+        id: true,
+        textContent: true,
+        enhancedContent: true,
+        enhancementStatus: true,
+        contentFingerprint: true,
+      },
+    });
+    const sourceFileById = new Map(
+      sourceFiles.map((file) => [file.id, file])
+    );
+    const sources = anchorRecords.map((anchor) => {
+      const file = anchor.fileAssetId
+        ? sourceFileById.get(anchor.fileAssetId)
+        : undefined;
+      const content = file ? getEffectiveFileContent(file) : "";
+      if (
+        !file ||
+        !content.trim() ||
+        file.contentFingerprint !== anchor.contentFingerprint
+      ) {
+        throw new LearningServiceError(
+          "source_unsupported",
+          "知识点来源已变化，请先重新生成知识点地图",
+          409
+        );
+      }
+      return {
+        handle: anchor.anchorKey,
+        fileAssetId: anchor.fileAssetId,
+        title: anchor.sourceFileName,
+        content,
+        contentFingerprint: anchor.contentFingerprint,
+      };
+    });
+    if (sources.length === 0) {
+      throw new LearningServiceError(
+        "source_unsupported",
+        "资料包缺少可引用的学习资料",
+        409
+      );
+    }
+    return { anchors, sources };
+  }
+
+  async function generateStudyPackSectionContent(command: {
+    userId: string;
+    goalId: string;
+    map: MapRecord;
+    section: {
+      key: string;
+      title: string;
+      description: string | null;
+    };
+    sources: Array<{
+      handle: string;
+      fileAssetId: string | null;
+      title: string;
+      content: string;
+      contentFingerprint: string;
+    }>;
+  }): Promise<{ content: string; metadata: Record<string, unknown> }> {
+    const parsed = z
+      .object({
+        content: z.string().trim().min(1).max(200_000),
+      })
+      .strict()
+      .parse(
+        await modelGateway.generateStudyPackSection({
+          userId: command.userId,
+          map: toMapDto(command.map),
+          section: {
+            key: command.section.key,
+            title: command.section.title,
+            description: command.section.description,
+          },
+          sources: command.sources,
+        })
+      );
+    return {
+      content: parsed.content,
+      metadata: { model: "deepseek-v4-flash" },
+    };
   }
 
   async function requireConfirmedScope(goalId: string) {
@@ -3628,6 +3879,509 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         }
         throw error;
       }
+    },
+
+    async listStudyPacks(
+      command: GoalCommand & { goalId: string }
+    ): Promise<{ packs: StudyPackDto[] }> {
+      await requireGoal(command.userId, command.projectId, command.goalId);
+      const packs = await prisma.studyPack.findMany({
+        where: {
+          userId: command.userId,
+          goalId: command.goalId,
+        },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        include: studyPackInclude,
+      });
+      return { packs: packs.map(toStudyPackDto) };
+    },
+
+    async createStudyPackDraft(
+      command: GoalCommand & {
+        goalId: string;
+        input: CreateStudyPackInput;
+      }
+    ): Promise<{ pack: StudyPackDto }> {
+      await requireGoal(command.userId, command.projectId, command.goalId);
+      await requireConfirmedScope(command.goalId);
+      const map = await prisma.knowledgeMap.findFirst({
+        where: { goalId: command.goalId },
+        orderBy: [{ version: "desc" }, { id: "desc" }],
+        include: mapInclude,
+      });
+      if (!map) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "请先生成知识点地图",
+          409
+        );
+      }
+      const goal = await prisma.learningGoal.findFirstOrThrow({
+        where: { id: command.goalId },
+        select: { title: true },
+      });
+      const existing = await prisma.studyPack.findUnique({
+        where: {
+          userId_idempotencyKey: {
+            userId: command.userId,
+            idempotencyKey: command.input.idempotencyKey,
+          },
+        },
+        include: studyPackInclude,
+      });
+      if (existing) {
+        if (existing.goalId !== command.goalId) {
+          throw new LearningServiceError(
+            "idempotency_conflict",
+            "该幂等键已用于其他学习资料包",
+            409
+          );
+        }
+        return { pack: toStudyPackDto(existing) };
+      }
+
+      const outline = map.knowledgePoints.map((point) => ({
+        key: point.lineage.stableKey,
+        title: point.name,
+        description: null,
+      }));
+      if (outline.length === 0) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "知识点地图还没有可整理的章节",
+          409
+        );
+      }
+      const title = command.input.title?.trim() || `${goal.title} · 学习资料包`;
+
+      try {
+        const pack = await prisma.studyPack.create({
+          data: {
+            id: ids.nextId("study-pack"),
+            userId: command.userId,
+            goalId: command.goalId,
+            title,
+            outline: outline as Prisma.InputJsonValue,
+            outlineStatus: "draft",
+            sourceFingerprint: map.sourceFingerprint,
+            idempotencyKey: command.input.idempotencyKey,
+            createdAt: clock.now(),
+            sections: {
+              create: outline.map((item, index) => ({
+                id: ids.nextId("study-pack-section"),
+                key: item.key,
+                orderIndex: index,
+                title: item.title,
+                description: null,
+                status: "draft",
+              })),
+            },
+          },
+          include: studyPackInclude,
+        });
+        return { pack: toStudyPackDto(pack) };
+      } catch (error) {
+        const raced = await prisma.studyPack.findUnique({
+          where: {
+            userId_idempotencyKey: {
+              userId: command.userId,
+              idempotencyKey: command.input.idempotencyKey,
+            },
+          },
+          include: studyPackInclude,
+        });
+        if (raced) {
+          if (raced.goalId !== command.goalId) {
+            throw new LearningServiceError(
+              "idempotency_conflict",
+              "该幂等键已用于其他学习资料包",
+              409
+            );
+          }
+          return { pack: toStudyPackDto(raced) };
+        }
+        throw error;
+      }
+    },
+
+    async updateStudyPackOutline(
+      command: GoalCommand & {
+        packId: string;
+        input: UpdateStudyPackOutlineInput;
+      }
+    ): Promise<{ pack: StudyPackDto }> {
+      const pack = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      if (pack.outlineStatus === "confirmed") {
+        throw new LearningServiceError(
+          "invalid_state",
+          "大纲已确认，不能修改结构，只能重做单个章节",
+          409
+        );
+      }
+      const inputOutline = command.input.outline;
+      const keys = new Set(inputOutline.map((item) => item.key));
+      if (keys.size !== inputOutline.length) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "大纲章节标识不能重复",
+          400
+        );
+      }
+
+      const existingByKey = new Map(
+        pack.sections.map((section) => [section.key, section])
+      );
+      const updated = await prisma.$transaction(async (tx) => {
+        const kept: Array<{ key: string; id: string }> = [];
+        for (const [index, item] of inputOutline.entries()) {
+          const existing = existingByKey.get(item.key);
+          if (existing) {
+            kept.push({ key: item.key, id: existing.id });
+            await tx.studyPackSection.update({
+              where: { id: existing.id },
+              data: {
+                orderIndex: index,
+                title: item.title,
+                description: item.description ?? null,
+              },
+            });
+          } else {
+            const created = await tx.studyPackSection.create({
+              data: {
+                id: ids.nextId("study-pack-section"),
+                packId: command.packId,
+                key: item.key,
+                orderIndex: index,
+                title: item.title,
+                description: item.description ?? null,
+                status: "draft",
+              },
+            });
+            kept.push({ key: item.key, id: created.id });
+          }
+        }
+        const keptIds = new Set(kept.map((entry) => entry.id));
+        await tx.studyPackSection.deleteMany({
+          where: { packId: command.packId, id: { notIn: [...keptIds] } },
+        });
+        return tx.studyPack.update({
+          where: { id: command.packId },
+          data: {
+            outline: inputOutline as Prisma.InputJsonValue,
+            outlineStatus:
+              command.input.status === "confirmed"
+                ? "confirmed"
+                : "draft",
+          },
+          include: studyPackInclude,
+        });
+      });
+      return { pack: toStudyPackDto(updated) };
+    },
+
+    async getStudyPack(
+      command: GoalCommand & { packId: string }
+    ): Promise<{ pack: StudyPackDto }> {
+      const pack = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      return { pack: toStudyPackDto(pack) };
+    },
+
+    async generateStudyPack(
+      command: GoalCommand & {
+        packId: string;
+        input: GenerateStudyPackInput;
+      }
+    ): Promise<{ pack: StudyPackDto; generated: number; skipped: number }> {
+      const pack = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      if (pack.outlineStatus !== "confirmed") {
+        throw new LearningServiceError(
+          "invalid_state",
+          "请先确认资料包大纲",
+          409
+        );
+      }
+      const map = await prisma.knowledgeMap.findFirst({
+        where: { goalId: pack.goalId },
+        orderBy: [{ version: "desc" }, { id: "desc" }],
+        include: mapInclude,
+      });
+      if (!map) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "请先生成知识点地图",
+          409
+        );
+      }
+      if (map.sourceFingerprint !== pack.sourceFingerprint) {
+        throw new LearningServiceError(
+          "source_unsupported",
+          "学习资料已变化，请重新创建资料包",
+          409
+        );
+      }
+      const { sources } = await buildStudyPackSources({
+        userId: command.userId,
+        projectId: command.projectId,
+        map,
+      });
+      const sections = pack.sections;
+      let generated = 0;
+      let skipped = 0;
+      for (const section of sections) {
+        if (section.userEditedContent !== null) {
+          skipped += 1;
+          continue;
+        }
+        if (section.status === "ready") {
+          skipped += 1;
+          continue;
+        }
+        await prisma.studyPackSection.update({
+          where: { id: section.id },
+          data: { status: "generating", failureReason: null },
+        });
+        try {
+          const result = await generateStudyPackSectionContent({
+            userId: command.userId,
+            goalId: pack.goalId,
+            map,
+            section: {
+              key: section.key,
+              title: section.title,
+              description: section.description,
+            },
+            sources,
+          });
+          await prisma.studyPackSection.update({
+            where: { id: section.id },
+            data: {
+              status: "ready",
+              content: result.content,
+              sourceFingerprint: map.sourceFingerprint,
+              generationMetadata:
+                result.metadata as Prisma.InputJsonValue,
+              failureReason: null,
+            },
+          });
+          generated += 1;
+        } catch (error) {
+          await prisma.studyPackSection.update({
+            where: { id: section.id },
+            data: {
+              status: "failed",
+              failureReason:
+                error instanceof LearningServiceError
+                  ? error.message
+                  : "章节生成失败，请重试",
+            },
+          });
+        }
+      }
+      const refreshed = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      return {
+        pack: toStudyPackDto(refreshed),
+        generated,
+        skipped,
+      };
+    },
+
+    async saveStudyPackSection(
+      command: GoalCommand & {
+        packId: string;
+        sectionId: string;
+        input: SaveStudyPackSectionInput;
+      }
+    ): Promise<{ section: StudyPackSectionDto }> {
+      const pack = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      const section = await requireStudyPackSection(pack, command.sectionId);
+      const updated = await prisma.studyPackSection.update({
+        where: { id: section.id },
+        data: {
+          userEditedContent: command.input.content,
+          userEditedAt: clock.now(),
+          status: section.status === "ready" ? "ready" : section.status,
+          failureReason: null,
+        },
+      });
+      return { section: toStudyPackSectionDto(updated) };
+    },
+
+    async regenerateStudyPackSection(
+      command: GoalCommand & {
+        packId: string;
+        sectionId: string;
+        input: GenerateStudyPackInput;
+      }
+    ): Promise<{ section: StudyPackSectionDto }> {
+      const pack = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      if (pack.outlineStatus !== "confirmed") {
+        throw new LearningServiceError(
+          "invalid_state",
+          "请先确认资料包大纲",
+          409
+        );
+      }
+      const section = await requireStudyPackSection(pack, command.sectionId);
+      const map = await prisma.knowledgeMap.findFirst({
+        where: { goalId: pack.goalId },
+        orderBy: [{ version: "desc" }, { id: "desc" }],
+        include: mapInclude,
+      });
+      if (!map) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "请先生成知识点地图",
+          409
+        );
+      }
+      if (map.sourceFingerprint !== pack.sourceFingerprint) {
+        throw new LearningServiceError(
+          "source_unsupported",
+          "学习资料已变化，请重新创建资料包",
+          409
+        );
+      }
+      const { sources } = await buildStudyPackSources({
+        userId: command.userId,
+        projectId: command.projectId,
+        map,
+      });
+      await prisma.studyPackSection.update({
+        where: { id: section.id },
+        data: { status: "generating", failureReason: null },
+      });
+      try {
+        const result = await generateStudyPackSectionContent({
+          userId: command.userId,
+          goalId: pack.goalId,
+          map,
+          section: {
+            key: section.key,
+            title: section.title,
+            description: section.description,
+          },
+          sources,
+        });
+        const updated = await prisma.studyPackSection.update({
+          where: { id: section.id },
+          data: {
+            status: "ready",
+            content: result.content,
+            sourceFingerprint: map.sourceFingerprint,
+            generationMetadata: result.metadata as Prisma.InputJsonValue,
+            failureReason: null,
+          },
+        });
+        return { section: toStudyPackSectionDto(updated) };
+      } catch (error) {
+        const failed = await prisma.studyPackSection.update({
+          where: { id: section.id },
+          data: {
+            status: "failed",
+            failureReason:
+              error instanceof LearningServiceError
+                ? error.message
+                : "章节生成失败，请重试",
+          },
+        });
+        return { section: toStudyPackSectionDto(failed) };
+      }
+    },
+
+    async publishStudyPack(
+      command: GoalCommand & {
+        packId: string;
+        input: PublishStudyPackInput;
+      }
+    ): Promise<{
+      pack: StudyPackDto;
+      artifact: { id: string; title: string };
+    }> {
+      const pack = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      if (pack.publishedArtifactId) {
+        const artifact = await prisma.artifact.findUnique({
+          where: { id: pack.publishedArtifactId },
+          select: { id: true, title: true },
+        });
+        if (artifact) {
+          return {
+            pack: toStudyPackDto(pack),
+            artifact,
+          };
+        }
+      }
+      const readySections = pack.sections.filter((section) => {
+        const effective = section.userEditedContent ?? section.content;
+        return effective !== null && effective.trim().length > 0;
+      });
+      if (readySections.length === 0) {
+        throw new LearningServiceError(
+          "invalid_state",
+          "资料包还没有可发布的内容，请先生成或编辑章节",
+          409
+        );
+      }
+      const body = readySections
+        .map((section) => {
+          const effective = section.userEditedContent ?? section.content!;
+          return `## ${section.title}\n\n${effective.trim()}\n`;
+        })
+        .join("\n");
+      const content = `# ${pack.title}\n\n${body}`.trim();
+      const artifact = await prisma.artifact.create({
+        data: {
+          userId: command.userId,
+          projectId: command.projectId,
+          title: pack.title,
+          type: "review_outline",
+          content,
+          metadata: {
+            studyPackId: pack.id,
+            goalId: pack.goalId,
+          },
+        },
+      });
+      await prisma.studyPack.update({
+        where: { id: pack.id },
+        data: { publishedArtifactId: artifact.id },
+      });
+      const refreshed = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      return {
+        pack: toStudyPackDto(refreshed),
+        artifact: { id: artifact.id, title: artifact.title },
+      };
     },
 
     async getProgress(

@@ -107,3 +107,45 @@ export const profileResetCommandSchema = z
     idempotencyKey: z.string().trim().min(1).max(200),
   })
   .strict();
+
+export const studyPackOutlineItemSchema = z
+  .object({
+    key: z.string().trim().min(1).max(120),
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).nullable().optional(),
+  })
+  .strict();
+
+export const createStudyPackSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    idempotencyKey: z.string().trim().min(1).max(200),
+  })
+  .strict();
+
+export const updateStudyPackOutlineSchema = z
+  .object({
+    outline: z.array(studyPackOutlineItemSchema).min(1).max(200),
+    status: z.enum(["draft", "confirmed"]).optional(),
+    idempotencyKey: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
+
+export const generateStudyPackSchema = z
+  .object({
+    idempotencyKey: z.string().trim().min(1).max(200),
+  })
+  .strict();
+
+export const saveStudyPackSectionSchema = z
+  .object({
+    content: z.string().trim().min(1).max(200_000),
+    idempotencyKey: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
+
+export const publishStudyPackSchema = z
+  .object({
+    idempotencyKey: z.string().trim().min(1).max(200),
+  })
+  .strict();

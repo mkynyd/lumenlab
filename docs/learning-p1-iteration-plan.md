@@ -1,6 +1,6 @@
 # LumenLab 学习闭环 P1 迭代执行计划
 
-> 状态：执行中（P1-A、P1-B 已完成，P1-C–P1-E 待执行）
+> 状态：执行中（P1-A、P1-B、P1-D 已完成，P1-C、P1-E 待执行）
 > 决策冻结：2026-08-01
 > 基线提交：`af57d83`
 > 前置合同：`docs/learning-loop-p0-iteration-plan.md`
@@ -162,6 +162,14 @@ Study Pack 归属一个 Project 和 Learning Goal，包含 Outline 与多个 Sec
 - 组装 Artifact 并验证 Markdown/DOCX/PDF 结构一致。
 
 验收：未确认大纲不能批量生成；任一节失败只重试该节；用户编辑不被自动重做覆盖；中断后可恢复。
+
+完成记录（2026-08-01）：
+
+- 新增 `StudyPack` / `StudyPackSection` 模型（`draft/queued/generating/ready/failed/stale` 状态机、用户编辑版本、source fingerprint、可选 agentExecutionId）及迁移 `20260801110000_study_packs`。
+- 新增 6 组 API：`study-packs` GET/POST（列表/从最新 KnowledgeMap 派生大纲草案）、`outline` PATCH（draft 阶段自由改结构，confirmed 后锁定）、`generate` POST（未确认大纲拒绝生成，已 ready 或用户编辑节跳过，failed 节重试）、`sections` GET/PATCH（用户编辑版本优先）、`sections/[id]/regenerate`（只重做单节且不覆盖用户编辑）、`publish`（组装 `review_outline` Artifact，已发布幂等返回同一成果）。
+- 生成复用 `LearningModelGateway.generateStudyPackSection`（DeepSeek 结构化 JSON，章节级 Markdown 输出），中断恢复 = 重跑 generate 时 ready 节跳过、failed 节自动重试。
+- 学习中心新增「资料包」页签：列表/新建、大纲编辑与确认、章节状态与失败原因、内容查看/编辑/单节重做、发布入口与成果链接。
+- 验收通过：全量单元测试 `223` 文件 / `1186` 项、PostgreSQL 集成测试 `18` 项（新增 3 项覆盖未确认拒绝生成、失败节隔离重试、用户编辑保护、发布幂等与越权）、route 测试与前端 RTL 测试；Lint、TypeScript、Next.js 生产构建和 `git diff --check` 全绿。真实浏览器覆盖桌面与 `390×844` 移动端：创建→大纲确认→生成失败状态→用户编辑→发布为成果全链路，无水平溢出或新增控制台告警；一次性 QA 数据已全部清理。
 
 ### Wave P1-E：学习质量发布门禁
 

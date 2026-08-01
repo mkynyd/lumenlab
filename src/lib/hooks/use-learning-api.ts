@@ -52,6 +52,9 @@ export type {
   ReviewEntryDto,
   ReviewListResponse,
   ReviewState,
+  StudyPackDto,
+  StudyPackOutlineItemDto,
+  StudyPackSectionDto,
   TodayNextActionDto,
   TodayNextActionType,
   WrongAnswerAttemptDto,
@@ -155,6 +158,28 @@ export const learningUrls = {
   profileResets: (projectId: string, goalId: string) =>
     `/api/projects/${projectId}/learning/goals/${goalId}/profile-resets`,
   userProfileResets: () => `/api/learning/profile-resets`,
+  studyPacks: (projectId: string, goalId: string) =>
+    `/api/projects/${projectId}/learning/goals/${goalId}/study-packs`,
+  studyPack: (projectId: string, packId: string) =>
+    `/api/projects/${projectId}/learning/study-packs/${packId}`,
+  studyPackOutline: (projectId: string, packId: string) =>
+    `/api/projects/${projectId}/learning/study-packs/${packId}/outline`,
+  studyPackGenerate: (projectId: string, packId: string) =>
+    `/api/projects/${projectId}/learning/study-packs/${packId}/generate`,
+  studyPackSection: (
+    projectId: string,
+    packId: string,
+    sectionId: string
+  ) =>
+    `/api/projects/${projectId}/learning/study-packs/${packId}/sections/${sectionId}`,
+  studyPackSectionRegenerate: (
+    projectId: string,
+    packId: string,
+    sectionId: string
+  ) =>
+    `/api/projects/${projectId}/learning/study-packs/${packId}/sections/${sectionId}/regenerate`,
+  studyPackPublish: (projectId: string, packId: string) =>
+    `/api/projects/${projectId}/learning/study-packs/${packId}/publish`,
   today: () => `/api/learning/today`,
 };
 

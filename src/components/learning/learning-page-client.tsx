@@ -31,6 +31,7 @@ import { EmptyState } from "@/components/learning/empty-state";
 import { GoalCreateForm } from "@/components/learning/goal-create-form";
 import { KnowledgeMapView } from "@/components/learning/knowledge-map-view";
 import { LearningHistory } from "@/components/learning/learning-history";
+import { StudyPacksView } from "@/components/learning/study-packs-view";
 import { friendlyLearningError } from "@/components/learning/learning-error";
 import { LearningProgressSummary } from "@/components/learning/progress-summary";
 import { PracticeSession } from "@/components/learning/practice-session";
@@ -44,7 +45,8 @@ type LearningTab =
   | "map"
   | "practice"
   | "wrong"
-  | "review";
+  | "review"
+  | "studyPack";
 
 const STEP_TAB: Record<LearningDeepLinkStep, LearningTab> = {
   scope: "progress",
@@ -60,6 +62,7 @@ const TABS: Array<{ id: LearningTab; label: string }> = [
   { id: "practice", label: "练习" },
   { id: "wrong", label: "错题" },
   { id: "review", label: "复习" },
+  { id: "studyPack", label: "资料包" },
 ];
 
 export interface LearningPageClientProps {
@@ -418,6 +421,10 @@ export function LearningPageClient({
 
                   {item.id === "review" ? (
                     <ReviewQueue projectId={projectId} goalId={goalId} />
+                  ) : null}
+
+                  {item.id === "studyPack" ? (
+                    <StudyPacksView projectId={projectId} goalId={goalId} />
                   ) : null}
                 </div>
               ) : null

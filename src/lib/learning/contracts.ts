@@ -94,6 +94,7 @@ export interface LearningModelGateway {
   generateKnowledgeMap(input: unknown): Promise<unknown>;
   generatePracticeItems(input: unknown): Promise<unknown>;
   evaluateAttempt(input: unknown): Promise<unknown>;
+  generateStudyPackSection(input: unknown): Promise<unknown>;
 }
 
 export const systemLearningClock: LearningClock = {

@@ -30,6 +30,7 @@ export function createFixtureLearningModel(
     knowledgeMap?: unknown;
     practiceItems?: unknown;
     evaluation?: unknown;
+    studyPackSection?: unknown;
   } = {}
 ): LearningModelGateway {
   return {
@@ -48,6 +49,13 @@ export function createFixtureLearningModel(
           confidence: 0,
           errorType: null,
           reason: "No fixture evaluation was configured.",
+        }
+      );
+    },
+    async generateStudyPackSection() {
+      return (
+        responses.studyPackSection ?? {
+          content: "# 复习章节\n\n## 核心要点\n- 示例要点",
         }
       );
     },

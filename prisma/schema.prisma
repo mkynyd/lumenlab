@@ -50,6 +50,7 @@ model User {
   knowledgeProgress    KnowledgePointProgress[]
   goalRevisions        LearningGoalRevision[]
   profileResets        LearningProfileReset[]
+  studyPacks           StudyPack[]
   credentialProfile    CredentialProfile?           @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption           RegistrationRedemption?
   profilePrompt        String?
@@ -350,6 +351,7 @@ model Artifact {
   conversation Conversation?       @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   message      Message?            @relation(fields: [messageId], references: [id], onDelete: SetNull)
   references   ReferenceListItem[]
+  studyPacks   StudyPack[]
 
   @@index([userId])
   @@index([projectId])
@@ -793,6 +795,20 @@ enum PracticeInteractionType {
   answer_revealed
 }
 
+enum StudyPackOutlineStatus {
+  draft
+  confirmed
+}
+
+enum StudyPackSectionStatus {
+  draft
+  queued
+  generating
+  ready
+  failed
+  stale
+}
+
 model LearningGoal {
   id             String             @id @default(cuid())
   userId         String
@@ -817,6 +833,7 @@ model LearningGoal {
   progress      KnowledgePointProgress[]
   revisions     LearningGoalRevision[]
   profileResets LearningProfileReset[]
+  studyPacks    StudyPack[]
 
   @@unique([userId, idempotencyKey])
   @@index([projectId, status])
@@ -1190,6 +1207,54 @@ model LearningProfileReset {
   @@unique([userId, idempotencyKey])
   @@index([userId, goalId, createdAt])
   @@index([userId, lineageId, createdAt])
+}
+
+model StudyPack {
+  id                  String                 @id @default(cuid())
+  userId              String
+  goalId              String
+  title               String
+  outline             Json
+  outlineStatus       StudyPackOutlineStatus @default(draft)
+  sourceFingerprint   String
+  publishedArtifactId String?
+  idempotencyKey      String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal              LearningGoal       @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  sections          StudyPackSection[]
+  publishedArtifact Artifact?          @relation(fields: [publishedArtifactId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, idempotencyKey])
+  @@index([goalId, createdAt])
+  @@index([userId, outlineStatus])
+}
+
+model StudyPackSection {
+  id                 String                 @id @default(cuid())
+  packId             String
+  key                String
+  orderIndex         Int
+  title              String
+  description        String?
+  status             StudyPackSectionStatus @default(draft)
+  content            String?
+  userEditedContent  String?
+  userEditedAt       DateTime?
+  sourceFingerprint  String?
+  generationMetadata Json?
+  failureReason      String?
+  agentExecutionId   String?                @unique
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  pack StudyPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@unique([packId, orderIndex])
+  @@unique([packId, key])
+  @@index([packId, status])
 }
 
 model UserToolPreference {

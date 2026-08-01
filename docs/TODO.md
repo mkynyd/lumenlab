@@ -32,6 +32,14 @@ This document tracks the completed Agent Runtime consolidation plus deferred Ski
 - Added a first-class「档案」tab with readable evidence, source locations and six learner-facing error categories; internal reason codes, answer criteria, rubric and generation metadata are not rendered.
 - The frozen P1 execution contract and remaining P1-B–P1-E waves are tracked in `docs/learning-p1-iteration-plan.md`; ADR 0007 defines profile projection and reset boundaries.
 
+## Completed Learning P1-D — Study Packs
+
+- Added `StudyPack` / `StudyPackSection` models with the `draft/queued/generating/ready/failed/stale` state machine, user-edit versions, source fingerprints and an optional `agentExecutionId`; migration `20260801110000_study_packs`.
+- Added the frozen route contract: pack list/create (outline derived from the latest Knowledge Map), outline PATCH (structure free while draft, locked once confirmed), generate (rejects unconfirmed outlines, skips ready or user-edited sections, retries failed ones), section GET/PATCH (user edits take precedence), single-section regenerate (never overwrites user edits) and publish (assembles a `review_outline` Artifact, idempotent on repeat).
+- Section generation reuses `LearningModelGateway.generateStudyPackSection` (DeepSeek structured JSON, per-section Markdown); interrupted runs resume by re-running generate, which skips ready sections and retries failed ones.
+- Added the「资料包」tab to the learning workspace: list/create, outline editor with confirm, per-section status and failure reasons, content view/edit, single-section redo and publish entry with an artifact link.
+- The frozen contract and remaining P1-C/P1-E waves are tracked in `docs/learning-p1-iteration-plan.md`.
+
 ## Completed Learning P1-B — Verdict Corrections, Goal Revisions and Profile Resets
 
 - Added `AttemptEvaluation.idempotencyKey` (unique per attempt), `LearningGoalRevision` snapshots and `LearningProfileReset` events with user/goal/point scopes; migration `20260801090000_learning_p1b_profile_resets`.

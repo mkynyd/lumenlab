@@ -73,6 +73,19 @@ vi.mock("@/lib/hooks/use-learning-history", () => ({
     useCorrectLearningErrorType(...args),
 }));
 
+const useStudyPacks = vi.fn();
+
+vi.mock("@/lib/hooks/use-learning-study-packs", () => ({
+  useStudyPacks: (...args: unknown[]) => useStudyPacks(...args),
+  useCreateStudyPack: () => mutationResult(),
+  useStudyPack: () => ({ data: undefined, isPending: false }),
+  useUpdateStudyPackOutline: () => mutationResult(),
+  useGenerateStudyPack: () => mutationResult(),
+  useSaveStudyPackSection: () => mutationResult(),
+  useRegenerateStudyPackSection: () => mutationResult(),
+  usePublishStudyPack: () => mutationResult(),
+}));
+
 vi.mock("@/lib/hooks/use-project-files", () => ({
   useProjectFiles: () => ({ data: [], isLoading: false }),
 }));
@@ -109,6 +122,7 @@ function setupReadyState() {
   useLearningProgress.mockReturnValue(queryResult(fixtureProgressResponse));
   useWrongAnswers.mockReturnValue(queryResult(fixtureWrongAnswerList.items));
   useReviewQueue.mockReturnValue(queryResult(fixtureReviewList.reviews));
+  useStudyPacks.mockReturnValue(queryResult([]));
   useLearningSession.mockReturnValue(queryResult(undefined));
   useLearningHistory.mockReturnValue(
     queryResult({
@@ -339,7 +353,7 @@ describe("LearningPageClient", () => {
     expect(progressTab).toHaveAttribute("tabindex", "-1");
 
     await user.keyboard("{End}");
-    expect(screen.getByRole("tab", { name: "复习" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "资料包" })).toHaveAttribute(
       "aria-selected",
       "true"
     );

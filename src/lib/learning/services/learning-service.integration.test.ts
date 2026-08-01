@@ -38,6 +38,9 @@ const unusedModelGateway: LearningModelGateway = {
   evaluateAttempt: async () => {
     throw new Error("not used");
   },
+  generateStudyPackSection: async () => {
+    throw new Error("not used");
+  },
 };
 
 async function createFixture() {
@@ -240,6 +243,9 @@ describe("LearningService goal and scope seam", () => {
         };
       },
       async evaluateAttempt() {
+        throw new Error("not used");
+      },
+      async generateStudyPackSection() {
         throw new Error("not used");
       },
     };
@@ -1930,6 +1936,355 @@ describe("P1-B regrades, goal revisions, and profile resets", () => {
             reason: "越权重置",
             idempotencyKey: "p1b-reset-stranger",
           },
+        })
+      ).rejects.toMatchObject({ code: "not_found", status: 404 });
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+});
+
+describe("P1-D study packs", () => {
+  async function setupStudyPackScenario() {
+    const { owner, stranger, project } = await createFixture();
+    const now = new Date("2026-08-01T08:00:00.000Z");
+    const clock: LearningClock = { now: () => now };
+    const sectionCalls: Array<{ title: string; key: string }> = [];
+    const modelGateway: LearningModelGateway = {
+      generateKnowledgeMap: async () => {
+        throw new Error("not used");
+      },
+      generatePracticeItems: async () => {
+        throw new Error("not used");
+      },
+      evaluateAttempt: async () => {
+        throw new Error("not used");
+      },
+      async generateStudyPackSection(input) {
+        const typed = input as {
+          section: { title: string; key: string };
+        };
+        sectionCalls.push(typed.section);
+        return {
+          content: `# ${typed.section.title}\n\n## 核心要点\n- 依据资料生成的要点`,
+        };
+      },
+    };
+    const service = createLearningService({
+      prisma,
+      clock,
+      ids: createIds(),
+      modelGateway,
+    });
+    const suffix = randomUUID();
+    const goal = await prisma.learningGoal.create({
+      data: {
+        userId: owner.id,
+        projectId: project.id,
+        title: "电路基础",
+      },
+    });
+    const scope = await prisma.learningScope.create({
+      data: {
+        goalId: goal.id,
+        version: 1,
+        status: "confirmed",
+        definition: { objective: "复习" },
+        materialMode: "project_corpus",
+        confirmedAt: now,
+      },
+    });
+    const map = await prisma.knowledgeMap.create({
+      data: {
+        goalId: goal.id,
+        scopeId: scope.id,
+        version: 1,
+        sourceFingerprint: "sha256:study-pack-map",
+      },
+    });
+    const file = await prisma.fileAsset.create({
+      data: {
+        userId: owner.id,
+        projectId: project.id,
+        filename: "sp.md",
+        originalName: "电路讲义.md",
+        mimeType: "text/markdown",
+        size: 32,
+        storagePath: "integration/sp.md",
+        textContent: "基尔霍夫电流定律：流入节点的电流等于流出节点的电流。",
+        contentFingerprint: "sha256:sp-v1",
+        status: "parsed",
+      },
+    });
+    const anchor = await prisma.sourceAnchor.create({
+      data: {
+        projectId: project.id,
+        anchorKey: `sp-anchor-${suffix}`,
+        fileAssetId: file.id,
+        originalFileAssetId: file.id,
+        sourceFileName: file.originalName,
+        locator: { kind: "file" },
+        contentFingerprint: file.contentFingerprint!,
+        excerptHash: "sha256:sp-excerpt",
+      },
+    });
+    const pointLineage = await prisma.knowledgePointLineage.create({
+      data: { goalId: goal.id, stableKey: `kcl-${suffix}` },
+    });
+    await prisma.knowledgePoint.create({
+      data: {
+        knowledgeMapId: map.id,
+        lineageId: pointLineage.id,
+        name: "节点电流定律",
+        kind: "concept",
+        orderIndex: 0,
+        sourceLinks: { create: { sourceAnchorId: anchor.id } },
+      },
+    });
+    return {
+      owner,
+      stranger,
+      project,
+      service,
+      goal,
+      map,
+      getSectionCalls: () => sectionCalls,
+    };
+  }
+
+  it("creates a draft from the map, updates and confirms the outline, then generates per section", async () => {
+    const { owner, project, service, goal, map, getSectionCalls } =
+      await setupStudyPackScenario();
+    try {
+      const created = await service.createStudyPackDraft({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: { idempotencyKey: "sp-create-1" },
+      });
+      expect(created.pack).toMatchObject({
+        outlineStatus: "draft",
+        sourceFingerprint: map.sourceFingerprint,
+      });
+      expect(created.pack.outline).toHaveLength(1);
+      expect(created.pack.outline[0]).toMatchObject({
+        title: "节点电流定律",
+        description: null,
+      });
+      expect(created.pack.outline[0].key).toMatch(/^kcl-/);
+      expect(created.pack.sections).toHaveLength(1);
+      expect(created.pack.sections[0].status).toBe("draft");
+
+      // 未确认大纲不能生成。
+      await expect(
+        service.generateStudyPack({
+          userId: owner.id,
+          projectId: project.id,
+          packId: created.pack.id,
+          input: { idempotencyKey: "sp-gen-1" },
+        })
+      ).rejects.toMatchObject({ code: "invalid_state", status: 409 });
+
+      const updated = await service.updateStudyPackOutline({
+        userId: owner.id,
+        projectId: project.id,
+        packId: created.pack.id,
+        input: {
+          outline: [
+            {
+              key: created.pack.sections[0].key,
+              title: "节点电流定律（复习）",
+              description: "重点复习",
+            },
+          ],
+          status: "confirmed",
+        },
+      });
+      expect(updated.pack.outlineStatus).toBe("confirmed");
+      expect(updated.pack.sections[0].title).toBe("节点电流定律（复习）");
+
+      // 确认后大纲结构锁定。
+      await expect(
+        service.updateStudyPackOutline({
+          userId: owner.id,
+          projectId: project.id,
+          packId: created.pack.id,
+          input: { outline: updated.pack.outline },
+        })
+      ).rejects.toMatchObject({ code: "invalid_state", status: 409 });
+
+      const generated = await service.generateStudyPack({
+        userId: owner.id,
+        projectId: project.id,
+        packId: created.pack.id,
+        input: { idempotencyKey: "sp-gen-2" },
+      });
+      expect(generated.generated).toBe(1);
+      expect(generated.pack.sections[0].status).toBe("ready");
+      expect(generated.pack.sections[0].content).toContain("核心要点");
+      expect(getSectionCalls()).toHaveLength(1);
+      expect(getSectionCalls()[0].title).toBe("节点电流定律（复习）");
+
+      // 再次生成是恢复操作：ready 节跳过。
+      const resumed = await service.generateStudyPack({
+        userId: owner.id,
+        projectId: project.id,
+        packId: created.pack.id,
+        input: { idempotencyKey: "sp-gen-3" },
+      });
+      expect(resumed.generated).toBe(0);
+      expect(resumed.skipped).toBe(1);
+      expect(getSectionCalls()).toHaveLength(1);
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("keeps failed sections isolated, retries only the failed section, and preserves user edits", async () => {
+    const { owner, project, service, goal, getSectionCalls } =
+      await setupStudyPackScenario();
+    try {
+      const created = await service.createStudyPackDraft({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: { idempotencyKey: "sp-create-2" },
+      });
+      // 让第一节首次生成失败。
+      const packWithFailure = await prisma.studyPackSection.update({
+        where: { id: created.pack.sections[0].id },
+        data: { status: "failed", failureReason: "模拟失败" },
+      });
+      expect(packWithFailure.status).toBe("failed");
+
+      await service.updateStudyPackOutline({
+        userId: owner.id,
+        projectId: project.id,
+        packId: created.pack.id,
+        input: {
+          outline: created.pack.outline,
+          status: "confirmed",
+        },
+      });
+
+      const regenerated = await service.regenerateStudyPackSection({
+        userId: owner.id,
+        projectId: project.id,
+        packId: created.pack.id,
+        sectionId: created.pack.sections[0].id,
+        input: { idempotencyKey: "sp-regen-1" },
+      });
+      expect(regenerated.section.status).toBe("ready");
+      expect(regenerated.section.failureReason).toBeNull();
+
+      // 用户编辑优先于服务端内容，且不覆盖服务端版本。
+      const edited = await service.saveStudyPackSection({
+        userId: owner.id,
+        projectId: project.id,
+        packId: created.pack.id,
+        sectionId: created.pack.sections[0].id,
+        input: { content: "用户手写要点" },
+      });
+      expect(edited.section.userEdited).toBe(true);
+      expect(edited.section.content).toBe("用户手写要点");
+
+      const packDetail = await service.getStudyPack({
+        userId: owner.id,
+        projectId: project.id,
+        packId: created.pack.id,
+      });
+      expect(packDetail.pack.sections[0].content).toBe("用户手写要点");
+
+      // 重做单节：服务端版本更新，用户编辑版本保留。
+      const redone = await service.regenerateStudyPackSection({
+        userId: owner.id,
+        projectId: project.id,
+        packId: created.pack.id,
+        sectionId: created.pack.sections[0].id,
+        input: { idempotencyKey: "sp-regen-2" },
+      });
+      expect(redone.section.userEdited).toBe(true);
+      expect(redone.section.content).toBe("用户手写要点");
+      expect(getSectionCalls()).toHaveLength(2);
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("publishes a study pack as an artifact idempotently and rejects cross-tenant access", async () => {
+    const { owner, stranger, project, service, goal } =
+      await setupStudyPackScenario();
+    try {
+      const created = await service.createStudyPackDraft({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: { idempotencyKey: "sp-create-3" },
+      });
+      const packId = created.pack.id;
+
+      // 没有内容不能发布。
+      await expect(
+        service.publishStudyPack({
+          userId: owner.id,
+          projectId: project.id,
+          packId,
+          input: { idempotencyKey: "sp-publish-1" },
+        })
+      ).rejects.toMatchObject({ code: "invalid_state", status: 409 });
+
+      await service.updateStudyPackOutline({
+        userId: owner.id,
+        projectId: project.id,
+        packId,
+        input: {
+          outline: created.pack.outline,
+          status: "confirmed",
+        },
+      });
+      await service.generateStudyPack({
+        userId: owner.id,
+        projectId: project.id,
+        packId,
+        input: { idempotencyKey: "sp-gen-4" },
+      });
+
+      const published = await service.publishStudyPack({
+        userId: owner.id,
+        projectId: project.id,
+        packId,
+        input: { idempotencyKey: "sp-publish-2" },
+      });
+      expect(published.artifact.id).toBeTruthy();
+      expect(published.pack.publishedArtifactId).toBe(published.artifact.id);
+      const artifact = await prisma.artifact.findUnique({
+        where: { id: published.artifact.id },
+      });
+      expect(artifact?.type).toBe("review_outline");
+      expect(artifact?.content).toContain("核心要点");
+
+      // 已发布再发布：返回同一成果（幂等）。
+      const republished = await service.publishStudyPack({
+        userId: owner.id,
+        projectId: project.id,
+        packId,
+        input: { idempotencyKey: "sp-publish-3" },
+      });
+      expect(republished.artifact.id).toBe(published.artifact.id);
+
+      await expect(
+        service.getStudyPack({
+          userId: stranger.id,
+          projectId: project.id,
+          packId,
+        })
+      ).rejects.toMatchObject({ code: "not_found", status: 404 });
+      await expect(
+        service.generateStudyPack({
+          userId: stranger.id,
+          projectId: project.id,
+          packId,
+          input: { idempotencyKey: "sp-gen-stranger" },
         })
       ).rejects.toMatchObject({ code: "not_found", status: 404 });
     } finally {

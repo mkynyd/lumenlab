@@ -25,6 +25,9 @@ import type {
   LearningRegradeDto,
   LearningScopeDto,
   LearningSessionDto,
+  StudyPackDto,
+  StudyPackOutlineItemDto,
+  StudyPackSectionDto,
 } from "@/lib/learning/services/learning-service";
 
 export type {
@@ -49,6 +52,9 @@ export type {
   PracticeItemOptionDto,
   PracticeItemPublicDto,
   ReviewState,
+  StudyPackDto,
+  StudyPackOutlineItemDto,
+  StudyPackSectionDto,
 };
 
 export interface ConversationSummary {
