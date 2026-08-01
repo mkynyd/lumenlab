@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
@@ -67,7 +68,9 @@ export function GoalCreateForm({
     const variables = {
       title: trimmedTitle,
       purpose: purpose.trim() ? purpose.trim() : null,
-      targetDate: targetDate || null,
+      targetDate: targetDate
+        ? format(new Date(`${targetDate}T00:00:00`), "yyyy-MM-dd'T'HH:mm:ssXXX")
+        : null,
       dailyMinutes:
         parsedMinutes !== null && Number.isFinite(parsedMinutes)
           ? parsedMinutes

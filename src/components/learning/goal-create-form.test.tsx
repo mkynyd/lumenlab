@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { format } from "date-fns";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/client";
 import { GoalCreateForm } from "@/components/learning/goal-create-form";
@@ -49,9 +50,14 @@ describe("GoalCreateForm", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
     const variables = mutate.mock.calls[0][0] as Record<string, unknown>;
     const now = new Date();
-    const expectedTargetDate = `${now.getFullYear()}-${String(
-      now.getMonth() + 1
-    ).padStart(2, "0")}-14`;
+    const selectedDate = new Date(
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-14T00:00:00`
+    );
+    // 表单以本地时区偏移的 ISO datetime 提交（服务端 schema 要求 offset）。
+    const expectedTargetDate = format(
+      selectedDate,
+      "yyyy-MM-dd'T'HH:mm:ssXXX"
+    );
     expect(variables).toEqual({
       title: "数据结构期末冲刺",
       purpose: "两周后考试",
