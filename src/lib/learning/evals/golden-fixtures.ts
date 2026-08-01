@@ -190,4 +190,74 @@ export const LEARNING_GOLDEN_CASES: readonly LearningGoldenEvalCase[] =
         reason: "rubric_requires_feedback",
       },
     },
+    {
+      id: "regrade-supersession-keeps-a-single-active-evaluation",
+      kind: "progress",
+      input: {
+        attempts: [
+          {
+            id: "a1",
+            mode: "evidence_bearing",
+            assistanceLevel: "independent",
+            spacingSeconds: 60,
+            submittedAt: new Date(origin.getTime() + 1_000),
+          },
+        ],
+        evaluations: [
+          {
+            ...correctEvaluation("e1", "a1"),
+            verdict: "incorrect",
+            score: 0,
+            errorType: "misconception",
+          },
+          {
+            ...correctEvaluation("e2", "a1"),
+            supersedesEvaluationId: "e1",
+          },
+        ],
+      },
+      expected: {
+        masteryState: "learning",
+        consideredAttemptIds: ["a1"],
+        activeEvaluationIds: ["e2"],
+        excludedAttempts: [],
+      },
+    },
+    {
+      id: "regrade-fork-fails-closed",
+      kind: "progress",
+      input: {
+        attempts: [
+          {
+            id: "a1",
+            mode: "evidence_bearing",
+            assistanceLevel: "independent",
+            spacingSeconds: 60,
+            submittedAt: new Date(origin.getTime() + 1_000),
+          },
+        ],
+        evaluations: [
+          {
+            ...correctEvaluation("e1", "a1"),
+            verdict: "incorrect",
+            score: 0,
+            errorType: "misconception",
+          },
+          {
+            ...correctEvaluation("e2", "a1"),
+            supersedesEvaluationId: "e1",
+          },
+          {
+            ...correctEvaluation("e3", "a1"),
+            supersedesEvaluationId: "e1",
+          },
+        ],
+      },
+      expected: {
+        masteryState: "new",
+        consideredAttemptIds: [],
+        activeEvaluationIds: [],
+        excludedAttempts: [{ attemptId: "a1", reason: "evaluation_fork" }],
+      },
+    },
   ] satisfies LearningGoldenEvalCase[]);

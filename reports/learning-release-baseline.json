@@ -1,0 +1,189 @@
+{
+  "manifest": {
+    "runner": "learning-release-gates",
+    "version": "1",
+    "ranAt": "2026-08-01T06:19:14.574Z",
+    "environment": "local",
+    "model": "deterministic",
+    "anonymized": true,
+    "commitSha": "4d3648ee1b58cb96f3ef3218a56faf78c0289456"
+  },
+  "summary": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0
+  },
+  "byGate": {
+    "answer_leakage": {
+      "total": 3,
+      "passed": 3
+    },
+    "authorization": {
+      "total": 3,
+      "passed": 3
+    },
+    "source_integrity": {
+      "total": 4,
+      "passed": 4
+    },
+    "projection": {
+      "total": 1,
+      "passed": 1
+    },
+    "idempotency": {
+      "total": 4,
+      "passed": 4
+    }
+  },
+  "byItemType": {
+    "numeric": {
+      "total": 3,
+      "passed": 3
+    },
+    "single_choice": {
+      "total": 1,
+      "passed": 1
+    },
+    "attempt": {
+      "total": 3,
+      "passed": 3
+    },
+    "goal": {
+      "total": 3,
+      "passed": 3
+    },
+    "knowledge_map": {
+      "total": 4,
+      "passed": 4
+    },
+    "policy": {
+      "total": 1,
+      "passed": 1
+    }
+  },
+  "byFailureStage": {
+    "dto": {
+      "total": 2,
+      "passed": 2
+    },
+    "contract": {
+      "total": 5,
+      "passed": 5
+    },
+    "validation": {
+      "total": 7,
+      "passed": 7
+    },
+    "projection": {
+      "total": 1,
+      "passed": 1
+    }
+  },
+  "results": [
+    {
+      "id": "leakage-public-dto-hides-private-fields",
+      "gate": "answer_leakage",
+      "failureStage": "dto",
+      "itemType": "numeric",
+      "passed": true
+    },
+    {
+      "id": "leakage-feedback-reveals-only-explanation",
+      "gate": "answer_leakage",
+      "failureStage": "dto",
+      "itemType": "numeric",
+      "passed": true
+    },
+    {
+      "id": "leakage-model-output-rejects-unknown-fields",
+      "gate": "answer_leakage",
+      "failureStage": "contract",
+      "itemType": "single_choice",
+      "passed": true
+    },
+    {
+      "id": "auth-attempt-submission-rejects-server-owned-fields",
+      "gate": "authorization",
+      "failureStage": "validation",
+      "itemType": "numeric",
+      "passed": true
+    },
+    {
+      "id": "auth-regrade-rejects-injected-ownership",
+      "gate": "authorization",
+      "failureStage": "validation",
+      "itemType": "attempt",
+      "passed": true
+    },
+    {
+      "id": "auth-profile-reset-scope-is-strict",
+      "gate": "authorization",
+      "failureStage": "validation",
+      "itemType": "goal",
+      "passed": true
+    },
+    {
+      "id": "source-locator-v2-accepts-precise-positions",
+      "gate": "source_integrity",
+      "failureStage": "contract",
+      "itemType": "knowledge_map",
+      "passed": true
+    },
+    {
+      "id": "source-fingerprint-is-deterministic-and-prefixed",
+      "gate": "source_integrity",
+      "failureStage": "contract",
+      "itemType": "knowledge_map",
+      "passed": true
+    },
+    {
+      "id": "source-model-cannot-forge-fingerprints-or-hashes",
+      "gate": "source_integrity",
+      "failureStage": "contract",
+      "itemType": "knowledge_map",
+      "passed": true
+    },
+    {
+      "id": "source-anchor-snapshot-accepts-block-locators",
+      "gate": "source_integrity",
+      "failureStage": "contract",
+      "itemType": "knowledge_map",
+      "passed": true
+    },
+    {
+      "id": "projection-golden-policy-baseline",
+      "gate": "projection",
+      "failureStage": "projection",
+      "itemType": "policy",
+      "passed": true
+    },
+    {
+      "id": "idempotency-attempt-submission-requires-key",
+      "gate": "idempotency",
+      "failureStage": "validation",
+      "itemType": "attempt",
+      "passed": true
+    },
+    {
+      "id": "idempotency-regrade-requires-key",
+      "gate": "idempotency",
+      "failureStage": "validation",
+      "itemType": "attempt",
+      "passed": true
+    },
+    {
+      "id": "idempotency-profile-reset-requires-key",
+      "gate": "idempotency",
+      "failureStage": "validation",
+      "itemType": "goal",
+      "passed": true
+    },
+    {
+      "id": "idempotency-goal-revision-requires-key",
+      "gate": "idempotency",
+      "failureStage": "validation",
+      "itemType": "goal",
+      "passed": true
+    }
+  ]
+}
