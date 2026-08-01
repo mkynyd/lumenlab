@@ -7,6 +7,10 @@ export interface ChunkCandidate {
   metadata?: {
     sourceType?: string;
     blockId?: string;
+    /** Stable within one parse result: sha256(blockId:index:content). */
+    blockKey?: string;
+    /** Chunk-content fingerprint for cross-rebuild comparison. */
+    contentFingerprint?: string;
     assetId?: string;
     pageNumber?: number;
     slideNumber?: number;
@@ -14,6 +18,22 @@ export interface ChunkCandidate {
     warnings?: string[];
   };
   mediaUrls: string[];
+}
+
+function blockKeyFor(blockId: string, index: number, content: string): string {
+  return crypto
+    .createHash("sha256")
+    .update(`${blockId}:${index}:${content}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+function chunkFingerprint(content: string): string {
+  return crypto
+    .createHash("sha256")
+    .update(content)
+    .digest("hex")
+    .slice(0, 32);
 }
 
 export function buildChunksFromBlocks(
@@ -35,19 +55,23 @@ export function buildChunksFromBlocks(
             : block.type === "code"
               ? [`\`\`\`${block.language || ""}`, block.content, "```"].join("\n")
               : block.content;
-        splitText(text, maxChunkChars, overlapChars).forEach((content) => {
-          chunks.push({
-            id: crypto.randomUUID(),
-            content,
-            metadata: {
-              sourceType: block.type,
-              blockId: block.id,
-              pageNumber: block.pageNumber,
-              slideNumber: block.slideNumber,
-            },
-            mediaUrls: [],
-          });
-        });
+        splitText(text, maxChunkChars, overlapChars).forEach(
+          (content, index) => {
+            chunks.push({
+              id: crypto.randomUUID(),
+              content,
+              metadata: {
+                sourceType: block.type,
+                blockId: block.id,
+                blockKey: blockKeyFor(block.id, index, content),
+                contentFingerprint: chunkFingerprint(content),
+                pageNumber: block.pageNumber,
+                slideNumber: block.slideNumber,
+              },
+              mediaUrls: [],
+            });
+          }
+        );
         break;
       }
       case "table":
@@ -57,6 +81,8 @@ export function buildChunksFromBlocks(
           metadata: {
             sourceType: "table",
             blockId: block.id,
+            blockKey: blockKeyFor(block.id, 0, block.markdown),
+            contentFingerprint: chunkFingerprint(block.markdown),
             pageNumber: block.pageNumber,
             slideNumber: block.slideNumber,
           },
@@ -70,6 +96,8 @@ export function buildChunksFromBlocks(
           metadata: {
             sourceType: "formula",
             blockId: block.id,
+            blockKey: blockKeyFor(block.id, 0, `$$${block.content}$$`),
+            contentFingerprint: chunkFingerprint(`$$${block.content}$$`),
             pageNumber: block.pageNumber,
             slideNumber: block.slideNumber,
           },
@@ -105,6 +133,8 @@ function imageBlockChunks(
       metadata: {
         sourceType: "image_summary",
         blockId: block.id,
+        blockKey: blockKeyFor(block.id, 0, block.visionSummary),
+        contentFingerprint: chunkFingerprint(block.visionSummary),
         assetId: block.assetId,
         pageNumber: block.pageNumber,
         slideNumber: block.slideNumber,
@@ -122,6 +152,8 @@ function imageBlockChunks(
       metadata: {
         sourceType: "image_ocr",
         blockId: block.id,
+        blockKey: blockKeyFor(block.id, 0, block.visionText),
+        contentFingerprint: chunkFingerprint(block.visionText),
         assetId: block.assetId,
         pageNumber: block.pageNumber,
         slideNumber: block.slideNumber,
@@ -137,12 +169,15 @@ function imageBlockChunks(
   }
 
   // Fallback for unanalyzed images: index alt/path so the image itself is retrievable.
+  const fallbackContent = block.altText || `图片：${block.relativePath}`;
   result.push({
     id: crypto.randomUUID(),
-    content: block.altText || `图片：${block.relativePath}`,
+    content: fallbackContent,
     metadata: {
       sourceType: "image_fallback",
       blockId: block.id,
+      blockKey: blockKeyFor(block.id, 0, fallbackContent),
+      contentFingerprint: chunkFingerprint(fallbackContent),
       assetId: block.assetId,
       pageNumber: block.pageNumber,
       slideNumber: block.slideNumber,

@@ -49,6 +49,24 @@ describe("buildChunksFromBlocks", () => {
     expect(codeChunk?.content).toContain("```ts");
   });
 
+  it("derives a stable blockKey and content fingerprint per chunk", () => {
+    const blocks: DocumentBlock[] = [
+      { type: "text", id: "stable-1", content: "Hello world. This is a test." },
+    ];
+    const first = buildChunksFromBlocks(blocks, new Map());
+    const second = buildChunksFromBlocks(blocks, new Map());
+    expect(first.length).toBe(second.length);
+    for (let i = 0; i < first.length; i += 1) {
+      expect(first[i].id).not.toBe(second[i].id);
+      expect(first[i].metadata?.blockKey).toBeDefined();
+      expect(first[i].metadata?.blockKey).toBe(second[i].metadata?.blockKey);
+      expect(first[i].metadata?.contentFingerprint).toBe(
+        second[i].metadata?.contentFingerprint
+      );
+      expect(first[i].metadata?.contentFingerprint?.length).toBe(32);
+    }
+  });
+
   it("produces a single chunk for table and formula blocks", () => {
     const blocks: DocumentBlock[] = [
       {

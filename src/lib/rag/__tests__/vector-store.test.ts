@@ -1,17 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createDocumentChunks } from "../vector-store";
 import { prisma } from "@/lib/db";
+import { invalidateSearchCache } from "@/lib/cache/rag-search-cache";
 import crypto from "crypto";
 import type { DocumentBlock } from "@/lib/document-pipeline/types";
 
-vi.mock("@/lib/db", () => ({
-  prisma: {
+vi.mock("@/lib/db", () => {
+  const prismaMock = {
     documentChunk: {
       deleteMany: vi.fn(),
       createMany: vi.fn(),
     },
-  },
-}));
+    $transaction: vi.fn(async (callback: unknown) =>
+      (callback as (tx: unknown) => Promise<unknown>)(prismaMock)
+    ),
+  };
+  return { prisma: prismaMock };
+});
 
 vi.mock("@/lib/cache/rag-search-cache", () => ({
   invalidateSearchCache: vi.fn(),
@@ -155,5 +160,40 @@ describe("createDocumentChunks", () => {
     });
     expect(count).toBe(0);
     expect(prisma.documentChunk.createMany).not.toHaveBeenCalled();
+  });
+
+  it("runs delete and create inside a transaction", async () => {
+    await createDocumentChunks({
+      fileAssetId: "f1",
+      projectId: "p1",
+      userId: "u1",
+      textContent: "transactional rebuild",
+      title: "doc",
+    });
+    expect(prisma.$transaction).toHaveBeenCalled();
+    const callback = vi.mocked(prisma.$transaction).mock.calls[0][0] as (
+      tx: unknown
+    ) => Promise<unknown>;
+    await callback(prisma);
+    expect(vi.mocked(prisma.documentChunk.deleteMany).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(prisma.documentChunk.createMany).mock.invocationCallOrder[0]
+    );
+  });
+
+  it("propagates rebuild failures and skips cache invalidation", async () => {
+    vi.mocked(prisma.documentChunk.createMany).mockRejectedValueOnce(
+      new Error("db down")
+    );
+    await expect(
+      createDocumentChunks({
+        fileAssetId: "f1",
+        projectId: "p1",
+        userId: "u1",
+        textContent: "rebuild will fail",
+        title: "doc",
+      })
+    ).rejects.toThrow("db down");
+    expect(prisma.documentChunk.deleteMany).toHaveBeenCalled();
+    expect(invalidateSearchCache).not.toHaveBeenCalled();
   });
 });

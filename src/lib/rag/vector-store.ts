@@ -372,10 +372,6 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
     assetResourceUrlMap,
   } = params;
 
-  await prisma.documentChunk.deleteMany({
-    where: { fileAssetId, userId },
-  });
-
   const contentHash = crypto
     .createHash("sha256")
     .update(textContent)
@@ -418,8 +414,17 @@ export async function createDocumentChunks(params: CreateChunksParams): Promise<
       : undefined,
   }));
 
-  await prisma.documentChunk.createMany({ data });
+  // Atomic rebuild (P1-C): delete + create inside one transaction so a failed
+  // rebuild leaves the previous chunk set intact instead of a half-written one.
+  await prisma.$transaction(async (tx) => {
+    await tx.documentChunk.deleteMany({
+      where: { fileAssetId, userId },
+    });
+    await tx.documentChunk.createMany({ data });
+  });
 
+  // Cache invalidation stays outside the transaction — it is a side effect on
+  // the in-memory search cache, not part of the chunk write.
   if (projectId) {
     await invalidateSearchCache(projectId);
   }
