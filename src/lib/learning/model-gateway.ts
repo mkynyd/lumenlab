@@ -143,6 +143,9 @@ export function createDeepSeekLearningModelGateway(
     const apiKey = await apiKeyFor(input.userId, getApiKey);
     const text = await createMessage(apiKey, {
       model: "deepseek-v4-flash",
+      // DeepSeek 默认思考会消耗大部分输出 token，导致 JSON 被 max_tokens
+      // 截断而无法解析；结构化生成必须禁用思考保证输出完整。
+      thinking: { type: "disabled" },
       system,
       prompt: modelPayload(input),
       maxTokens,
@@ -163,6 +166,7 @@ export function createDeepSeekLearningModelGateway(
       const apiKey = await apiKeyFor(input.userId, getApiKey);
       const text = await createMessage(apiKey, {
         model: "deepseek-v4-flash",
+        thinking: { type: "disabled" },
         system: EVALUATION_SYSTEM_PROMPT,
         prompt: modelPayload(input),
         maxTokens: 2_048,

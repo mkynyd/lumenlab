@@ -131,6 +131,7 @@ export async function createTextMessage(
     prompt: string;
     maxTokens?: number;
     temperature?: number;
+    thinking?: Anthropic.Messages.ThinkingConfigParam;
   }
 ): Promise<string> {
   try {
@@ -138,6 +139,7 @@ export async function createTextMessage(
       model: mapDeepSeekModel(options.model || "deepseek-v4-flash"),
       max_tokens: options.maxTokens || 4096,
       temperature: options.temperature ?? 0.3,
+      ...(options.thinking ? { thinking: options.thinking } : {}),
       system: options.system,
       messages: [{ role: "user", content: options.prompt }],
     });
