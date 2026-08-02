@@ -62,12 +62,20 @@ export class DocumentPipeline {
     const content = renderDocumentToMarkdown(parseResult.blocks);
     const completedAt = new Date().toISOString();
 
+    // 覆盖率分子是渲染文本的字符数，分母必须同单位：文本文件按 UTF-8
+    // 解码后的字符数计算，否则中文（每字 3 字节）的覆盖率会被低估约三倍，
+    // 无法达到 0.5 的门槛；二进制（PDF/图片）保持字节数作为启发式基准。
+    const originalSize =
+      parser instanceof TextLocalParser
+        ? input.data.toString("utf8").length
+        : input.data.length;
+
     const qualityReport = buildParseQualityReport({
       blocks: parseResult.blocks,
       assets: parseResult.assets,
       content,
       metadata: parseResult.metadata,
-      originalSize: input.data.length,
+      originalSize,
     });
 
     return {
