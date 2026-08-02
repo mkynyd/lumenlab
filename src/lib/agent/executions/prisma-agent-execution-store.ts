@@ -50,6 +50,19 @@ function failureCode(failure: Prisma.InputJsonValue | undefined): string | null 
   return null;
 }
 
+function failureMessage(failure: Prisma.InputJsonValue | undefined): string | null {
+  if (
+    failure &&
+    !Array.isArray(failure) &&
+    typeof failure === "object" &&
+    "message" in failure &&
+    typeof failure.message === "string"
+  ) {
+    return failure.message;
+  }
+  return null;
+}
+
 function isKnownPrismaError(
   error: unknown,
   code: string
@@ -632,11 +645,17 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
             }
           : {}),
       },
-      event: () => ({
-        key: "run_failed",
-        type: "run_failed",
-        payload: { failureCode: failureCode(input.failure) },
-      }),
+      event: () => {
+        const message = failureMessage(input.failure);
+        return {
+          key: "run_failed",
+          type: "run_failed",
+          payload: {
+            failureCode: failureCode(input.failure),
+            ...(message ? { message } : {}),
+          },
+        };
+      },
     });
   }
 

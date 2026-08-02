@@ -13,7 +13,9 @@ export function chromiumExecutablePath() {
   ];
   const executablePath = candidates.find(existsSync);
   if (!executablePath) {
-    throw new Error("未找到 Chromium，请配置 CHROMIUM_EXECUTABLE_PATH");
+    throw new Error(
+      `未找到 Chromium，请配置 CHROMIUM_EXECUTABLE_PATH。已尝试候选路径: ${candidates.join("、")}；CHROMIUM_EXECUTABLE_PATH=${process.env.CHROMIUM_EXECUTABLE_PATH || "未设置"}`
+    );
   }
   return executablePath;
 }

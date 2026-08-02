@@ -12,6 +12,7 @@ import {
   type LearningModelGateway,
 } from "@/lib/learning/contracts";
 import { PrismaClient } from "@/generated/prisma/client";
+import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
 import { createLearningService } from "@/lib/learning/services/learning-service";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -354,6 +355,172 @@ describe("LearningService goal and scope seam", () => {
       await prisma.user.deleteMany({
         where: { id: { in: [owner.id, stranger.id] } },
       });
+    }
+  });
+
+  it("generates maps from legacy files with a NULL contentFingerprint by computing the fingerprint on the fly", async () => {
+    const { owner, project } = await createFixture();
+    const file = await prisma.fileAsset.create({
+      data: {
+        userId: owner.id,
+        projectId: project.id,
+        filename: "legacy-circuit.md",
+        originalName: "考研数学目录.md",
+        mimeType: "text/markdown",
+        size: 64,
+        storagePath: "integration/legacy-circuit.md",
+        textContent:
+          "基尔霍夫电流定律：流入节点的电流等于流出节点的电流。",
+        // 升级前上传的存量文件：指纹列从未回填。
+        contentFingerprint: null,
+        status: "parsed",
+      },
+    });
+    let observedMapInput: unknown;
+    const modelGateway: LearningModelGateway = {
+      async generateKnowledgeMap(input) {
+        observedMapInput = input;
+        const source = (
+          input as { sources: Array<{ handle: string }> }
+        ).sources[0];
+        return {
+          points: [
+            {
+              stableKey: "kirchhoff-current-law",
+              name: "基尔霍夫电流定律",
+              kind: "concept",
+              order: 0,
+              predecessorStableKeys: [],
+              sourceHandles: [source.handle],
+            },
+          ],
+        };
+      },
+      async generatePracticeItems(input) {
+        const source = (
+          input as { sources: Array<{ handle: string }> }
+        ).sources[0];
+        return {
+          items: Array.from({ length: 5 }, (_, index) => ({
+            stableKey: `legacy-diagnostic-${index + 1}`,
+            prompt: `题目 ${index + 1}：节点电流是否守恒？`,
+            type: "true_false",
+            mode: "evidence_bearing",
+            answerCriteria: { kind: "boolean", expected: true },
+            explanation: "依据基尔霍夫电流定律。",
+            sourceHandles: [source.handle],
+            knowledgePointStableKeys: ["kirchhoff-current-law"],
+            predecessorStableKeys: [],
+          })),
+        };
+      },
+      async evaluateAttempt() {
+        throw new Error("not used");
+      },
+      async generateStudyPackSection() {
+        throw new Error("not used");
+      },
+    };
+    const service = createLearningService({
+      prisma,
+      clock,
+      ids: createIds(),
+      modelGateway,
+    });
+
+    try {
+      const goal = await service.createGoal({
+        userId: owner.id,
+        projectId: project.id,
+        input: {
+          title: "存量资料地图",
+          purpose: null,
+          targetDate: null,
+          dailyMinutes: 30,
+          activate: true,
+          idempotencyKey: "legacy-goal",
+        },
+      });
+      await service.saveScopeDraft({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          expectedVersion: 0,
+          definition: { objective: "存量资料地图" },
+          materialMode: "project_corpus",
+          fileIds: [],
+          materialGaps: [],
+          idempotencyKey: "legacy-scope",
+        },
+      });
+      await service.confirmScope({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: {
+          expectedVersion: 1,
+          idempotencyKey: "legacy-scope-confirm",
+        },
+      });
+
+      const expectedFingerprint = computeContentFingerprint(
+        file.textContent!
+      );
+      expect(expectedFingerprint).toMatch(/^sha256:v1:/);
+
+      // NULL 指纹的存量行不再 409：现算指纹进入 source、anchor。
+      const map = await service.generateMap({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: { idempotencyKey: "legacy-map-1" },
+      });
+      expect(map).toMatchObject({
+        version: 1,
+        points: [{ stableKey: "kirchhoff-current-law" }],
+      });
+      expect(observedMapInput).toMatchObject({
+        sources: [
+          {
+            fileAssetId: file.id,
+            title: "考研数学目录.md",
+            contentFingerprint: expectedFingerprint,
+          },
+        ],
+      });
+
+      // 惰性回填：列不再是 NULL。
+      const refreshed = await prisma.fileAsset.findUniqueOrThrow({
+        where: { id: file.id },
+      });
+      expect(refreshed.contentFingerprint).toBe(expectedFingerprint);
+
+      // 锚点持久化现算指纹，供下游一致性判定。
+      const anchor = await prisma.sourceAnchor.findFirstOrThrow({
+        where: { projectId: project.id, fileAssetId: file.id },
+      });
+      expect(anchor.contentFingerprint).toBe(expectedFingerprint);
+
+      // 下游判定统一走现算回退：学习资料包与诊断会话不再 409。
+      const pack = await service.createStudyPackDraft({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: { title: "电路复习包", idempotencyKey: "legacy-pack-1" },
+      });
+      expect(pack.pack.sections.length).toBeGreaterThan(0);
+
+      const session = await service.createDiagnosticSession({
+        userId: owner.id,
+        projectId: project.id,
+        goalId: goal.id,
+        input: { idempotencyKey: "legacy-diagnostic-1" },
+      });
+      expect(session.mode).toBe("diagnostic");
+      expect(session.items).toHaveLength(5);
+    } finally {
+      await prisma.user.delete({ where: { id: owner.id } });
     }
   });
 
@@ -1735,7 +1902,10 @@ describe("LearningService goal and scope seam", () => {
 describe("P1-B regrades, goal revisions, and profile resets", () => {
   async function setupP1bScenario() {
     const { owner, stranger, project } = await createFixture();
-    let now = new Date("2026-08-01T08:00:00.000Z");
+    // 时钟固定在远未来日期：regrade 等写入会用 clock.now() 落库，而 attempt
+    // 判定的 createdAt 走数据库默认 now()，若时钟日期落在真实时间之前，
+    // createdAt 排序会被颠倒（如 evaluations[0] 变成纠正记录）。
+    let now = new Date("2099-01-01T08:00:00.000Z");
     const clock: LearningClock = { now: () => now };
     const service = createLearningService({
       prisma,

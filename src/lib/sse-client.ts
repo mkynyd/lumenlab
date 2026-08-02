@@ -99,6 +99,7 @@ export async function readSSEStream(
           let payload: {
             status?: "failed" | "cancelled";
             failureCode?: string | null;
+            message?: string;
           } = {};
           try {
             payload = JSON.parse(data) as typeof payload;
@@ -107,7 +108,8 @@ export async function readSSEStream(
           }
           const status = payload.status ?? "failed";
           throw new SSEExecutionError(
-            status === "cancelled" ? "执行已取消" : "执行失败，请重试",
+            payload.message ??
+              (status === "cancelled" ? "执行已取消" : "执行失败，请重试"),
             status,
             payload.failureCode ?? null
           );

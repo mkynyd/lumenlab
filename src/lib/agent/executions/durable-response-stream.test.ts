@@ -61,12 +61,40 @@ describe("durable chat replay encoding", () => {
 
   it("surfaces a structured terminal error instead of a false DONE", () => {
     const encoded = encodeChatReplayEvent(
-      event(10, "run_failed", { failureCode: "provider_unavailable" })
+      event(10, "run_failed", {
+        failureCode: "provider_unavailable",
+        message: "服务暂时不可用，请稍后重试",
+      })
     );
 
     expect(encoded).toContain("event: execution_error\n");
     expect(encoded).toContain('"status":"failed"');
     expect(encoded).toContain('"failureCode":"provider_unavailable"');
+    expect(encoded).toContain('"message":"服务暂时不可用，请稍后重试"');
     expect(encoded).not.toContain("[DONE]");
+  });
+
+  it("propagates the run failure message when the event carries one", () => {
+    const encoded = encodeChatReplayEvent(
+      event(11, "run_failed", {
+        failureCode: "no_readable_files",
+        message: "当前项目没有可读取的已解析资料，请先上传资料并等待解析完成。",
+      })
+    );
+
+    expect(encoded).toContain('"failureCode":"no_readable_files"');
+    expect(encoded).toContain(
+      '"message":"当前项目没有可读取的已解析资料，请先上传资料并等待解析完成。"'
+    );
+  });
+
+  it("omits the message field when the run failure has none", () => {
+    const encoded = encodeChatReplayEvent(
+      event(12, "run_cancelled", { failureCode: "execution_cancelled" })
+    );
+
+    expect(encoded).toContain('"status":"cancelled"');
+    expect(encoded).toContain('"failureCode":"execution_cancelled"');
+    expect(encoded).not.toContain('"message"');
   });
 });

@@ -5,6 +5,7 @@ import type {
   AgentExecutionStore,
 } from "./agent-execution-store";
 import { AgentExecutionStoreError } from "./agent-execution-store";
+import { AgentRuntimeError } from "@/lib/agent/runtime";
 import type { AgentExecutionRetryPolicy } from "./retry-policy";
 
 type RunnerStore = Pick<
@@ -204,11 +205,25 @@ export class AgentExecutionRunner {
       if (error instanceof LeaseLostDuringRun || input.signal.aborted) {
         return { state: "lease_lost" };
       }
+      // Deterministic client errors (e.g. a quick task with no readable
+      // materials, missing API key, wrong project) will not fix themselves
+      // within the retry window, so fail fast instead of burning attempts.
+      // Provider-mapped 4xx/5xx and network failures stay retryable.
+      const providerStatusKeys = [
+        "piAiStatus",
+        "bailianStatus",
+        "deepseekStatus",
+        "minimaxStatus",
+      ];
+      const deterministicClientError =
+        error instanceof AgentRuntimeError &&
+        error.status < 500 &&
+        !providerStatusKeys.some((key) => key in error.details);
       result = {
         kind: "failed",
         code: "execution_error",
         message: error instanceof Error ? error.message : "Execution failed",
-        retryable: true,
+        retryable: !deterministicClientError,
       };
     }
 

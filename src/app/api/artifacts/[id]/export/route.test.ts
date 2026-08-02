@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getCachedExport: vi.fn(),
   setCachedExport: vi.fn(),
   recordExportCacheResult: vi.fn(),
+  loggerError: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -25,6 +26,9 @@ vi.mock("@/lib/export/browser-pdf", () => ({
 }));
 vi.mock("@/lib/export/pdf-validation", () => ({
   validatePdfExport: mocks.validatePdfExport,
+}));
+vi.mock("@/lib/logger", () => ({
+  logger: { error: mocks.loggerError },
 }));
 vi.mock("@/lib/cache/export-cache", () => ({
   buildExportCacheKey: () => "export-key",
@@ -83,5 +87,45 @@ describe("GET artifact export", () => {
     expect(Buffer.from(await response.arrayBuffer()).toString()).toBe("%PDF-cached");
     expect(mocks.renderArtifactPdf).not.toHaveBeenCalled();
     expect(mocks.validatePdfExport).not.toHaveBeenCalled();
+  });
+
+  it("passes markdown content through as the default format", async () => {
+    const response = await GET(
+      new Request("http://localhost:3000/api/artifacts/artifact-1/export"),
+      context
+    );
+
+    expect(Buffer.from(await response.arrayBuffer()).toString()).toBe("# 有内容的成果");
+    expect(response.headers.get("Content-Type")).toBe("text/markdown; charset=utf-8");
+    expect(mocks.markdownToDocx).not.toHaveBeenCalled();
+    expect(mocks.renderArtifactPdf).not.toHaveBeenCalled();
+  });
+
+  it("returns a friendly JSON 500 and logs context when generation throws", async () => {
+    mocks.renderArtifactPdf.mockRejectedValue(new Error("chromium not found"));
+
+    const response = await GET(
+      new Request("http://localhost:3000/api/artifacts/artifact-1/export?format=pdf"),
+      context
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "导出失败,请稍后重试" });
+    expect(mocks.loggerError).toHaveBeenCalledWith(
+      "导出失败",
+      expect.objectContaining({ format: "pdf", artifactId: "artifact-1" })
+    );
+  });
+
+  it("keeps 401 semantics outside the generic error handling", async () => {
+    mocks.auth.mockResolvedValue(null);
+
+    const response = await GET(
+      new Request("http://localhost:3000/api/artifacts/artifact-1/export?format=pdf"),
+      context
+    );
+
+    expect(response.status).toBe(401);
+    expect(mocks.loggerError).not.toHaveBeenCalled();
   });
 });

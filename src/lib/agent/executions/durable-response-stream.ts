@@ -102,6 +102,9 @@ export function encodeChatReplayEvent(event: DurableAgentEvent): string {
       `event: execution_error\ndata: ${JSON.stringify({
         status: event.type === "run_failed" ? "failed" : "cancelled",
         failureCode: payload.failureCode ?? null,
+        ...(typeof payload.message === "string"
+          ? { message: payload.message }
+          : {}),
       })}\n\n`
     );
   }

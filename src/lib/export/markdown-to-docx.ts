@@ -230,9 +230,22 @@ export async function legacyMarkdownToDocx(
   return Packer.toBuffer(document);
 }
 
+function isPandocUnavailable(error: unknown): boolean {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  ) {
+    return true;
+  }
+  return error instanceof Error && error.message.includes("未安装 Pandoc");
+}
+
 /**
- * Pandoc owns the production DOCX path. The previous renderer remains an
- * explicit emergency rollback only; it is intentionally not the default.
+ * Pandoc owns the production DOCX path. When pandoc is unavailable on the
+ * host (spawn ENOENT / "未安装 Pandoc"), fall back to the pure-JS renderer
+ * so exports still succeed on servers without system pandoc.
  */
 export async function markdownToDocx(
   content: string,
@@ -243,5 +256,12 @@ export async function markdownToDocx(
   }
 
   const { markdownToPandocDocx } = await import("@/lib/export/pandoc-docx");
-  return markdownToPandocDocx(content, options);
+  try {
+    return await markdownToPandocDocx(content, options);
+  } catch (error) {
+    if (isPandocUnavailable(error)) {
+      return legacyMarkdownToDocx(content, options);
+    }
+    throw error;
+  }
 }

@@ -8,6 +8,7 @@ import {
   AgentExecutionFaultInjectionCrash,
   AgentExecutionRunner,
 } from "./agent-execution-runner";
+import { AgentRuntimeError } from "@/lib/agent/runtime";
 import { AgentExecutionRetryPolicy } from "./retry-policy";
 
 function checkpoint(round = 0): AgentCheckpoint {
@@ -198,6 +199,67 @@ describe("AgentExecutionRunner", () => {
       },
       now: new Date("2026-07-31T00:00:05.000Z"),
     });
+  });
+
+  it("fails fast on a deterministic AgentRuntimeError without scheduling a retry", async () => {
+    const store = createStore();
+    const runner = new AgentExecutionRunner({
+      store,
+      handler: vi
+        .fn()
+        .mockRejectedValue(
+          new AgentRuntimeError(
+            400,
+            "当前项目没有可读取的已解析资料，请先上传资料并等待解析完成。"
+          )
+        ),
+      retryPolicy: retryPolicy(),
+      now: () => new Date("2026-07-31T00:00:05.000Z"),
+    });
+
+    await expect(
+      runner.run({
+        execution: claimedExecution({ attempt: 1 }),
+        workerId: "worker-a",
+        signal: new AbortController().signal,
+      })
+    ).resolves.toEqual({ state: "failed" });
+    expect(store.scheduleRetry).not.toHaveBeenCalled();
+    expect(store.markFailed).toHaveBeenCalledWith({
+      executionId: "run-1",
+      workerId: "worker-a",
+      failure: {
+        code: "execution_error",
+        message: "当前项目没有可读取的已解析资料，请先上传资料并等待解析完成。",
+        retryable: false,
+        attempt: 1,
+      },
+      now: new Date("2026-07-31T00:00:05.000Z"),
+    });
+  });
+
+  it("keeps provider-mapped 4xx failures retryable", async () => {
+    const store = createStore();
+    const runner = new AgentExecutionRunner({
+      store,
+      handler: vi.fn().mockRejectedValue(
+        new AgentRuntimeError(429, "rate limited", { deepseekStatus: 429 })
+      ),
+      retryPolicy: retryPolicy(),
+      now: () => new Date("2026-07-31T00:00:05.000Z"),
+    });
+
+    await expect(
+      runner.run({
+        execution: claimedExecution({ attempt: 1 }),
+        workerId: "worker-a",
+        signal: new AbortController().signal,
+      })
+    ).resolves.toEqual({
+      state: "retry_scheduled",
+      scheduledAt: new Date("2026-07-31T00:00:06.000Z"),
+    });
+    expect(store.markFailed).not.toHaveBeenCalled();
   });
 
   it("redacts credentials before persisting an execution failure", async () => {

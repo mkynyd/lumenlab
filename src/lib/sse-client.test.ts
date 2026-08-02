@@ -63,4 +63,34 @@ describe("durable SSE client", () => {
       new SSEExecutionError("执行失败，请重试", "failed", "provider_error")
     );
   });
+
+  it("uses the server-provided message for a terminal failure", async () => {
+    await expect(
+      readSSEStream(
+        reader(
+          'id: 6\nevent: execution_error\ndata: {"status":"failed","failureCode":"no_readable_files","message":"当前项目没有可读取的已解析资料，请先上传资料并等待解析完成。"}\n\n'
+        ),
+        () => {}
+      )
+    ).rejects.toEqual(
+      new SSEExecutionError(
+        "当前项目没有可读取的已解析资料，请先上传资料并等待解析完成。",
+        "failed",
+        "no_readable_files"
+      )
+    );
+  });
+
+  it("falls back to the generic cancellation message when cancelled without a message", async () => {
+    await expect(
+      readSSEStream(
+        reader(
+          'id: 7\nevent: execution_error\ndata: {"status":"cancelled","failureCode":"execution_cancelled"}\n\n'
+        ),
+        () => {}
+      )
+    ).rejects.toEqual(
+      new SSEExecutionError("执行已取消", "cancelled", "execution_cancelled")
+    );
+  });
 });

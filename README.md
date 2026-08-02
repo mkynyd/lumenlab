@@ -399,6 +399,14 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 - 中央模式：course-ai-regadmin 发布的注册码与密钥组
 - 自托管模式：通过 `scripts/seed-dev-access.ts` 初始化账号与用户 API Key
 
+本地基础设施（PostgreSQL 与 Redis）由 docker compose 管理，`npm run dev` 不会自动拉起它们，请先启动：
+
+```bash
+docker compose up -d
+```
+
+查看健康状态：`docker compose ps`。跳过容器方案时，需自行提供与 `.env` 中 `DATABASE_URL`、`REDIS_URL` 匹配的服务。
+
 ### 1. 安装依赖
 
 ```bash

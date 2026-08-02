@@ -442,12 +442,26 @@ export default function ProjectDetailPage() {
 
   async function handleQuickTaskSend(input: QuickTaskSendInput) {
     setChatInputValue("");
+    const materialScope = input.materialScope ?? "project-corpus";
+    // 快捷任务依赖项目已解析资料，无可用资料时直接前置拦截，
+    // 避免请求进入后端后在 durable 执行中空转重试。
+    if (materialScope !== "none") {
+      const hasReadableMaterial = (project?.files ?? []).some(
+        (file) => file.status === "parsed" || file.status === "partial"
+      );
+      if (!hasReadableMaterial) {
+        setFileMessage(
+          "当前项目还没有可读取的资料，请先上传资料并等待解析完成后再试。"
+        );
+        return;
+      }
+    }
     await sendOrQueue(
       withSkillSelection({
         content: input.label,
         hiddenPrompt: input.prompt,
         isQuickTask: true,
-        materialScope: input.materialScope ?? "project-corpus",
+        materialScope,
       })
     );
   }

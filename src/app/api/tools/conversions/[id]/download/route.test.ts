@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   validatePdfExport: vi.fn(),
   buildConversionPackage: vi.fn(),
   buildConversionExportFingerprint: vi.fn(),
+  loggerError: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -24,6 +25,7 @@ vi.mock("@/lib/db", () => ({
     },
   },
 }));
+vi.mock("@/lib/logger", () => ({ logger: { error: mocks.loggerError } }));
 vi.mock("@/lib/storage/object-storage", () => ({
   readStoredObject: mocks.readStoredObject,
   uploadObjectBuffer: mocks.uploadObjectBuffer,
@@ -161,6 +163,24 @@ describe("GET conversion package", () => {
     expect(response.headers.get("Content-Type")).toBe("application/zip");
     expect(response.headers.get("Content-Disposition")).toContain("lecture.zip");
     expect(Buffer.from(await response.arrayBuffer()).toString()).toBe("PK-package");
+  });
+
+  it("returns a readable 500 instead of a bare crash when the export pipeline fails", async () => {
+    mocks.renderMarkdownPdf.mockRejectedValue(
+      new Error("未找到 Chromium，请配置 CHROMIUM_EXECUTABLE_PATH")
+    );
+
+    const response = await GET(request(), context);
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toContain("缺少导出组件");
+    expect(body.message).toContain("未找到 Chromium");
+    expect(mocks.loggerError).toHaveBeenCalledWith(
+      expect.stringContaining("完整包导出失败"),
+      expect.objectContaining({ conversionId: "conversion-1" })
+    );
+    expect(mocks.uploadObjectBuffer).not.toHaveBeenCalled();
   });
 
   it("regenerates a current package only when the user explicitly requests it", async () => {

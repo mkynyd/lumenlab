@@ -73,31 +73,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "无效的 JSON 格式" }, { status: 400 });
   }
 
-  const project = await prisma.project.create({
-    data: {
-      userId: session.user.id,
-      name: body.name,
-      description: body.description || null,
-      type: body.type,
-      defaultModel: body.defaultModel || "deepseek-v4-flash",
-      thinkingEnabled: body.thinkingEnabled ?? true,
-      quickActions: {
-        create: [
-          ...getDefaultQuickActions(body.type).map((action) => ({
-            title: action.title,
-            prompt: action.prompt,
-            isSystem: true,
-            sortOrder: action.sortOrder || 0,
-          })),
-          ...(body.quickActions || []).map((action, index) => ({
-            title: action.title,
-            prompt: action.prompt,
-            isSystem: false,
-            sortOrder: 100 + index,
-          })),
-        ],
+  const quickActions = [
+    ...getDefaultQuickActions(body.type).map((action) => ({
+      title: action.title,
+      prompt: action.prompt,
+      isSystem: true,
+      sortOrder: action.sortOrder || 0,
+    })),
+    ...(body.quickActions || []).map((action, index) => ({
+      title: action.title,
+      prompt: action.prompt,
+      isSystem: false,
+      sortOrder: 100 + index,
+    })),
+  ];
+
+  // 顶层 create 带嵌套 create + include 会让查询编译器把子写入并发派发到
+  // 同一连接（pg 驱动适配器下已弃用），因此拆成事务内串行三步：
+  // 建项目、批量建快捷指令、再读回组装响应。
+  const project = await prisma.$transaction(async (tx) => {
+    const created = await tx.project.create({
+      data: {
+        userId: session.user.id,
+        name: body.name,
+        description: body.description || null,
+        type: body.type,
+        defaultModel: body.defaultModel || "deepseek-v4-flash",
+        thinkingEnabled: body.thinkingEnabled ?? true,
       },
-    },
+    });
+    if (quickActions.length > 0) {
+      await tx.quickAction.createMany({
+        data: quickActions.map((action) => ({
+          ...action,
+          projectId: created.id,
+        })),
+      });
+    }
+    return created;
+  });
+
+  const loaded = await prisma.project.findUniqueOrThrow({
+    where: { id: project.id },
     include: {
       files: true,
       conversations: true,
@@ -110,5 +127,5 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ project }, { status: 201 });
+  return NextResponse.json({ project: loaded }, { status: 201 });
 }

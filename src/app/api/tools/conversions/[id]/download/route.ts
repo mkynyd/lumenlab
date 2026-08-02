@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { logger } from "@/lib/logger";
 import { renderMarkdownPdf } from "@/lib/export/browser-pdf";
 import { validatePdfExport } from "@/lib/export/pdf-validation";
 import {
@@ -81,18 +82,32 @@ export async function GET(
       }),
     }))
   );
-  const pdfBuffer = await renderMarkdownPdf({
-    requestUrl: request.url,
-    conversionId: conversion.id,
-    cookieHeader: request.headers.get("cookie") || "",
-  });
-  await validatePdfExport(pdfBuffer);
-  const packageBuffer = await buildConversionPackage({
-    baseName,
-    markdownContent: conversion.markdownContent,
-    pdfBuffer,
-    assets,
-  });
+  let pdfBuffer: Buffer;
+  let packageBuffer: Buffer;
+  try {
+    pdfBuffer = await renderMarkdownPdf({
+      requestUrl: request.url,
+      conversionId: conversion.id,
+      cookieHeader: request.headers.get("cookie") || "",
+    });
+    await validatePdfExport(pdfBuffer);
+    packageBuffer = await buildConversionPackage({
+      baseName,
+      markdownContent: conversion.markdownContent,
+      pdfBuffer,
+      assets,
+    });
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    logger.error("完整包导出失败", { conversionId: conversion.id, error: cause });
+    return NextResponse.json(
+      {
+        error: "服务器缺少导出组件（pandoc/Chromium），请检查系统依赖",
+        message: cause,
+      },
+      { status: 500 }
+    );
+  }
   const exportId = crypto.randomUUID();
   const candidate = await uploadObjectBuffer({
     key: [

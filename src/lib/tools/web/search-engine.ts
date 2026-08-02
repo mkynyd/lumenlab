@@ -6,12 +6,14 @@
  *   - 需要从 DeepSeek 拿到联网摘要 + 来源 URL
  *
  * 实现策略：
- *   1. 用 tool_choice 强制调用 web_search（如果兼容层支持）。
- *   2. 若强制失败或模型未产生内容，降级为普通 chat 请求，让模型凭知识生成回答。
+ *   1. 用系统提示要求模型调用内置 web_search（DeepSeek Anthropic 兼容端点是
+ *      server tool，不支持按 name 强制 tool_choice，见 supportsForcedSearchToolChoice）。
+ *   2. 若模型未产生可验证来源，降级为 HTTP 直接搜索（DuckDuckGo → Bing）。
  *   3. 从 tool_use 块或 content 中提取来源 URL。
  */
 
 import { completeChat, type DeepSeekMessage } from "@/lib/deepseek";
+import { supportsForcedSearchToolChoice } from "@/lib/chat/model-capabilities";
 import { getRedis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 
@@ -198,7 +200,14 @@ async function callSearchWithToolChoice(
         required: ["query"],
       },
     }],
-    tool_choice: { type: "tool", name: "web_search" },
+    // DeepSeek 的内置 web_search 是 server tool，按 name 强制 tool_choice 会 400，
+    // 因此这里不传 tool_choice，靠 buildSearchMessages 的系统提示驱动模型调用；
+    // 仅对 supportsForcedSearchToolChoice 判定为支持的 provider 恢复强制。
+    // 若模型未调用 web_search，runWebSearch 的 sources 判空会自动降级到
+    // callSearchFallback，兜底逻辑不变。
+    ...(supportsForcedSearchToolChoice("deepseek")
+      ? { tool_choice: { type: "tool", name: "web_search" } }
+      : {}),
   });
 
   if (!response.content) return null;
@@ -212,12 +221,14 @@ async function callSearchWithToolChoice(
   };
 }
 
-async function callSearchFallback(query: string, maxResults: number): Promise<WebSearchResult> {
+// 每个 provider 尝试使用独立的 AbortController + 10s 超时，
+// 避免上一次超时 abort 的 signal 连坐到后续 provider 的重试。
+async function searchDuckDuckGo(query: string, maxResults: number): Promise<WebSearchResult> {
+  const url = new URL(DUCKDUCKGO_HTML_SEARCH);
+  url.searchParams.set("q", query);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
   try {
-    const url = new URL(DUCKDUCKGO_HTML_SEARCH);
-    url.searchParams.set("q", query);
     const response = await fetch(url, {
       signal: controller.signal,
       headers: { "user-agent": "LumenLab-Agent/1.0" },
@@ -234,38 +245,54 @@ async function callSearchFallback(query: string, maxResults: number): Promise<We
       sources: results.map(({ url: sourceUrl, title }) => ({ url: sourceUrl, title })),
       query,
     };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function searchBingRss(query: string, maxResults: number): Promise<WebSearchResult> {
+  const url = new URL(BING_RSS_SEARCH);
+  url.searchParams.set("format", "rss");
+  url.searchParams.set("q", query);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { "user-agent": "LumenLab-Agent/1.0" },
+    });
+    if (!response.ok) throw new Error(`HTTP_${response.status}`);
+    const results = parseBingRssResults(await response.text(), maxResults);
+    if (results.length === 0) {
+      return { summary: "联网搜索未找到可验证结果。", sources: [], query };
+    }
+    return {
+      summary: results
+        .map((item, index) => `[^${index + 1}^] ${item.title}${item.snippet ? `\n${item.snippet}` : ""}\n${item.url}`)
+        .join("\n\n"),
+      sources: results.map(({ url: sourceUrl, title }) => ({ url: sourceUrl, title })),
+      query,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callSearchFallback(query: string, maxResults: number): Promise<WebSearchResult> {
+  try {
+    return await searchDuckDuckGo(query, maxResults);
   } catch (primaryError) {
     logger.warn("web.search primary provider failed", {
       error: primaryError instanceof Error ? primaryError.message : String(primaryError),
     });
     try {
-      const url = new URL(BING_RSS_SEARCH);
-      url.searchParams.set("format", "rss");
-      url.searchParams.set("q", query);
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { "user-agent": "LumenLab-Agent/1.0" },
-      });
-      if (!response.ok) throw new Error(`HTTP_${response.status}`);
-      const results = parseBingRssResults(await response.text(), maxResults);
-      if (results.length === 0) {
-        return { summary: "联网搜索未找到可验证结果。", sources: [], query };
-      }
-      return {
-        summary: results
-          .map((item, index) => `[^${index + 1}^] ${item.title}${item.snippet ? `\n${item.snippet}` : ""}\n${item.url}`)
-          .join("\n\n"),
-        sources: results.map(({ url: sourceUrl, title }) => ({ url: sourceUrl, title })),
-        query,
-      };
+      return await searchBingRss(query, maxResults);
     } catch (error) {
       logger.warn("web.search verified fallback failed", {
-      error: error instanceof Error ? error.message : String(error),
+        error: error instanceof Error ? error.message : String(error),
       });
       return { summary: "联网搜索暂不可用，未获取到可验证来源。", sources: [], query };
     }
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

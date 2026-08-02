@@ -11,7 +11,12 @@ vi.mock("@/lib/export/mermaid-image", () => ({
     )
   ),
 }));
+vi.mock("@/lib/export/pandoc-docx", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/export/pandoc-docx")>();
+  return { ...actual, markdownToPandocDocx: vi.fn(actual.markdownToPandocDocx) };
+});
 import { markdownToDocx } from "@/lib/export/markdown-to-docx";
+import { markdownToPandocDocx } from "@/lib/export/pandoc-docx";
 import { getPdfFont, markdownToPdf } from "@/lib/export/markdown-to-pdf";
 
 const SAMPLE = `# 中文复习提纲
@@ -56,4 +61,32 @@ describe("artifact exporters", () => {
     const buffer = await markdownToPdf(SAMPLE);
     expect(buffer.subarray(0, 4).toString()).toBe("%PDF");
   }, 20_000);
+
+  it("falls back to the legacy DOCX renderer when pandoc reports it is not installed", async () => {
+    vi.mocked(markdownToPandocDocx).mockRejectedValueOnce(
+      new Error("未安装 Pandoc，无法生成 DOCX。")
+    );
+
+    const buffer = await markdownToDocx(SAMPLE);
+
+    expect(buffer.subarray(0, 2).toString()).toBe("PK");
+  });
+
+  it("falls back to the legacy DOCX renderer on an ENOENT spawn error", async () => {
+    const error = new Error("spawn pandoc ENOENT");
+    (error as NodeJS.ErrnoException).code = "ENOENT";
+    vi.mocked(markdownToPandocDocx).mockRejectedValueOnce(error);
+
+    const buffer = await markdownToDocx(SAMPLE);
+
+    expect(buffer.subarray(0, 2).toString()).toBe("PK");
+  });
+
+  it("does not silently fall back on unrelated export errors", async () => {
+    vi.mocked(markdownToPandocDocx).mockRejectedValueOnce(
+      new Error("Mermaid 图表渲染失败：boom")
+    );
+
+    await expect(markdownToDocx(SAMPLE)).rejects.toThrow("Mermaid 图表渲染失败");
+  });
 });

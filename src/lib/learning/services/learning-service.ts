@@ -57,10 +57,14 @@ import {
   sourceAnchorSnapshotSchema,
 } from "@/lib/learning/validators";
 import { z } from "zod";
-import { getEffectiveFileContent } from "@/lib/files/content-fingerprint";
+import {
+  computeEffectiveContentFingerprint,
+  getEffectiveFileContent,
+} from "@/lib/files/content-fingerprint";
 import type { ParseQualityReport } from "@/lib/document-pipeline/quality-checker";
 import { gateHighConfidenceGeneration } from "@/lib/document-pipeline/quality-gate";
 import { classifyCoverage } from "@/lib/rag/coverage";
+import { logger } from "@/lib/logger";
 
 type GoalCreateInput = z.infer<typeof learningGoalCreateSchema>;
 type ScopeDraftInput = z.infer<typeof learningScopeDraftSchema>;
@@ -1004,6 +1008,25 @@ function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
+/**
+ * Resolve a file's content fingerprint. Files parsed before the
+ * contentFingerprint column was introduced keep a NULL column, so fall back
+ * to a deterministic on-the-fly computation over the effective content (the
+ * enhanced text when enhancementStatus is enhanced, otherwise textContent),
+ * using the same NFC / CRLF / trailing-whitespace / trim normalization as
+ * parse-job writes. The computed value is stable, so anchors created from it
+ * match later writes and downstream source-freshness checks.
+ */
+export function resolveFileFingerprint(file: {
+  textContent: string | null | undefined;
+  enhancedContent: string | null | undefined;
+  enhancementStatus: string | null | undefined;
+  contentFingerprint: string | null;
+}): string | null {
+  if (file.contentFingerprint) return file.contentFingerprint;
+  return computeEffectiveContentFingerprint(file);
+}
+
 function sameScopeInput(
   scope: {
     definition: Prisma.JsonValue;
@@ -1133,7 +1156,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       if (
         !file ||
         !content.trim() ||
-        file.contentFingerprint !== anchor.contentFingerprint
+        resolveFileFingerprint(file) !== anchor.contentFingerprint
       ) {
         throw new LearningServiceError(
           "source_unsupported",
@@ -1330,20 +1353,42 @@ export function createLearningService(options: CreateLearningServiceOptions) {
     const blockLocators = await resolveBlockLocators(
       files.map((file) => file.id)
     );
-    return files.map((file) => {
+    const fingerprintBackfills: Array<Promise<void>> = [];
+    const snapshots = files.map((file) => {
       const content =
         file.enhancementStatus === "enhanced" && file.enhancedContent
           ? file.enhancedContent
           : file.textContent ?? "";
-      if (!content.trim() || !file.contentFingerprint) {
+      const contentFingerprint = resolveFileFingerprint(file);
+      if (!content.trim() || !contentFingerprint) {
         throw new LearningServiceError(
           "source_unsupported",
           `资料 ${file.originalName} 缺少可验证的正文指纹`,
           409
         );
       }
+      // Legacy rows (uploaded before the contentFingerprint column existed)
+      // backfill lazily: keep going even when the write fails, since the
+      // fingerprint was already derived deterministically from the content.
+      if (contentFingerprint !== file.contentFingerprint) {
+        fingerprintBackfills.push(
+          prisma.fileAsset
+            .update({
+              where: { id: file.id },
+              data: { contentFingerprint },
+            })
+            .then(() => undefined)
+            .catch((error) => {
+              logger.warn("生成知识点地图时回填资料指纹失败", {
+                fileId: file.id,
+                error:
+                  error instanceof Error ? error.message : String(error),
+              });
+            })
+        );
+      }
       const handle = sha256(
-        `${command.projectId}\n${file.id}\n${file.contentFingerprint}`
+        `${command.projectId}\n${file.id}\n${contentFingerprint}`
       );
       const block = blockLocators.get(file.id);
       const snapshot = sourceAnchorSnapshotSchema.parse({
@@ -1353,7 +1398,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         sourceFileName: file.originalName,
         documentChunkId: block?.documentChunkId ?? null,
         locator: block?.locator ?? { kind: "file" },
-        contentFingerprint: file.contentFingerprint,
+        contentFingerprint,
         excerptHash: sha256(content),
       });
       const processingMetadata = file.processingMetadata
@@ -1367,6 +1412,8 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         parseReport: processingMetadata?.parseReport,
       };
     });
+    await Promise.all(fingerprintBackfills);
+    return snapshots;
   }
 
   async function requireSessionItem(command: {
@@ -2507,7 +2554,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         if (
           !file ||
           !content.trim() ||
-          file.contentFingerprint !== anchor.contentFingerprint
+          resolveFileFingerprint(file) !== anchor.contentFingerprint
         ) {
           throw new LearningServiceError(
             "source_unsupported",
@@ -3108,23 +3155,32 @@ export function createLearningService(options: CreateLearningServiceOptions) {
           409
         );
       }
-      const session = await prisma.learningSession.create({
-        data: {
-          id: ids.nextId("learning-session"),
-          userId: command.userId,
-          goalId: command.goalId,
-          knowledgeMapId: map.id,
-          mode: "review",
-          status: "ready",
-          idempotencyKey: command.input.idempotencyKey,
-          items: {
-            create: chosen.map((item, index) => ({
-              id: ids.nextId("learning-session-item"),
-              practiceItemId: item.id,
-              orderIndex: index,
-            })),
+      const sessionId = ids.nextId("learning-session");
+      await prisma.$transaction(async (tx) => {
+        await tx.learningSession.create({
+          data: {
+            id: sessionId,
+            userId: command.userId,
+            goalId: command.goalId,
+            knowledgeMapId: map.id,
+            mode: "review",
+            status: "ready",
+            idempotencyKey: command.input.idempotencyKey,
           },
-        },
+        });
+        // 嵌套 create + include 会让查询编译器把子写入并发派发到同一连接
+        // (pg 驱动适配器下已弃用)，题目改为单独批量写入。
+        await tx.learningSessionItem.createMany({
+          data: chosen.map((item, index) => ({
+            id: ids.nextId("learning-session-item"),
+            sessionId,
+            practiceItemId: item.id,
+            orderIndex: index,
+          })),
+        });
+      });
+      const session = await prisma.learningSession.findUniqueOrThrow({
+        where: { id: sessionId },
         include: sessionInclude,
       });
       return toSessionDto(session);
@@ -4079,28 +4135,37 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       const title = command.input.title?.trim() || `${goal.title} · 学习资料包`;
 
       try {
-        const pack = await prisma.studyPack.create({
-          data: {
-            id: ids.nextId("study-pack"),
-            userId: command.userId,
-            goalId: command.goalId,
-            title,
-            outline: outline as Prisma.InputJsonValue,
-            outlineStatus: "draft",
-            sourceFingerprint: map.sourceFingerprint,
-            idempotencyKey: command.input.idempotencyKey,
-            createdAt: clock.now(),
-            sections: {
-              create: outline.map((item, index) => ({
-                id: ids.nextId("study-pack-section"),
-                key: item.key,
-                orderIndex: index,
-                title: item.title,
-                description: null,
-                status: "draft",
-              })),
+        const packId = ids.nextId("study-pack");
+        await prisma.$transaction(async (tx) => {
+          await tx.studyPack.create({
+            data: {
+              id: packId,
+              userId: command.userId,
+              goalId: command.goalId,
+              title,
+              outline: outline as Prisma.InputJsonValue,
+              outlineStatus: "draft",
+              sourceFingerprint: map.sourceFingerprint,
+              idempotencyKey: command.input.idempotencyKey,
+              createdAt: clock.now(),
             },
-          },
+          });
+          // 嵌套 create + include 会让查询编译器把子写入并发派发到同一连接
+          // (pg 驱动适配器下已弃用)，章节改为单独批量写入。
+          await tx.studyPackSection.createMany({
+            data: outline.map((item, index) => ({
+              id: ids.nextId("study-pack-section"),
+              packId,
+              key: item.key,
+              orderIndex: index,
+              title: item.title,
+              description: null,
+              status: "draft",
+            })),
+          });
+        });
+        const pack = await prisma.studyPack.findUniqueOrThrow({
+          where: { id: packId },
           include: studyPackInclude,
         });
         return { pack: toStudyPackDto(pack) };

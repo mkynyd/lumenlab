@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { parseBingRssResults, parseDuckDuckGoResults, runWebSearch } from "./search-engine";
 import * as deepseek from "@/lib/deepseek";
 
@@ -43,6 +43,10 @@ describe("runWebSearch", () => {
       ok: true,
       text: async () => verifiedSearchHtml,
     }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("returns empty result for empty query", async () => {
@@ -176,7 +180,7 @@ describe("runWebSearch", () => {
     ]);
   });
 
-  it("uses completeChat with tool_choice forced to web_search", async () => {
+  it("calls completeChat without forcing tool_choice on DeepSeek", async () => {
     mockRedisGet.mockResolvedValue(null);
     vi.mocked(deepseek.completeChat).mockResolvedValue({
       content: "Answer.",
@@ -187,7 +191,9 @@ describe("runWebSearch", () => {
     await runWebSearch("query", "sk-test", 3);
 
     const lastCall = vi.mocked(deepseek.completeChat).mock.calls[0];
-    expect(lastCall[1].tool_choice).toEqual({ type: "tool", name: "web_search" });
+    // DeepSeek 内置 web_search 是 server tool，按 name 强制 tool_choice 会 400，
+    // 因此不传强制 tool_choice，靠系统提示驱动模型调用。
+    expect(lastCall[1].tool_choice).toBeUndefined();
     expect(lastCall[1].tools).toEqual([
       {
         name: "web_search",
@@ -202,5 +208,45 @@ describe("runWebSearch", () => {
       },
     ]);
     expect(lastCall[1].thinking).toEqual({ type: "disabled" });
+  });
+
+  it("retries with Bing after DuckDuckGo times out and aborts", async () => {
+    vi.useFakeTimers();
+    mockRedisGet.mockResolvedValue(null);
+    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
+
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockReset();
+    fetchMock
+      .mockImplementationOnce(async (_url, init) => {
+        // 模拟 DDG 挂起直到 10s 超时 abort。
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        });
+      })
+      .mockImplementationOnce(async (_url, init) => {
+        // 若 signal 已被上一次超时 abort（修复前的连坐 bug），fetch 应抛 AbortError。
+        if (init?.signal?.aborted) {
+          throw new DOMException("The operation was aborted.", "AbortError");
+        }
+        return {
+          ok: true,
+          text: async () =>
+            "<rss><channel><item><title>Official Site</title><link>https://example.com/</link><description>Verified result</description></item></channel></rss>",
+        } as Response;
+      });
+
+    const resultPromise = runWebSearch("test", "sk-test");
+    await vi.advanceTimersByTimeAsync(10_000);
+    const result = await resultPromise;
+
+    expect(result.summary).toContain("Official Site");
+    expect(result.sources).toEqual([
+      { url: "https://example.com/", title: "Official Site" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain("bing.com");
   });
 });
