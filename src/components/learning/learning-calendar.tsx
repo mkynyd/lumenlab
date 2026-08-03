@@ -198,7 +198,7 @@ export function LearningCalendar({ className }: LearningCalendarProps) {
                   <Button
                     asChild
                     variant="ghost"
-                    className="h-auto w-full justify-start gap-2 whitespace-normal px-2 py-2 text-left"
+                    className="h-auto w-full justify-start gap-2 whitespace-normal px-2 py-2 text-left transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]"
                   >
                     <Link
                       href={`/learning?project=${encodeURIComponent(item.projectId)}&goal=${encodeURIComponent(item.goalId)}`}

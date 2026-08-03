@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { NavArrowRight } from "iconoir-react";
 import { cn } from "@/lib/utils";
 import type {
   StudyPackDto,
@@ -132,17 +133,16 @@ function OutlineEditor({ projectId, pack }: OutlineEditorProps) {
         <span className="text-xs font-medium text-[var(--color-text-secondary)]">
           大纲章节
         </span>
-        <button
-          type="button"
-          onClick={addItem}
-          className="text-xs font-medium text-[var(--color-accent)]"
-        >
+        <Button type="button" size="sm" variant="secondary" onClick={addItem}>
           添加章节
-        </button>
+        </Button>
       </div>
       <ul className="flex flex-col gap-1.5">
         {items.map((item, index) => (
-          <li key={`${item.key}-${index}`} className="flex flex-col gap-1">
+          <li
+            key={`${item.key}-${index}`}
+            className="workbench-view-enter flex flex-col gap-1"
+          >
             <div className="flex items-center gap-2">
               <Input
                 aria-label={`章节 ${index + 1} 标题`}
@@ -154,7 +154,7 @@ function OutlineEditor({ projectId, pack }: OutlineEditorProps) {
                 type="button"
                 onClick={() => removeItem(index)}
                 disabled={saveOutline.isPending}
-                className="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+                className="rounded-[var(--radius-sm)] px-1.5 py-0.5 text-xs text-[var(--color-text-tertiary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-error-muted)] hover:text-[var(--color-error)]"
               >
                 移除
               </button>
@@ -191,7 +191,10 @@ function OutlineEditor({ projectId, pack }: OutlineEditorProps) {
         </Button>
         <div aria-live="polite">
           {saveOutline.isError && (
-            <p role="alert" className="text-xs text-[var(--color-error)]">
+            <p
+              role="alert"
+              className="workbench-view-enter text-xs text-[var(--color-error)]"
+            >
               保存大纲失败，请重试。
             </p>
           )}
@@ -212,10 +215,8 @@ function SectionCard({ projectId, pack, section }: SectionCardProps) {
   const regenerate = useRegenerateStudyPackSection(projectId, pack.id);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(section.content ?? "");
-  // 已生成内容的章节默认展开,直接看到渲染后的复习资料
-  const [expanded, setExpanded] = useState(
-    () => section.status === "ready" && (section.content ?? "").trim().length > 0
-  );
+  // 默认收起,避免详情页章节多时展开过长;点击「查看内容」再展开
+  const [expanded, setExpanded] = useState(false);
 
   const canRegenerate = pack.outlineStatus === "confirmed";
 
@@ -243,17 +244,39 @@ function SectionCard({ projectId, pack, section }: SectionCardProps) {
         </p>
       )}
       {section.content && !editing && (
-        <button
+        <Button
           type="button"
+          size="sm"
+          variant="secondary"
           onClick={() => setExpanded((current) => !current)}
-          className="self-start text-xs font-medium text-[var(--color-accent)]"
+          className="self-start"
+          aria-expanded={expanded}
         >
+          <NavArrowRight
+            width={12}
+            height={12}
+            aria-hidden
+            className={cn(
+              "transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+              expanded && "rotate-90"
+            )}
+          />
           {expanded ? "收起内容" : "查看内容"}
-        </button>
+        </Button>
       )}
-      {expanded && !editing && (
-        <div className="max-h-96 overflow-auto rounded-[var(--radius-md)] bg-[var(--color-control)] p-3">
-          <MarkdownContent content={section.content ?? ""} className="text-sm" />
+      {!editing && section.content && (
+        <div
+          aria-hidden={!expanded}
+          className={cn(
+            "grid transition-[grid-template-rows] duration-300 ease-[var(--ease-out-expo)] motion-reduce:transition-none",
+            expanded ? "visible grid-rows-[1fr]" : "invisible grid-rows-[0fr]"
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="max-h-96 overflow-auto rounded-[var(--radius-md)] bg-[var(--color-control)] p-3">
+              <MarkdownContent content={section.content} className="text-sm" />
+            </div>
+          </div>
         </div>
       )}
       {editing ? (
@@ -287,23 +310,24 @@ function SectionCard({ projectId, pack, section }: SectionCardProps) {
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-3 text-xs">
-          <button
+          <Button
             type="button"
+            size="sm"
+            variant="secondary"
             onClick={() => {
               setDraft(section.content ?? "");
               setEditing(true);
             }}
             disabled={saveSection.isPending}
-            className="font-medium text-[var(--color-accent)]"
           >
             编辑内容
-          </button>
+          </Button>
           {canRegenerate && (
             <button
               type="button"
               onClick={() => regenerate.mutate(section.id)}
               disabled={regenerate.isPending}
-              className="font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              className="rounded-[var(--radius-sm)] px-2 py-1 font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
             >
               {regenerate.isPending ? "重做中…" : "重做本节"}
             </button>
@@ -351,11 +375,11 @@ function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div className="workbench-view-enter flex min-w-0 flex-col gap-3">
       <button
         type="button"
         onClick={onBack}
-        className="self-start text-xs font-medium text-[var(--color-text-secondary)]"
+        className="self-start rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
       >
         返回资料包列表
       </button>
@@ -409,12 +433,18 @@ function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
           </Button>
           <div aria-live="polite">
             {generate.isSuccess && (
-              <p role="status" className="text-xs text-[var(--color-text-secondary)]">
+              <p
+                role="status"
+                className="workbench-view-enter text-xs text-[var(--color-text-secondary)]"
+              >
                 本轮生成 {generate.data.generated} 节，跳过 {generate.data.skipped} 节。
               </p>
             )}
             {generate.isError && (
-              <p role="alert" className="text-xs text-[var(--color-error)]">
+              <p
+                role="alert"
+                className="workbench-view-enter text-xs text-[var(--color-error)]"
+              >
                 生成失败，请重试。
               </p>
             )}
@@ -443,12 +473,18 @@ function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
           </Button>
           <div aria-live="polite">
             {publish.isSuccess && (
-              <p role="status" className="text-xs text-[var(--color-text-secondary)]">
+              <p
+                role="status"
+                className="workbench-view-enter text-xs text-[var(--color-text-secondary)]"
+              >
                 已发布，可在项目的成果列表中导出 DOCX/PDF。
               </p>
             )}
             {publish.isError && (
-              <p role="alert" className="text-xs text-[var(--color-error)]">
+              <p
+                role="alert"
+                className="workbench-view-enter text-xs text-[var(--color-error)]"
+              >
                 发布失败，请重试。
               </p>
             )}
@@ -504,7 +540,7 @@ export function StudyPacksView({
         title="资料包加载失败"
         description="请稍后重试。"
         action={
-          <Button type="button" variant="ghost" onClick={() => refetch()}>
+          <Button type="button" variant="secondary" onClick={() => refetch()}>
             重试
           </Button>
         }
@@ -559,7 +595,7 @@ export function StudyPacksView({
                 <button
                   type="button"
                   onClick={() => setSelectedPackId(pack.id)}
-                  className="flex w-full flex-col gap-1 py-3 text-left"
+                  className="flex w-full flex-col gap-1 rounded-[var(--radius-md)] px-2 py-3 text-left transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]"
                 >
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="text-sm font-medium text-[var(--color-text-primary)]">

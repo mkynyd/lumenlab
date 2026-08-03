@@ -66,7 +66,7 @@ function latestEvaluation(attempt: WrongAnswerItemDto["attempts"][number]) {
 function AttemptHistory({ item }: { item: WrongAnswerItemDto }) {
   return (
     <details className="mt-1">
-      <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-secondary)]">
+      <summary className="cursor-pointer rounded-[var(--radius-sm)] text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
         作答历史
       </summary>
       <ul className="mt-1 flex flex-col gap-1">
@@ -136,7 +136,7 @@ function WrongAnswerItem({ item }: { item: WrongAnswerItemDto }) {
       )}
       {item.feedback.explanation && (
         <details className="mt-1">
-          <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-secondary)]">
+          <summary className="cursor-pointer rounded-[var(--radius-sm)] text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
             解析
           </summary>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
@@ -172,7 +172,7 @@ export function WrongAnswerList({ items, className }: WrongAnswerListProps) {
       )}
       {resolved.length > 0 && (
         <details>
-          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text-secondary)]">
+          <summary className="cursor-pointer rounded-[var(--radius-sm)] text-sm font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
             已解决 {resolved.length}
           </summary>
           <ul className="mt-1 flex flex-col divide-y divide-[var(--color-border-light)]">

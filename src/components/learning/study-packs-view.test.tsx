@@ -162,13 +162,18 @@ describe("StudyPacksView", () => {
 
     await user.click(screen.getByText("电路基础 · 学习资料包"));
     expect(screen.getByText("生成全部章节")).toBeInTheDocument();
-    // ready 章节默认展开:标题出现两次(章节标题 + Markdown 渲染的 h1)
-    expect(screen.getAllByText("节点电流定律").length).toBeGreaterThanOrEqual(2);
-    // Markdown 内容已按格式渲染(h2 标题)
-    expect(screen.getByRole("heading", { level: 2, name: "核心要点" })).toBeInTheDocument();
+    // ready 章节默认收起:内容区 aria-hidden,Markdown 渲染的 h2 不在可访问树
+    expect(
+      screen.queryByRole("heading", { level: 2, name: "核心要点" })
+    ).not.toBeInTheDocument();
     expect(screen.getByText("已完成")).toBeInTheDocument();
     expect(screen.getByText("发布为成果")).toBeInTheDocument();
     expect(screen.getByText("下载 Markdown")).toBeInTheDocument();
+    // 点击「查看内容」后展开,Markdown 内容按格式渲染(h2 标题)且可见
+    await user.click(screen.getByText("查看内容"));
+    expect(
+      screen.getByRole("heading", { level: 2, name: "核心要点" })
+    ).toBeVisible();
   });
 
   it("创建资料包携带 idempotency 参数", async () => {

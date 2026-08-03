@@ -20,7 +20,7 @@ export interface PracticeItemCardProps {
 
 const controlLabelClassName = "text-sm text-[var(--color-text-secondary)]";
 const optionLabelClassName =
-  "cursor-pointer flex items-center gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-sm text-[var(--color-text-primary)]";
+  "cursor-pointer flex items-center gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)] transition-colors duration-150 motion-reduce:transition-none";
 
 function hasOptions(
   options: PracticeItemClientDto["options"]
@@ -206,7 +206,14 @@ export function PracticeItemCard({
           此题只提供反馈，不影响掌握度
         </p>
       )}
-      <div className={cn(disabled && "opacity-80")}>{control}</div>
+      <div
+        className={cn(
+          disabled &&
+            "opacity-80 transition-opacity duration-150 motion-reduce:transition-none"
+        )}
+      >
+        {control}
+      </div>
     </section>
   );
 }

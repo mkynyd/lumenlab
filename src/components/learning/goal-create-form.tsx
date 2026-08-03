@@ -168,7 +168,7 @@ export function GoalCreateForm({
       </div>
 
       {createGoal.error && (
-        <p role="alert" className="text-sm text-[var(--color-error)]">
+        <p role="alert" className="workbench-view-enter text-sm text-[var(--color-error)]">
           {friendlyLearningError(createGoal.error)}
         </p>
       )}

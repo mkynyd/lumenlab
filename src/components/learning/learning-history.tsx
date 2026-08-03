@@ -255,17 +255,17 @@ function ErrorTypeCorrectionEditor({
       </div>
       <div aria-live="polite">
         {correction.isPending && (
-          <p role="status" className="text-xs text-[var(--color-text-secondary)]">
+          <p role="status" className="workbench-view-enter text-xs text-[var(--color-text-secondary)]">
             正在保存修正…
           </p>
         )}
         {correction.isError && (
-          <p role="alert" className="text-xs text-[var(--color-error)]">
+          <p role="alert" className="workbench-view-enter text-xs text-[var(--color-error)]">
             保存修正失败，请重试。
           </p>
         )}
         {saved && !correction.isPending && !correction.isError && (
-          <p role="status" className="text-xs text-[var(--color-text-secondary)]">
+          <p role="status" className="workbench-view-enter text-xs text-[var(--color-text-secondary)]">
             已保存修正。
           </p>
         )}
@@ -399,12 +399,12 @@ function RegradeEditor({
         </Button>
         <div aria-live="polite">
           {regrade.isError && (
-            <p role="alert" className="text-xs text-[var(--color-error)]">
+            <p role="alert" className="workbench-view-enter text-xs text-[var(--color-error)]">
               保存纠正失败，请重试。
             </p>
           )}
           {saved && !regrade.isPending && !regrade.isError && (
-            <p role="status" className="text-xs text-[var(--color-text-secondary)]">
+            <p role="status" className="workbench-view-enter text-xs text-[var(--color-text-secondary)]">
               已保存纠正，掌握度与复习安排已更新。
             </p>
           )}
@@ -439,7 +439,7 @@ function EvidenceItem({ evidence, projectId, goalId }: EvidenceItemProps) {
   return (
     <li className="min-w-0">
       <details>
-        <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-secondary)]">
+        <summary className="cursor-pointer rounded-[var(--radius-sm)] text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
           {evidence.resetBefore && (
             <span className="mr-1.5 rounded-full bg-[var(--color-accent-muted)] px-2 py-0.5 text-[var(--color-accent)]">
               重置前记录
@@ -499,13 +499,15 @@ function EvidenceItem({ evidence, projectId, goalId }: EvidenceItemProps) {
                 evaluationId={activeEvaluation.id}
               />
               <div className="flex flex-col gap-1.5">
-                <button
+                <Button
                   type="button"
-                  className="self-start text-xs font-medium text-[var(--color-accent)]"
+                  size="sm"
+                  variant="secondary"
+                  className="self-start"
                   onClick={() => setRegradeOpen((open) => !open)}
                 >
                   {regradeOpen ? "收起纠正判定" : "纠正判定"}
-                </button>
+                </Button>
                 {regradeOpen && (
                   <RegradeEditor
                     projectId={projectId}
@@ -664,13 +666,15 @@ function GoalRevisionEditor({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <button
+      <Button
         type="button"
-        className="self-start text-xs font-medium text-[var(--color-accent)]"
+        size="sm"
+        variant="secondary"
+        className="self-start"
         onClick={() => setOpen((current) => !current)}
       >
         {open ? "收起编辑学习目标" : "编辑学习目标"}
-      </button>
+      </Button>
       {open && (
         <div className="flex flex-col gap-1.5">
           <Input
@@ -740,12 +744,12 @@ function GoalRevisionEditor({
             </Button>
             <div aria-live="polite">
               {revise.isError && (
-                <p role="alert" className="text-xs text-[var(--color-error)]">
+                <p role="alert" className="workbench-view-enter text-xs text-[var(--color-error)]">
                   保存修订失败，请重试。
                 </p>
               )}
               {saved && !revise.isPending && !revise.isError && (
-                <p role="status" className="text-xs text-[var(--color-text-secondary)]">
+                <p role="status" className="workbench-view-enter text-xs text-[var(--color-text-secondary)]">
                   已保存修订。
                 </p>
               )}
@@ -812,7 +816,7 @@ function ProfileResetControls({
       </button>
       <div aria-live="polite">
         {(resetGoal.isError || resetAll.isError) && (
-          <p role="alert" className="text-[var(--color-error)]">
+          <p role="alert" className="workbench-view-enter text-[var(--color-error)]">
             重置失败，请重试。
           </p>
         )}
@@ -868,7 +872,7 @@ export function LearningHistory({
         title="学习档案加载失败"
         description="请稍后重试。"
         action={
-          <Button type="button" variant="ghost" onClick={() => refetch()}>
+          <Button type="button" variant="secondary" onClick={() => refetch()}>
             重试
           </Button>
         }

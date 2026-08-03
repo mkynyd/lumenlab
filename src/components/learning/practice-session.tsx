@@ -221,7 +221,7 @@ export function PracticeSession({
           查看答案后，本题对掌握度的影响会降低
         </span>
         <Button
-          variant="ghost"
+          variant="secondary"
           onClick={handleExposure}
           disabled={recordAnswerExposure.isPending}
         >
@@ -236,7 +236,7 @@ export function PracticeSession({
       </span>
     ) : (
       <Button
-        variant="ghost"
+        variant="secondary"
         onClick={() => setConfirmingExposure(true)}
         disabled={submitting}
       >
@@ -251,7 +251,10 @@ export function PracticeSession({
       </p>
 
       {phase === "feedback" && result ? (
-        <>
+        <div
+          key={`feedback-${currentIndex}`}
+          className="workbench-view-enter flex flex-col gap-4"
+        >
           <h3 className="break-words text-base font-medium text-[var(--color-text-primary)]">
             {item.prompt}
           </h3>
@@ -270,9 +273,12 @@ export function PracticeSession({
           <Button onClick={handleNext} className="self-start">
             {isLast ? "完成" : "下一题"}
           </Button>
-        </>
+        </div>
       ) : (
-        <>
+        <div
+          key={`answer-${currentIndex}`}
+          className="workbench-view-enter flex flex-col gap-4"
+        >
           <PracticeItemCard
             item={item}
             value={answer}
@@ -281,13 +287,13 @@ export function PracticeSession({
           />
 
           {hint && (
-            <p className="rounded-[var(--radius-md)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">
+            <p className="workbench-view-enter rounded-[var(--radius-md)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">
               {hint}
             </p>
           )}
 
           {exposedFeedback?.explanation && (
-            <section className="flex flex-col gap-1">
+            <section className="workbench-view-enter flex flex-col gap-1">
               <h4 className="text-sm font-medium text-[var(--color-text-primary)]">
                 解析
               </h4>
@@ -298,7 +304,7 @@ export function PracticeSession({
           )}
 
           {submitError && (
-            <p role="alert" className="text-sm text-[var(--color-error)]">
+            <p role="alert" className="workbench-view-enter text-sm text-[var(--color-error)]">
               {submitError}
             </p>
           )}
@@ -316,7 +322,7 @@ export function PracticeSession({
               </Button>
             ) : (
               <Button
-                variant="ghost"
+                variant="secondary"
                 onClick={handleHint}
                 disabled={submitting || recordHint.isPending}
               >
@@ -326,16 +332,16 @@ export function PracticeSession({
             {session.mode === "review" && exposureControl}
           </div>
           {recordHint.isError ? (
-            <p role="alert" className="text-sm text-[var(--color-error)]">
+            <p role="alert" className="workbench-view-enter text-sm text-[var(--color-error)]">
               提示获取失败，请重试
             </p>
           ) : null}
           {recordAnswerExposure.isError ? (
-            <p role="alert" className="text-sm text-[var(--color-error)]">
+            <p role="alert" className="workbench-view-enter text-sm text-[var(--color-error)]">
               答案获取失败，请重试
             </p>
           ) : null}
-        </>
+        </div>
       )}
     </div>
   );

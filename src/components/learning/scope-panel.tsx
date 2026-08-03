@@ -190,7 +190,7 @@ export function ScopePanel({ projectId, goalId, onConfirmed }: ScopePanelProps) 
           学习素材
         </legend>
         <div>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-primary)]">
+          <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] text-sm text-[var(--color-text-primary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
             <input
               type="radio"
               name={`${fieldId}-material-mode`}
@@ -205,7 +205,7 @@ export function ScopePanel({ projectId, goalId, onConfirmed }: ScopePanelProps) 
           </p>
         </div>
         <div>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-primary)]">
+          <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] text-sm text-[var(--color-text-primary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
             <input
               type="radio"
               name={`${fieldId}-material-mode`}
@@ -216,7 +216,7 @@ export function ScopePanel({ projectId, goalId, onConfirmed }: ScopePanelProps) 
             选定资料
           </label>
           {materialMode === "selected_files" && (
-            <div className="mt-1 pl-6">
+            <div className="workbench-view-enter mt-1 pl-6">
               {filesQuery.isError ? (
                 <p className="text-xs text-[var(--color-text-tertiary)]">
                   资料列表暂时无法读取，请稍后刷新重试。
@@ -225,7 +225,7 @@ export function ScopePanel({ projectId, goalId, onConfirmed }: ScopePanelProps) 
                 <ul className="flex flex-col gap-1.5">
                   {selectableFiles.map((file) => (
                     <li key={file.id}>
-                      <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-primary)]">
+                      <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] text-sm text-[var(--color-text-primary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
                         <input
                           type="checkbox"
                           checked={selectedFileIds.includes(file.id)}

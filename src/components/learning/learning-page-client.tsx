@@ -99,7 +99,7 @@ function HistoricalGoalRow({
       </div>
       <Button
         type="button"
-        variant="ghost"
+        variant="secondary"
         disabled={updateStatus.isPending}
         onClick={() => updateStatus.mutate({ status: "active" })}
       >
@@ -251,7 +251,7 @@ export function LearningPageClient({
         {stage === "loading" ? (
           <p
             role="status"
-            className="py-12 text-center text-sm text-[var(--color-text-secondary)]"
+            className="workbench-view-enter py-12 text-center text-sm text-[var(--color-text-secondary)]"
           >
             加载中…
           </p>
@@ -264,7 +264,7 @@ export function LearningPageClient({
             action={
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 onClick={() => {
                   goalsQuery.refetch();
                   scopeQuery.refetch();
@@ -278,7 +278,7 @@ export function LearningPageClient({
         ) : null}
 
         {stage === "goal" ? (
-          <div className="space-y-8">
+          <div className="workbench-view-enter space-y-8">
             <section aria-label="创建学习目标">
               <h2 className="mb-1 text-base font-medium text-[var(--color-text-primary)]">
                 开始学习
@@ -308,7 +308,10 @@ export function LearningPageClient({
         ) : null}
 
         {stage === "scope" && goalId ? (
-          <section aria-label="确认学习范围">
+          <section
+            aria-label="确认学习范围"
+            className="workbench-view-enter"
+          >
             <h2 className="mb-1 text-base font-medium text-[var(--color-text-primary)]">
               确认学习范围
             </h2>
@@ -320,7 +323,10 @@ export function LearningPageClient({
         ) : null}
 
         {stage === "map" && goalId ? (
-          <section aria-label="生成知识点地图">
+          <section
+            aria-label="生成知识点地图"
+            className="workbench-view-enter"
+          >
             <KnowledgeMapView
               map={null}
               isGenerating={generateMap.isPending}
@@ -336,7 +342,7 @@ export function LearningPageClient({
         ) : null}
 
         {stage === "ready" && goalId ? (
-          <div>
+          <div className="workbench-view-enter">
             <div
               role="tablist"
               aria-label="学习视图"
@@ -373,6 +379,7 @@ export function LearningPageClient({
                   role="tabpanel"
                   aria-labelledby={`learning-tab-${item.id}`}
                   tabIndex={0}
+                  className="workbench-view-enter"
                 >
                   {item.id === "progress" ? (
                     <ProgressTab projectId={projectId} goalId={goalId} />
@@ -388,7 +395,7 @@ export function LearningPageClient({
                       <div className="mt-4">
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="secondary"
                           disabled={generateMap.isPending}
                           onClick={handleGenerateMap}
                         >
@@ -462,7 +469,7 @@ function ProgressTab({
         action={
           <Button
             type="button"
-            variant="ghost"
+            variant="secondary"
             onClick={() => progressQuery.refetch()}
           >
             重试
@@ -500,7 +507,7 @@ function WrongAnswersTab({
         action={
           <Button
             type="button"
-            variant="ghost"
+            variant="secondary"
             onClick={() => wrongQuery.refetch()}
           >
             重试
@@ -551,12 +558,16 @@ function PracticeTab({
             <div className="flex items-center justify-center gap-2">
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 onClick={() => sessionQuery.refetch()}
               >
                 重试
               </Button>
-              <Button type="button" variant="ghost" onClick={onExitSession}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onExitSession}
+              >
                 返回
               </Button>
             </div>

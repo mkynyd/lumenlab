@@ -56,7 +56,7 @@ export function ReviewQueue({ projectId, goalId, className }: ReviewQueueProps) 
         title="复习队列加载失败"
         description="请稍后重试。"
         action={
-          <Button type="button" variant="ghost" onClick={() => refetch()}>
+          <Button type="button" variant="secondary" onClick={() => refetch()}>
             重试
           </Button>
         }
@@ -99,7 +99,7 @@ export function ReviewQueue({ projectId, goalId, className }: ReviewQueueProps) 
           {createSession.isPending ? "创建中…" : "开始复习"}
         </Button>
         {createSession.isError && (
-          <p role="alert" className="text-xs text-[var(--color-error)]">
+          <p role="alert" className="workbench-view-enter text-xs text-[var(--color-error)]">
             创建复习会话失败，请重试。
           </p>
         )}

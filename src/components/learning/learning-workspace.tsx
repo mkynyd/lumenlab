@@ -156,7 +156,7 @@ export function LearningWorkspace({
                 title="暂时无法读取项目"
                 description="请检查网络后重试。"
                 action={
-                  <Button type="button" variant="ghost" onClick={() => projectsQuery.refetch()}>
+                  <Button type="button" variant="secondary" onClick={() => projectsQuery.refetch()}>
                     重试
                   </Button>
                 }
@@ -190,7 +190,7 @@ export function LearningWorkspace({
                       {selectedProject._count.files} 份资料 · {PROJECT_TYPE_LABELS[selectedProject.type] ?? selectedProject.type}
                     </p>
                   </div>
-                  <Button asChild variant="ghost" className="shrink-0">
+                  <Button asChild variant="secondary" className="shrink-0">
                     <Link href={`/projects/${encodeURIComponent(selectedProject.id)}`}>
                       查看资料
                     </Link>
@@ -233,7 +233,7 @@ export function LearningWorkspace({
                         从已有项目开始
                       </h2>
                     </div>
-                    <Button asChild variant="ghost">
+                    <Button asChild variant="secondary">
                       <Link href="/projects/new">
                         <Plus data-icon="inline-start" aria-hidden="true" />
                         新建项目

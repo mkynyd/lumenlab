@@ -115,7 +115,7 @@ export function TodayView({ className }: TodayViewProps) {
                   {project.name}
                 </p>
               </div>
-              <Button asChild variant="ghost">
+              <Button asChild variant="secondary">
                 <Link
                   href={`/learning?project=${encodeURIComponent(project.id)}&goal=${encodeURIComponent(goal.id)}`}
                 >
