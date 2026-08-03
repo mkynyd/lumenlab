@@ -2576,18 +2576,30 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         };
       });
       gateSourceQuality(practiceSources);
-      const generatedItems = z
-        .object({
-          items: z.array(practiceItemGenerationSchema).min(5).max(10),
-        })
-        .strict()
-        .parse(
-          await modelGateway.generatePracticeItems({
-            userId: command.userId,
-            map: toMapDto(map),
-            sources: practiceSources,
+      let generatedItems: z.infer<typeof practiceItemGenerationSchema>[];
+      try {
+        generatedItems = z
+          .object({
+            items: z.array(practiceItemGenerationSchema).min(5).max(10),
           })
-        ).items;
+          .strict()
+          .parse(
+            await modelGateway.generatePracticeItems({
+              userId: command.userId,
+              map: toMapDto(map),
+              sources: practiceSources,
+            })
+          ).items;
+      } catch (error) {
+        if (error instanceof LearningServiceError) throw error;
+        // 模型输出不满足题目 schema(如 answerCriteria.kind 与 type 不配对)时,
+        // 给出可读错误而不是落入 500 兜底
+        throw new LearningServiceError(
+          "invalid_state",
+          "学习模型生成的题目不符合格式要求，请重试",
+          502
+        );
+      }
       const pointByStableKey = new Map(
         map.knowledgePoints.map((point) => [point.lineage.stableKey, point])
       );
