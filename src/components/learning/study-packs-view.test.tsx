@@ -162,9 +162,13 @@ describe("StudyPacksView", () => {
 
     await user.click(screen.getByText("电路基础 · 学习资料包"));
     expect(screen.getByText("生成全部章节")).toBeInTheDocument();
-    expect(screen.getByText("节点电流定律")).toBeInTheDocument();
+    // ready 章节默认展开:标题出现两次(章节标题 + Markdown 渲染的 h1)
+    expect(screen.getAllByText("节点电流定律").length).toBeGreaterThanOrEqual(2);
+    // Markdown 内容已按格式渲染(h2 标题)
+    expect(screen.getByRole("heading", { level: 2, name: "核心要点" })).toBeInTheDocument();
     expect(screen.getByText("已完成")).toBeInTheDocument();
     expect(screen.getByText("发布为成果")).toBeInTheDocument();
+    expect(screen.getByText("下载 Markdown")).toBeInTheDocument();
   });
 
   it("创建资料包携带 idempotency 参数", async () => {

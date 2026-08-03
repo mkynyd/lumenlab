@@ -22,6 +22,8 @@ import { EmptyState } from "@/components/learning/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { MarkdownContent } from "@/components/markdown/markdown-content";
+import { downloadTextFile } from "@/lib/browser/download-text-file";
 
 const SECTION_STATUS_LABELS: Record<string, string> = {
   draft: "未生成",
@@ -210,7 +212,10 @@ function SectionCard({ projectId, pack, section }: SectionCardProps) {
   const regenerate = useRegenerateStudyPackSection(projectId, pack.id);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(section.content ?? "");
-  const [expanded, setExpanded] = useState(false);
+  // 已生成内容的章节默认展开,直接看到渲染后的复习资料
+  const [expanded, setExpanded] = useState(
+    () => section.status === "ready" && (section.content ?? "").trim().length > 0
+  );
 
   const canRegenerate = pack.outlineStatus === "confirmed";
 
@@ -247,9 +252,9 @@ function SectionCard({ projectId, pack, section }: SectionCardProps) {
         </button>
       )}
       {expanded && !editing && (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-md)] bg-[var(--color-control)] p-3 text-xs text-[var(--color-text-secondary)]">
-          {section.content}
-        </pre>
+        <div className="max-h-96 overflow-auto rounded-[var(--radius-md)] bg-[var(--color-control)] p-3">
+          <MarkdownContent content={section.content ?? ""} className="text-sm" />
+        </div>
       )}
       {editing ? (
         <div className="flex flex-col gap-1.5">
@@ -331,6 +336,19 @@ function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
   ).length;
   const canGenerate = pack.outlineStatus === "confirmed";
   const canPublish = readyCount > 0;
+  const readySections = pack.sections.filter(
+    (section) => (section.content ?? "").trim().length > 0
+  );
+
+  const downloadMarkdown = () => {
+    const body = readySections
+      .map((section) => `## ${section.title}\n\n${section.content}`)
+      .join("\n\n---\n\n");
+    downloadTextFile(
+      `# ${pack.title}\n\n${body}`,
+      `${pack.title}.md`
+    );
+  };
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -355,6 +373,10 @@ function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
           </Link>
         )}
       </div>
+      <p className="text-xs text-[var(--color-text-secondary)]">
+        复习资料包按章节整理核心要点、公式与自测题，可直接阅读、
+        下载 Markdown，或发布为成果后在项目里导出 DOCX/PDF。
+      </p>
       <p className="text-xs text-[var(--color-text-secondary)]">
         章节 {pack.sections.length} · 已完成 {readyCount}
         {failedCount > 0 ? ` · 失败 ${failedCount}` : ""}
@@ -405,6 +427,14 @@ function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
           <Button
             type="button"
             size="sm"
+            onClick={downloadMarkdown}
+            disabled={readySections.length === 0}
+          >
+            下载 Markdown
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             variant="secondary"
             onClick={() => publish.mutate()}
             disabled={publish.isPending}
@@ -414,7 +444,7 @@ function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
           <div aria-live="polite">
             {publish.isSuccess && (
               <p role="status" className="text-xs text-[var(--color-text-secondary)]">
-                已发布，可在项目的成果列表中查看与导出。
+                已发布，可在项目的成果列表中导出 DOCX/PDF。
               </p>
             )}
             {publish.isError && (
