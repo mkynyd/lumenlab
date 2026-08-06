@@ -1,7 +1,11 @@
 import "server-only";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import type { RegistrationRepository } from "@/lib/register-user";
+import { findDefaultCredentialProfile } from "@/lib/profile-default";
+import type {
+  ChallengeTicketRow,
+  RegistrationRepository,
+} from "@/lib/register-user";
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
 
@@ -18,58 +22,70 @@ class PrismaRegistrationRepository implements RegistrationRepository {
     });
   }
 
-  findCodeByDigest(digest: string) {
-    return this.client.registrationCode.findUnique({
-      where: { codeDigest: digest },
+  findChallengeForTicket(
+    challengeId: string
+  ): Promise<ChallengeTicketRow | null> {
+    return this.client.emailChallenge.findUnique({
+      where: { id: challengeId },
       select: {
         id: true,
-        status: true,
-        redemptionCount: true,
-        maxRedemptions: true,
-        expiresAt: true,
-        credentialProfile: {
-          select: {
-            id: true,
-            status: true,
-            credentials: {
-              select: { provider: true, status: true },
-            },
-          },
-        },
+        email: true,
+        verifiedAt: true,
+        verifiedVia: true,
+        ticketHash: true,
+        ticketExpiresAt: true,
+        ticketConsumedAt: true,
+        consumedAt: true,
       },
     });
   }
 
-  async consumeCode(codeId: string, now: Date) {
+  async consumeTicket(input: {
+    challengeId: string;
+    ticketHash: string;
+    now: Date;
+  }): Promise<boolean> {
     const affected = await this.client.$executeRaw`
-      UPDATE "RegistrationCode"
-      SET "redemptionCount" = "redemptionCount" + 1,
+      UPDATE "EmailChallenge"
+      SET "ticketConsumedAt" = ${input.now},
           "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = ${codeId}
-        AND "status" = 'active'
-        AND "redemptionCount" < "maxRedemptions"
-        AND ("expiresAt" IS NULL OR "expiresAt" > ${now})
+      WHERE "id" = ${input.challengeId}
+        AND "ticketHash" = ${input.ticketHash}
+        AND "ticketConsumedAt" IS NULL
+        AND "ticketExpiresAt" > ${input.now}
+        AND "consumedAt" IS NULL
     `;
     return affected === 1;
+  }
+
+  findDefaultCredentialProfile() {
+    return findDefaultCredentialProfile(this.client);
   }
 
   createUser(input: {
     email: string;
     passwordHash: string;
     credentialProfileId: string;
+    emailVerifiedAt: Date;
+    emailVerificationSource: string;
   }) {
     return this.client.user.create({
       data: {
         email: input.email,
         passwordHash: input.passwordHash,
         credentialProfileId: input.credentialProfileId,
+        emailVerifiedAt: input.emailVerifiedAt,
+        emailVerificationSource: input.emailVerificationSource,
       },
       select: { id: true, email: true, name: true },
     });
   }
 
-  async createRedemption(input: { codeId: string; userId: string }) {
-    await this.client.registrationRedemption.create({ data: input });
+  async completeChallenge(challengeId: string, now: Date): Promise<void> {
+    await this.client.emailChallenge.updateMany({
+      where: { id: challengeId },
+      data: { consumedAt: now },
+    });
   }
 
   transaction<T>(
@@ -93,4 +109,3 @@ export const registrationRepository = new PrismaRegistrationRepository(
   prisma,
   prisma
 );
-

@@ -25,6 +25,9 @@ model User {
   avatarMimeType        String?
   avatarUpdatedAt       DateTime?
   accessStatus          String    @default("active")
+  emailVerifiedAt       DateTime? // 邮箱验证完成时间；老用户迁移时 backfill 为 createdAt
+  emailVerificationSource String  @default("none") // none | legacy | code | link
+  passwordChangedAt     DateTime? // 密码最近变更时间；JWT 校验旧会话失效
   credentialProfileId   String?
   planTier              String    @default("premium") // free | pro | premium
   planCredits           Int       @default(0) // 当前周期总信用点额度；0 表示 A 测期间不限制
@@ -53,6 +56,7 @@ model User {
   studyPacks           StudyPack[]
   credentialProfile    CredentialProfile?           @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption           RegistrationRedemption?
+  authChallenges       EmailChallenge[]
   profilePrompt        String?
 
   @@index([email])
@@ -1277,6 +1281,83 @@ model LoginAttempt {
 
   @@index([email, createdAt])
   @@index([ip, createdAt])
+}
+
+// ============================================================
+// Email verification & password reset challenges
+// ============================================================
+
+// 邮箱验证/密码重设挑战。verify 发生在用户创建之前，故 userId 可空，仅 reset 填充。
+// 明文 code / rawToken 只在签发时存在于内存；数据库只存 sha256。
+model EmailChallenge {
+  id               String    @id @default(cuid())
+  type             String // "verify" | "reset"
+  email            String
+  userId           String? // 仅 reset：FK User onDelete Cascade
+  // 验证码通道
+  codeHash         String
+  codeExpiresAt    DateTime
+  codeAttempts     Int       @default(0) // 失败尝试计数
+  codeVerifiedAt   DateTime? // 码验证成功时刻
+  // 链接通道（approval-token 模式：DB 只存 sha256(raw)）
+  tokenHash        String?   @unique
+  tokenExpiresAt   DateTime?
+  tokenConsumedAt  DateTime?
+  // 挑战级状态
+  verifiedVia      String? // "code" | "link" —— 最终写入 User.emailVerificationSource
+  verifiedAt       DateTime? // 任一通道验证成功
+  // 注册票据（验证成功后签发，一次性）
+  ticketHash       String?   @unique
+  ticketExpiresAt  DateTime?
+  ticketConsumedAt DateTime?
+  // 关闭标记：被新挑战取代 / 尝试超限 / 注册完成
+  consumedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 部分唯一索引(同 email+type 至多一个活跃挑战)在迁移 SQL 中手工追加
+  @@index([email, type])
+  @@index([consumedAt])
+}
+
+// 邮件发送与投递状态日志。bulkId 为 SendEmail 返回的 MessageId。
+model EmailLog {
+  id            String   @id @default(cuid())
+  kind          String // "verify" | "reset"
+  email         String
+  challengeId   String? // 关联 EmailChallenge.id（无 FK，避免耦合删除）
+  bulkId        String? // SendEmail 返回的 MessageId
+  smtpMessageId String? // 回调 messageId（SMTP 头）
+  event         String   @default("sent")
+  // 状态机取值：sending|sent|delivered|deferred|bounced|dropped|spamreport|failed|callback-only
+  bounceType    String? // soft_bounce | hard_bounce
+  reason        String? // dropped/bounce 原因
+  templateId    String?
+  payload       Json? // dry-run 渲染内容 / 失败错误信息
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  events EmailLogEvent[]
+
+  @@index([bulkId])
+  @@index([email, createdAt])
+  @@index([event])
+}
+
+// 回调事件行。payloadHash 为幂等键（sha256(canonicalJson(payload))）。
+model EmailLogEvent {
+  id          String   @id @default(cuid())
+  emailLogId  String?
+  event       String // delivered|deferred|bounce|dropped|spamreport|open|click|unsubscribe
+  payload     Json // 原样存回调 JSON（体积已限）
+  payloadHash String   @unique
+  receivedAt  DateTime @default(now())
+
+  emailLog EmailLog? @relation(fields: [emailLogId], references: [id], onDelete: Cascade)
+
+  @@index([emailLogId])
 }
 
 // ============================================================

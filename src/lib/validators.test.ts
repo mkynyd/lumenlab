@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { registerSchema, sendMessageSchema } from "@/lib/validators";
+import {
+  registerSchema,
+  resetPasswordSchema,
+  sendMessageSchema,
+  verifyCodeSchema,
+  verifySendSchema,
+} from "@/lib/validators";
 
 describe("registerSchema", () => {
-  it("requires a registration code", () => {
+  it("requires the email verification ticket instead of a registration code", () => {
     expect(
       registerSchema.parse({
         email: "alpha@example.com",
         password: "password123",
-        registrationCode: "ALPHA-7X9P",
+        ticket: "challenge-1.rawToken",
       })
     ).toEqual({
       email: "alpha@example.com",
       password: "password123",
-      registrationCode: "ALPHA-7X9P",
+      ticket: "challenge-1.rawToken",
     });
 
     expect(() =>
@@ -20,6 +26,40 @@ describe("registerSchema", () => {
         email: "alpha@example.com",
         password: "password123",
       })
+    ).toThrow();
+  });
+});
+
+describe("verifyCodeSchema", () => {
+  it("accepts a six-digit code", () => {
+    expect(
+      verifyCodeSchema.parse({ email: "a@b.com", code: "123456" })
+    ).toEqual({ email: "a@b.com", code: "123456" });
+  });
+
+  it("rejects a non-six-digit code", () => {
+    expect(() =>
+      verifyCodeSchema.parse({ email: "a@b.com", code: "12" })
+    ).toThrow();
+  });
+});
+
+describe("verifySendSchema", () => {
+  it("normalizes the email", () => {
+    expect(verifySendSchema.parse({ email: "  A@B.com " }).email).toBe("a@b.com");
+  });
+});
+
+describe("resetPasswordSchema", () => {
+  it("requires a ticket and a strong password", () => {
+    expect(
+      resetPasswordSchema.parse({ ticket: "challenge-1.raw", password: "new-password-123" })
+    ).toEqual({ ticket: "challenge-1.raw", password: "new-password-123" });
+  });
+
+  it("rejects a short password", () => {
+    expect(() =>
+      resetPasswordSchema.parse({ ticket: "challenge-1.raw", password: "short" })
     ).toThrow();
   });
 });

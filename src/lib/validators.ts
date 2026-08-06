@@ -33,11 +33,28 @@ export const loginSchema = z.object({
   password: z.string().min(8, "密码至少需要 8 个字符").max(128),
 });
 
+// 注册：邮箱验证票据（<challengeId>.<raw>）作为注册凭证，替代注册码
 export const registerSchema = loginSchema.extend({
-  registrationCode: z
+  ticket: z.string().min(1, "缺少邮箱验证票据").max(200, "邮箱验证票据无效"),
+});
+
+// 邮箱验证码：6 位数字
+export const verifyCodeSchema = z.object({
+  email: z.string().trim().toLowerCase().email("邮箱格式不正确"),
+  code: z
     .string()
-    .min(8, "注册码至少需要 8 个字符")
-    .max(128, "注册码长度超出限制"),
+    .regex(/^\d{6}$/, "验证码应为 6 位数字"),
+});
+
+// 发送验证/重设邮件
+export const verifySendSchema = z.object({
+  email: z.string().trim().toLowerCase().email("邮箱格式不正确"),
+});
+
+// 密码重设：ticket 即邮件中的一次性 token
+export const resetPasswordSchema = z.object({
+  ticket: z.string().min(1, "缺少重设凭证").max(200, "重设凭证无效"),
+  password: z.string().min(8, "密码至少需要 8 个字符").max(128),
 });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

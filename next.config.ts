@@ -43,6 +43,7 @@ const nextConfig: NextConfig = {
     "pdfkit",
     "adm-zip",
     "fonteditor-core",
+    "tencentcloud-sdk-nodejs-ses",
   ],
   // Turbopack root fix
   turbopack: {

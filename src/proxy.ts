@@ -8,6 +8,8 @@ export const config = {
     "/",
     "/login",
     "/register",
+    "/forgot-password",
+    "/reset-password",
     "/home",
     "/docs/:path*",
     "/learning/:path*",

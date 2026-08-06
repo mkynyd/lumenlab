@@ -120,4 +120,14 @@ export const RateLimits = {
   API_KEY: { max: 10, window: 60_000 },
   FILE_UPLOAD: { max: 20, window: 60_000 },
   FILE_BATCH: { max: 10, window: 60_000 },
+  // 验证邮件发送：每邮箱 3 封/10 分钟 + 每 IP 5 次/10 分钟
+  VERIFY_SEND_EMAIL: { max: 3, window: 600_000 },
+  VERIFY_SEND_IP: { max: 5, window: 600_000 },
+  // 验证码校验：每 IP 10 次/15 分钟
+  VERIFY_CODE_IP: { max: 10, window: 900_000 },
+  // 密码重设邮件：每邮箱 3 封/10 分钟 + 每 IP 5 次/10 分钟
+  FORGOT_SEND_EMAIL: { max: 3, window: 600_000 },
+  FORGOT_SEND_IP: { max: 5, window: 600_000 },
+  // 密码重设确认：每 IP 5 次/10 分钟
+  PASSWORD_RESET_IP: { max: 5, window: 600_000 },
 } as const;
