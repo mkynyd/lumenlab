@@ -199,7 +199,7 @@ export function Stepper({
                   >
                     {isComplete ? <Check size={12} strokeWidth={2.5} /> : index + 1}
                   </span>
-                  <span id={stepTitleId(index)} className="hidden sm:inline">
+                  <span id={stepTitleId(index)} className="hidden sm:inline whitespace-nowrap">
                     {step.title}
                   </span>
                 </button>
