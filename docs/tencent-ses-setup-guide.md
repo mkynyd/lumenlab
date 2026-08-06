@@ -38,10 +38,10 @@
 
 | 模板 | 建议模板名 | 上传文件 | 变量 |
 |---|---|---|---|
-| 邮箱验证 | `lumenlab-email-verify` | `assets/ses-templates/lumenlab-email-verify.html` | `{{code}}`（6 位验证码）、`{{verifyUrl}}`（一次性验证链接） |
-| 密码重设 | `lumenlab-password-reset` | `assets/ses-templates/lumenlab-password-reset.html` | `{{resetUrl}}`（一次性重设链接，60 分钟有效） |
+| 邮箱验证 | `lumenlab-email-verify` | `assets/ses-templates/lumenlab-email-verify.html` | `{{code}}`（6 位验证码）、`{{verifyToken}}`（一次性验证 token，`<challengeId>.<raw>`） |
+| 密码重设 | `lumenlab-password-reset` | `assets/ses-templates/lumenlab-password-reset.html` | `{{resetToken}}`（一次性重设 token，60 分钟有效） |
 
-变量名均为小写字母/大写字母组合，符合腾讯云变量名规则（字母、数字、下划线）。上传后可用「预览」查看效果。
+**链接规范**：模板链接采用「静态域名 + 变量 token」形式——`https://lab.mkynstudio.top/api/auth/verify/link?token={{verifyToken}}`，域名与路径固定，变量只承载 token，满足腾讯云链接审核规范（审核曾因变量承载完整 URL 拒绝）。变量名均为字母组合，符合变量名规则（字母、数字、下划线）。上传后可用「预览」查看效果。
 
 审核周期：工作日 1 个工作日内。触发类（验证码）邮件无字数要求。变量与文字比例不超过 1:5。
 
@@ -57,7 +57,7 @@ LumenLab 邮箱验证
 验证码：{{code}}（15 分钟内有效）
 
 或点击以下链接完成验证（60 分钟内有效，链接一次性使用）：
-{{verifyUrl}}
+https://lab.mkynstudio.top/api/auth/verify/link?token={{verifyToken}}
 
 如果这不是您的操作，请忽略本邮件，您的账户不会受到影响。
 
@@ -71,21 +71,12 @@ LumenLab 密码重设
 
 您好！我们收到了您的密码重设申请，请点击以下链接设置新密码（60 分钟内有效，链接一次性使用）：
 
-{{resetUrl}}
+https://lab.mkynstudio.top/api/auth/password/reset-link?token={{resetToken}}
 
 如果这不是您的操作，请忽略本邮件，您的密码不会被修改。
 
 LumenLab 团队
 ```
-
-### 审核被拒的备选方案
-
-若审核以「链接未保留域名」拒绝（规范要求 URL 至少保留域名部分），把模板中链接改为域名静态 + token 变量：
-
-- 验证模板：`<a href="https://lab.mkynstudio.top/api/auth/verify/link?token={{verifyToken}}">`，变量 `{{code}}`、`{{verifyToken}}`
-- 重设模板：`<a href="https://lab.mkynstudio.top/api/auth/password/reset-link?token={{resetToken}}">`，变量 `{{resetToken}}`
-
-对应需改应用代码：`src/lib/email/service.ts` 的 `templateData` 传 `verifyToken`/`resetToken`（`${challengeId}.${rawToken}`）替代完整 URL（含 `ses-client.test.ts`、`service.test.ts` 断言），并同步更新本指南与 `docs/auth-email-frontend-handoff.md`。
 
 ## 步骤 4：创建 API 密钥（SecretId / SecretKey）
 

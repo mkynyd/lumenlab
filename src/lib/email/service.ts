@@ -136,11 +136,13 @@ export async function sendVerificationEmail(
     { type: "verify", email: input.email },
     { repository: authChallengeRepository, now: opts.now }
   );
-  const verifyUrl = buildVerifyUrl(start.challengeId, start.rawToken);
-  const templateData = buildVerifyTemplateData(start.code, verifyUrl);
+  // 模板链接域名固定为生产域名，变量只承载 token
+  const verifyToken = `${start.challengeId}.${start.rawToken}`;
+  const templateData = buildVerifyTemplateData(start.code, verifyToken);
   const rendered = {
     code: start.code,
-    verifyUrl,
+    verifyToken,
+    verifyUrl: buildVerifyUrl(start.challengeId, start.rawToken),
     expiresAt: start.codeExpiresAt.toISOString(),
   };
 
@@ -174,8 +176,8 @@ export async function sendPasswordResetEmail(
     { type: "reset", email: input.email, userId: input.userId },
     { repository: authChallengeRepository, now: opts.now }
   );
-  const resetUrl = buildResetUrl(start.challengeId, start.rawToken);
-  const templateData = buildResetTemplateData(resetUrl);
+  const resetToken = `${start.challengeId}.${start.rawToken}`;
+  const templateData = buildResetTemplateData(resetToken);
 
   return deliverTemplateEmail({
     kind: "reset",
@@ -184,6 +186,10 @@ export async function sendPasswordResetEmail(
     templateId: getTemplateId("reset") ?? "",
     subject: buildResetSubject(),
     templateData,
-    rendered: { resetUrl, expiresAt: start.tokenExpiresAt.toISOString() },
+    rendered: {
+      resetToken,
+      resetUrl: buildResetUrl(start.challengeId, start.rawToken),
+      expiresAt: start.tokenExpiresAt.toISOString(),
+    },
   });
 }

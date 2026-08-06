@@ -35,17 +35,19 @@ export function buildResetUrl(challengeId: string, rawToken: string): string {
   return `${base}?token=${encodeURIComponent(`${challengeId}.${rawToken}`)}`;
 }
 
+// 模板链接采用「静态域名 + 变量 token」形式（腾讯云审核要求域名确定，
+// 变量不得承载完整 URL）；模板见 assets/ses-templates/。
 export function buildVerifyTemplateData(
   code: string,
-  verifyUrl: string
+  verifyToken: string
 ): Record<string, string> {
-  return { code, verifyUrl };
+  return { code, verifyToken };
 }
 
 export function buildResetTemplateData(
-  resetUrl: string
+  resetToken: string
 ): Record<string, string> {
-  return { resetUrl };
+  return { resetToken };
 }
 
 export function buildVerifySubject(): string {

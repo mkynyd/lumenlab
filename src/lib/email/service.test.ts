@@ -104,7 +104,8 @@ describe("sendVerificationEmail", () => {
       templateId: "",
       templateData: {
         code: expect.stringMatching(/^\d{6}$/),
-        verifyUrl: expect.stringContaining("/api/auth/verify/link?token="),
+        // 模板链接域名固定，变量只承载 token（<challengeId>.<raw>）
+        verifyToken: expect.stringMatching(/^challenge-1\.[A-Za-z0-9_-]+$/),
       },
       smtpMessageId: "<verify-challenge-1@mail.mkynstudio.top>",
       headers: { "X-Tencentcloudses-Cb-Kind": "verify" },

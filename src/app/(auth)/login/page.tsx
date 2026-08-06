@@ -14,10 +14,18 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("from") || "/chat";
   const errorId = useId();
+  const noticeId = useId();
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<"email" | "password" | null>(null);
+
+  const notice =
+    searchParams.get("reset") === "done"
+      ? "密码已重置，请重新登录"
+      : searchParams.get("registered") === "true"
+        ? "注册成功，请使用邮箱和密码登录"
+        : null;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -36,8 +44,13 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        setError("邮箱或密码错误，请重试");
-        setErrorField("password");
+        if (result.code === "email_not_verified") {
+          setError("该邮箱尚未完成验证，请查收验证邮件并完成注册");
+          setErrorField("email");
+        } else {
+          setError("邮箱或密码错误，请重试");
+          setErrorField("password");
+        }
         setIsLoading(false);
         return;
       }
@@ -107,6 +120,16 @@ function LoginForm() {
           />
         </div>
 
+        {notice && (
+          <p
+            id={noticeId}
+            className="rounded-[var(--radius-md)] bg-[var(--color-success-muted)] px-3 py-2 text-sm text-[var(--color-success)]"
+            role="status"
+          >
+            {notice}
+          </p>
+        )}
+
         {error && (
           <p
             id={errorId}
@@ -131,6 +154,15 @@ function LoginForm() {
             "登录"
           )}
         </Button>
+
+        <div className="text-center">
+          <Link
+            href="/forgot-password"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center px-1 text-sm text-[var(--color-accent)] transition-colors hover:text-[var(--color-accent-hover)]"
+          >
+            忘记密码？
+          </Link>
+        </div>
       </form>
     </AuthShell>
   );
