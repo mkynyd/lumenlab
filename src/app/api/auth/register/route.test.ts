@@ -54,10 +54,10 @@ describe("POST /api/auth/register", () => {
     registrationRepository.findChallengeForTicket.mockReset().mockResolvedValue({
       id: "challenge-1",
       email: "new@example.com",
-      verifiedAt: new Date("2026-08-06T11:50:00.000Z"),
+      verifiedAt: new Date(Date.now() - 10 * 60 * 1000),
       verifiedVia: "code",
       ticketHash: TICKET_HASH,
-      ticketExpiresAt: new Date("2026-08-06T12:15:00.000Z"),
+      ticketExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
       ticketConsumedAt: null,
       consumedAt: null,
     });
