@@ -34,33 +34,20 @@
 
 ## 步骤 3：创建邮件模板（2 个，需审核）
 
-邮件配置 → 发信模板 → 新建发信模板。**模板类型选「HTML 富文本」**（内容以文字为主，兼容性最好；如腾讯云支持，可再建同名纯文本版本）。
+邮件配置 → 发信模板 → 新建发信模板。**模板类型选「HTML 富文本」**，点击「上传 HTML 文件」上传仓库中的现成文件（UTF-8 编码，远小于 400KB 限制）：
+
+| 模板 | 建议模板名 | 上传文件 | 变量 |
+|---|---|---|---|
+| 邮箱验证 | `lumenlab-email-verify` | `assets/ses-templates/lumenlab-email-verify.html` | `{{code}}`（6 位验证码）、`{{verifyUrl}}`（一次性验证链接） |
+| 密码重设 | `lumenlab-password-reset` | `assets/ses-templates/lumenlab-password-reset.html` | `{{resetUrl}}`（一次性重设链接，60 分钟有效） |
+
+变量名均为小写字母/大写字母组合，符合腾讯云变量名规则（字母、数字、下划线）。上传后可用「预览」查看效果。
 
 审核周期：工作日 1 个工作日内。触发类（验证码）邮件无字数要求。变量与文字比例不超过 1:5。
 
-### 模板 1：邮箱验证（模板名建议 `lumenlab-email-verify`）
+### 模板内容参考（与上传文件一致）
 
-变量：`{{code}}`（6 位验证码）、`{{verifyUrl}}`（一次性验证链接）
-
-HTML 正文：
-
-```html
-<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background-color:#f6f7fb;font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;">
-  <div style="max-width:520px;margin:24px auto;background:#ffffff;border-radius:14px;padding:32px;">
-    <h1 style="font-size:18px;color:#1a1d29;margin:0 0 16px;">LumenLab 邮箱验证</h1>
-    <p style="font-size:14px;color:#4a4f63;line-height:1.7;margin:0 0 16px;">您好！您正在注册 LumenLab 账户，请使用以下验证码完成验证：</p>
-    <div style="font-size:32px;font-weight:600;letter-spacing:8px;color:#5a5fe1;text-align:center;padding:16px 0;margin:0 0 16px;">{{code}}</div>
-    <p style="font-size:14px;color:#4a4f63;line-height:1.7;margin:0 0 8px;">或点击以下链接完成验证（60 分钟内有效，链接一次性使用）：</p>
-    <p style="margin:0 0 16px;"><a href="{{verifyUrl}}" style="display:inline-block;background:#5a5fe1;color:#ffffff;text-decoration:none;padding:10px 24px;border-radius:10px;font-size:14px;">完成邮箱验证</a></p>
-    <p style="font-size:12px;color:#8a8fa3;line-height:1.7;margin:0;">验证码 15 分钟内有效。如果这不是您的操作，请忽略本邮件，您的账户不会受到影响。</p>
-  </div>
-</body>
-</html>
-```
-
-纯文本版本（备选/参考）：
+邮箱验证（纯文本形态，供核对内容）：
 
 ```text
 LumenLab 邮箱验证
@@ -77,27 +64,7 @@ LumenLab 邮箱验证
 LumenLab 团队
 ```
 
-### 模板 2：密码重设（模板名建议 `lumenlab-password-reset`）
-
-变量：`{{resetUrl}}`（一次性重设链接，60 分钟有效）
-
-HTML 正文：
-
-```html
-<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background-color:#f6f7fb;font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;">
-  <div style="max-width:520px;margin:24px auto;background:#ffffff;border-radius:14px;padding:32px;">
-    <h1 style="font-size:18px;color:#1a1d29;margin:0 0 16px;">LumenLab 密码重设</h1>
-    <p style="font-size:14px;color:#4a4f63;line-height:1.7;margin:0 0 16px;">您好！我们收到了您的密码重设申请，请点击以下链接设置新密码（60 分钟内有效，链接一次性使用）：</p>
-    <p style="margin:0 0 16px;"><a href="{{resetUrl}}" style="display:inline-block;background:#5a5fe1;color:#ffffff;text-decoration:none;padding:10px 24px;border-radius:10px;font-size:14px;">设置新密码</a></p>
-    <p style="font-size:12px;color:#8a8fa3;line-height:1.7;margin:0;">如果这不是您的操作，请忽略本邮件，您的密码不会被修改。</p>
-  </div>
-</body>
-</html>
-```
-
-纯文本版本（备选/参考）：
+密码重设（纯文本形态，供核对内容）：
 
 ```text
 LumenLab 密码重设
