@@ -68,3 +68,7 @@ LOCALTEST.md
 /接口文档.md
 /scripts/deploy.sh
 /deploy/
+
+# Agent handoff / sensitive setup docs (local only, never pushed)
+/docs/auth-email-frontend-handoff.md
+/docs/tencent-ses-setup-guide.md
