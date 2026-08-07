@@ -28,7 +28,7 @@ export function AvatarMark({
     return (
       <span
         className={cn(
-          "flex shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-surface)]",
+          "flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--color-surface)]",
           className
         )}
       >
@@ -42,7 +42,7 @@ export function AvatarMark({
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-[var(--radius-md)] text-xs font-semibold",
+        "flex shrink-0 items-center justify-center rounded-full text-xs font-semibold",
         AVATAR_STYLE_CLASSES[preset.id],
         className
       )}
