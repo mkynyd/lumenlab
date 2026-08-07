@@ -53,13 +53,12 @@ export function LandingFooter() {
 
         <div className="mt-20 flex flex-col gap-2 border-t border-[var(--color-border-light)] pt-5 text-[12px] text-[var(--color-text-tertiary)] sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <span className="relative flex size-5 items-center justify-center overflow-hidden rounded-md">
+            <span className="relative flex size-5 items-center justify-center">
               <Image
-                src="/LumenLab-logo-only.png"
+                src="/LumenLab.png"
                 alt="LumenLab"
                 width={20}
                 height={20}
-                className="object-cover"
                 aria-hidden
               />
             </span>

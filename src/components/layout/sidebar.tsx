@@ -284,13 +284,12 @@ export function Sidebar({
             )}
             aria-label="LumenLab 首页"
           >
-            <span className="relative flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-lg">
+            <span className="relative flex size-7 shrink-0 items-center justify-center">
               <Image
-                src="/LumenLab-logo-only.png"
+                src="/LumenLab.png"
                 alt=""
                 width={28}
                 height={28}
-                className="object-cover"
                 priority
               />
             </span>
@@ -305,13 +304,12 @@ export function Sidebar({
               aria-expanded="false"
               title="展开侧边栏"
             >
-              <span className="relative flex size-6 items-center justify-center overflow-hidden rounded-md transition-opacity group-hover:opacity-0">
+              <span className="relative flex size-6 items-center justify-center transition-opacity group-hover:opacity-0">
                 <Image
-                  src="/LumenLab-logo-only.png"
+                  src="/LumenLab.png"
                   alt=""
                   width={24}
                   height={24}
-                  className="object-cover"
                   priority
                 />
               </span>

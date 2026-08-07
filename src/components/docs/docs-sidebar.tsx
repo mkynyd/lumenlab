@@ -41,13 +41,12 @@ export function DocsSidebar({
           href="/home"
           className="flex items-center gap-2 rounded-[var(--radius-md)] px-1 py-1 text-[15px] font-semibold tracking-tight text-[var(--color-text-primary)] transition-colors hover:text-[var(--color-accent)]"
         >
-          <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-[var(--radius-md)]">
+          <span className="relative flex size-8 items-center justify-center">
             <Image
-              src="/LumenLab-logo-only.png"
+              src="/LumenLab.png"
               alt="LumenLab"
               width={32}
               height={32}
-              className="object-cover"
               priority
             />
           </span>

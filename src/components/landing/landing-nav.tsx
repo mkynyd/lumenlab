@@ -23,13 +23,12 @@ export function LandingNav({ showBrand = true }: LandingNavProps) {
             href="/home"
             className="flex items-center gap-2 rounded-lg px-1 py-1 text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-primary)] transition-colors duration-200 hover:text-[var(--color-accent)]"
           >
-            <span className="relative flex size-7 items-center justify-center overflow-hidden rounded-lg">
+            <span className="relative flex size-7 items-center justify-center">
               <Image
-                src="/LumenLab-logo-only.png"
+                src="/LumenLab.png"
                 alt="LumenLab"
                 width={28}
                 height={28}
-                className="object-cover"
                 priority
               />
             </span>
