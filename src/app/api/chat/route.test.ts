@@ -1570,6 +1570,9 @@ describe("Streaming tool loop", () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get("X-Agent-Orchestrator")).toBe("enabled");
+      // POST 现在在模型生成期间就返回流;读完流后再断言副作用已全部发生。
+      const body = await response.text();
+      expect(body).toContain("最终回答");
       expect(mocks.streamChat).toHaveBeenCalledTimes(2);
       expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
         expect.objectContaining({

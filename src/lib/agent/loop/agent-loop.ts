@@ -40,6 +40,13 @@ export interface AgentLoopInput {
     arguments: Record<string, unknown>;
   }>;
   maxRounds?: number;
+  /**
+   * Real-time model event hook. bufferRound must buffer each round so tool
+   * calls can be parsed, but the same events are forwarded here as they
+   * arrive so the HTTP stream can relay deltas while the model is still
+   * generating instead of replaying everything after the round completes.
+   */
+  onModelEvent?: (event: ProviderStreamEvent) => void;
 }
 
 export interface AgentLoopResult {
@@ -73,7 +80,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     }
 
     try {
-      roundResult = await bufferRound(roundResult, input.signal);
+      roundResult = await bufferRound(roundResult, input.signal, input.onModelEvent);
     } catch (error) {
       if (input.signal.aborted || isAbortError(error)) {
         return cancelled(roundResult);
@@ -201,6 +208,9 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     messages = roundResult.requestMessages;
 
     if (stopInstruction) {
+      // 这一轮由 continueRound 产生、尚未经过 bufferRound,内容还没实时转发。
+      // 缓冲并转发后再返回,保持"每一轮内容都实时送达"的契约。
+      roundResult = await bufferRound(roundResult, input.signal, input.onModelEvent);
       return {
         status: "completed",
         finalRound: roundResult,
@@ -272,7 +282,8 @@ async function blockLoopCall(
 
 async function bufferRound(
   round: ProviderRound,
-  signal: AbortSignal
+  signal: AbortSignal,
+  forward?: (event: ProviderStreamEvent) => void
 ): Promise<ProviderRound> {
   const reader = round.events.getReader();
   const events: ProviderStreamEvent[] = [];
@@ -281,12 +292,39 @@ async function bufferRound(
   };
   if (signal.aborted) cancel();
   signal.addEventListener("abort", cancel, { once: true });
+  // 转发时做全量清洗 + 增量切片(与 deepseek 传输层一致):工具调用标记
+  // 只有在完整闭合时才能被移除,增量文本必须按"清洗后全文"切片,否则
+  // 用户会在流式过程中看到 <tool_calls> 之类的原始标记。
+  let rawText = "";
+  let cleanedTextStreamed = "";
+  let rawReasoning = "";
+  let cleanedReasoningStreamed = "";
+  const forwardCleaned = (event: ProviderStreamEvent) => {
+    if (event.type === "text_delta") {
+      rawText += event.text;
+      const cleaned = sanitizeModelText(rawText);
+      const delta = cleaned.slice(cleanedTextStreamed.length);
+      cleanedTextStreamed = cleaned;
+      if (delta) forward?.({ type: "text_delta", text: delta });
+    } else if (event.type === "reasoning_delta") {
+      rawReasoning += event.text;
+      const cleaned = sanitizeModelText(rawReasoning);
+      const delta = cleaned.slice(cleanedReasoningStreamed.length);
+      cleanedReasoningStreamed = cleaned;
+      if (delta) forward?.({ type: "reasoning_delta", text: delta });
+    } else {
+      forward?.(event);
+    }
+  };
   try {
     while (true) {
       if (signal.aborted) throw abortError();
       const { done, value } = await reader.read();
       if (done) break;
-      if (value) events.push(value);
+      if (value) {
+        events.push(value);
+        forwardCleaned(value);
+      }
     }
   } finally {
     signal.removeEventListener("abort", cancel);

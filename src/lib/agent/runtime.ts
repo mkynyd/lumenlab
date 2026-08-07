@@ -304,6 +304,35 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   const isQuickTask = input.capabilities.isQuickTask;
   const materialScope = input.capabilities.materialScope;
   try {
+  // 实时事件出口:所有 operational 事件和模型增量在发生时立即写入,
+  // HTTP 适配层可以在模型生成期间就流式转发,而不是等整次运行结束再回放。
+  // 用对象属性保存 controller:TS 对"仅闭包内赋值的变量"会窄化为 never,
+  // 属性访问不受该分析影响。
+  const outboundState: {
+    controller: ReadableStreamDefaultController<AgentRuntimeEvent> | null;
+  } = { controller: null };
+  const outbound = new ReadableStream<AgentRuntimeEvent>({
+    start(controller) {
+      outboundState.controller = controller;
+    },
+  });
+  const emitRuntimeEvent = (event: AgentRuntimeEvent) => {
+    outboundState.controller?.enqueue(event);
+  };
+  // 手工 async iterator 包装:项目 lib 未启用 ReadableStream 的 Symbol.asyncIterator 类型,
+  // 但运行时(Node 18+)原生支持,这里用 Reader 实现同等的契约。
+  const outboundEvents: AsyncIterable<AgentRuntimeEvent> = {
+    [Symbol.asyncIterator]() {
+      const reader = outbound.getReader();
+      return {
+        next: () => reader.read(),
+        return: async () => {
+          await reader.cancel().catch(() => {});
+          return { done: true as const, value: undefined };
+        },
+      };
+    },
+  };
   const attachmentText = await textAttachmentContext(attachments);
   let effectivePrompt = [
     hiddenPrompt || message,
@@ -593,10 +622,9 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     });
   }
 
-  const agentEvents: AgentEvent[] = [];
   let publicPlan: ReturnType<typeof buildInitialAgentPlan> = null;
   const emitAgentEvent = (event: AgentEvent) => {
-    agentEvents.push(event);
+    emitRuntimeEvent(event);
     if (event.type === "plan_updated") publicPlan = event.plan;
     runMetrics.observeAgentEvent(event);
   };
@@ -1039,99 +1067,16 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   if (!adapter) {
     throw new Error("Provider adapter was not initialized");
   }
-  let loopResult: AgentLoopResult;
-  if (preludePendingExecutionIds.length > 0) {
-    loopResult = {
-      status: "awaiting_approval",
-      finalRound: streamResult,
-      pendingExecutionIds: preludePendingExecutionIds,
-      stopReason: "approval_required",
-    };
-  } else {
-    try {
-      loopResult = await runAgentLoop({
-        provider: adapter,
-        initialRound: streamResult,
-        model,
-        thinkingEnabled,
-        reasoningEffort,
-        activeTools,
-        messages: streamResult.requestMessages,
-        context: {
-          userId,
-          conversationId: conversation.id,
-          projectId: project?.id,
-          selectedFileIds: uniqueFileIds,
-          skillId: skillRoute.activeSkillId ?? undefined,
-          runId,
-          agentExecutionId: input.durable?.executionId,
-          sessionApprovals,
-        },
-        signal: input.signal,
-        toolRunner,
-        emit: emitAgentEvent,
-        audit: recordAuditEvent,
-        preAttemptedCalls: preludeAttemptedCalls,
-      });
-    } catch (error) {
-      const mapped = mapProviderError(error);
-      if (mapped) throw mapped;
-      throw error;
-    }
-  }
-  streamResult = loopResult.finalRound;
-  if (publicPlan) {
-    emitAgentEvent({
-      type: "plan_updated",
-      plan: finalizeAgentPlan(publicPlan, loopResult.status),
-      source: "runtime",
-    });
-  }
-  if (loopResult.stopReason && process.env.AGENT_DEBUG_EVENTS === "1") {
-    emitAgentEvent({
-      type: "tool_loop_stop_reason",
-      reason: loopResult.stopReason,
-    });
-  }
 
-  const messageSources = orchestratorSources.length > 0 ? orchestratorSources : legacySources;
+  // 提前创建助手消息占位,让 metadata.messageId 在 SSE 响应头可用。
   const assistantMessage = input.durable
     ? { id: input.durable.assistantMessageId }
     : await conversationPersistence.createAssistantMessage({
         conversationId: conversation.id,
-        sources: messageSources,
+        sources: [],
       });
 
-  const [eventStream, persistenceStream] = streamResult.events.tee();
-  const completion = accumulateAndSaveEvents(
-    observeProviderEvents(persistenceStream, runMetrics),
-    conversation.id,
-    assistantMessage.id,
-    userId,
-    model,
-    modelRoute.provider,
-    streamResult.getUsage,
-    messageSources,
-    loopResult.status,
-    conversationPersistence,
-    Boolean(input.durable),
-    !input.durable,
-    input.durable?.priorUsage ?? null
-  )
-    .then(async (result) => {
-      runMetrics.recordUsage(result.usage);
-      await recordRunMetricOnce(result.status, conversation.id);
-      return result;
-    })
-    .catch(async (error) => {
-      await recordRunMetricOnce("failed", conversation.id);
-      throw error;
-    });
-  void completion.catch((error) => {
-    logger.error("保存助手消息失败", { error: String(error) });
-  });
-
-  // 14. 首次对话更新标题
+  // 14. 首次对话更新标题(与模型生成并行,不阻塞流)。
   if (!conversationId) {
     conversationPersistence
       .updateTitle({
@@ -1140,6 +1085,160 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       })
       .catch(() => {});
   }
+
+  // 模型请求已发起(startRound 完成),run 立即返回:
+  // loop + 持久化移到后台执行,模型增量经 onModelEvent / outbound 实时送达,
+  // 前端不必等整次生成结束才看到内容。
+  let resolveCompletion!: (value: AgentCompletion) => void;
+  let rejectCompletion!: (reason?: unknown) => void;
+  const completion = new Promise<AgentCompletion>((resolve, reject) => {
+    resolveCompletion = resolve;
+    rejectCompletion = reject;
+  });
+  void completion.catch((error) => {
+    logger.error("保存助手消息失败", { error: String(error) });
+  });
+
+  void (async () => {
+    try {
+      const forwardModelEvent = (value: ProviderStreamEvent) => {
+        if (value.type === "usage") {
+          emitRuntimeEvent({ type: "usage", usage: normalizeUsage(value.usage) });
+        } else {
+          emitRuntimeEvent(value);
+        }
+      };
+      if (preludePendingExecutionIds.length === 0) {
+        emitRuntimeEvent({
+          type: "model_started",
+          provider: modelRoute.provider,
+          model,
+        });
+      }
+
+      let loopResult: AgentLoopResult;
+      if (preludePendingExecutionIds.length > 0) {
+        loopResult = {
+          status: "awaiting_approval",
+          finalRound: streamResult,
+          pendingExecutionIds: preludePendingExecutionIds,
+          stopReason: "approval_required",
+        };
+      } else {
+        try {
+          loopResult = await runAgentLoop({
+            provider: adapter,
+            initialRound: streamResult,
+            model,
+            thinkingEnabled,
+            reasoningEffort,
+            activeTools,
+            messages: streamResult.requestMessages,
+            context: {
+              userId,
+              conversationId: conversation.id,
+              projectId: project?.id,
+              selectedFileIds: uniqueFileIds,
+              skillId: skillRoute.activeSkillId ?? undefined,
+              runId,
+              agentExecutionId: input.durable?.executionId,
+              sessionApprovals,
+            },
+            signal: input.signal,
+            toolRunner,
+            emit: emitAgentEvent,
+            audit: recordAuditEvent,
+            preAttemptedCalls: preludeAttemptedCalls,
+            onModelEvent: forwardModelEvent,
+          });
+        } catch (error) {
+          const mapped = mapProviderError(error);
+          if (mapped) throw mapped;
+          throw error;
+        }
+      }
+      streamResult = loopResult.finalRound;
+      if (publicPlan) {
+        emitAgentEvent({
+          type: "plan_updated",
+          plan: finalizeAgentPlan(publicPlan, loopResult.status),
+          source: "runtime",
+        });
+      }
+      if (loopResult.stopReason && process.env.AGENT_DEBUG_EVENTS === "1") {
+        emitAgentEvent({
+          type: "tool_loop_stop_reason",
+          reason: loopResult.stopReason,
+        });
+      }
+
+      const messageSources =
+        orchestratorSources.length > 0 ? orchestratorSources : legacySources;
+      const persistAndComplete = (events: ReadableStream<ProviderStreamEvent>) =>
+        accumulateAndSaveEvents(
+          observeProviderEvents(events, runMetrics),
+          conversation.id,
+          assistantMessage.id,
+          userId,
+          model,
+          modelRoute.provider,
+          streamResult.getUsage,
+          messageSources,
+          loopResult.status,
+          conversationPersistence,
+          Boolean(input.durable),
+          !input.durable,
+          input.durable?.priorUsage ?? null
+        )
+          .then(async (result) => {
+            runMetrics.recordUsage(result.usage);
+            await recordRunMetricOnce(result.status, conversation.id);
+            resolveCompletion(result);
+          })
+          .catch(async (error) => {
+            await recordRunMetricOnce("failed", conversation.id);
+            rejectCompletion(error);
+          });
+
+      if (preludePendingExecutionIds.length > 0) {
+        // 等待审批的静态文本轮没有经过 runAgentLoop,内容尚未转发:
+        // tee 后一路径持久化,另一路径实时转发给前端。
+        const [clientStream, persistenceStream] = streamResult.events.tee();
+        void persistAndComplete(persistenceStream);
+        const reader = clientStream.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            forwardModelEvent(value);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      } else {
+        // loop 已通过 onModelEvent 把各轮增量实时转发给前端;
+        // 这里只消费 finalRound 用于持久化,不再重复转发。
+        void persistAndComplete(streamResult.events);
+      }
+
+      emitRuntimeEvent({
+        type: "completed",
+        conversationId: conversation.id,
+        messageId: assistantMessage.id,
+      });
+      outboundState.controller?.close();
+    } catch (error) {
+      logger.error("agent runtime background execution failed", {
+        error: String(error),
+      });
+      try {
+        outboundState.controller?.error(error);
+      } catch {
+        // outbound 已关闭,忽略。
+      }
+      rejectCompletion(error);
+    }
+  })();
 
   const metadata: AgentRun["metadata"] = {
     conversationId: conversation.id,
@@ -1156,12 +1255,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
 
   return {
     metadata,
-    events: providerEventsToRuntimeEvents(
-      agentEvents,
-      eventStream,
-      metadata,
-      preludePendingExecutionIds.length === 0
-    ),
+    events: outboundEvents,
     completion,
   };
   } catch (error) {
@@ -1210,48 +1304,6 @@ function mapProviderError(error: unknown): AgentRuntimeError | null {
     });
   }
   return null;
-}
-
-async function* providerEventsToRuntimeEvents(
-  operationalEvents: AgentEvent[],
-  stream: ReadableStream<ProviderStreamEvent>,
-  metadata: AgentRun["metadata"],
-  modelStarted: boolean
-): AsyncIterable<AgentRuntimeEvent> {
-  for (const event of operationalEvents) yield event;
-  if (modelStarted) {
-    yield {
-      type: "model_started",
-      provider: metadata.provider,
-      model: metadata.model,
-    };
-  }
-
-  const reader = stream.getReader();
-  let completed = false;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        completed = true;
-        break;
-      }
-      if (value.type === "usage") {
-        yield { type: "usage", usage: normalizeUsage(value.usage) };
-      } else {
-        yield value;
-      }
-    }
-  } finally {
-    if (!completed) await reader.cancel("runtime event consumer cancelled").catch(() => {});
-    reader.releaseLock();
-  }
-
-  yield {
-    type: "completed",
-    conversationId: metadata.conversationId,
-    messageId: metadata.messageId,
-  };
 }
 
 function observeProviderEvents(
