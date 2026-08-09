@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profileName" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profileProfession" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profileDetails" TEXT;

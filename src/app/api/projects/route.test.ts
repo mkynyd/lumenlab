@@ -186,6 +186,21 @@ describe("POST /api/projects", () => {
     }
   });
 
+  it("accepts quick action titles up to 20 characters", async () => {
+    const response = await post({
+      name: "电路实验",
+      type: "review",
+      quickActions: [{ title: "整理这份资料的章节结构", prompt: "请整理" }],
+    });
+
+    expect(response.status).toBe(201);
+    const createManyCall = mocks.quickActionCreateMany.mock.calls[0][0];
+    expect(createManyCall.data[defaultQuickActionCount]).toMatchObject({
+      title: "整理这份资料的章节结构",
+      isSystem: false,
+    });
+  });
+
   it("rejects unauthenticated requests", async () => {
     mocks.auth.mockResolvedValue(null);
     const response = await post({ name: "电路实验", type: "review" });

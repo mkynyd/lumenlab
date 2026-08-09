@@ -2,7 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+
+type RecentRecord = {
+  id: string;
+  model: string;
+  provider: string;
+  totalTokens: number;
+  creditsConsumed: number;
+  createdAt: string;
+};
 
 type UsageResponse = {
   tier: string;
@@ -32,6 +42,7 @@ type UsageResponse = {
       creditsConsumed: number;
       createdAt: string;
     }>;
+    nextCursor: string | null;
   };
 };
 
@@ -40,6 +51,9 @@ export default function UsagePage() {
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [moreRecords, setMoreRecords] = useState<RecentRecord[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     fetch("/api/me/usage")
@@ -52,13 +66,42 @@ export default function UsagePage() {
         return res.json() as Promise<UsageResponse>;
       })
       .then((json) => {
-        if (json) setData(json);
+        if (json) {
+          setData(json);
+          setNextCursor(json.usage.nextCursor ?? null);
+        }
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "加载失败");
       })
       .finally(() => setLoading(false));
   }, [router]);
+
+  const loadMoreRecords = () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    fetch(
+      `/api/me/usage?cursor=${encodeURIComponent(nextCursor)}&limit=20`,
+    )
+      .then(async (res) => {
+        if (res.status === 401) {
+          router.push("/login");
+          return null;
+        }
+        if (!res.ok) throw new Error(await res.text());
+        return res.json() as Promise<UsageResponse>;
+      })
+      .then((json) => {
+        if (json) {
+          setMoreRecords((prev) => [...prev, ...json.usage.recentRecords]);
+          setNextCursor(json.usage.nextCursor ?? null);
+        }
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "加载失败");
+      })
+      .finally(() => setLoadingMore(false));
+  };
 
   if (loading) {
     return (
@@ -96,6 +139,7 @@ export default function UsagePage() {
     ),
     1,
   );
+  const recentRecords = [...data.usage.recentRecords, ...moreRecords];
   const quotaUsage =
     data.quota.enforced && data.quota.total
       ? Math.min(100, (data.quota.used / data.quota.total) * 100)
@@ -169,12 +213,12 @@ export default function UsagePage() {
           </h2>
           <dl className="mt-2 grid grid-cols-2 gap-x-6 sm:grid-cols-5">
             {[
-              ["周期 Credits", data.usage.currentCycleCredits],
-              ["周期 tokens", data.usage.currentCycleTokens],
-              ["最近 24 小时", data.usage.last24hCredits],
-              ["最近 7 天", data.usage.last7dCredits],
-              ["最近 5 小时", data.usage.last5hCredits],
-            ].map(([label, value]) => (
+              ["周期 Credits", data.usage.currentCycleCredits, "Credits"],
+              ["周期 tokens", data.usage.currentCycleTokens, "tokens"],
+              ["最近 5 小时", data.usage.last5hCredits, "Credits"],
+              ["最近 24 小时", data.usage.last24hCredits, "Credits"],
+              ["最近 7 天", data.usage.last7dCredits, "Credits"],
+            ].map(([label, value, unit]) => (
               <div
                 key={String(label)}
                 className="border-b border-[var(--color-border-light)] py-3"
@@ -183,7 +227,10 @@ export default function UsagePage() {
                   {label}
                 </dt>
                 <dd className="mt-1 text-base font-medium tabular-nums text-[var(--color-text-primary)]">
-                  {Number(value).toLocaleString()}
+                  {Number(value).toLocaleString()}{" "}
+                  <span className="text-xs font-normal text-[var(--color-text-tertiary)]">
+                    {unit}
+                  </span>
                 </dd>
               </div>
             ))}
@@ -230,7 +277,7 @@ export default function UsagePage() {
           </section>
         )}
 
-        {data.usage.recentRecords.length > 0 && (
+        {recentRecords.length > 0 && (
           <section aria-labelledby="recent-requests-heading" className="mt-8">
             <h2
               id="recent-requests-heading"
@@ -249,7 +296,7 @@ export default function UsagePage() {
                   </tr>
                 </thead>
                 <tbody className="text-[var(--color-text-primary)]">
-                  {data.usage.recentRecords.map((record) => (
+                  {recentRecords.map((record) => (
                     <tr
                       key={record.id}
                       className="border-t border-[var(--color-border-light)]"
@@ -271,6 +318,18 @@ export default function UsagePage() {
                 </tbody>
               </table>
             </div>
+            {nextCursor && (
+              <div className="mt-3 flex justify-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={loadMoreRecords}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? "加载中…" : "加载更多"}
+                </Button>
+              </div>
+            )}
           </section>
         )}
       </main>

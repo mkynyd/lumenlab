@@ -383,6 +383,7 @@ export function ProjectSidebar({
               onToggle={onFileToggle}
               onFileAction={(action, file) => onFileAction(action, file.id)}
               searchQuery={fileSearch}
+              onClearSearch={() => setFileSearch("")}
               className="w-full overflow-hidden"
             />
           </ScrollArea>
@@ -506,6 +507,7 @@ export function ProjectSidebar({
       onOpenChange={setDetailOpen}
       projectName={project.name}
       projectType={project.type}
+      systemPrompt={project.systemPrompt}
       fileCount={fileCount}
       conversationCount={conversationCount}
       artifactCount={artifactCount}

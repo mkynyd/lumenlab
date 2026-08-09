@@ -15,7 +15,15 @@ vi.mock("@/lib/data/provider-access", () => ({
 }));
 vi.mock("@/lib/parse/mineru", () => ({
   parseFileWithMinerU: mocks.parseFileWithMinerU,
-  MinerUError: class MinerUError extends Error {},
+  MinerUError: class MinerUError extends Error {
+    constructor(
+      public code: string | number,
+      message: string
+    ) {
+      super(message);
+      this.name = "MinerUError";
+    }
+  },
 }));
 vi.mock("@/lib/conversions/assets", () => ({
   storeConversionAssets: mocks.storeConversionAssets,
@@ -28,6 +36,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { POST } from "@/app/api/tools/pdf-to-markdown/route";
+import { MinerUError } from "@/lib/parse/mineru";
 
 function pdfRequest(options?: { token?: string; file?: File }) {
   const body = new FormData();
@@ -115,6 +124,21 @@ describe("POST /api/tools/pdf-to-markdown", () => {
     await expect(response.json()).resolves.toEqual({
       error: "您的账户未开通文档解析服务，请在下方输入 MinerU Token",
       needToken: true,
+      code: "need-token",
+    });
+  });
+
+  it("includes a code in non-stream validation error responses", async () => {
+    const response = await POST(
+      pdfRequest({
+        file: new File(["hello"], "notes.txt", { type: "text/plain" }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "请选择有效的 PDF 文件",
+      code: "invalid-file",
     });
   });
 
@@ -184,6 +208,21 @@ describe("POST /api/tools/pdf-to-markdown", () => {
 
     expect(response.status).toBe(200);
     expect(stream).toContain('"stage":"failed","error":"队列已满，请稍后重试"');
+    expect(mocks.conversionCreate).not.toHaveBeenCalled();
+  });
+
+  it("includes the MinerUError code in the failed event payload", async () => {
+    mocks.parseFileWithMinerU.mockRejectedValue(
+      new MinerUError("-60009", "队列已满，请稍后重试")
+    );
+
+    const response = await POST(pdfRequest());
+    const stream = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(stream).toContain(
+      '"stage":"failed","error":"队列已满，请稍后重试","code":"-60009"'
+    );
     expect(mocks.conversionCreate).not.toHaveBeenCalled();
   });
 

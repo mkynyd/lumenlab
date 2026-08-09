@@ -1,6 +1,7 @@
 import "server-only";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { invalidatePasswordChangedAtCache } from "@/lib/password-version";
 import type {
   PasswordResetRepository,
   PasswordResetTokenRow,
@@ -62,6 +63,9 @@ class PrismaPasswordResetRepository implements PasswordResetRepository {
       where: { id: userId },
       data: { passwordHash, passwordChangedAt: changedAt },
     });
+    // 所有写密码路径（邮件重设 / 已登录改密）统一在此失效 pwchg 缓存，
+    // 避免旧会话因 60s 缓存残留继续有效
+    await invalidatePasswordChangedAtCache(userId);
   }
 
   transaction<T>(

@@ -13,6 +13,7 @@ import { MarkdownContent } from "@/components/markdown/markdown-content";
 import type { ConversionSummary } from "@/lib/api/types";
 import { downloadTextFile } from "@/lib/browser/download-text-file";
 import { useConversions } from "@/lib/hooks/use-conversions";
+import { getMinerUErrorMessage } from "@/lib/parse/mineru-errors";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 
@@ -134,6 +135,7 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
         const body = (await response.json().catch(() => null)) as {
           error?: string;
           needToken?: boolean;
+          code?: string;
         } | null;
         if (response.status === 403 && body?.needToken) {
           setShowTokenInput(true);
@@ -144,7 +146,9 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
           });
           return;
         }
-        throw new Error(body?.error || "转换失败，请稍后重试");
+        throw new Error(
+          getMinerUErrorMessage(body?.code, body?.error || "转换失败，请稍后重试"),
+        );
       }
       if (!response.body) {
         throw new Error("转换服务未返回进度流，请重试");
@@ -205,7 +209,12 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
           } else if (event.stage === "failed") {
             receivedTerminalEvent = true;
             setStage("idle");
-            setError(String(event.error || "转换失败，请稍后重试"));
+            setError(
+              getMinerUErrorMessage(
+                event.code,
+                event.error || "转换失败，请稍后重试",
+              ),
+            );
           }
         }
       }
@@ -460,7 +469,11 @@ export function PdfConvertClient({ conversions }: PdfConvertClientProps) {
                 variant="ghost"
                 size="sm"
                 className="min-h-10 sm:min-h-0"
-                onClick={reset}
+                onClick={() => {
+                  // 先 reset（会清空 input value，保证选同一文件也触发 change），再打开选择器
+                  reset();
+                  fileInputRef.current?.click();
+                }}
               >
                 选择其他文件
               </Button>

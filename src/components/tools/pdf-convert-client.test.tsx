@@ -48,6 +48,7 @@ describe("PdfConvertClient", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("marks the fourth step complete, then dismisses the finished progress", async () => {
@@ -74,5 +75,104 @@ describe("PdfConvertClient", () => {
 
     expect(screen.queryByRole("region", { name: "转换进度" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "转换结果" })).toBeInTheDocument();
+  });
+
+  function stubFailedStream(payload: Record<string, unknown>) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(`data: ${JSON.stringify(payload)}\n\n`, {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          })
+      )
+    );
+  }
+
+  async function selectPdf(container: HTMLElement) {
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await act(async () => {
+      fireEvent.change(input!, {
+        target: {
+          files: [new File(["pdf"], "讲义.pdf", { type: "application/pdf" })],
+        },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    return input!;
+  }
+
+  it("shows the mapped Chinese message for a failed event with a known code", async () => {
+    stubFailedStream({
+      stage: "failed",
+      error: "queue is full",
+      code: "-60009",
+    });
+    const { container } = renderClient();
+
+    await selectPdf(container);
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("队列已满，请稍后重试");
+    expect(alert).not.toHaveTextContent("queue is full");
+  });
+
+  it("shows the generic Chinese message for a failed event with an unknown code", async () => {
+    stubFailedStream({
+      stage: "failed",
+      error: "model inference failed: out of memory",
+      code: "-69999",
+    });
+    const { container } = renderClient();
+
+    await selectPdf(container);
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("解析失败，请检查文件后重试");
+    expect(alert).not.toHaveTextContent("out of memory");
+  });
+
+  it("maps non-stream error responses by code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { error: "MinerU 服务异常，请稍后重试", code: "-10001" },
+          { status: 500 }
+        )
+      )
+    );
+    const { container } = renderClient();
+
+    await selectPdf(container);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "MinerU 服务异常，请稍后重试"
+    );
+  });
+
+  it("opens the file picker when clicking 选择其他文件 after an error", async () => {
+    stubFailedStream({
+      stage: "failed",
+      error: "queue is full",
+      code: "-60009",
+    });
+    const { container } = renderClient();
+    const input = await selectPdf(container);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    const clickSpy = vi
+      .spyOn(HTMLInputElement.prototype, "click")
+      .mockImplementation(() => {});
+    fireEvent.click(screen.getByRole("button", { name: "选择其他文件" }));
+
+    // reset 先清空 input value，再打开文件选择器
+    expect(input.value).toBe("");
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

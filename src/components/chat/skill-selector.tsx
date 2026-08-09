@@ -130,6 +130,9 @@ export function SkillSelector({
   const selected = allOptions.find((option) => option.value === value);
   const isOff = value === "off";
   const TriggerIcon = isOff ? Xmark : getSkillIcon(value);
+  // Align with ModelSelector semantics: compact only constrains width, a
+  // non-default selection still shows its label. auto/off stay icon-only.
+  const showLabel = Boolean(selected) && (!compact || (value !== "auto" && !isOff));
 
   const [open, setOpen] = useState(false);
   const pointerHandledRef = useRef(false);
@@ -158,9 +161,9 @@ export function SkillSelector({
         <Button
           type="button"
           variant="ghost"
-          size={compact ? "icon-sm" : "md"}
+          size={compact ? (showLabel ? "sm" : "icon-sm") : "md"}
           disabled={disabled}
-          aria-label="选择 Skill"
+          aria-label={selected ? `选择 Skill：${selected.label}` : "选择 Skill"}
           aria-haspopup="menu"
           data-dropdown-menu-trigger
           className={cn(
@@ -171,9 +174,16 @@ export function SkillSelector({
           onPointerDown={handlePointerDown}
           onClick={handleClick}
         >
-          {createElement(TriggerIcon, { className: "size-[17px]", strokeWidth: 2 })}
-          {!compact && selected && (
-            <span className="ml-1.5 text-xs">{selected.label}</span>
+          {createElement(TriggerIcon, { className: "size-[17px] shrink-0", strokeWidth: 2 })}
+          {showLabel && selected && (
+            <span
+              className={cn(
+                "truncate text-xs",
+                compact ? "max-w-24" : "ml-1.5"
+              )}
+            >
+              {selected.label}
+            </span>
           )}
         </Button>
       </DropdownMenuTrigger>

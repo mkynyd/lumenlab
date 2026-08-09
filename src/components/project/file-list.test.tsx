@@ -105,4 +105,52 @@ describe("FileList", () => {
       "hover:text-[var(--color-text-primary)]"
     );
   });
+
+  it("shows an inline empty state when the search matches nothing", () => {
+    render(
+      <FileList
+        files={files}
+        selectedIds={new Set()}
+        onToggle={vi.fn()}
+        searchQuery="不存在的资料"
+        onClearSearch={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("没有匹配「不存在的资料」的资料")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "清除搜索" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("clears the search from the empty state", async () => {
+    const user = userEvent.setup();
+    const onClearSearch = vi.fn();
+
+    render(
+      <FileList
+        files={files}
+        selectedIds={new Set()}
+        onToggle={vi.fn()}
+        searchQuery="不存在的资料"
+        onClearSearch={onClearSearch}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "清除搜索" }));
+    expect(onClearSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it("still renders matching files when the search has hits", () => {
+    render(
+      <FileList
+        files={files}
+        selectedIds={new Set()}
+        onToggle={vi.fn()}
+        searchQuery="讲义"
+      />
+    );
+
+    expect(screen.getByRole("checkbox", { name: "选择文件 实验讲义.pdf" })).toBeInTheDocument();
+    expect(screen.queryByText(/没有匹配/)).not.toBeInTheDocument();
+  });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { signOut, useSession } from "next-auth/react";
 import {
   ArrowUpRight,
@@ -11,6 +11,7 @@ import {
   KeyRound,
   LogOut,
   Palette,
+  Shield,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles
@@ -25,7 +26,7 @@ import { useCacheMetrics } from "@/lib/hooks/use-cache-metrics";
 import { DEFAULT_AVATAR_PRESET } from "@/lib/user-profile";
 import { cn } from "@/lib/utils";
 
-type TabId = "alpha" | "tokens" | "personalization" | "appearance";
+type TabId = "alpha" | "tokens" | "personalization" | "security" | "appearance";
 const TOKEN_CHART_COLORS = {
   hit: "color-mix(in oklch, var(--color-accent) 24%, var(--color-surface))",
   miss: "color-mix(in oklch, var(--color-accent) 42%, var(--color-surface))",
@@ -98,6 +99,7 @@ export function SettingsPanel({
     { id: "alpha", label: "服务访问", icon: KeyRound },
     { id: "tokens", label: "用量统计", icon: Database },
     { id: "personalization", label: "个性化", icon: SlidersHorizontal },
+    { id: "security", label: "账号安全", icon: Shield },
     { id: "appearance", label: "外观", icon: Palette }
   ];
 
@@ -243,6 +245,7 @@ export function SettingsPanel({
           {tab === "alpha" && <AlphaSection />}
           {tab === "tokens" && <TokensSection />}
           {tab === "personalization" && <PersonalizationSection />}
+          {tab === "security" && <SecuritySection />}
           {tab === "appearance" && <AppearanceSection />}
         </div>
       </div>
@@ -785,30 +788,137 @@ function AppearanceSection() {
   );
 }
 
+type PersonaFields = {
+  profileName: string;
+  profileProfession: string;
+  profileDetails: string;
+};
+
+const EMPTY_PERSONA: PersonaFields = {
+  profileName: "",
+  profileProfession: "",
+  profileDetails: ""
+};
+
+function samePersona(a: PersonaFields, b: PersonaFields) {
+  return (
+    a.profileName === b.profileName &&
+    a.profileProfession === b.profileProfession &&
+    a.profileDetails === b.profileDetails
+  );
+}
+
 function PersonalizationSection() {
-  const [promptName, setPromptName] = useState("");
-  const [profession, setProfession] = useState("");
-  const [details, setDetails] = useState("");
+  const [persona, setPersona] = useState<PersonaFields>(EMPTY_PERSONA);
+  const [profilePrompt, setProfilePrompt] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
   const [generating, setGenerating] = useState(false);
-  const [promptSaved, setPromptSaved] = useState(false);
-  const [promptError, setPromptError] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
+  const personaRef = useRef(persona);
+  const lastSavedRef = useRef<PersonaFields | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    personaRef.current = persona;
+  }, [persona]);
+
+  // 挂载时回填已保存的画像字段与已生成的个人描述
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/user/persona");
+        if (!res.ok) throw new Error("load failed");
+        const data = await res.json();
+        if (cancelled) return;
+        const loaded: PersonaFields = {
+          profileName: data.profileName ?? "",
+          profileProfession: data.profileProfession ?? "",
+          profileDetails: data.profileDetails ?? ""
+        };
+        setPersona(loaded);
+        personaRef.current = loaded;
+        lastSavedRef.current = loaded;
+        setProfilePrompt(data.profilePrompt ?? "");
+      } catch {
+        if (!cancelled) setLoadFailed(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
+  async function persistPersona() {
+    const current = personaRef.current;
+    if (lastSavedRef.current && samePersona(lastSavedRef.current, current)) {
+      return;
+    }
+    setSaveStatus("saving");
+    try {
+      const res = await fetch("/api/user/persona", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(current)
+      });
+      if (!res.ok) throw new Error("save failed");
+      lastSavedRef.current = current;
+      setSaveStatus("saved");
+    } catch {
+      setSaveStatus("error");
+    }
+  }
+
+  // 失焦后 debounce 自动保存
+  function handleFieldBlur() {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void persistPersona();
+    }, 800);
+  }
 
   async function handleGeneratePrompt() {
-    if (!promptName.trim() && !profession.trim() && !details.trim()) return;
+    const { profileName, profileProfession, profileDetails } =
+      personaRef.current;
+    if (
+      !profileName.trim() &&
+      !profileProfession.trim() &&
+      !profileDetails.trim()
+    ) {
+      return;
+    }
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
     setGenerating(true);
-    setPromptError(null);
-    setPromptSaved(false);
+    setGenerateError(null);
     try {
+      // 先确保三个字段落库，再生成
+      await persistPersona();
       const res = await fetch("/api/user/generate-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname: promptName, profession, details })
+        body: JSON.stringify({
+          nickname: profileName,
+          profession: profileProfession,
+          details: profileDetails
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "生成失败");
-      setPromptSaved(true);
+      setProfilePrompt(data.profilePrompt || "");
     } catch (err) {
-      setPromptError(err instanceof Error ? err.message : "保存失败");
+      setGenerateError(err instanceof Error ? err.message : "生成失败");
     } finally {
       setGenerating(false);
     }
@@ -829,59 +939,120 @@ function PersonalizationSection() {
           </p>
         </div>
 
-        <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
-          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
-            <label
-              htmlFor="personalization-name"
-              className="text-sm font-medium text-[var(--color-text-primary)]"
-            >
-              名字
-            </label>
-            <Input
-              id="personalization-name"
-              value={promptName}
-              onChange={(e) => setPromptName(e.target.value)}
-              placeholder="你的名字"
-              maxLength={60}
-              className={cn("h-9", FIELD_CLASS)}
-            />
+        {loading ? (
+          <div className="space-y-3 border-y border-[var(--color-border-light)] py-4">
+            <Skeleton className="h-9 rounded-lg" />
+            <Skeleton className="h-9 rounded-lg" />
+            <Skeleton className="h-24 rounded-lg" />
           </div>
-          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
-            <label
-              htmlFor="personalization-profession"
-              className="text-sm font-medium text-[var(--color-text-primary)]"
-            >
-              职业
-            </label>
-            <Input
-              id="personalization-profession"
-              value={profession}
-              onChange={(e) => setProfession(e.target.value)}
-              placeholder="例如：计算机学院本科生"
-              maxLength={100}
-              className={cn("h-9", FIELD_CLASS)}
-            />
+        ) : loadFailed ? (
+          <p
+            className="border-y border-[var(--color-border-light)] py-4 text-sm text-[var(--color-error)]"
+            role="alert"
+          >
+            加载失败，请重新打开设置
+          </p>
+        ) : (
+          <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
+            <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+              <label
+                htmlFor="personalization-name"
+                className="text-sm font-medium text-[var(--color-text-primary)]"
+              >
+                名字
+              </label>
+              <Input
+                id="personalization-name"
+                value={persona.profileName}
+                onChange={(e) =>
+                  setPersona((prev) => ({
+                    ...prev,
+                    profileName: e.target.value
+                  }))
+                }
+                onBlur={handleFieldBlur}
+                placeholder="你的名字"
+                maxLength={60}
+                className={cn("h-9", FIELD_CLASS)}
+              />
+            </div>
+            <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+              <label
+                htmlFor="personalization-profession"
+                className="text-sm font-medium text-[var(--color-text-primary)]"
+              >
+                职业
+              </label>
+              <Input
+                id="personalization-profession"
+                value={persona.profileProfession}
+                onChange={(e) =>
+                  setPersona((prev) => ({
+                    ...prev,
+                    profileProfession: e.target.value
+                  }))
+                }
+                onBlur={handleFieldBlur}
+                placeholder="例如：计算机学院本科生"
+                maxLength={100}
+                className={cn("h-9", FIELD_CLASS)}
+              />
+            </div>
+            <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-start sm:gap-5">
+              <label
+                htmlFor="personalization-details"
+                className="pt-2 text-sm font-medium text-[var(--color-text-primary)]"
+              >
+                你的详情
+              </label>
+              <Textarea
+                id="personalization-details"
+                value={persona.profileDetails}
+                onChange={(e) =>
+                  setPersona((prev) => ({
+                    ...prev,
+                    profileDetails: e.target.value
+                  }))
+                }
+                onBlur={handleFieldBlur}
+                placeholder="描述你的学习目标、使用习惯等"
+                maxLength={500}
+                className={cn("h-24 resize-none", FIELD_CLASS)}
+              />
+            </div>
+            {profilePrompt && (
+              <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-start sm:gap-5">
+                <label
+                  htmlFor="personalization-prompt"
+                  className="pt-2 text-sm font-medium text-[var(--color-text-primary)]"
+                >
+                  个人描述
+                </label>
+                <Textarea
+                  id="personalization-prompt"
+                  value={profilePrompt}
+                  readOnly
+                  aria-readonly
+                  className={cn(
+                    "h-24 resize-none text-[var(--color-text-secondary)]",
+                    FIELD_CLASS
+                  )}
+                />
+              </div>
+            )}
           </div>
-          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-start sm:gap-5">
-            <label
-              htmlFor="personalization-details"
-              className="pt-2 text-sm font-medium text-[var(--color-text-primary)]"
-            >
-              你的详情
-            </label>
-            <Textarea
-              id="personalization-details"
-              value={details}
-              onChange={(e) => setDetails(e.target.value)}
-              placeholder="描述你的学习目标、使用习惯等"
-              maxLength={500}
-              className={cn("h-24 resize-none", FIELD_CLASS)}
-            />
-          </div>
-        </div>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
-          {promptSaved && (
+          {saveStatus === "saving" && (
+            <p
+              className="mr-auto text-xs text-[var(--color-text-tertiary)]"
+              role="status"
+            >
+              保存中...
+            </p>
+          )}
+          {saveStatus === "saved" && (
             <p
               className="mr-auto text-xs text-[var(--color-success)]"
               role="status"
@@ -889,26 +1060,184 @@ function PersonalizationSection() {
               已保存
             </p>
           )}
-          {promptError && (
+          {saveStatus === "error" && (
             <p
               className="mr-auto text-xs text-[var(--color-error)]"
               role="alert"
             >
-              {promptError}
+              保存失败，请重试
+            </p>
+          )}
+          {generateError && (
+            <p
+              className="mr-auto text-xs text-[var(--color-error)]"
+              role="alert"
+            >
+              {generateError}
             </p>
           )}
           <Button
             variant="primary"
             size="md"
             onClick={handleGeneratePrompt}
-            disabled={generating}
+            disabled={generating || loading}
             className="rounded-lg px-4"
           >
             {generating
               ? "生成中..."
-              : promptSaved
+              : profilePrompt
                 ? "重新生成"
                 : "生成个人描述"}
+          </Button>
+        </div>
+      </section>
+    </SectionShell>
+  );
+}
+
+function SecuritySection() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [succeeded, setSucceeded] = useState(false);
+
+  async function handleSubmit() {
+    setError(null);
+    setSucceeded(false);
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      setError("新密码需要 8-128 个字符");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("两次输入的新密码不一致");
+      return;
+    }
+    setPending(true);
+    try {
+      const res = await fetch("/api/user/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(
+          typeof data.error === "string" ? data.error : "修改失败，请重试"
+        );
+        return;
+      }
+      setSucceeded(true);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch {
+      setError("网络错误，请重试");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <SectionShell id="settings-panel-security" title="账号安全">
+      <section aria-labelledby="change-password-heading">
+        <div className="mb-3">
+          <h3
+            id="change-password-heading"
+            className="text-sm font-medium text-[var(--color-text-primary)]"
+          >
+            修改密码
+          </h3>
+          <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+            修改成功后其他设备的登录状态将失效
+          </p>
+        </div>
+
+        <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
+          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+            <label
+              htmlFor="security-current-password"
+              className="text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              当前密码
+            </label>
+            <Input
+              id="security-current-password"
+              type="password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              maxLength={128}
+              className={cn("h-9", FIELD_CLASS)}
+            />
+          </div>
+          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+            <label
+              htmlFor="security-new-password"
+              className="text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              新密码
+            </label>
+            <Input
+              id="security-new-password"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              maxLength={128}
+              className={cn("h-9", FIELD_CLASS)}
+            />
+          </div>
+          <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+            <label
+              htmlFor="security-confirm-password"
+              className="text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              确认新密码
+            </label>
+            <Input
+              id="security-confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              maxLength={128}
+              className={cn("h-9", FIELD_CLASS)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+          {error && (
+            <p
+              className="mr-auto text-xs text-[var(--color-error)]"
+              role="alert"
+            >
+              {error}
+            </p>
+          )}
+          {succeeded && (
+            <p
+              className="mr-auto text-xs text-[var(--color-success)]"
+              role="status"
+            >
+              密码已修改
+            </p>
+          )}
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleSubmit}
+            disabled={
+              pending ||
+              !currentPassword ||
+              !newPassword ||
+              !confirmPassword
+            }
+            className="rounded-lg px-4"
+          >
+            {pending ? "提交中..." : "修改密码"}
           </Button>
         </div>
       </section>

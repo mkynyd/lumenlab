@@ -1,3 +1,4 @@
+import { getMinerUErrorMessage } from "@/lib/parse/mineru-errors";
 import {
   extractMinerUResult,
   type ParsedImageAsset,
@@ -19,18 +20,8 @@ export class MinerUError extends Error {
   }
 }
 
-function mapMinerUError(code: string | number | undefined, message?: string) {
-  const normalized = String(code ?? "");
-  const messages: Record<string, string> = {
-    "-60005": "文件大小超过 200MB 限制，请压缩或拆分后重试",
-    "-60006": "文件页数超过 200 页限制，请拆分后重试",
-    "-60018": "今日解析额度已用完（1000页/天），请明日再试",
-    "-60010": "解析失败，MinerU 服务暂时不可用，请稍后重试",
-    "-60009": "队列已满，请稍后重试",
-    "A0202": "MinerU Token 无效",
-    "A0211": "MinerU Token 已过期",
-  };
-  return messages[normalized] || `解析失败：${message || "未知错误"}（错误码：${normalized || "unknown"}）`;
+function mapMinerUError(code: string | number | undefined) {
+  return getMinerUErrorMessage(code);
 }
 
 async function readJson<T>(resp: Response): Promise<T> {
@@ -81,7 +72,7 @@ export async function submitFileToMinerU(options: {
   }>(resp);
 
   if (body.code !== 0 || !body.data?.batch_id || !body.data.file_urls?.[0]) {
-    throw new MinerUError(body.code, mapMinerUError(body.code, body.msg));
+    throw new MinerUError(body.code, mapMinerUError(body.code));
   }
 
   const uploadUrl = body.data.file_urls[0];
@@ -131,7 +122,7 @@ async function getBatchResult(token: string, taskId: string) {
   }>(resp);
 
   if (body.code !== 0) {
-    throw new MinerUError(body.code, mapMinerUError(body.code, body.msg));
+    throw new MinerUError(body.code, mapMinerUError(body.code));
   }
   return (body.data?.extract_result || body.data?.extract_results || [])[0];
 }
@@ -177,7 +168,7 @@ export async function pollMinerUTask(options: {
     if (result.state === "failed") {
       throw new MinerUError(
         result.err_code || "failed",
-        mapMinerUError(result.err_code, result.err_msg)
+        mapMinerUError(result.err_code)
       );
     }
 
@@ -231,6 +222,8 @@ export async function parseFileWithMinerU(options: {
   token: string;
   fileBuffer: Buffer;
   filename: string;
+  /** MinerU 解析模型，默认 vlm（/tools 转换链路）；项目文件管线显式传 pipeline */
+  modelVersion?: "pipeline" | "vlm";
   onProgress?: (stage: string, progress?: { current: number; total: number }) => void;
 }): Promise<{
   content: string;
@@ -244,11 +237,13 @@ export async function parseFileWithMinerU(options: {
     requiresVisionModel?: boolean;
   };
 }> {
+  const modelVersion = options.modelVersion ?? "vlm";
   options.onProgress?.("uploading");
   const submitted = await submitFileToMinerU({
     token: options.token,
     fileBuffer: options.fileBuffer,
     filename: options.filename,
+    modelVersion,
   });
 
   options.onProgress?.("pending");
@@ -281,7 +276,7 @@ export async function parseFileWithMinerU(options: {
     content,
     assets,
     metadata: {
-      parser: "mineru-pipeline",
+      parser: modelVersion === "vlm" ? "mineru-vlm" : "mineru-pipeline",
       taskId: submitted.taskId,
       parsedAt: new Date().toISOString(),
       ...(retainedImageCount > 0

@@ -11,6 +11,7 @@ interface ProjectDetailModalProps {
   onOpenChange: (open: boolean) => void;
   projectName: string;
   projectType: string;
+  systemPrompt?: string | null;
   fileCount: number;
   conversationCount: number;
   artifactCount: number;
@@ -30,6 +31,7 @@ export function ProjectDetailModal({
   onOpenChange,
   projectName,
   projectType,
+  systemPrompt,
   fileCount,
   conversationCount,
   artifactCount,
@@ -121,11 +123,15 @@ export function ProjectDetailModal({
                   </h2>
                 </div>
 
-                <div className="rounded-2xl bg-[var(--color-project-control)] p-5">
-                  <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-                    在「系统提示词」标签下查看项目专属提示词。
-                  </p>
-                </div>
+                {systemPrompt?.trim() ? (
+                  <div className="rounded-[var(--radius-md)] bg-[var(--color-project-control)] p-3 max-h-96 overflow-y-auto">
+                    <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap">
+                      {systemPrompt}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[var(--color-text-tertiary)]">未设置</p>
+                )}
               </div>
             )}
           </ScrollArea>

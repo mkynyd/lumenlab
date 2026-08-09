@@ -13,7 +13,7 @@ import { NavArrowLeft } from "iconoir-react";
 import { RotatingText } from "@/components/ui/rotating-text";
 import { useCreateProject } from "@/lib/hooks/use-projects";
 import { signOut } from "next-auth/react";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, errorMessage } from "@/lib/api/client";
 
 const PROJECT_TYPES = [
   { value: "general" as const, label: "通用项目", desc: "通用问答、创作辅助和知识管理" },
@@ -116,16 +116,17 @@ export default function NewProjectPage() {
         body: JSON.stringify({ actions: selected }),
       });
       if (!res.ok) {
-        let msg = "保存快捷任务失败";
-        try { const err = await res.json(); msg = err.error || msg; } catch { /* ignore */ }
-        throw new Error(msg);
+        let payload: unknown = null;
+        try { payload = await res.json(); } catch { /* ignore */ }
+        // 项目已创建成功（含系统默认快捷任务），保存失败不阻塞进入项目
+        setError(`${errorMessage(payload, "快捷任务保存失败")}，可在项目内重试`);
       }
-      router.push(`/projects/${newProjectId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "保存快捷任务失败");
+    } catch {
+      setError("快捷任务保存失败，可在项目内重试");
     } finally {
       setIsSavingActions(false);
     }
+    router.push(`/projects/${newProjectId}`);
   }, [newProjectId, quickActions, selectedActions, router]);
 
   // Skip personalization: create project without AI generation and go straight to it

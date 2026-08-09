@@ -50,6 +50,8 @@ export class MinerUParser implements DocumentParser {
       token: input.apiKeys.mineru,
       fileBuffer: input.data,
       filename: input.filename,
+      // 项目文件管线保持 pipeline 模式（/tools 转换链路已默认切到 vlm）
+      modelVersion: "pipeline",
       onProgress,
     });
 

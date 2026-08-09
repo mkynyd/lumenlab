@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchJson } from "@/lib/api/client";
+import { errorMessage, fetchJson } from "@/lib/api/client";
 
 describe("fetchJson", () => {
   afterEach(() => {
@@ -71,6 +71,32 @@ describe("fetchJson", () => {
 
     await expect(fetchJson("/api/value")).rejects.toThrow(
       "请求内容与已有幂等记录不一致"
+    );
+  });
+});
+
+describe("errorMessage", () => {
+  it("extracts the first message from flattened zod fieldErrors", () => {
+    // 向导批量保存快捷任务时服务端返回的 400 形状
+    const payload = {
+      error: { actions: ["标题不能超过 20 个字符"] },
+    };
+    expect(errorMessage(payload, "快捷任务保存失败")).toBe(
+      "标题不能超过 20 个字符"
+    );
+  });
+
+  it("returns string errors unchanged", () => {
+    expect(errorMessage({ error: "保存失败" }, "兜底")).toBe("保存失败");
+  });
+
+  it("falls back for non-payloads instead of rendering [object Object]", () => {
+    expect(errorMessage(null, "快捷任务保存失败")).toBe("快捷任务保存失败");
+    expect(errorMessage({ error: {} }, "快捷任务保存失败")).toBe(
+      "快捷任务保存失败"
+    );
+    expect(errorMessage("服务器错误", "快捷任务保存失败")).toBe(
+      "快捷任务保存失败"
     );
   });
 });

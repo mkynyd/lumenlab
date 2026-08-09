@@ -9,7 +9,7 @@ export class ApiError extends Error {
   }
 }
 
-function errorMessage(payload: unknown, fallback: string): string {
+export function errorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object" || !("error" in payload)) {
     return fallback;
   }

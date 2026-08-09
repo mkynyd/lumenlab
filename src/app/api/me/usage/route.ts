@@ -10,12 +10,22 @@ import { getDisplayTotalTokens } from "@/lib/token-usage-display";
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 
-export async function GET() {
+const DEFAULT_RECENT_LIMIT = 20;
+const MAX_RECENT_LIMIT = 100;
+
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
   const userId = session.user.id;
+
+  const searchParams = new URL(request.url).searchParams;
+  const cursor = searchParams.get("cursor");
+  const rawLimit = Number(searchParams.get("limit") || DEFAULT_RECENT_LIMIT);
+  const recentLimit = Number.isFinite(rawLimit)
+    ? Math.min(MAX_RECENT_LIMIT, Math.max(1, Math.floor(rawLimit)))
+    : DEFAULT_RECENT_LIMIT;
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -67,7 +77,8 @@ export async function GET() {
     prisma.tokenUsage.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: recentLimit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: {
         id: true,
         model: true,
@@ -102,6 +113,12 @@ export async function GET() {
       .entries(),
   ].map(([model, values]) => ({ model, ...values }));
 
+  const pagedRecentRecords = recentRecords.slice(0, recentLimit);
+  const nextCursor =
+    recentRecords.length > recentLimit
+      ? (pagedRecentRecords[pagedRecentRecords.length - 1]?.id ?? null)
+      : null;
+
   return NextResponse.json({
     tier: user.planTier,
     cycle: {
@@ -121,7 +138,7 @@ export async function GET() {
       last7dCredits: last7d._sum.creditsConsumed ?? 0,
       last5hCredits: last5h._sum.creditsConsumed ?? 0,
       modelDistribution,
-      recentRecords: recentRecords.map((record) => ({
+      recentRecords: pagedRecentRecords.map((record) => ({
         id: record.id,
         model: record.model,
         provider: record.provider,
@@ -129,6 +146,7 @@ export async function GET() {
         creditsConsumed: record.creditsConsumed,
         createdAt: record.createdAt,
       })),
+      nextCursor,
     },
   });
 }

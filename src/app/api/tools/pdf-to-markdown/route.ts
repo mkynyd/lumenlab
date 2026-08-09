@@ -4,7 +4,8 @@ import { auth } from "@/lib/auth";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { parseFileWithMinerU } from "@/lib/parse/mineru";
+import { parseFileWithMinerU, MinerUError } from "@/lib/parse/mineru";
+import { getMinerUErrorMessage } from "@/lib/parse/mineru-errors";
 import {
   deleteStoredObjects,
   storeConversionAssets,
@@ -12,8 +13,7 @@ import {
 } from "@/lib/conversions/assets";
 
 const MAX_PDF_SIZE = 200 * 1024 * 1024;
-const NEED_TOKEN_MESSAGE =
-  "您的账户未开通文档解析服务，请在下方输入 MinerU Token";
+const NEED_TOKEN_MESSAGE = getMinerUErrorMessage("need-token");
 
 function isUploadFile(value: unknown): value is File {
   return Boolean(
@@ -55,13 +55,16 @@ export async function POST(request: Request) {
   const file = formData.get("file");
   if (!isUploadFile(file) || !isPdf(file)) {
     return NextResponse.json(
-      { error: "请选择有效的 PDF 文件" },
+      { error: getMinerUErrorMessage("invalid-file"), code: "invalid-file" },
       { status: 400 }
     );
   }
   if (file.size > MAX_PDF_SIZE) {
     return NextResponse.json(
-      { error: "文件大小超过 200MB 限制，请压缩或拆分后重试" },
+      {
+        error: getMinerUErrorMessage("file-too-large"),
+        code: "file-too-large",
+      },
       { status: 413 }
     );
   }
@@ -73,7 +76,7 @@ export async function POST(request: Request) {
   } catch {
     if (!oneTimeToken) {
       return NextResponse.json(
-        { error: NEED_TOKEN_MESSAGE, needToken: true },
+        { error: NEED_TOKEN_MESSAGE, needToken: true, code: "need-token" },
         { status: 403 }
       );
     }
@@ -182,12 +185,14 @@ export async function POST(request: Request) {
           }
           const message =
             error instanceof Error ? error.message : "转换失败，请稍后重试";
+          const code =
+            error instanceof MinerUError ? String(error.code) : undefined;
           logger.error("PDF 转 Markdown 失败", {
             userId,
             filename: file.name,
             error: String(error),
           });
-          send({ stage: "failed", error: message });
+          send({ stage: "failed", error: message, ...(code ? { code } : {}) });
         } finally {
           controller.close();
         }

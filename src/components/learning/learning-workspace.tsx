@@ -84,6 +84,8 @@ export function LearningWorkspace({
     Boolean(initialProjectId) && !projectsQuery.isPending && !selectedProject
 
   function selectProject(projectId: string) {
+    // 列表缓存可能滞后于项目内的资料增删，选择项目时主动刷新保证计数一致
+    void projectsQuery.refetch()
     router.push(`/learning?project=${encodeURIComponent(projectId)}`)
   }
 

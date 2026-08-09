@@ -1,10 +1,12 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
+const router = { push };
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push }),
+  useRouter: () => router,
 }));
 
 import UsagePage from "@/app/(chat)/usage/page";
@@ -41,6 +43,7 @@ const usageResponse = {
         createdAt: "2026-07-24T08:00:00.000Z",
       },
     ],
+    nextCursor: null,
   },
 };
 
@@ -94,5 +97,82 @@ describe("UsagePage", () => {
     render(<UsagePage />);
 
     await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+  });
+
+  it("renders stat windows shortest-first with units", async () => {
+    render(<UsagePage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "用量统计" }),
+    ).toBeInTheDocument();
+
+    const terms = screen
+      .getAllByRole("term")
+      .map((el) => el.textContent);
+    expect(terms).toEqual([
+      "周期 Credits",
+      "周期 tokens",
+      "最近 5 小时",
+      "最近 24 小时",
+      "最近 7 天",
+    ]);
+
+    const definitions = screen
+      .getAllByRole("definition")
+      .map((el) => el.textContent);
+    expect(definitions).toEqual([
+      "2,500 Credits",
+      "125,000 tokens",
+      "24 Credits",
+      "80 Credits",
+      "640 Credits",
+    ]);
+  });
+
+  it("appends more recent records via 加载更多 and hides the button at the end", async () => {
+    const user = userEvent.setup();
+    const firstPage = {
+      ...usageResponse,
+      usage: { ...usageResponse.usage, nextCursor: "usage-1" },
+    };
+    const secondPage = {
+      ...usageResponse,
+      usage: {
+        ...usageResponse.usage,
+        recentRecords: [
+          {
+            id: "usage-2",
+            model: "minimax-m3",
+            provider: "minimax",
+            totalTokens: 512,
+            creditsConsumed: 8,
+            createdAt: "2026-07-23T08:00:00.000Z",
+          },
+        ],
+        nextCursor: null,
+      },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const body = String(input).includes("cursor=") ? secondPage : firstPage;
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<UsagePage />);
+
+    const loadMore = await screen.findByRole("button", { name: "加载更多" });
+    await user.click(loadMore);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("cursor=usage-1&limit=20"),
+    );
+    expect(await screen.findByText("512")).toBeInTheDocument();
+    expect(screen.getByText("2,048")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "加载更多" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -61,6 +61,7 @@ interface FileListProps {
   onFileAction?: (action: "delete" | "reparse" | "download" | "preview", file: ProjectFile) => void;
   defaultGroupsCollapsed?: boolean;
   searchQuery?: string;
+  onClearSearch?: () => void;
   className?: string;
 }
 
@@ -100,6 +101,7 @@ export function FileList({
   onFileAction,
   defaultGroupsCollapsed = false,
   searchQuery = "",
+  onClearSearch,
   className,
 }: FileListProps) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
@@ -113,6 +115,25 @@ export function FileList({
 
   if (files.length === 0) {
     return null;
+  }
+
+  if (filteredFiles.length === 0) {
+    return (
+      <div className={cn("px-2 py-2", className)}>
+        <p className="text-xs text-[var(--color-text-tertiary)]">
+          没有匹配「{searchQuery.trim()}」的资料
+        </p>
+        {onClearSearch && (
+          <button
+            type="button"
+            onClick={onClearSearch}
+            className="mt-1 rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:bg-[var(--color-project-surface-hover)] focus-visible:text-[var(--color-text-primary)]"
+          >
+            清除搜索
+          </button>
+        )}
+      </div>
+    );
   }
 
   function isGroupOpen(category: string) {

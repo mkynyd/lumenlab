@@ -12,6 +12,17 @@ import { prisma } from "@/lib/db";
 
 const CACHE_TTL_SECONDS = 60;
 
+/** 密码变更后调用：删除 Redis 缓存，避免旧 pwchg 残留导致旧会话多活 60s */
+export async function invalidatePasswordChangedAtCache(
+  userId: string
+): Promise<void> {
+  try {
+    await getRedis().del(`pwchg:${userId}`);
+  } catch {
+    // Redis 不可用：缓存本来就没写入，无需处理
+  }
+}
+
 /** 返回 null 表示用户不存在（或从未设置过 passwordChangedAt） */
 export async function getPasswordChangedAt(
   userId: string

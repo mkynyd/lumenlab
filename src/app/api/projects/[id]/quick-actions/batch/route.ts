@@ -7,7 +7,7 @@ const batchCreateSchema = z.object({
   actions: z
     .array(
       z.object({
-        title: z.string().min(1).max(6),
+        title: z.string().min(1).max(20),
         prompt: z.string().min(1).max(200000),
       })
     )

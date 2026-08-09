@@ -1,5 +1,19 @@
 import { render, screen } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import userEvent from "@testing-library/user-event"
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+
+beforeAll(() => {
+  // jsdom lacks the pointer-capture / scroll APIs Radix Select relies on.
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (typeof proto.hasPointerCapture !== "function") {
+    proto.hasPointerCapture = () => false;
+    proto.setPointerCapture = () => undefined;
+    proto.releasePointerCapture = () => undefined;
+  }
+  if (typeof proto.scrollIntoView !== "function") {
+    proto.scrollIntoView = () => undefined;
+  }
+})
 
 const push = vi.fn()
 const projectsState = vi.hoisted(() => ({
@@ -82,6 +96,17 @@ describe("LearningWorkspace", () => {
       "/learning?project=project-1"
     )
     expect(screen.getByText(/8 份资料/)).toBeInTheDocument()
+  })
+
+  it("refreshes the projects query when selecting a project", async () => {
+    const user = userEvent.setup()
+    render(<LearningWorkspace rollout="default" />)
+
+    await user.click(screen.getByRole("combobox", { name: "选择学习项目" }))
+    await user.click(await screen.findByRole("option", { name: "数据结构" }))
+
+    expect(projectsState.result.refetch).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledWith("/learning?project=project-1")
   })
 
   it("opens the selected project's learning flow inside the workspace", () => {

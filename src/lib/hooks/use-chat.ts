@@ -367,6 +367,14 @@ export function useChat(options: UseChatOptions = {}) {
         if (newConvId && !conversationId) {
           conversationIdRef.current = newConvId;
           setConversationId(newConvId);
+          if (!options.projectId) {
+            // Move /chat to /chat/<id> in place: /chat and /chat/[id] are
+            // separate route segments, so router.push would swap page
+            // components and unmount the streaming ChatArea. Project pages
+            // keep their own /projects/<id> URL instead. (replaceState
+            // precedent: use-hash-dialog.ts)
+            window.history.replaceState(null, "", `/chat/${newConvId}`);
+          }
           // Keep the response stream on the critical path; title generation is
           // a best-effort background refinement of the neutral "新对话" label.
           void fetch(`/api/conversations/${newConvId}/title`, {

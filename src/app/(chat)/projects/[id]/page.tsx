@@ -360,6 +360,9 @@ export default function ProjectDetailPage() {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.projects.files(projectId),
     });
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.projects.all,
+    });
   }
 
   async function handleBatchReparseFailed() {
