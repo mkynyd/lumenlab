@@ -53,6 +53,8 @@ const CATEGORY_DESCRIPTIONS: Record<FileCategory, string> = {
   讲义: "教材章节、补充阅读、学习笔记",
   实验: "实验指导书、实验报告、实验数据",
   代码: "源码、脚本、代码示例与作业代码",
+  政策通知: "政策文件、通知公告、实施意见",
+  通用: "不属于以上类别的其他资料",
 };
 
 export function FileUpload({

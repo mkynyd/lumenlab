@@ -68,7 +68,7 @@ describe("POST /api/projects/[id]/files", () => {
       }),
       "lecture.pdf"
     );
-    body.append("category", "讲义");
+    body.append("category", "政策通知");
 
     const response = await POST(
       { formData: async () => body } as unknown as Request,
@@ -89,6 +89,8 @@ describe("POST /api/projects/[id]/files", () => {
       data: expect.objectContaining({
         storageProvider: "qiniu",
         storagePath: "users/user-1/projects/project-1/files/file-1/file.pdf",
+        category: "政策通知",
+        categoryConfidence: 1,
       }),
     });
     expect(mocks.startFileParseBatch).toHaveBeenCalledWith({
