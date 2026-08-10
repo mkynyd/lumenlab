@@ -23,6 +23,7 @@ import { GET } from "./route";
 
 describe("GET /api/auth/verify/link", () => {
   beforeEach(() => {
+    vi.stubEnv("AUTH_URL", "https://lab.mkynstudio.top");
     authChallengeRepository.invalidateActiveChallenges
       .mockReset()
       .mockResolvedValue(undefined);
@@ -50,6 +51,7 @@ describe("GET /api/auth/verify/link", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
@@ -67,13 +69,14 @@ describe("GET /api/auth/verify/link", () => {
     });
 
     const request = new NextRequest(
-      "http://localhost/api/auth/verify/link?token=challenge-1.rawTokenPart"
+      "https://localhost:3000/api/auth/verify/link?token=challenge-1.rawTokenPart"
     );
     const response = await GET(request);
 
     expect(response.status).toBe(307);
     const location = response.headers.get("location") || "";
-    expect(location).toContain("/register");
+    expect(location).toMatch(/^https:\/\/lab\.mkynstudio\.top\/register\?/);
+    expect(location).not.toContain("localhost");
     expect(location).toContain("verified=1");
     expect(location).toContain("ticket=challenge-1.");
     expect(location).toContain("email=new%40example.com");
@@ -89,8 +92,8 @@ describe("GET /api/auth/verify/link", () => {
     const response = await GET(request);
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toContain(
-      "/register?verify=failed"
+    expect(response.headers.get("location")).toBe(
+      "https://lab.mkynstudio.top/register?verify=failed"
     );
     expect(authChallengeRepository.markTokenVerified).not.toHaveBeenCalled();
   });

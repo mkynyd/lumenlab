@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { resolveAppOrigin } from "@/lib/app-origin";
 import { verifyWithLink } from "@/lib/auth-challenge";
 import { authChallengeRepository } from "@/lib/data/auth-challenge-repository";
 
@@ -8,7 +9,7 @@ import { authChallengeRepository } from "@/lib/data/auth-challenge-repository";
  */
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token") || "";
-  const origin = request.nextUrl.origin;
+  const origin = resolveAppOrigin(request.nextUrl.origin);
 
   const result = await verifyWithLink(
     { token },

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sha256, splitRawToken } from "@/lib/auth-challenge";
+import { resolveAppOrigin } from "@/lib/app-origin";
 import { passwordResetRepository } from "@/lib/data/password-reset-repository";
 
 /**
@@ -8,7 +9,7 @@ import { passwordResetRepository } from "@/lib/data/password-reset-repository";
  */
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token") || "";
-  const origin = request.nextUrl.origin;
+  const origin = resolveAppOrigin(request.nextUrl.origin);
 
   const split = splitRawToken(token);
   let valid = false;

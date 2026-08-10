@@ -22,6 +22,7 @@ const TOKEN = `challenge-1.${RAW}`;
 
 describe("GET /api/auth/password/reset-link", () => {
   beforeEach(() => {
+    vi.stubEnv("AUTH_URL", "https://lab.mkynstudio.top");
     passwordResetRepository.findResetToken.mockReset().mockResolvedValue({
       email: "user@example.com",
       tokenHash: sha256(RAW),
@@ -32,18 +33,22 @@ describe("GET /api/auth/password/reset-link", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
   it("validates without consuming and redirects with the original token", async () => {
     const request = new NextRequest(
-      `http://localhost/api/auth/password/reset-link?token=${TOKEN}`
+      `https://localhost:3000/api/auth/password/reset-link?token=${TOKEN}`
     );
     const response = await GET(request);
 
     expect(response.status).toBe(307);
     const location = response.headers.get("location") || "";
-    expect(location).toContain("/reset-password?ticket=challenge-1.");
+    expect(location).toMatch(
+      /^https:\/\/lab\.mkynstudio\.top\/reset-password\?ticket=challenge-1\./
+    );
+    expect(location).not.toContain("localhost");
     // GET 只校验不消费
     expect(passwordResetRepository.claimResetToken).not.toHaveBeenCalled();
   });
@@ -63,8 +68,8 @@ describe("GET /api/auth/password/reset-link", () => {
     const response = await GET(request);
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toContain(
-      "/reset-password?invalid=1"
+    expect(response.headers.get("location")).toBe(
+      "https://lab.mkynstudio.top/reset-password?invalid=1"
     );
   });
 
@@ -82,6 +87,8 @@ describe("GET /api/auth/password/reset-link", () => {
     );
     const response = await GET(request);
 
-    expect(response.headers.get("location")).toContain("/reset-password?invalid=1");
+    expect(response.headers.get("location")).toBe(
+      "https://lab.mkynstudio.top/reset-password?invalid=1"
+    );
   });
 });
