@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 
 function LoginForm() {
   const router = useRouter();
@@ -107,17 +108,24 @@ function LoginForm() {
           >
             密码
           </label>
-          <Input
+          <PasswordInput
             id="password"
             name="password"
-            type="password"
             autoComplete="current-password"
             required
             placeholder="••••••••"
             className="font-mono"
             aria-invalid={errorField === "password" || undefined}
-            aria-describedby={error ? errorId : undefined}
+            aria-describedby={
+              error ? `${errorId} login-password-help` : "login-password-help"
+            }
           />
+          <p
+            id="login-password-help"
+            className="text-xs leading-5 text-[var(--color-text-tertiary)]"
+          >
+            密码区分全角与半角符号；需使用中文输入法时，可先点右侧图标显示密码。
+          </p>
         </div>
 
         {notice && (

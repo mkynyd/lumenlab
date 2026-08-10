@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 
 /** ticket 即邮件中的一次性 token（<id>.<raw>），与后端 resetPasswordSchema 对齐 */
 const TICKET_PATTERN = /^[^\s]{1,100}\.[^\s]{1,100}$/;
@@ -126,10 +126,9 @@ function ResetPasswordForm() {
             >
               新密码
             </label>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="new-password"
               required
               minLength={8}
@@ -147,10 +146,9 @@ function ResetPasswordForm() {
             >
               确认新密码
             </label>
-            <Input
+            <PasswordInput
               id="confirmPassword"
               name="confirmPassword"
-              type="password"
               autoComplete="new-password"
               required
               minLength={8}

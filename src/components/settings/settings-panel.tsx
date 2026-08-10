@@ -19,6 +19,7 @@ import {
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AvatarMark } from "@/components/user/avatar-mark";
@@ -1162,9 +1163,8 @@ function SecuritySection() {
             >
               当前密码
             </label>
-            <Input
+            <PasswordInput
               id="security-current-password"
-              type="password"
               autoComplete="current-password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
@@ -1179,9 +1179,8 @@ function SecuritySection() {
             >
               新密码
             </label>
-            <Input
+            <PasswordInput
               id="security-new-password"
-              type="password"
               autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -1196,9 +1195,8 @@ function SecuritySection() {
             >
               确认新密码
             </label>
-            <Input
+            <PasswordInput
               id="security-confirm-password"
-              type="password"
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

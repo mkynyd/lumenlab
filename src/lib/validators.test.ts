@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  loginSchema,
   registerSchema,
   resetPasswordSchema,
   sendMessageSchema,
@@ -27,6 +28,21 @@ describe("registerSchema", () => {
         password: "password123",
       })
     ).toThrow();
+  });
+
+  it("preserves Unicode passwords without normalizing full-width symbols", () => {
+    const password = "中文密码，符号！Aa1";
+
+    expect(
+      registerSchema.parse({
+        email: "unicode@example.com",
+        password,
+        ticket: "challenge-1.rawToken",
+      }).password
+    ).toBe(password);
+    expect(
+      loginSchema.parse({ email: "unicode@example.com", password }).password
+    ).toBe(password);
   });
 });
 

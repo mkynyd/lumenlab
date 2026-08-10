@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Check, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Stepper, type Step } from "@/components/ui/stepper";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -318,10 +319,9 @@ function RegisterFlow() {
             >
               密码
             </label>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="new-password"
               required
               minLength={8}
@@ -330,8 +330,18 @@ function RegisterFlow() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               aria-invalid={errorField === "password" || undefined}
-              aria-describedby={error ? errorId : undefined}
+              aria-describedby={
+                error
+                  ? `${errorId} register-password-help`
+                  : "register-password-help"
+              }
             />
+            <p
+              id="register-password-help"
+              className="text-xs leading-5 text-[var(--color-text-tertiary)]"
+            >
+              支持中文与全角符号，登录时需逐字一致；需使用中文输入法时，可先点右侧图标显示密码。
+            </p>
           </div>
           <div className="space-y-1.5">
             <label
@@ -340,10 +350,9 @@ function RegisterFlow() {
             >
               确认密码
             </label>
-            <Input
+            <PasswordInput
               id="confirmPassword"
               name="confirmPassword"
-              type="password"
               autoComplete="new-password"
               required
               minLength={8}
