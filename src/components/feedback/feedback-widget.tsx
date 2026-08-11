@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageSquarePlus } from "lucide-react";
 import {
   Dialog,
@@ -23,6 +23,22 @@ const CATEGORIES = [
 
 type Category = (typeof CATEGORIES)[number]["value"];
 
+const POSITION_STORAGE_KEY = "feedback-widget-pos";
+const VIEWPORT_MARGIN = 8;
+const EDGE_SNAP_OFFSET = 12;
+const DRAG_THRESHOLD_PX = 6;
+
+type Position = { x: number; y: number };
+
+function clampToViewport(pos: Position, width: number, height: number): Position {
+  const maxX = Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN);
+  const maxY = Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN);
+  return {
+    x: Math.min(Math.max(pos.x, VIEWPORT_MARGIN), maxX),
+    y: Math.min(Math.max(pos.y, VIEWPORT_MARGIN), maxY),
+  };
+}
+
 export function FeedbackWidget() {
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState<Category>("bug");
@@ -30,6 +46,115 @@ export function FeedbackWidget() {
   const [contact, setContact] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [state, setState] = useState<"idle" | "success" | "error">("idle");
+  // null = 使用 CSS 类默认定位（SSR 与首帧一致，避免 hydration 不匹配）
+  const [position, setPosition] = useState<Position | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const dragRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    originX: number;
+    originY: number;
+    width: number;
+    height: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(POSITION_STORAGE_KEY);
+      if (!raw) return;
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        typeof (parsed as Position).x === "number" &&
+        typeof (parsed as Position).y === "number" &&
+        Number.isFinite((parsed as Position).x) &&
+        Number.isFinite((parsed as Position).y)
+      ) {
+        const rect = buttonRef.current?.getBoundingClientRect();
+        setPosition(
+          clampToViewport(parsed as Position, rect?.width ?? 0, rect?.height ?? 0)
+        );
+      }
+    } catch {
+      // 存储内容损坏时忽略，回落到默认定位
+    }
+  }, []);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    dragRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      width: rect.width,
+      height: rect.height,
+      moved: false,
+    };
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
+      // jsdom 等环境下 pointer capture 不可用，忽略
+    }
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (!drag.moved) {
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      drag.moved = true;
+      setDragging(true);
+    }
+    setPosition(
+      clampToViewport(
+        { x: drag.originX + dx, y: drag.originY + dy },
+        drag.width,
+        drag.height
+      )
+    );
+  };
+
+  const endDrag = (snap: boolean) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!drag || !drag.moved) return;
+    setDragging(false);
+    if (!snap) return;
+    // 拖动后的那次 click 必须吞掉，避免拖完弹出 dialog
+    suppressClickRef.current = true;
+    setPosition((current) => {
+      const base = current ?? { x: drag.originX, y: drag.originY };
+      const snappedX =
+        base.x + drag.width / 2 < window.innerWidth / 2
+          ? EDGE_SNAP_OFFSET
+          : window.innerWidth - drag.width - EDGE_SNAP_OFFSET;
+      const next = clampToViewport(
+        { x: snappedX, y: base.y },
+        drag.width,
+        drag.height
+      );
+      try {
+        localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // 存储不可用时忽略
+      }
+      return next;
+    });
+  };
+
+  const handleClickCapture = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!suppressClickRef.current) return;
+    suppressClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   const reset = () => {
     setCategory("bug");
@@ -76,8 +201,19 @@ export function FeedbackWidget() {
     >
       <DialogTrigger asChild>
         <button
+          ref={buttonRef}
           type="button"
-          className="fixed right-4 bottom-24 z-30 inline-flex h-9 items-center gap-1.5 rounded-full bg-[var(--color-panel-muted)] px-4 text-sm text-[var(--color-text-secondary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--color-interaction-active)] hover:text-[var(--color-text-primary)] active:scale-[0.97] sm:right-6 sm:bottom-6"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={() => endDrag(true)}
+          onPointerCancel={() => endDrag(false)}
+          onClickCapture={handleClickCapture}
+          style={position ? { left: position.x, top: position.y } : undefined}
+          className={cn(
+            "fixed z-30 inline-flex h-9 touch-none items-center gap-1.5 rounded-full bg-[var(--color-panel-muted)] px-4 text-sm text-[var(--color-text-secondary)] transition-[background-color,color,transform] duration-150 select-none hover:bg-[var(--color-interaction-active)] hover:text-[var(--color-text-primary)] active:scale-[0.97]",
+            dragging ? "cursor-grabbing" : "cursor-grab",
+            !position && "right-4 bottom-16 sm:right-6 sm:bottom-6"
+          )}
         >
           <MessageSquarePlus className="size-4" aria-hidden />
           反馈
