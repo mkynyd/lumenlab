@@ -40,6 +40,7 @@ function RegisterFlow() {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(() =>
     linkFailed ? "验证链接已失效，请重新验证" : null
   );
@@ -143,6 +144,9 @@ function RegisterFlow() {
 
   /** 最终注册提交 */
   async function submitRegistration() {
+    if (!agreed) {
+      fail("请先阅读并勾选同意用户协议与隐私政策", null);
+    }
     if (password.length < 8) {
       fail("密码至少需要 8 个字符", "password");
     }
@@ -363,6 +367,39 @@ function RegisterFlow() {
               aria-invalid={errorField === "confirm" || undefined}
               aria-describedby={error ? errorId : undefined}
             />
+          </div>
+          <div className="flex items-start gap-2">
+            <input
+              id="agreement"
+              name="agreement"
+              type="checkbox"
+              checked={agreed}
+              onChange={(event) => setAgreed(event.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+            />
+            <label
+              htmlFor="agreement"
+              className="text-xs leading-5 text-[var(--color-text-secondary)]"
+            >
+              注册登录即代表已阅读并同意我们的
+              <Link
+                href="/legal/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--color-accent)] underline underline-offset-2 transition-colors hover:text-[var(--color-accent-hover)]"
+              >
+                用户协议
+              </Link>
+              与
+              <Link
+                href="/legal/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--color-accent)] underline underline-offset-2 transition-colors hover:text-[var(--color-accent-hover)]"
+              >
+                隐私政策
+              </Link>
+            </label>
           </div>
           {errorBlock}
         </div>
