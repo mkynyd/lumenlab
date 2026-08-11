@@ -30,6 +30,15 @@
 | `AGENT_RUNTIME_MODE` | 可选 | `legacy` | Agent Runtime 发布模式：`legacy` / `shadow` / `new` |
 | `AGENT_ORCHESTRATOR_ENABLED` | 已弃用 | — | 仅在未设置 `AGENT_RUNTIME_MODE` 时兼容旧部署：`0` → `legacy`，`1` → `new` |
 | `AGENT_PROVIDER_ADAPTER` | 可选 | `legacy` | 模型协议层：`legacy` 保持现有 Anthropic 兼容链路；`pi` 仅启用隔离 POC（`pi-ai` 兼容别名） |
+| `AGENT_DURABLE_EXECUTION_ENABLED` | 可选 | `false` | 持久化 Agent 执行（`AgentExecution` 队列、Worker 租约与断点恢复）开关 |
+| `LEARNING_LOOP_ROLLOUT` | 可选 | `off` | 学习闭环灰度：`off` 隐藏入口；`preview` 开放独立学习工作区；`default` 将 `/learning` 设为默认首页（要求 `AGENT_DURABLE_EXECUTION_ENABLED=true`） |
+| `ADMIN_EMAILS` | 可选 | — | 管理控制台允许访问的邮箱列表（逗号分隔），控制 `/admin` 页面与 `/api/admin/**` 接口 |
+| `TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` | 生产必需 | — | 腾讯云 SES 凭据，用于注册验证、密码重置与反馈通知邮件 |
+| `SES_ENABLED` | 可选 | — | 设为 `1` 启用 SES 发送；未配置时回退为控制台 dry-run |
+| `SES_REGION` | 可选 | `ap-hongkong` | SES 地域 |
+| `SES_FROM_EMAIL` / `SES_FROM_NAME` | 生产必需 | — | 发件人地址与名称 |
+| `SES_TEMPLATE_VERIFY` / `SES_TEMPLATE_RESET` / `SES_TEMPLATE_FEEDBACK` | 生产必需 | — | SES 控制台审核通过的模板 ID（验证、重置、反馈通知） |
+| `SES_VERIFY_URL_BASE` / `SES_RESET_URL_BASE` | 可选 | 由 `AUTH_URL` 推导 | 验证/重设链接地址覆盖 |
 | `AGENT_DEBUG_EVENTS` | 可选 | `false` | 是否在 SSE 中发送 router/debug 事件 |
 | `WEB_FETCH_ALLOWLIST` | 可选 | — | 允许 `web.fetch` 抓取的域名列表，建议生产环境显式配置 |
 | `CACHE_EXPERIMENT_PROMPT_REORDER` | 可选 | `false` | 是否启用提示词重排实验 |

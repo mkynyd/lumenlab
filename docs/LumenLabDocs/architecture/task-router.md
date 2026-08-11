@@ -40,7 +40,7 @@
 
 ## 历史压缩
 
-当对话从 DeepSeek 切换到 MiniMax 时，原始 DeepSeek 消息中的 `reasoningContent`（深度推理过程）对 MiniMax 无意义，且会占用大量上下文窗口。`src/lib/chat/router.ts` 中的 `summarizeHistoryForMiniMax()` 会：
+当对话从 DeepSeek 切换到 MiniMax 时，原始 DeepSeek 消息中的 `reasoningContent`（深度推理过程）对 MiniMax 无意义，且会占用大量上下文窗口。`src/lib/agent/runtime.ts` 中的 `summarizeHistoryForMiniMax()` 会：
 
 1. 过滤掉 `role !== user/assistant` 的消息。
 2. 仅保留最近 12 条。

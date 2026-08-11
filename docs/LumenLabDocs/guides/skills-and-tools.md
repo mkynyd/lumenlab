@@ -62,6 +62,8 @@ Skill Router 会根据提问、隐藏快捷任务提示、选中文件、项目�
 
 `web.fetch` 会做公开 URL 校验、DNS/重定向复核、SSRF 防护、8 秒超时和 1.5MB body 上限，并受 `WEB_FETCH_ALLOWLIST` 控制。即使显式加入 allowlist，IPv4、IPv6、IPv4-mapped IPv6 的 loopback、私网、link-local、ULA、multicast 和 IANA 特殊用途地址仍会被拒绝。连接使用已验证的 DNS 结果，不会在连接时再解析域名；每个重定向目标都会独立复核和固定。
 
+除上表外，学习闭环还注册了 `learning.*` 系列工具（目标、地图、练习、作答、复习、进度，L1 / L2）和 `plan.update`（L0，研究/工作流路由的计划步骤），它们只在项目学习场景中进入候选工具集。
+
 ## 审批与风险
 
 - L1 只读或低风险操作默认自动执行。

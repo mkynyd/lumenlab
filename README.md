@@ -49,7 +49,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### 可恢复学习闭环
 
-学习闭环默认关闭，可通过 `LEARNING_LOOP_ROLLOUT=preview` 在本地或小范围环境开启：
+学习闭环已在生产环境开启，从主导航的独立「学习」工作区进入；自托管部署默认关闭，可通过 `LEARNING_LOOP_ROLLOUT=preview` 在本地或小范围环境开启：
 
 - 从独立「学习」工作区选择已有项目，直接创建学习目标、确认整库或选定资料范围，再生成带来源锚点的版本化知识点地图。
 - 学习总览集中展示今日下一步、已有学习项目和基于 shadcn Base Calendar 的复习日历；项目仍作为资料所有权与权限边界。
@@ -155,7 +155,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 ### 注册码与集中认证
 
-- 用户注册需要提供邮箱、密码和有效注册码。
+- 用户注册需要提供邮箱、邮箱验证和密码；注册码在注册后于设置「服务访问」页绑定，用于切换密钥组。
 - 注册码由独立管理端 course-ai-regadmin 生成和发布。
 - API Key 集中加密存储，用户无法查看明文。
 - 同步协议使用 RSA-OAEP + AES-256-GCM + HMAC 防篡改和重放。
@@ -212,7 +212,7 @@ src/
 │       ├── learning/today/              # 今日学习聚合
 │       ├── projects/[id]/learning/      # Goal/Scope/Map/Practice/Review API
 │       ├── auth/[...nextauth]/         # NextAuth 认证路由
-│       ├── auth/register/              # 注册码注册
+│       ├── auth/register/              # 邮箱验证注册
 │       ├── projects/                   # 项目 CRUD
 │       ├── conversations/              # 对话管理
 │       ├── files/                      # 文件上传、解析、下载、增强
@@ -476,9 +476,9 @@ npm run dev
 3. 可选启用深度推理模式获得慢思考。
 4. AI 回答基于项目资料，不确定内容标注 `[需补充]`。
 
-### 使用学习闭环（预览）
+### 使用学习闭环
 
-1. 在环境中设置 `LEARNING_LOOP_ROLLOUT=preview`，从主导航进入独立「学习」工作区。
+1. 从主导航进入独立「学习」工作区（自托管部署需先设置 `LEARNING_LOOP_ROLLOUT=preview`）。
 2. 在学习中心选择一个已有项目，创建目标并确认学习范围；未单独选文件时使用项目内全部可读资料。
 3. 生成知识点地图并完成诊断练习。
 4. 从「错题」回看同题重做历史，从「复习」处理到期知识点。

@@ -10,6 +10,7 @@
 - PostgreSQL 16 + pgvector
 - Redis 7（可选；多实例和生产环境建议启用）
 - DeepSeek / MiniMax / MinerU / Bailian 中与你要使用的能力对应的凭据
+- 腾讯云 SES 邮件服务凭据（注册邮箱验证与密码重置邮件；未配置时本地开发回退为控制台 dry-run）
 - 生产文件存储建议使用七牛云 Kodo；开发环境可回退到本地存储
 
 复制配置并按 [配置参考](./reference/configuration.md) 填写：

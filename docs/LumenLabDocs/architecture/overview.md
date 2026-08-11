@@ -17,7 +17,7 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 
 | 路由分组 | 路径示例 | 说明 |
 |---|---|---|
-| `(auth)` | `/login`、`/register` | 登录、注册、注册码校验 |
+| `(auth)` | `/login`、`/register` | 登录、注册（邮箱验证）、密码重置 |
 | `(chat)` | `/chat`、`/chat/[id]`、`/projects`、`/tools`、`/tools/[id]` | 工作台：对话、项目、资料、快捷任务 |
 | `/docs` | `/docs` | 静态文档站点 |
 | `/api/*` | `/api/chat`、`/api/agent/*`、`/api/skills/catalog` | 服务端 API |
@@ -108,13 +108,14 @@ response-stream.ts
 
 ## 文件解析流水线
 
-项目资料解析集中在 `src/lib/files/parse-job.ts`：
+项目资料解析由 `src/lib/files/parse-job.ts` 调度，实际解析走 `src/lib/document-pipeline` 多模态文档流水线：
 
 | 文件类型 | 解析路径 |
 |---|---|
 | 文本、Markdown、CSV、代码 | 本地读取 UTF-8 文本 |
 | 图片 | MiniMax M3 视觉 OCR |
-| PDF | MiniMax M3 原生文档解析 |
+| PDF（≤20MB） | MiniMax M3 原生文档解析，请求过大或格式无效时自动回退 MinerU 一次 |
+| PDF（>20MB，上限 200MB） | MinerU 解析 |
 | Office / WPS / iWork | MinerU 解析 Markdown，图片保存为 `FileAssetResource` |
 
 解析完成后会刷新 `ProjectIndex`，创建 `DocumentChunk`，并在可用时通过百炼 `qwen3-vl-embedding` 生成 1024 维向量。

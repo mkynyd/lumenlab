@@ -68,7 +68,7 @@ LumenLab 是一个**项目化**的 AI 学习工作台。它把以下能力整合
 
 - 支持 DeepSeek V4 Pro / Flash，复杂推理可开启深度推理模式。
 - MiniMax M3 负责图片 OCR、PDF 文档解析等多模态任务。
-- Qwen3.7-Plus 作为默认关闭的灰度模型，启用后支持文本输出与图像、视频理解。
+- Qwen3.7-Plus 支持文本输出与图像、视频理解，当前账号具备百炼凭据时可选。
 - 流式输出，Markdown、公式、流程图、代码高亮实时渲染。
 - 通过 ProviderAdapter 统一厂商协议：DeepSeek 使用原生 Tool 与 XML/DSML fallback，MiniMax 使用原生 Tool，Qwen 使用 DashScope 原生多模态与 Function Calling；三条路径都进入同一 AgentLoop。
 - `AGENT_PROVIDER_ADAPTER=pi` 可把 DeepSeek / MiniMax 切到隔离的 `@earendil-works/pi-ai` POC，Qwen 始终使用项目自有的 Bailian Adapter。
@@ -95,10 +95,10 @@ LumenLab 是一个**项目化**的 AI 学习工作台。它把以下能力整合
 - 以 Markdown 为统一源，导出格式保持一致。
 - 导出结果会被缓存，重复下载无需等待。
 
-### 注册码与凭据管理
+### 注册与凭据管理
 
-- 用户注册需要邮箱、密码与有效的注册码。
-- 注册码由管理员或部署这个项目的开发者发放。
+- 用户注册需要邮箱、邮箱验证（6 位验证码或邮件链接）和密码，无需注册码；新用户自动关联默认凭证配置。
+- 注册码由管理员或部署这个项目的开发者发放，用于在设置的「服务访问」页切换密钥组，更换后立即生效。
 - 系统支持两种模式：
   - **中央凭证模式**：API Key 由管理员通过 `CredentialProfile` 集中配置，用户无需自行设置。
   - **自托管模式**：在 `src/lib/config.ts` 或环境变量中设置 `USER_API_KEYS_ENABLED=1`，用户可以自行保存 API Key（通过 `POST /api/user/api-keys` 或由管理员使用 `scripts/setup-api-key.ts` 设置）。

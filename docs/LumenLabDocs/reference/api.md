@@ -14,10 +14,43 @@
 
 ### `POST /api/auth/register`
 
-- 描述：Alpha 注册码注册，创建新用户并建立默认凭证配置。
+- 描述：创建新用户。注册凭证是邮箱验证挑战签发的一次性票据（ticket），必须先完成邮箱验证；新用户自动关联默认 `CredentialProfile`。
 - 认证：公开。
-- 请求：`{ email, password, registrationCode }`
-- 响应：注册成功返回用户信息；失败返回对应错误码与提示。
+- 请求：`{ email, password, ticket }`
+- 响应：注册成功（201）返回用户信息；失败返回对应错误码与提示（400 票据无效/过期、409 邮箱已注册、429 限流、503 默认凭证不可用）。
+
+### `POST /api/auth/verify/send`
+
+- 描述：为注册邮箱创建验证挑战并发送双通道邮件（6 位验证码 + 一次性链接）。
+- 认证：公开（按 IP 限流）。
+
+### `POST /api/auth/verify/code`
+
+- 描述：校验 6 位验证码，签发一次性注册 ticket。
+- 认证：公开。
+- 请求：`{ email, code }`
+- 响应：`{ success, ticket }`
+
+### `GET /api/auth/verify/link`
+
+- 描述：一次性链接验证，成功后重定向到 `/register?verified=1&ticket=...` 直达设置密码步骤。
+- 认证：公开。
+
+### `POST /api/auth/password/forgot`
+
+- 描述：发起密码重置，发送重置邮件；无论邮箱是否存在都返回成功，防止账号枚举。
+- 认证：公开（按 IP 限流）。
+
+### `GET /api/auth/password/reset-link`
+
+- 描述：校验重置链接有效性（不消费令牌），随后由前端引导到 `/reset-password?ticket=...`。
+- 认证：公开。
+
+### `POST /api/auth/password/reset`
+
+- 描述：原子消费重置令牌并更新密码，写入 `passwordChangedAt` 使旧会话失效。
+- 认证：公开。
+- 请求：`{ ticket, password }`
 
 ---
 
@@ -31,10 +64,29 @@
 
 ### `PATCH /api/user/profile`
 
-- 描述：更新当前用户昵称或 AI profile prompt。
+- 描述：更新当前用户昵称或头像预设。
 - 认证：需登录。
-- 请求：`{ name?, profilePrompt? }`
+- 请求：`{ name?, avatarPreset? }`
 - 响应：更新后的用户资料。
+
+### `GET /api/user/persona`
+
+- 描述：读取个性化 AI 画像输入与已生成的提示词，供设置的「个性化」页使用。
+- 认证：需登录。
+- 响应：`{ profileName, profileProfession, profileDetails, profilePrompt }`
+
+### `PUT /api/user/persona`
+
+- 描述：保存个性化 AI 画像的三个输入字段（空字符串归一化为 null）。
+- 认证：需登录。
+- 请求：`{ profileName?, profileProfession?, profileDetails? }`
+- 响应：保存后的画像字段与 `profilePrompt`。
+
+### `POST /api/user/password`
+
+- 描述：已登录用户修改密码（设置的「账号安全」页）；校验当前密码，按 IP 限流，写入 `passwordChangedAt` 使旧会话失效。
+- 认证：需登录。
+- 请求：`{ currentPassword, newPassword }`
 
 ### `POST /api/user/profile/avatar`
 
@@ -72,8 +124,8 @@
 
 - 描述：切换当前用户绑定的注册码，用于更新所属密钥组或延长使用期限。
 - 认证：需登录。
-- 请求：`{ registrationCode }`
-- 响应：切换后的注册码状态与用户信息。
+- 请求：`{ code }`
+- 响应：`{ success: true }`；注册码无效、停用、过期或次数用完返回 400。
 
 ---
 
@@ -305,7 +357,7 @@
 
 - 描述：返回当前 `.lumenlab/skills` 发现到的 Skill catalog，包括分类、显示名、描述、触发词和策略摘要。
 - 认证：需登录。
-- 响应：`{ categories, skills }`
+- 响应：`{ categories, totalCount }`。`categories` 按 `.lumenlab/skills/INDEX.md` 的分类顺序排列（academic / exam / coding / learning / document，未分类归入 uncategorized 兜底），`totalCount` 为 Skill 总数。
 
 ---
 
@@ -325,6 +377,51 @@
 - 认证：需登录。
 - 请求：`{ executionId, reason? }`
 - 响应：`{ ok: true, executionId }`。
+
+### `GET /api/agent/executions/*`
+
+- 描述：持久化 Agent 运行的状态查询、有序事件回放（支持 cursor 续传）、取消与重试，全部按归属限定为当前用户。仅在 `AGENT_DURABLE_EXECUTION_ENABLED=true` 时可用。
+- 认证：需登录。
+
+---
+
+## Learning
+
+以下接口在 `LEARNING_LOOP_ROLLOUT` 不为 `off` 时开放，全部要求登录并按归属校验：
+
+### `GET /api/learning/today`
+
+- 描述：聚合当前用户所有活跃学习目标，返回服务端选定的「今日下一步」。
+- 认证：需登录。
+
+### `POST /api/learning/profile-resets`
+
+- 描述：用户级学习画像重置，重置边界之前的证据不再计入掌握度、复习与推荐投影。
+- 认证：需登录。
+
+### `/api/projects/[id]/learning/*`
+
+- 描述：项目级学习闭环接口族——学习目标（Goal）、学习范围（Scope）、知识点地图（Map）、诊断/复习会话、提示与答案曝光、append-only 作答与判分、进度、错题、到期复习、作答历史、错因修正与重判、Goal 修订、画像重置，以及学习资料包（Study Pack）的大纲确认、分节生成、编辑与发布为 Artifact。
+- 认证：需登录，且项目需属于当前用户。
+
+---
+
+## Feedback / Errors
+
+### `POST /api/feedback`
+
+- 描述：提交用户反馈（分类 bug / suggestion / other，内容 1–2000 字，可选联系方式），每用户每日 20 条。
+- 认证：需登录。
+
+### `POST /api/errors/report`
+
+- 描述：客户端错误静默上报（zod 校验，按 IP 限流 30 次/分钟），始终返回 204。
+- 认证：公开。
+
+### `/api/admin/feedback/*` 与 `/api/admin/errors/*`
+
+- 描述：管理端的反馈与错误事件列表、状态流转接口；仅 `ADMIN_EMAILS` 中的账号可用，非管理员一律返回 404。
+- 认证：需登录且为管理员。
 
 ---
 
