@@ -15,27 +15,27 @@ datasource db {
 // ============================================================
 
 model User {
-  id                    String    @id @default(cuid())
-  email                 String    @unique
-  passwordHash          String
-  name                  String?
-  avatarPreset          String    @default("lumen")
-  avatarStorageProvider String?
-  avatarObjectKey       String?
-  avatarMimeType        String?
-  avatarUpdatedAt       DateTime?
-  accessStatus          String    @default("active")
-  emailVerifiedAt       DateTime? // 邮箱验证完成时间；老用户迁移时 backfill 为 createdAt
-  emailVerificationSource String  @default("none") // none | legacy | code | link
-  passwordChangedAt     DateTime? // 密码最近变更时间；JWT 校验旧会话失效
-  credentialProfileId   String?
-  planTier              String    @default("premium") // free | pro | premium
-  planCredits           Int       @default(0) // 当前周期总信用点额度；0 表示 A 测期间不限制
-  creditsUsed           Int       @default(0) // 当前周期已用信用点
-  cycleStartedAt        DateTime  @default(now()) // 当前 30 天周期开始时间
-  scopes                String[]  @default(["project.read", "project.write", "artifact.read", "artifact.write"]) // Agent 工具权限作用域
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                      String    @id @default(cuid())
+  email                   String    @unique
+  passwordHash            String
+  name                    String?
+  avatarPreset            String    @default("lumen")
+  avatarStorageProvider   String?
+  avatarObjectKey         String?
+  avatarMimeType          String?
+  avatarUpdatedAt         DateTime?
+  accessStatus            String    @default("active")
+  emailVerifiedAt         DateTime? // 邮箱验证完成时间；老用户迁移时 backfill 为 createdAt
+  emailVerificationSource String    @default("none") // none | legacy | code | link
+  passwordChangedAt       DateTime? // 密码最近变更时间；JWT 校验旧会话失效
+  credentialProfileId     String?
+  planTier                String    @default("premium") // free | pro | premium
+  planCredits             Int       @default(0) // 当前周期总信用点额度；0 表示 A 测期间不限制
+  creditsUsed             Int       @default(0) // 当前周期已用信用点
+  cycleStartedAt          DateTime  @default(now()) // 当前 30 天周期开始时间
+  scopes                  String[]  @default(["project.read", "project.write", "artifact.read", "artifact.write"]) // Agent 工具权限作用域
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   apiKeys              ApiKey[]
   conversations        Conversation[]
@@ -57,6 +57,7 @@ model User {
   credentialProfile    CredentialProfile?           @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption           RegistrationRedemption?
   authChallenges       EmailChallenge[]
+  feedback             Feedback[]
   profilePrompt        String?
   profileName          String?
   profileProfession    String?
@@ -1405,4 +1406,43 @@ model ReferenceListItem {
   @@unique([artifactId, referenceId])
   @@index([artifactId])
   @@index([referenceId])
+}
+
+// ============================================================
+// User feedback & error collection
+// ============================================================
+
+model Feedback {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  String // bug | suggestion | other
+  content   String
+  contact   String?
+  pagePath  String
+  userAgent String
+  status    String   @default("open") // open | resolved | closed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId])
+}
+
+model ErrorEvent {
+  id          String   @id @default(cuid())
+  digest      String // 错误指纹：sha256(source + route + message + stack 首行) 前 16 位
+  source      String // client | server
+  message     String
+  stack       String?
+  route       String?
+  userId      String? // 可空：未登录时的前端错误；故意不做外键 relation
+  userAgent   String?
+  count       Int      @default(1)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  status      String   @default("open") // open | resolved | ignored
+
+  @@unique([digest])
+  @@index([status, lastSeenAt])
 }
