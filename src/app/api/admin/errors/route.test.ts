@@ -50,6 +50,20 @@ describe("PATCH /api/admin/errors/[id]", () => {
     mocks.update.mockResolvedValue({ id: "err-1", status: "ignored" });
   });
 
+  it("returns 404 for non-admin", async () => {
+    mocks.getAdminUser.mockResolvedValue(null);
+    const response = await PATCH(
+      new NextRequest("http://localhost/api/admin/errors/err-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ignored" }),
+      }),
+      { params: Promise.resolve({ id: "err-1" }) }
+    );
+    expect(response.status).toBe(404);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it("updates status for admin", async () => {
     const response = await PATCH(
       new NextRequest("http://localhost/api/admin/errors/err-1", {

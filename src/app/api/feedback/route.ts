@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       content: body.content,
       contact: body.contact || null,
       pagePath: body.pagePath,
-      userAgent: request.headers.get("user-agent") ?? "",
+      userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? "",
     },
   });
 

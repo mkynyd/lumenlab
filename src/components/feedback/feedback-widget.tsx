@@ -77,7 +77,7 @@ export function FeedbackWidget() {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="fixed right-4 bottom-20 z-30 inline-flex h-9 items-center gap-1.5 rounded-full bg-[var(--color-panel-muted)] px-4 text-sm text-[var(--color-text-secondary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--color-interaction-active)] hover:text-[var(--color-text-primary)] active:scale-[0.97] sm:right-6 sm:bottom-6"
+          className="fixed right-4 bottom-24 z-30 inline-flex h-9 items-center gap-1.5 rounded-full bg-[var(--color-panel-muted)] px-4 text-sm text-[var(--color-text-secondary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--color-interaction-active)] hover:text-[var(--color-text-primary)] active:scale-[0.97] sm:right-6 sm:bottom-6"
         >
           <MessageSquarePlus className="size-4" aria-hidden />
           反馈

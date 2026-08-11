@@ -9,6 +9,7 @@ export interface ErrorRow {
   message: string;
   stack: string | null;
   route: string | null;
+  userId: string | null;
   count: number;
   status: string;
   lastSeenAt: string;
@@ -64,6 +65,9 @@ export function ErrorsTable({ rows }: { rows: ErrorRow[] }) {
             <span className="ml-auto text-xs text-[var(--color-text-secondary)]">{row.status}</span>
           </summary>
           <div className="mt-3 flex flex-col gap-2 text-sm">
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              用户：{row.userId ?? "匿名"}
+            </p>
             {row.stack && (
               <pre className="max-h-64 overflow-auto rounded-[var(--radius-md)] bg-[var(--color-interaction-hover)] p-3 text-xs">
                 {row.stack}

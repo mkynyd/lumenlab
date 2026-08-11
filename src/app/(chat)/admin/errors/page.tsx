@@ -29,6 +29,7 @@ export default async function AdminErrorsPage({
     message: item.message,
     stack: item.stack,
     route: item.route,
+    userId: item.userId,
     count: item.count,
     status: item.status,
     lastSeenAt: item.lastSeenAt.toISOString(),
