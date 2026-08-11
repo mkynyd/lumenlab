@@ -11,6 +11,7 @@ import type {
 } from "@/lib/hooks/use-learning-api";
 import { createIdempotencyKey } from "@/lib/hooks/use-learning-api";
 import {
+  useDeleteLearningGoal,
   useGenerateKnowledgeMap,
   useKnowledgeMap,
   useLearningGoals,
@@ -26,6 +27,16 @@ import {
   useWrongAnswers,
 } from "@/lib/hooks/use-learning-progress";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/learning/empty-state";
 import { GoalCreateForm } from "@/components/learning/goal-create-form";
@@ -83,6 +94,8 @@ function HistoricalGoalRow({
   goal: LearningGoalDto;
 }) {
   const updateStatus = useUpdateLearningGoalStatus(projectId, goal.id);
+  const deleteGoal = useDeleteLearningGoal(projectId);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   return (
     <div className="flex items-center justify-between gap-3 py-2">
       <div className="min-w-0">
@@ -97,14 +110,62 @@ function HistoricalGoalRow({
               : "已替换"}
         </p>
       </div>
-      <Button
-        type="button"
-        variant="secondary"
-        disabled={updateStatus.isPending}
-        onClick={() => updateStatus.mutate({ status: "active" })}
+      <div className="flex shrink-0 items-center gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={updateStatus.isPending || deleteGoal.isPending}
+          onClick={() => updateStatus.mutate({ status: "active" })}
+        >
+          重新激活
+        </Button>
+        <button
+          type="button"
+          onClick={() => setDeleteOpen(true)}
+          disabled={deleteGoal.isPending}
+          className="rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--color-text-tertiary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-error-muted)] hover:text-[var(--color-error)]"
+        >
+          删除
+        </button>
+      </div>
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (!open && !deleteGoal.isPending) setDeleteOpen(false);
+        }}
       >
-        重新激活
-      </Button>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除学习目标</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除「{goal.title}」吗？该目标的知识点地图、练习记录、
+              学习档案和资料包将被一并删除，且无法恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteGoal.isError && (
+            <p role="alert" className="text-sm text-[var(--color-error)]">
+              删除失败，请稍后重试。
+            </p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteGoal.isPending}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteGoal.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                deleteGoal.mutate(goal.id, {
+                  onSuccess: () => setDeleteOpen(false),
+                });
+              }}
+            >
+              {deleteGoal.isPending ? "正在删除" : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

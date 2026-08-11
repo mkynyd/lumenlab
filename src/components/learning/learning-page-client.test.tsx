@@ -16,6 +16,7 @@ import {
 const useLearningGoals = vi.fn();
 const useCreateLearningGoal = vi.fn();
 const useUpdateLearningGoalStatus = vi.fn();
+const useDeleteLearningGoal = vi.fn();
 const useLearningScope = vi.fn();
 const useSaveScopeDraft = vi.fn();
 const useConfirmScope = vi.fn();
@@ -27,6 +28,7 @@ vi.mock("@/lib/hooks/use-learning-goals", () => ({
   useCreateLearningGoal: (...args: unknown[]) => useCreateLearningGoal(...args),
   useUpdateLearningGoalStatus: (...args: unknown[]) =>
     useUpdateLearningGoalStatus(...args),
+  useDeleteLearningGoal: (...args: unknown[]) => useDeleteLearningGoal(...args),
   useLearningScope: (...args: unknown[]) => useLearningScope(...args),
   useSaveScopeDraft: (...args: unknown[]) => useSaveScopeDraft(...args),
   useConfirmScope: (...args: unknown[]) => useConfirmScope(...args),
@@ -144,6 +146,7 @@ describe("LearningPageClient", () => {
     vi.clearAllMocks();
     useCreateLearningGoal.mockReturnValue(mutationResult());
     useUpdateLearningGoalStatus.mockReturnValue(mutationResult());
+    useDeleteLearningGoal.mockReturnValue(mutationResult());
     useSaveScopeDraft.mockReturnValue(mutationResult());
     useConfirmScope.mockReturnValue(mutationResult());
     useGenerateKnowledgeMap.mockReturnValue(mutationResult());

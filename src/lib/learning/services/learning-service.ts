@@ -2167,6 +2167,27 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       return toGoalDto(updated);
     },
 
+    async deleteGoal(
+      command: GoalCommand & { goalId: string }
+    ): Promise<void> {
+      await requireGoal(command.userId, command.projectId, command.goalId);
+      await prisma.$transaction(async (tx) => {
+        // AttemptEvaluation 的 supersession 自引用是 onDelete: Restrict，
+        // 目标级联删除会被该外键拦截；同一链条必定属于同一 attempt/goal，
+        // 先在事务内解除目标范围内的链接，再整体级联删除。
+        await tx.attemptEvaluation.updateMany({
+          where: {
+            supersedesEvaluationId: { not: null },
+            attempt: {
+              sessionItem: { session: { goalId: command.goalId } },
+            },
+          },
+          data: { supersedesEvaluationId: null },
+        });
+        await tx.learningGoal.delete({ where: { id: command.goalId } });
+      });
+    },
+
     async getScope(
       command: GoalCommand & { goalId: string }
     ): Promise<LearningScopeDto | null> {
@@ -4583,6 +4604,18 @@ export function createLearningService(options: CreateLearningServiceOptions) {
         pack: toStudyPackDto(refreshed),
         artifact: { id: artifact.id, title: artifact.title },
       };
+    },
+
+    async deleteStudyPack(
+      command: GoalCommand & { packId: string }
+    ): Promise<void> {
+      const pack = await requireStudyPack(
+        command.userId,
+        command.projectId,
+        command.packId
+      );
+      // 章节随资料包级联删除；已发布的成果是独立的 Artifact，保留不删。
+      await prisma.studyPack.delete({ where: { id: pack.id } });
     },
 
     async getProgress(

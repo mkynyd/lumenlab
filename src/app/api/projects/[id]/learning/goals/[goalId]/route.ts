@@ -34,3 +34,11 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     return NextResponse.json({ goal });
   });
 }
+
+export async function DELETE(_request: Request, { params }: RouteContext) {
+  return learningRoute(async ({ userId }) => {
+    const { id: projectId, goalId } = await params;
+    await learningService.deleteGoal({ userId, projectId, goalId });
+    return NextResponse.json({ success: true });
+  });
+}

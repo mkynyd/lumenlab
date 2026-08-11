@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
-import { resolveFileFingerprint } from "@/lib/learning/services/learning-service";
+import { LearningServiceError } from "@/lib/learning/contracts";
+import {
+  createLearningService,
+  resolveFileFingerprint,
+} from "@/lib/learning/services/learning-service";
+import type { PrismaClient } from "@/generated/prisma/client";
 
 describe("resolveFileFingerprint", () => {
   it("uses the stored column value when present", () => {
@@ -85,5 +90,140 @@ describe("resolveFileFingerprint", () => {
     expect(resolveFileFingerprint(legacy)).toBe(
       computeContentFingerprint("正文内容")
     );
+  });
+});
+
+const testClock = { now: () => new Date("2026-08-01T08:00:00.000Z") };
+const testIds = { nextId: (kind: string) => `${kind}-test` };
+const unusedModelGateway = {
+  generateKnowledgeMap: async () => {
+    throw new Error("not used");
+  },
+  generatePracticeItems: async () => {
+    throw new Error("not used");
+  },
+  evaluateAttempt: async () => {
+    throw new Error("not used");
+  },
+  generateStudyPackSection: async () => {
+    throw new Error("not used");
+  },
+};
+
+function createServiceWithPrisma(prisma: Record<string, unknown>) {
+  return createLearningService({
+    prisma: prisma as unknown as PrismaClient,
+    clock: testClock,
+    ids: testIds,
+    modelGateway: unusedModelGateway,
+  });
+}
+
+describe("deleteGoal", () => {
+  function createGoalPrisma(goal: unknown) {
+    const tx = {
+      attemptEvaluation: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      learningGoal: { delete: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      project: {
+        findFirst: vi.fn().mockResolvedValue({ id: "project-1" }),
+      },
+      learningGoal: {
+        findFirst: vi.fn().mockResolvedValue(goal),
+      },
+      $transaction: vi.fn(
+        (callback: (txArg: typeof tx) => Promise<unknown>) => callback(tx)
+      ),
+      tx,
+    };
+    return prisma;
+  }
+
+  it("unlinks superseded evaluations before cascading the goal", async () => {
+    const prisma = createGoalPrisma({ id: "goal-1" });
+    const service = createServiceWithPrisma(prisma);
+
+    await service.deleteGoal({
+      userId: "user-1",
+      projectId: "project-1",
+      goalId: "goal-1",
+    });
+
+    expect(prisma.tx.attemptEvaluation.updateMany).toHaveBeenCalledWith({
+      where: {
+        supersedesEvaluationId: { not: null },
+        attempt: { sessionItem: { session: { goalId: "goal-1" } } },
+      },
+      data: { supersedesEvaluationId: null },
+    });
+    expect(prisma.tx.learningGoal.delete).toHaveBeenCalledWith({
+      where: { id: "goal-1" },
+    });
+  });
+
+  it("fails closed when the goal belongs to another user", async () => {
+    const prisma = createGoalPrisma(null);
+    const service = createServiceWithPrisma(prisma);
+
+    await expect(
+      service.deleteGoal({
+        userId: "user-1",
+        projectId: "project-1",
+        goalId: "goal-1",
+      })
+    ).rejects.toBeInstanceOf(LearningServiceError);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleteStudyPack", () => {
+  function createPackPrisma(pack: unknown) {
+    return {
+      project: {
+        findFirst: vi.fn().mockResolvedValue({ id: "project-1" }),
+      },
+      studyPack: {
+        findFirst: vi.fn().mockResolvedValue(pack),
+        delete: vi.fn().mockResolvedValue({}),
+      },
+    };
+  }
+
+  it("deletes the owned pack and lets sections cascade", async () => {
+    const prisma = createPackPrisma({ id: "pack-1", sections: [] });
+    const service = createServiceWithPrisma(prisma);
+
+    await service.deleteStudyPack({
+      userId: "user-1",
+      projectId: "project-1",
+      packId: "pack-1",
+    });
+
+    expect(prisma.studyPack.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "pack-1",
+          userId: "user-1",
+        }),
+      })
+    );
+    expect(prisma.studyPack.delete).toHaveBeenCalledWith({
+      where: { id: "pack-1" },
+    });
+  });
+
+  it("fails closed when the pack belongs to another user", async () => {
+    const prisma = createPackPrisma(null);
+    const service = createServiceWithPrisma(prisma);
+
+    await expect(
+      service.deleteStudyPack({
+        userId: "user-1",
+        projectId: "project-1",
+        packId: "pack-1",
+      })
+    ).rejects.toBeInstanceOf(LearningServiceError);
+    expect(prisma.studyPack.delete).not.toHaveBeenCalled();
   });
 });

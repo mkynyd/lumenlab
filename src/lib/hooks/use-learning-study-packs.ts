@@ -222,3 +222,21 @@ export function usePublishStudyPack(projectId: string, packId: string) {
     },
   });
 }
+
+export function useDeleteStudyPack(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (packId: string) =>
+      fetchJson<{ success: boolean }>(learningUrls.studyPack(projectId, packId), {
+        method: "DELETE",
+      }),
+    onSuccess: async (_data, packId) => {
+      queryClient.removeQueries({
+        queryKey: learningKeys.studyPack(projectId, packId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: learningKeys.studyPacks(projectId, ""),
+      });
+    },
+  });
+}

@@ -11,6 +11,7 @@ import type {
 } from "@/lib/hooks/use-learning-api";
 import {
   useCreateStudyPack,
+  useDeleteStudyPack,
   useGenerateStudyPack,
   usePublishStudyPack,
   useRegenerateStudyPackSection,
@@ -20,6 +21,16 @@ import {
   useUpdateStudyPackOutline,
 } from "@/lib/hooks/use-learning-study-packs";
 import { EmptyState } from "@/components/learning/empty-state";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -352,6 +363,8 @@ interface PackDetailProps {
 function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
   const generate = useGenerateStudyPack(projectId, pack.id);
   const publish = usePublishStudyPack(projectId, pack.id);
+  const deletePack = useDeleteStudyPack(projectId);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const readyCount = pack.sections.filter(
     (section) => (section.content ?? "").trim().length > 0
   ).length;
@@ -491,6 +504,57 @@ function PackDetail({ projectId, pack, onBack }: PackDetailProps) {
           </div>
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setDeleteOpen(true)}
+          className="rounded-[var(--radius-sm)] px-2 py-1 text-xs font-medium text-[var(--color-text-tertiary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-error-muted)] hover:text-[var(--color-error)]"
+        >
+          删除资料包
+        </button>
+      </div>
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (!open && !deletePack.isPending) setDeleteOpen(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除资料包</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除「{pack.title}」吗？资料包及其章节内容将被删除，
+              已发布的成果不受影响。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deletePack.isError && (
+            <p role="alert" className="text-sm text-[var(--color-error)]">
+              删除失败，请稍后重试。
+            </p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletePack.isPending}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deletePack.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                deletePack.mutate(pack.id, {
+                  onSuccess: () => {
+                    setDeleteOpen(false);
+                    onBack();
+                  },
+                });
+              }}
+            >
+              {deletePack.isPending ? "正在删除" : "删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

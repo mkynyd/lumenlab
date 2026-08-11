@@ -81,6 +81,25 @@ export function useUpdateLearningGoalStatus(projectId: string, goalId: string) {
   });
 }
 
+export function useDeleteLearningGoal(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (goalId: string) =>
+      fetchJson<{ success: boolean }>(learningUrls.goal(projectId, goalId), {
+        method: "DELETE",
+      }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: learningKeys.goals(projectId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: learningKeys.today(),
+        }),
+      ]),
+  });
+}
+
 export function useLearningScope(projectId?: string, goalId?: string) {
   return useQuery({
     queryKey: learningKeys.scope(projectId || "", goalId || ""),

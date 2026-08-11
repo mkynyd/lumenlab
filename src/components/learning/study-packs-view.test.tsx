@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StudyPacksView } from "@/components/learning/study-packs-view";
 import {
   useCreateStudyPack,
+  useDeleteStudyPack,
   useGenerateStudyPack,
   usePublishStudyPack,
   useRegenerateStudyPackSection,
@@ -23,6 +24,7 @@ vi.mock("@/lib/hooks/use-learning-study-packs", () => ({
   useSaveStudyPackSection: vi.fn(),
   useRegenerateStudyPackSection: vi.fn(),
   usePublishStudyPack: vi.fn(),
+  useDeleteStudyPack: vi.fn(),
 }));
 
 const mockUseStudyPacks = vi.mocked(useStudyPacks);
@@ -35,6 +37,7 @@ const mockUseRegenerateStudyPackSection = vi.mocked(
   useRegenerateStudyPackSection
 );
 const mockUsePublishStudyPack = vi.mocked(usePublishStudyPack);
+const mockUseDeleteStudyPack = vi.mocked(useDeleteStudyPack);
 
 const createMutate = vi.fn();
 const outlineMutate = vi.fn();
@@ -42,6 +45,7 @@ const generateMutate = vi.fn();
 const saveSectionMutate = vi.fn();
 const regenerateMutate = vi.fn();
 const publishMutate = vi.fn();
+const deleteMutate = vi.fn();
 
 const fixturePack = {
   id: "pack-1",
@@ -116,6 +120,11 @@ function mockDefaultMutations() {
     isPending: false,
     isError: false,
     isSuccess: false,
+  } as any);
+  mockUseDeleteStudyPack.mockReturnValue({
+    mutate: deleteMutate,
+    isPending: false,
+    isError: false,
   } as any);
 }
 
