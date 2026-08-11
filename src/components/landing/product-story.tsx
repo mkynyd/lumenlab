@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { FileText, FolderOpen, MessageSquareText } from "lucide-react";
+import { ListChecks, Map, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ChatDemo } from "./demos/chat-demo";
-import { ConversionDemo } from "./demos/conversion-demo";
-import { ProjectDemo } from "./demos/project-demo";
+import { LearningMapDemo } from "./demos/learning-map-demo";
+import { LearningPracticeDemo } from "./demos/learning-practice-demo";
+import { LearningReviewDemo } from "./demos/learning-review-demo";
 import { usePrefersReducedMotion } from "./prefers-motion";
 
 interface StoryChapter {
@@ -21,37 +21,37 @@ interface StoryChapter {
 
 const STORY_CHAPTERS: StoryChapter[] = [
   {
-    id: "organize",
+    id: "map",
     index: "01",
-    label: "项目空间",
-    title: "创建项目",
+    label: "知识点地图",
+    title: "从资料生成地图",
     description:
-      "把讲义、实验数据、代码和作业放进同一个项目。之后的每次提问，都会沿用这些资料和项目目标。",
-    detail: "一个项目，持续保存资料、对话与成果。",
-    icon: <FolderOpen size={17} strokeWidth={1.8} />,
-    demo: <ProjectDemo className="h-full" />,
+      "设定学习目标并确认资料范围后，LumenLab 从项目资料生成知识点地图，每个知识点都标注来源。",
+    detail: "资料更新后，只重新验证受影响的知识点。",
+    icon: <Map size={17} strokeWidth={1.8} />,
+    demo: <LearningMapDemo className="h-full" />,
   },
   {
-    id: "ask",
+    id: "practice",
     index: "02",
-    label: "上下文对话",
-    title: "围绕资料提问",
+    label: "诊断练习",
+    title: "做几道题，找到薄弱点",
     description:
-      "直接针对项目里的资料追问，回答会引用你上传的内容。模型、推理强度、附件和联网功能都在同一个输入区。",
-    detail: "从原始材料出发，保留推导与引用。",
-    icon: <MessageSquareText size={17} strokeWidth={1.8} />,
-    demo: <ChatDemo className="h-full" />,
+      "围绕地图开始诊断练习，提交后立即看到判定、解析和出处；卡住了可以先要提示，看答案会记为辅助作答。",
+    detail: "每次作答都会更新对应知识点的掌握度。",
+    icon: <ListChecks size={17} strokeWidth={1.8} />,
+    demo: <LearningPracticeDemo className="h-full" />,
   },
   {
-    id: "deliver",
+    id: "review",
     index: "03",
-    label: "结构化成果",
-    title: "解析并导出文档",
+    label: "复习与错题",
+    title: "按节奏复习到掌握",
     description:
-      "课件解析后保留标题、公式、图片和代码结构，可导出为 Markdown、PDF 或 DOCX，直接用于复习和写作。",
-    detail: "从课件到笔记，一步到位。",
-    icon: <FileText size={17} strokeWidth={1.8} />,
-    demo: <ConversionDemo className="h-full" />,
+      "掌握度独立记录，到期的知识点自动进入复习队列；错题留在历史里可以重做，也可以打包成复习资料包导出。",
+    detail: "今天该做什么，打开学习页就知道。",
+    icon: <RefreshCw size={17} strokeWidth={1.8} />,
+    demo: <LearningReviewDemo className="h-full" />,
   },
 ];
 
@@ -226,7 +226,7 @@ export function ProductStory() {
     <section
       ref={rootRef}
       id="features"
-      aria-label="LumenLab 产品工作流"
+      aria-label="LumenLab 学习闭环"
       data-scroll-mode="sticky-natural"
       className={cn(
         "relative scroll-mt-14",
@@ -305,14 +305,14 @@ function StoryHeading({ id }: { id: string }) {
   return (
     <div className="mb-8 max-w-3xl">
       <p className="text-[13px] font-medium text-[var(--color-accent)]">
-        工作流程
+        学习闭环
       </p>
       <h2
         id={id}
         className="mt-3 max-w-3xl text-[clamp(2rem,4vw,3.6rem)] font-semibold leading-[1.06] tracking-[-0.035em] text-[var(--color-text-primary)]"
         style={{ textWrap: "balance" }}
       >
-        从资料到成果，一站完成。
+        从资料到掌握，一站完成。
       </h2>
     </div>
   );
@@ -387,7 +387,7 @@ function MobileStory({ reducedMotion }: { reducedMotion: boolean }) {
             ? "flex-col gap-16"
             : "overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         )}
-        aria-label="产品工作流"
+        aria-label="学习闭环"
       >
         {STORY_CHAPTERS.map((chapter) => (
           <article
@@ -413,7 +413,7 @@ function MobileStory({ reducedMotion }: { reducedMotion: boolean }) {
       </div>
       {!reducedMotion && (
         <p className="mt-3 px-4 text-[12px] text-[var(--color-text-tertiary)] sm:px-6">
-          横向滑动查看完整工作流
+          横向滑动查看完整学习闭环
         </p>
       )}
     </div>
