@@ -85,6 +85,8 @@ export function FeedbackWidget() {
   }, []);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    // 新一轮交互开始，清掉可能残留的吞 click 标记，避免误吞合法轻点
+    suppressClickRef.current = false;
     const rect = event.currentTarget.getBoundingClientRect();
     dragRef.current = {
       startClientX: event.clientX,
@@ -129,24 +131,22 @@ export function FeedbackWidget() {
     if (!snap) return;
     // 拖动后的那次 click 必须吞掉，避免拖完弹出 dialog
     suppressClickRef.current = true;
-    setPosition((current) => {
-      const base = current ?? { x: drag.originX, y: drag.originY };
-      const snappedX =
-        base.x + drag.width / 2 < window.innerWidth / 2
-          ? EDGE_SNAP_OFFSET
-          : window.innerWidth - drag.width - EDGE_SNAP_OFFSET;
-      const next = clampToViewport(
-        { x: snappedX, y: base.y },
-        drag.width,
-        drag.height
-      );
-      try {
-        localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // 存储不可用时忽略
-      }
-      return next;
-    });
+    const base = position ?? { x: drag.originX, y: drag.originY };
+    const snappedX =
+      base.x + drag.width / 2 < window.innerWidth / 2
+        ? EDGE_SNAP_OFFSET
+        : window.innerWidth - drag.width - EDGE_SNAP_OFFSET;
+    const next = clampToViewport(
+      { x: snappedX, y: base.y },
+      drag.width,
+      drag.height
+    );
+    setPosition(next);
+    try {
+      localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // 存储不可用时忽略
+    }
   };
 
   const handleClickCapture = (event: React.MouseEvent<HTMLButtonElement>) => {
