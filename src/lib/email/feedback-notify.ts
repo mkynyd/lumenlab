@@ -55,12 +55,14 @@ export async function sendFeedbackNotificationEmail(
       content: input.content,
     });
 
-    for (const email of admins) {
+    const templateId = getFeedbackTemplateId() ?? "";
+
+    for (const [index, email] of admins.entries()) {
       const log = await prisma.emailLog.create({
         data: {
           kind: "feedback-notify",
           email,
-          templateId: getFeedbackTemplateId() ?? "",
+          templateId,
           event: "sending",
         },
         select: { id: true },
@@ -69,9 +71,9 @@ export async function sendFeedbackNotificationEmail(
       const result = await sendTemplateEmail({
         to: email,
         subject: buildFeedbackSubject(),
-        templateId: getFeedbackTemplateId() ?? "",
+        templateId,
         templateData,
-        smtpMessageId: `<feedback-notify-${input.feedbackId}@mail.mkynstudio.top>`,
+        smtpMessageId: `<feedback-notify-${input.feedbackId}-${index}@mail.mkynstudio.top>`,
         headers: { "X-Tencentcloudses-Cb-Kind": "feedback-notify" },
       });
 

@@ -56,7 +56,7 @@ describe("sendFeedbackNotificationEmail", () => {
       expect.objectContaining({
         to: "a1@example.com",
         subject: "LumenLab 用户反馈通知",
-        smtpMessageId: "<feedback-notify-fb-1@mail.mkynstudio.top>",
+        smtpMessageId: "<feedback-notify-fb-1-0@mail.mkynstudio.top>",
         templateData: expect.objectContaining({
           category: "Bug",
           userEmail: "u1@example.com",

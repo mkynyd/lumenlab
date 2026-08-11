@@ -52,17 +52,18 @@ export async function POST(request: Request) {
     },
   });
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { email: true },
-  });
-
-  // 通知失败不影响反馈已落库的事实；notify 自身不抛异常，这里再兜一层保险
+  // 通知链路（含取邮箱）任何失败都不影响反馈已落库的事实
+  let userEmail = "unknown";
   try {
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { email: true },
+    });
+    userEmail = user?.email ?? "unknown";
     await sendFeedbackNotificationEmail({
       feedbackId: feedback.id,
       category: feedback.category,
-      userEmail: user?.email ?? "unknown",
+      userEmail,
       content: feedback.content,
       pagePath: feedback.pagePath,
       contact: feedback.contact,
