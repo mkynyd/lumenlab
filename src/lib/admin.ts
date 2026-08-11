@@ -1,13 +1,17 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
-export function isAdminEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const admins = (process.env.ADMIN_EMAILS ?? "")
+/** 解析 ADMIN_EMAILS 环境变量为规范化邮箱列表（trim + 小写 + 去空）。 */
+export function getAdminEmails(): string[] {
+  return (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
-  return admins.includes(email.toLowerCase());
+}
+
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return getAdminEmails().includes(email.toLowerCase());
 }
 
 /**

@@ -136,4 +136,6 @@ export const RateLimits = {
   FEEDBACK: { max: 20, window: 86_400_000 },
   // 错误上报：每 IP 30 条/分钟
   ERROR_REPORT: { max: 30, window: 60_000 },
+  // 反馈通知邮件：全局 50 封/天兜底
+  FEEDBACK_NOTIFY: { max: 50, window: 86_400_000 },
 } as const;

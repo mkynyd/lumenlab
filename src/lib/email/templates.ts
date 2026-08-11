@@ -58,6 +58,28 @@ export function buildResetSubject(): string {
   return "LumenLab 密码重设";
 }
 
+/** 反馈通知模板 ID（SES 控制台审核通过后注入；未配置时 dry-run） */
+export function getFeedbackTemplateId(): string | null {
+  const value = process.env.SES_TEMPLATE_FEEDBACK;
+  return value?.trim() ? value.trim() : null;
+}
+
+export function buildFeedbackSubject(): string {
+  return "LumenLab 用户反馈通知";
+}
+
+/** 变量名与 SES 控制台模板保持一致：{{category}} {{userEmail}} {{pagePath}} {{contact}} {{time}} {{content}} */
+export function buildFeedbackTemplateData(input: {
+  category: string;
+  userEmail: string;
+  pagePath: string;
+  contact: string;
+  time: string;
+  content: string;
+}): Record<string, string> {
+  return { ...input };
+}
+
 /** 发件人（别名 + 空格 + 邮箱，腾讯云格式） */
 export function buildFromEmailAddress(): string {
   const name = process.env.SES_FROM_NAME?.trim() || "LumenLab";
