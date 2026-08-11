@@ -49,6 +49,7 @@ export async function GET() {
     exam: "考试复习",
     coding: "编程技术",
     learning: "通识学习",
+    document: "文档处理",
     uncategorized: "未分类",
   };
 
@@ -78,11 +79,15 @@ export async function GET() {
     });
   }
 
-  // 按分类排序（保持 INDEX.md 定义的顺序）
-  const categoryOrder = ["academic", "exam", "coding", "learning", "uncategorized"];
-  const categories = categoryOrder
-    .filter((slug) => categoryMap.has(slug))
-    .map((slug) => categoryMap.get(slug)!);
+  // 按分类排序（保持 INDEX.md 定义的顺序）；未列入的新分类排在 uncategorized 之前，避免被静默丢弃
+  const categoryOrder = ["academic", "exam", "coding", "learning", "document"];
+  const ordered = categoryOrder.filter((slug) => categoryMap.has(slug));
+  const extras = [...categoryMap.keys()].filter(
+    (slug) => !categoryOrder.includes(slug) && slug !== "uncategorized",
+  );
+  const finalOrder = [...ordered, ...extras];
+  if (categoryMap.has("uncategorized")) finalOrder.push("uncategorized");
+  const categories = finalOrder.map((slug) => categoryMap.get(slug)!);
 
   return NextResponse.json({
     categories,
