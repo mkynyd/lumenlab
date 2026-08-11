@@ -221,7 +221,7 @@ function MessageBubbleComponent({
                 ) : (
                   <LoadingIndicator
                     size="sm"
-                    variant="lissajous"
+                    orb="solving"
                     label="正在推理"
                     detail="思考过程会在返回后同步显示"
                   />
@@ -245,7 +245,7 @@ function MessageBubbleComponent({
             <div className="py-1">
               <LoadingIndicator
                 size="sm"
-                variant="lissajous"
+                orb="working"
                 label="等待模型响应"
                 detail="正在建立输出流"
               />

@@ -539,8 +539,8 @@ export default function ProjectDetailPage() {
     return (
       <div className="flex items-center justify-center h-full">
         <LoadingIndicator
-          size="md"
-          variant="lissajous"
+          size="lg"
+          orb="breathing"
           label="加载项目工作台"
           detail="正在读取资料索引"
         />
