@@ -132,4 +132,8 @@ export const RateLimits = {
   PASSWORD_RESET_IP: { max: 5, window: 600_000 },
   // 登录态修改密码：每 IP 5 次/10 分钟
   PASSWORD_CHANGE_IP: { max: 5, window: 600_000 },
+  // 用户反馈：每用户 20 条/天
+  FEEDBACK: { max: 20, window: 86_400_000 },
+  // 错误上报：每 IP 30 条/分钟
+  ERROR_REPORT: { max: 30, window: 60_000 },
 } as const;
