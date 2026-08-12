@@ -592,7 +592,9 @@ export function startAgentExecutionWorker() {
     runner,
     retryPolicy,
     leaseMs: 30_000,
-    heartbeatMs: 10_000,
+    // 心跳同时承担取消感知：cancelOwned 清空租约后续约失败即中断运行。
+    // 2s 节奏让用户停止的延迟控制在秒级。
+    heartbeatMs: 2_000,
     pollIntervalMs: 250,
   });
   globalWorker.__lumenAgentExecutionWorker = worker;

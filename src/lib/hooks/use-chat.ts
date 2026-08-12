@@ -203,6 +203,8 @@ export function useChat(options: UseChatOptions = {}) {
     suggestions: [],
   });
   const abortRef = useRef<AbortController | null>(null);
+  /** 当前流式对应的 durable 执行 ID，用于停止时通知服务端真正取消 */
+  const agentExecutionIdRef = useRef<string | null>(null);
   const conversationIdRef = useRef<string | undefined>(
     options.initialConversationId
   );
@@ -430,6 +432,7 @@ export function useChat(options: UseChatOptions = {}) {
         const reader = response.body?.getReader();
         if (!reader) throw new Error("No response body");
         const agentExecutionId = response.headers.get("X-Agent-Execution-Id");
+        agentExecutionIdRef.current = agentExecutionId;
 
         const responseMessageId = response.headers.get("X-Message-Id");
         if (responseMessageId && responseMessageId !== streamingId) {
@@ -685,8 +688,14 @@ export function useChat(options: UseChatOptions = {}) {
           });
         }
       } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-          // User aborted the attached foreground stream.
+        const isCancelledExecution =
+          err instanceof SSEExecutionError && err.status === "cancelled";
+        if (
+          (err instanceof Error && err.name === "AbortError") ||
+          isCancelledExecution
+        ) {
+          // User aborted the attached foreground stream (or the durable
+          // execution was cancelled server-side): keep the partial content.
           if (streamSessionRef.current === streamSession) {
             setMessages((prev) =>
               prev.map((m) =>
@@ -720,6 +729,7 @@ export function useChat(options: UseChatOptions = {}) {
         if (streamSessionRef.current === streamSession) {
           setIsStreaming(false);
         }
+        agentExecutionIdRef.current = null;
         if (controller && abortRef.current === controller) {
           abortRef.current = null;
         }
@@ -745,6 +755,16 @@ export function useChat(options: UseChatOptions = {}) {
   );
 
   const abort = useCallback(() => {
+    // durable 模式下仅断开本地流不会让模型停止：执行跑在后台 worker。
+    // 先通知服务端取消（worker 心跳感知后软停止），再断开本地渲染。
+    const executionId = agentExecutionIdRef.current;
+    if (executionId) {
+      agentExecutionIdRef.current = null;
+      void fetch(
+        `/api/agent/executions/${encodeURIComponent(executionId)}/cancel`,
+        { method: "POST" }
+      ).catch(() => {});
+    }
     abortRef.current?.abort();
   }, []);
 
@@ -753,6 +773,7 @@ export function useChat(options: UseChatOptions = {}) {
   const newConversation = useCallback(() => {
     streamSessionRef.current += 1;
     abortRef.current = null;
+    agentExecutionIdRef.current = null;
     conversationIdRef.current = undefined;
     setMessages([]);
     setConversationId(undefined);

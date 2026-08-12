@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -215,5 +215,55 @@ describe("useChat conversation URL sync", () => {
 
     expect(result.current.conversationId).toBe("conv-new-1");
     expect(window.location.pathname).toBe("/projects/proj-1");
+  });
+
+  it("calls the execution cancel endpoint when aborting a durable stream", async () => {
+    const cancelCalls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/chat/models") {
+          return Response.json({ models: ["deepseek-v4-flash"] });
+        }
+        if (url === "/api/chat") {
+          const headers = new Headers({
+            "Content-Type": "text/event-stream",
+            "X-Agent-Execution-Id": "exec-1",
+          });
+          // 永不产出内容的流；本地 abort 时像真实 fetch 一样让流报错
+          const body = new ReadableStream<Uint8Array>({
+            start(streamController) {
+              init?.signal?.addEventListener("abort", () => {
+                streamController.error(
+                  new DOMException("The operation was aborted.", "AbortError")
+                );
+              });
+            },
+          });
+          return new Response(body, { status: 200, headers });
+        }
+        if (url === "/api/agent/executions/exec-1/cancel") {
+          cancelCalls.push(url);
+          return Response.json({ ok: true });
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      })
+    );
+    const { result } = renderHook(() => useChat(), {
+      wrapper: createWrapper(),
+    });
+
+    act(() => {
+      void result.current.sendMessage("你好");
+    });
+    await waitFor(() => expect(result.current.isStreaming).toBe(true));
+
+    act(() => {
+      result.current.abort();
+    });
+
+    expect(cancelCalls).toEqual(["/api/agent/executions/exec-1/cancel"]);
+    await waitFor(() => expect(result.current.isStreaming).toBe(false));
   });
 });
