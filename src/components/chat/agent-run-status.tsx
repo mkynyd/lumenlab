@@ -1,15 +1,8 @@
 import type { AgentPlan } from "@/lib/agent/plan";
-import type { AgentEvent } from "@/lib/agent/types";
 import { cn } from "@/lib/utils";
-
-type CapabilityExplanation = Extract<
-  AgentEvent,
-  { type: "capability_explained" }
->;
 
 interface AgentRunStatusProps {
   plan?: AgentPlan;
-  explanations: CapabilityExplanation[];
   needsUserDecision?: boolean;
 }
 
@@ -31,14 +24,14 @@ const STEP_STATUS_STYLE: Record<AgentPlan["steps"][number]["status"], string> = 
 
 /**
  * A compact, streaming-safe view of public agent state. It intentionally
- * renders only plans, declared capability reasons and an approval hand-off.
+ * renders only plans and an approval hand-off; tool usage is summarized
+ * inline at the end of each assistant message instead.
  */
 export function AgentRunStatus({
   plan,
-  explanations,
   needsUserDecision = false,
 }: AgentRunStatusProps) {
-  if (!plan && explanations.length === 0 && !needsUserDecision) return null;
+  if (!plan && !needsUserDecision) return null;
 
   return (
     <section
@@ -97,26 +90,6 @@ export function AgentRunStatus({
         <p className="mt-2 text-xs leading-5 text-[var(--color-warning)]">
           请在下方确认或拒绝待执行操作；确认前不会执行。
         </p>
-      )}
-
-      {explanations.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {explanations.map((explanation) => (
-            <details key={explanation.capability} className="group text-xs">
-              <summary className="cursor-pointer list-none text-[var(--color-text-secondary)] marker:hidden">
-                <span className="group-open:hidden">为什么这样处理？</span>
-                <span className="hidden group-open:inline">收起说明</span>
-                <span className="ml-1 text-[var(--color-text-primary)]">
-                  {explanation.title}
-                </span>
-              </summary>
-              <p className="mt-1 leading-5 text-[var(--color-text-tertiary)]">
-                {explanation.reason}
-                {explanation.detail ? ` ${explanation.detail}` : ""}
-              </p>
-            </details>
-          ))}
-        </div>
       )}
     </section>
   );

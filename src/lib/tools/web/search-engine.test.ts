@@ -115,7 +115,7 @@ describe("runWebSearch", () => {
     vi.mocked(deepseek.completeChat)
       .mockRejectedValueOnce(new Error("tool_choice not supported"));
 
-    const result = await runWebSearch("test", "sk-test");
+    const result = await runWebSearch("example", "sk-test");
 
     expect(result.summary).toContain("Verified snippet");
     expect(result.sources).toEqual([
@@ -132,7 +132,23 @@ describe("runWebSearch", () => {
     const result = await runWebSearch("test", "sk-test");
 
     expect(result.sources).toEqual([]);
-    expect(result.summary).toContain("未找到可验证结果");
+    expect(result.summary).toContain("未找到与问题相关的可验证结果");
+  });
+
+  it("drops irrelevant fallback results instead of feeding junk sources", async () => {
+    mockRedisGet.mockResolvedValue(null);
+    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
+    // 中文查询下 DDG/Bing 抓回的垃圾站结果（与查询无任何词项重合）
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      text: async () =>
+        "<rss><channel><item><title>快递100-查快递,寄快递</title><link>https://junk.example.com/</link><description>快递单号查询</description></item></channel></rss>",
+    } as Response);
+
+    const result = await runWebSearch("编程语言排行榜", "sk-test");
+
+    expect(result.sources).toEqual([]);
+    expect(result.summary).toContain("未找到与问题相关的可验证结果");
   });
 
   it("parses and limits verified DuckDuckGo results", () => {
@@ -210,7 +226,7 @@ describe("runWebSearch", () => {
     expect(lastCall[1].thinking).toEqual({ type: "disabled" });
   });
 
-  it("retries with Bing after DuckDuckGo times out and aborts", async () => {
+  it("falls back to DuckDuckGo after Bing times out and aborts", async () => {
     vi.useFakeTimers();
     mockRedisGet.mockResolvedValue(null);
     vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
@@ -219,7 +235,7 @@ describe("runWebSearch", () => {
     fetchMock.mockReset();
     fetchMock
       .mockImplementationOnce(async (_url, init) => {
-        // 模拟 DDG 挂起直到 10s 超时 abort。
+        // 模拟 Bing 挂起直到 10s 超时 abort。
         return new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () => {
             reject(new DOMException("The operation was aborted.", "AbortError"));
@@ -233,20 +249,19 @@ describe("runWebSearch", () => {
         }
         return {
           ok: true,
-          text: async () =>
-            "<rss><channel><item><title>Official Site</title><link>https://example.com/</link><description>Verified result</description></item></channel></rss>",
+          text: async () => verifiedSearchHtml,
         } as Response;
       });
 
-    const resultPromise = runWebSearch("test", "sk-test");
+    const resultPromise = runWebSearch("example", "sk-test");
     await vi.advanceTimersByTimeAsync(10_000);
     const result = await resultPromise;
 
-    expect(result.summary).toContain("Official Site");
+    expect(result.summary).toContain("Verified snippet");
     expect(result.sources).toEqual([
-      { url: "https://example.com/", title: "Official Site" },
+      { url: "https://example.com/article", title: "Example & Article" },
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[1][0])).toContain("bing.com");
+    expect(String(fetchMock.mock.calls[1][0])).toContain("duckduckgo.com");
   });
 });

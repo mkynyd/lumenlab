@@ -25,12 +25,18 @@ import type {
   AgentExecutionHandler,
   AgentExecutionHandlerContext,
 } from "./agent-execution-runner";
-import { AgentExecutionRunner } from "./agent-execution-runner";
+import {
+  AgentExecutionRunner,
+  LeaseLostDuringRun,
+} from "./agent-execution-runner";
 import { AgentExecutionWorker } from "./agent-execution-worker";
 import { PrismaAgentExecutionStore } from "./prisma-agent-execution-store";
 import { AgentExecutionRetryPolicy } from "./retry-policy";
 
 const OUTPUT_CHUNK_SIZE = 16_000;
+/** 增量落盘的分段阈值：攒够字符数或距上次写入超过该间隔即写入事件存储 */
+const LIVE_SEGMENT_MIN_CHARS = 400;
+const LIVE_FLUSH_INTERVAL_MS = 300;
 
 function providerForModel(model: AgentRunInput["model"]["requestedModel"]) {
   if (model === "minimax-m3") return "minimax";
@@ -208,19 +214,17 @@ function splitText(value: string): string[] {
   return chunks;
 }
 
-async function appendOperationalEvents(
+async function appendOperationalEvent(
   context: AgentExecutionHandlerContext,
-  events: AgentEvent[]
+  event: AgentEvent
 ) {
-  for (const event of events) {
-    const serialized = eventJson(event);
-    if (!serialized) continue;
-    await context.appendEvent({
-      key: `agent_event:${eventKey(serialized)}`,
-      type: "agent_event",
-      payload: { eventJson: serialized },
-    });
-  }
+  const serialized = eventJson(event);
+  if (!serialized) return;
+  await context.appendEvent({
+    key: `agent_event:${eventKey(serialized)}`,
+    type: "agent_event",
+    payload: { eventJson: serialized },
+  });
 }
 
 async function appendOutput(
@@ -243,6 +247,36 @@ async function appendOutput(
       payload: { text },
     });
   }
+  if (output.usage) {
+    await context.appendEvent({
+      key: "assistant_usage",
+      type: "assistant_usage",
+      payload: {
+        prompt: output.usage.promptTokens,
+        completion: output.usage.completionTokens,
+        total: output.usage.totalTokens,
+        cacheHit: output.usage.promptCacheHitTokens ?? 0,
+        cacheMiss: output.usage.promptCacheMissTokens ?? 0,
+      },
+    });
+  }
+  await context.appendEvent({
+    key: "assistant_committed",
+    type: "assistant_committed",
+    payload: { messageId: context.execution.assistantMessageId },
+  });
+}
+
+/**
+ * 完成时的收尾事件（用量 + 提交标记）。正文与推理内容在运行期间已通过
+ * 增量分段实时落盘，这里不再重复写入。
+ */
+async function appendCompletionMarkers(
+  context: AgentExecutionHandlerContext,
+  checkpoint: AgentCheckpoint
+) {
+  const output = checkpoint.output;
+  if (!output) return;
   if (output.usage) {
     await context.appendEvent({
       key: "assistant_usage",
@@ -391,14 +425,82 @@ export function createDurableAgentExecutionHandler(input: {
     let reasoning = "";
     let streamedUsage: AgentUsage | null = null;
 
+    // 增量实时落盘：delta 分段后立即写入事件存储，replay 端（250ms 轮询）
+    // 因此能近实时看到正文/推理流，而不是等整轮跑完。
+    // key 带 attempt 与单调序号：同一 attempt 内序列即顺序；崩溃重试是新
+    // attempt、重新生成内容，不与旧 attempt 的分段互相去重阻塞。
+    const attempt = context.execution.attempt;
+    const liveBuffers = {
+      assistant_text: { buffer: "", sequence: 0 },
+      assistant_reasoning: { buffer: "", sequence: 0 },
+    };
+    let lastLiveFlushAt = Date.now();
+
+    const flushLiveSegment = async (
+      kind: "assistant_text" | "assistant_reasoning",
+      force = false
+    ) => {
+      const state = liveBuffers[kind];
+      if (!state.buffer) return;
+      const due = Date.now() - lastLiveFlushAt >= LIVE_FLUSH_INTERVAL_MS;
+      if (!force && state.buffer.length < LIVE_SEGMENT_MIN_CHARS && !due) {
+        return;
+      }
+      const segment = state.buffer;
+      const key = `${kind}:a${attempt}:${state.sequence}`;
+      try {
+        await context.appendEvent({
+          key,
+          type: kind,
+          payload: { text: segment },
+        });
+        state.buffer = "";
+        state.sequence += 1;
+        lastLiveFlushAt = Date.now();
+      } catch (error) {
+        // 租约丢失必须上抛终止；其余写入失败保留缓冲，下一分段继续，
+        // 内容不丢（仅延迟），避免瞬时 DB 抖动杀死整个执行。
+        if (error instanceof LeaseLostDuringRun) {
+          throw error;
+        }
+        logger.warn("durable live segment append failed", {
+          executionId: context.execution.id,
+          kind,
+          error: String(error),
+        });
+      }
+    };
+
     for await (const event of agentRun.events) {
-      if (event.type === "text_delta") text += event.text;
-      else if (event.type === "reasoning_delta") reasoning += event.text;
-      else if (event.type === "usage") streamedUsage = event.usage;
-      else if (isOperationalEvent(event)) operationalEvents.push(event);
+      if (event.type === "text_delta") {
+        text += event.text;
+        liveBuffers.assistant_text.buffer += event.text;
+        await flushLiveSegment("assistant_text");
+      } else if (event.type === "reasoning_delta") {
+        reasoning += event.text;
+        liveBuffers.assistant_reasoning.buffer += event.text;
+        await flushLiveSegment("assistant_reasoning");
+      } else if (event.type === "usage") {
+        streamedUsage = event.usage;
+      } else if (isOperationalEvent(event)) {
+        operationalEvents.push(event);
+        try {
+          await appendOperationalEvent(context, event);
+        } catch (error) {
+          if (error instanceof LeaseLostDuringRun) {
+            throw error;
+          }
+          logger.warn("durable operational event append failed", {
+            executionId: context.execution.id,
+            eventType: event.type,
+            error: String(error),
+          });
+        }
+      }
     }
     const completion = await agentRun.completion;
-    await appendOperationalEvents(context, operationalEvents);
+    await flushLiveSegment("assistant_text", true);
+    await flushLiveSegment("assistant_reasoning", true);
 
     if (completion.status === "awaiting_approval") {
       const approval = [...operationalEvents]
@@ -447,7 +549,7 @@ export function createDurableAgentExecutionHandler(input: {
       finalCheckpoint.output?.usage ?? null,
       recordUsage
     );
-    await appendOutput(context, finalCheckpoint);
+    await appendCompletionMarkers(context, finalCheckpoint);
     return { kind: "completed", checkpoint: finalCheckpoint };
   };
 }

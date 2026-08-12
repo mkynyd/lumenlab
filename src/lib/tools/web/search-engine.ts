@@ -223,7 +223,8 @@ async function callSearchWithToolChoice(
 
 // 每个 provider 尝试使用独立的 AbortController + 10s 超时，
 // 避免上一次超时 abort 的 signal 连坐到后续 provider 的重试。
-async function searchDuckDuckGo(query: string, maxResults: number): Promise<WebSearchResult> {
+// 返回 null 表示没有相关结果（调用方应尝试下一级 provider）。
+async function searchDuckDuckGo(query: string, maxResults: number): Promise<WebSearchResult | null> {
   const url = new URL(DUCKDUCKGO_HTML_SEARCH);
   url.searchParams.set("q", query);
   const controller = new AbortController();
@@ -235,22 +236,13 @@ async function searchDuckDuckGo(query: string, maxResults: number): Promise<WebS
     });
     if (!response.ok) throw new Error(`HTTP_${response.status}`);
     const results = parseDuckDuckGoResults(await response.text(), maxResults);
-    if (results.length === 0) {
-      throw new Error("NO_DUCKDUCKGO_RESULTS");
-    }
-    return {
-      summary: results
-        .map((item, index) => `[^${index + 1}^] ${item.title}${item.snippet ? `\n${item.snippet}` : ""}\n${item.url}`)
-        .join("\n\n"),
-      sources: results.map(({ url: sourceUrl, title }) => ({ url: sourceUrl, title })),
-      query,
-    };
+    return buildVerifiedResult(results, query);
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function searchBingRss(query: string, maxResults: number): Promise<WebSearchResult> {
+async function searchBingRss(query: string, maxResults: number): Promise<WebSearchResult | null> {
   const url = new URL(BING_RSS_SEARCH);
   url.searchParams.set("format", "rss");
   url.searchParams.set("q", query);
@@ -263,37 +255,77 @@ async function searchBingRss(query: string, maxResults: number): Promise<WebSear
     });
     if (!response.ok) throw new Error(`HTTP_${response.status}`);
     const results = parseBingRssResults(await response.text(), maxResults);
-    if (results.length === 0) {
-      return { summary: "联网搜索未找到可验证结果。", sources: [], query };
-    }
-    return {
-      summary: results
-        .map((item, index) => `[^${index + 1}^] ${item.title}${item.snippet ? `\n${item.snippet}` : ""}\n${item.url}`)
-        .join("\n\n"),
-      sources: results.map(({ url: sourceUrl, title }) => ({ url: sourceUrl, title })),
-      query,
-    };
+    return buildVerifiedResult(results, query);
   } finally {
     clearTimeout(timeout);
   }
 }
 
+/** 提取查询词项：拉丁词 + 中文二元组，用于结果相关性判断 */
+function queryTerms(query: string): string[] {
+  const terms = new Set<string>();
+  for (const match of query.toLowerCase().matchAll(/[a-z0-9]+/g)) {
+    if (match[0].length >= 2) terms.add(match[0]);
+  }
+  const cjk = query.replace(/[^一-鿿]/g, "");
+  for (let index = 0; index + 2 <= cjk.length; index += 1) {
+    terms.add(cjk.slice(index, index + 2));
+  }
+  return [...terms];
+}
+
+/**
+ * 相关性闸门：结果标题/摘要/URL 与查询没有任何词项重合时判为无关。
+ * 全部无关时返回 null——宁可让模型明说「没搜到」，也不把无关结果
+ * （如中文查询下 DuckDuckGo 常返回的推广/垃圾站）塞进上下文。
+ */
+function buildVerifiedResult(
+  items: Array<{ title: string; url: string; snippet: string }>,
+  query: string
+): WebSearchResult | null {
+  if (items.length === 0) return null;
+  const terms = queryTerms(query);
+  const relevant =
+    terms.length === 0
+      ? items
+      : items.filter((item) => {
+          const haystack =
+            `${item.title} ${item.snippet} ${item.url}`.toLowerCase();
+          return terms.some((term) => haystack.includes(term));
+        });
+  if (relevant.length === 0) return null;
+  return {
+    summary: relevant
+      .map(
+        (item, index) =>
+          `[^${index + 1}^] ${item.title}${item.snippet ? `\n${item.snippet}` : ""}\n${item.url}`
+      )
+      .join("\n\n"),
+    sources: relevant.map(({ url, title }) => ({ url, title })),
+    query,
+  };
+}
+
 async function callSearchFallback(query: string, maxResults: number): Promise<WebSearchResult> {
-  try {
-    return await searchDuckDuckGo(query, maxResults);
-  } catch (primaryError) {
-    logger.warn("web.search primary provider failed", {
-      error: primaryError instanceof Error ? primaryError.message : String(primaryError),
-    });
+  // Bing RSS 对中文查询的结果质量明显好于 DuckDuckGo HTML 抓取，因此 Bing 优先；
+  // 每一级都先过相关性闸门，两级都无相关结果时返回空来源。
+  const providers = [searchBingRss, searchDuckDuckGo];
+  for (const provider of providers) {
     try {
-      return await searchBingRss(query, maxResults);
+      const result = await provider(query, maxResults);
+      if (result) return result;
     } catch (error) {
-      logger.warn("web.search verified fallback failed", {
+      logger.warn("web.search fallback provider failed", {
+        provider: provider.name,
         error: error instanceof Error ? error.message : String(error),
       });
-      return { summary: "联网搜索暂不可用，未获取到可验证来源。", sources: [], query };
     }
   }
+  return {
+    summary: "联网搜索未找到与问题相关的可验证结果。",
+    sources: [],
+    query,
+  };
 }
 
 export async function runWebSearch(

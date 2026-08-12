@@ -136,12 +136,56 @@ describe("durable Agent runtime bridge", () => {
     expect(appended).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          key: "assistant_text:0",
+          key: "assistant_text:a1:0",
           payload: { text: "Kirchhoff law" },
         }),
         expect.objectContaining({ key: "assistant_committed" }),
       ])
     );
+    expect(result).toMatchObject({ kind: "completed" });
+  });
+
+  it("flushes large text output as multiple live segments during the run", async () => {
+    const bigDelta = "x".repeat(500);
+    const runMock = vi.fn(async () =>
+      run(
+        (async function* () {
+          yield { type: "text_delta" as const, text: bigDelta };
+          yield { type: "text_delta" as const, text: bigDelta };
+          yield { type: "reasoning_delta" as const, text: "思考片段" };
+        })(),
+        "completed"
+      )
+    );
+    const appended: Array<{ key: string; type: string; payload?: unknown }> = [];
+    const result = await createDurableAgentExecutionHandler({
+      run: runMock,
+      recordUsage: vi.fn(),
+    })({
+      execution: execution(),
+      signal: new AbortController().signal,
+      saveCheckpoint: vi.fn(),
+      appendEvent: async (value) => {
+        appended.push(value);
+      },
+    });
+
+    const textSegments = appended.filter((item) =>
+      item.key.startsWith("assistant_text:")
+    );
+    // 两个 500 字符 delta：第一次达到阈值实时写入一段，尾部强制写入一段
+    expect(textSegments.map((item) => item.key)).toEqual([
+      "assistant_text:a1:0",
+      "assistant_text:a1:1",
+    ]);
+    expect(
+      textSegments.map(
+        (item) => (item.payload as { text: string }).text
+      ).join("")
+    ).toBe(bigDelta + bigDelta);
+    expect(
+      appended.some((item) => item.key === "assistant_reasoning:a1:0")
+    ).toBe(true);
     expect(result).toMatchObject({ kind: "completed" });
   });
 

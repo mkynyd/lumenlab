@@ -6,6 +6,7 @@ import { useWebSearch } from "@/lib/hooks/use-web-search";
 import type { FileAttachment } from "@/lib/chat/router";
 import { ChatInput } from "@/components/chat/chat-input";
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
+import { onNewChat } from "@/lib/chat/new-chat-event";
 import { TokenUsageBar } from "@/components/chat/token-usage-bar";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
 import { AgentRunStatus } from "@/components/chat/agent-run-status";
@@ -61,6 +62,7 @@ export function ChatArea({
     approveExecution,
     rejectExecution,
     contextBudget,
+    newConversation,
   } = useChat({
     initialConversationId,
     initialMessages: initialMessages?.map((m) => ({
@@ -71,6 +73,10 @@ export function ChatArea({
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [userSkillValue, setUserSkillValue] = useState<SkillSelectorValue>("auto");
   const { webSearchActive, toggle: toggleWebSearch } = useWebSearch();
+
+  // 侧边栏「+」：URL 被 replaceState 改写时 router.push("/chat") 是 no-op，
+  // 订阅新对话事件原地重置会话状态。
+  useEffect(() => onNewChat(newConversation), [newConversation]);
   const canUseWebSearch = modelSupportsWebSearch(model);
   const sendWithWebSearch = effectiveWebSearchActive(model, webSearchActive);
 
@@ -248,7 +254,6 @@ export function ChatArea({
         <>
           <AgentRunStatus
             plan={agentSession.plan}
-            explanations={agentSession.explanations}
             needsUserDecision={needsUserDecision}
           />
 

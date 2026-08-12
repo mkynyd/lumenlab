@@ -85,7 +85,7 @@ export type AgentExecutionRunnerHooks = {
   ) => void | Promise<void>;
 };
 
-class LeaseLostDuringRun extends Error {}
+export class LeaseLostDuringRun extends Error {}
 
 function sanitizeFailureMessage(message: string): string {
   return message

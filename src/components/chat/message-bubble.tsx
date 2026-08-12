@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
+import type { OrbState } from "thinking-orbs";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -39,6 +40,10 @@ interface MessageBubbleProps {
   tokenCount?: number | null;
   sources?: AgentSource[] | null;
   isStreaming?: boolean;
+  /** 流式期间正在执行的工具 ID（映射为「正在搜索」等状态行） */
+  activeToolId?: string | null;
+  /** 本轮已完成的工具调用数，用于输出末尾的摘要行 */
+  toolsUsed?: number;
   onSaveArtifact?: (input: {
     messageId: string;
     title: string;
@@ -47,6 +52,18 @@ interface MessageBubbleProps {
   }) => Promise<void>;
   onSkillFollowUp?: (skillId: string) => void;
 }
+
+/** 工具 ID → 流式状态行（标签 + thinking-orbs 动画）；未列出的工具保持静默 */
+const TOOL_STATUS: Record<string, { label: string; orb: OrbState }> = {
+  "web.search": { label: "正在搜索", orb: "searching" },
+  "web.fetch": { label: "正在读取网页", orb: "connecting" },
+  "project_rag.search": { label: "正在检索资料", orb: "weaving" },
+  "project_files.list": { label: "正在检索资料", orb: "weaving" },
+  "project_files.read": { label: "正在读取资料", orb: "weaving" },
+  "arxiv.search": { label: "正在检索论文", orb: "searching" },
+  "arxiv.read": { label: "正在读取论文", orb: "connecting" },
+  "arxiv.fetch": { label: "正在读取论文", orb: "connecting" },
+};
 
 const ARTIFACT_TYPES = [
   ["general", "通用成果"],
@@ -155,6 +172,8 @@ function MessageBubbleComponent({
   tokenCount,
   sources,
   isStreaming = false,
+  activeToolId,
+  toolsUsed,
   onSaveArtifact,
   onSkillFollowUp,
 }: MessageBubbleProps) {
@@ -169,6 +188,13 @@ function MessageBubbleComponent({
   const shouldShowReasoning = isAssistant && (hasReasoning || isStreaming);
   const canSaveArtifact =
     isAssistant && !isStreaming && isArtifactContentSavable(content);
+  const toolStatus =
+    isStreaming && activeToolId ? (TOOL_STATUS[activeToolId] ?? null) : null;
+  const summaryParts: string[] = [];
+  if (!isStreaming) {
+    if (toolsUsed) summaryParts.push(`使用 ${toolsUsed} 个工具`);
+    if (sources?.length) summaryParts.push(`${sources.length} 个来源`);
+  }
 
   if (!isUser && !isAssistant) return null;
 
@@ -243,15 +269,24 @@ function MessageBubbleComponent({
             <MarkdownContent content={content} isStreaming={isStreaming} />
           ) : isStreaming ? (
             <div className="py-1">
-              <LoadingIndicator
-                size="sm"
-                orb="working"
-                label="等待模型响应"
-                detail="正在建立输出流"
-              />
+              {toolStatus ? (
+                <LoadingIndicator size="sm" orb={toolStatus.orb} label={toolStatus.label} />
+              ) : (
+                <LoadingIndicator
+                  size="sm"
+                  orb="working"
+                  label="等待模型响应"
+                  detail="正在建立输出流"
+                />
+              )}
             </div>
           ) : null}
-          {isStreaming && content && <span className="typing-cursor" />}
+          {isStreaming && content && toolStatus && (
+            <div className="py-1">
+              <LoadingIndicator size="sm" orb={toolStatus.orb} label={toolStatus.label} />
+            </div>
+          )}
+          {isStreaming && content && !toolStatus && <span className="typing-cursor" />}
         </div>
 
         {isAssistant && !isStreaming && <MessageSources sources={sources} />}
@@ -306,10 +341,18 @@ function MessageBubbleComponent({
           </div>
         )}
 
-        {tokenCount != null && (
-          <span className="mt-1 text-xs font-mono text-[var(--color-text-tertiary)]">
-            {tokenCount.toLocaleString()} tokens
-          </span>
+        {(summaryParts.length > 0 || tokenCount != null) && (
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)]">
+            {summaryParts.length > 0 && <span>{summaryParts.join(" · ")}</span>}
+            {summaryParts.length > 0 && tokenCount != null && (
+              <span aria-hidden>·</span>
+            )}
+            {tokenCount != null && (
+              <span className="font-mono">
+                {tokenCount.toLocaleString()} tokens
+              </span>
+            )}
+          </div>
         )}
       </div>
       </div>
@@ -326,7 +369,8 @@ export const MessageBubble = memo(
     if (next.isStreaming) {
       return (
         previous.content === next.content &&
-        previous.reasoningContent === next.reasoningContent
+        previous.reasoningContent === next.reasoningContent &&
+        previous.activeToolId === next.activeToolId
       );
     }
     return (
@@ -334,6 +378,7 @@ export const MessageBubble = memo(
       previous.reasoningContent === next.reasoningContent &&
       previous.tokenCount === next.tokenCount &&
       previous.sources === next.sources &&
+      previous.toolsUsed === next.toolsUsed &&
       previous.onSaveArtifact === next.onSaveArtifact
     );
   }

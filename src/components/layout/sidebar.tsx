@@ -6,6 +6,7 @@ import { signOut, useSession } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { emitNewChat } from "@/lib/chat/new-chat-event";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -198,7 +199,13 @@ export function Sidebar({
       router.push("/tools");
       return;
     }
-    router.push(activeSection === "chat" ? "/chat" : "/projects/new");
+    if (activeSection === "chat") {
+      // 先派发重置事件：URL 被 replaceState 改写时 push("/chat") 不会重挂载
+      emitNewChat();
+      router.push("/chat");
+      return;
+    }
+    router.push("/projects/new");
   }
 
   function projectDestination(projectId: string) {

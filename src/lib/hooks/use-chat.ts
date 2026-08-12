@@ -30,7 +30,6 @@ export interface AgentTimelineEntry {
 
 export interface AgentSessionState {
   plan?: AgentPlan;
-  explanations: Array<Extract<AgentEvent, { type: "capability_explained" }>>;
   activeSkill?: {
     skillId: string;
     version: string;
@@ -58,6 +57,10 @@ export interface ChatMessage {
   isStreaming?: boolean;
   streamingSource?: "foreground" | "background";
   streamingStartedAt?: number;
+  /** 流式期间正在执行的工具 ID（如 web.search），用于状态行展示 */
+  activeToolId?: string | null;
+  /** 本轮已完成（completed/failed 终态）的工具调用数，流式结束时定格 */
+  toolsUsed?: number;
 }
 
 export interface SendMessageInput {
@@ -190,7 +193,6 @@ export function useChat(options: UseChatOptions = {}) {
   >({});
   const [agentSession, setAgentSession] = useState<AgentSessionState>({
     suggestions: [],
-    explanations: [],
   });
   const abortRef = useRef<AbortController | null>(null);
   const conversationIdRef = useRef<string | undefined>(
@@ -266,7 +268,7 @@ export function useChat(options: UseChatOptions = {}) {
       // Abort any still-attached foreground stream before sending a new message.
       abortRef.current?.abort();
       setAgentTimeline({});
-      setAgentSession({ suggestions: [], explanations: [] });
+      setAgentSession({ suggestions: [] });
       const streamSession = streamSessionRef.current + 1;
       streamSessionRef.current = streamSession;
 
@@ -282,6 +284,24 @@ export function useChat(options: UseChatOptions = {}) {
       };
       let streamingId = `assistant-${Date.now()}`;
       const streamingStartedAt = Date.now();
+
+      // 本轮工具调用跟踪：executionId → toolId、进行中的执行集合、已完成的数量
+      const toolIdByExecution = new Map<string, string>();
+      const activeExecutions = new Set<string>();
+      let toolsFinished = 0;
+      const syncActiveTool = () => {
+        let activeToolId: string | null = null;
+        for (const executionId of activeExecutions) {
+          const toolId = toolIdByExecution.get(executionId);
+          if (toolId) {
+            activeToolId = toolId;
+            break;
+          }
+        }
+        setMessages((prev) =>
+          prev.map((m) => (m.id === streamingId ? { ...m, activeToolId } : m))
+        );
+      };
 
       setMessages((prev) => [
         ...prev.map((m) =>
@@ -452,18 +472,6 @@ export function useChat(options: UseChatOptions = {}) {
                 setAgentSession((current) => ({ ...current, plan: event.plan }));
                 return;
               }
-              if (event.type === "capability_explained") {
-                setAgentSession((current) => ({
-                  ...current,
-                  explanations: [
-                    ...current.explanations.filter(
-                      (item) => item.capability !== event.capability
-                    ),
-                    event,
-                  ],
-                }));
-                return;
-              }
               if (event.type === "skill_activated") {
                 setAgentSession((current) => ({
                   ...current,
@@ -517,6 +525,20 @@ export function useChat(options: UseChatOptions = {}) {
                   )
                 );
                 return;
+              }
+              if (event.type === "tool_proposed") {
+                toolIdByExecution.set(event.executionId, event.preview.toolId);
+              } else if (event.type === "tool_started") {
+                activeExecutions.add(event.executionId);
+                syncActiveTool();
+              } else if (
+                event.type === "tool_completed" ||
+                event.type === "tool_failed" ||
+                event.type === "tool_blocked"
+              ) {
+                activeExecutions.delete(event.executionId);
+                toolsFinished += 1;
+                syncActiveTool();
               }
               if (
                 event.type === "context_budget_warning" ||
@@ -617,6 +639,8 @@ export function useChat(options: UseChatOptions = {}) {
                   isStreaming: false,
                   streamingSource: undefined,
                   streamingStartedAt: undefined,
+                  activeToolId: null,
+                  toolsUsed: toolsFinished,
                   tokenCount: result.usage?.totalTokens ?? null,
                   cacheHitTokens: result.usage?.cacheHitTokens ?? null,
                   cacheMissTokens: result.usage?.cacheMissTokens ?? null,
@@ -646,6 +670,8 @@ export function useChat(options: UseChatOptions = {}) {
                       isStreaming: false,
                       streamingSource: undefined,
                       streamingStartedAt: undefined,
+                      activeToolId: null,
+                      toolsUsed: toolsFinished,
                     }
                   : m
               )
@@ -705,7 +731,7 @@ export function useChat(options: UseChatOptions = {}) {
     setError(null);
     setIsStreaming(false);
     setAgentTimeline({});
-    setAgentSession({ suggestions: [], explanations: [] });
+    setAgentSession({ suggestions: [] });
   }, []);
 
   const loadConversation = useCallback(
@@ -726,7 +752,7 @@ export function useChat(options: UseChatOptions = {}) {
       setError(null);
       setIsStreaming(hasStreamingMessage(nextMessages));
       setAgentTimeline({});
-      setAgentSession({ suggestions: [], explanations: [] });
+      setAgentSession({ suggestions: [] });
     },
     []
   );

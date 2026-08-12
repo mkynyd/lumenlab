@@ -10,7 +10,7 @@ export default async function ChatPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <ChatArea />
+      <ChatArea key="new" />
     </div>
   );
 }

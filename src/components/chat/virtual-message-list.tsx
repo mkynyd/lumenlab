@@ -43,6 +43,8 @@ const Bubble = memo(function Bubble({
       tokenCount={message.tokenCount ?? undefined}
       sources={message.sources}
       isStreaming={message.isStreaming}
+      activeToolId={message.activeToolId}
+      toolsUsed={message.toolsUsed}
       onSaveArtifact={
         message.role === "assistant" ? onSaveArtifact : undefined
       }
