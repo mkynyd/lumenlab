@@ -175,6 +175,30 @@ model RegistrationSyncNonce {
   @@index([expiresAt])
 }
 
+/// 独立管理台查询请求的一次性 nonce。与注册码发布 nonce 分表、分密钥，
+/// 防止跨协议重放；过期记录由每次合法请求顺手清理。
+model AdminObservabilityNonce {
+  id        String   @id @default(cuid())
+  nonce     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+/// 管理员对主业务数据的访问审计。只记录查询类型与目标标识，
+/// 不记录消息正文、系统提示词、推理内容或内部 metadata。
+model AdminObservabilityAudit {
+  id        String   @id @default(cuid())
+  action    String
+  targetId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+}
+
 model Conversation {
   id                 String   @id @default(cuid())
   userId             String

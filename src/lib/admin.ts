@@ -1,7 +1,8 @@
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-
-/** 解析 ADMIN_EMAILS 环境变量为规范化邮箱列表（trim + 小写 + 去空）。 */
+/**
+ * Legacy environment helper retained for feedback notification recipients.
+ * Interactive administration moved to course-ai-regadmin; this module no
+ * longer authenticates a main-application user as an administrator.
+ */
 export function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
     .split(",")
@@ -12,19 +13,4 @@ export function getAdminEmails(): string[] {
 export function isAdminEmail(email: string | null | undefined): boolean {
   if (!email) return false;
   return getAdminEmails().includes(email.toLowerCase());
-}
-
-/**
- * 返回当前登录的管理员用户（含邮箱），非管理员或未登录返回 null。
- * 邮箱以数据库为准（session 回调不透传 email）。
- */
-export async function getAdminUser(): Promise<{ id: string; email: string } | null> {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, email: true },
-  });
-  if (!user || !isAdminEmail(user.email)) return null;
-  return user;
 }

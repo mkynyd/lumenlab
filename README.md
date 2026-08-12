@@ -430,6 +430,7 @@ cp .env.example .env
 | `REGISTRATION_CODE_PEPPER` | 注册码加盐, 与 regadmin 的 FINGERPRINT_SECRET 独立 |
 | `REGISTRATION_SYNC_SECRET` | 与 course-ai-regadmin 共享的同步密钥 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | RSA 私钥 (PEM base64) |
+| `ADMIN_OBSERVABILITY_SECRET` | 与 course-ai-regadmin 共享的独立运营数据签名密钥；不得复用注册同步密钥 |
 | `AGENT_RUNTIME_MODE` | `legacy` / `shadow` / `new`，默认 `legacy` |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 持久 Agent Worker 与事件恢复开关，默认 `false` |
 | `LEARNING_LOOP_ROLLOUT` | `off` / `preview` / `default`，默认 `off`；`default` 要求持久执行开启 |
@@ -535,4 +536,4 @@ npx prisma migrate status
 
 ### 相关项目
 
-- [course-ai-regadmin](https://github.com/mkynyd/course-ai-regadmin) — 注册码管理后台，负责注册码生成、密钥组管理和发布同步。
+- [course-ai-regadmin](https://github.com/mkynyd/course-ai-regadmin) — 统一管理员后台，负责注册码、密钥组、发布同步，以及经私网签名接口读取运营数据和处理反馈/错误。
