@@ -31,6 +31,9 @@ import {
   suggestArtifactTitle,
 } from "@/lib/artifacts/content";
 import type { AgentSource } from "@/lib/agent/sources";
+import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
+import type { ApprovalScope } from "@/lib/agent/types";
+import { AssistantProcess } from "@/components/chat/assistant-process";
 
 interface MessageBubbleProps {
   id?: string;
@@ -44,6 +47,13 @@ interface MessageBubbleProps {
   activeToolId?: string | null;
   /** 本轮已完成的工具调用数，用于输出末尾的摘要行 */
   toolsUsed?: number;
+  process?: AssistantProcessTrace;
+  onApproveTool?: (
+    executionId: string,
+    token: string,
+    scope: ApprovalScope
+  ) => Promise<void> | void;
+  onDenyTool?: (executionId: string) => Promise<void> | void;
   onSaveArtifact?: (input: {
     messageId: string;
     title: string;
@@ -92,9 +102,9 @@ function MessageSources({ sources }: { sources?: AgentSource[] | null }) {
   if (visible.length === 0) return null;
 
   return (
-    <div className="mt-3 text-xs text-[var(--color-text-tertiary)]">
-      <div className="mb-1 font-medium text-[var(--color-text-secondary)]">来源</div>
-      <div className="flex flex-wrap gap-1.5">
+    <div className="message-source-tray">
+      <div className="message-source-title">来源 · {sources?.length ?? 0}</div>
+      <div className="message-source-list">
         {visible.map((source, index) => {
           const label = source.title || source.url || source.fileId || `来源 ${index + 1}`;
           const content = (
@@ -103,8 +113,7 @@ function MessageSources({ sources }: { sources?: AgentSource[] | null }) {
               <span className="max-w-[18rem] truncate">{label}</span>
             </>
           );
-          const className =
-            "inline-flex h-7 max-w-full items-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)]";
+          const className = "message-source-item";
 
           return source.url ? (
             <a
@@ -123,7 +132,7 @@ function MessageSources({ sources }: { sources?: AgentSource[] | null }) {
           );
         })}
         {(sources?.length ?? 0) > visible.length && (
-          <span className="inline-flex h-7 items-center rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2">
+          <span className="message-source-more">
             +{(sources?.length ?? 0) - visible.length}
           </span>
         )}
@@ -174,6 +183,9 @@ function MessageBubbleComponent({
   isStreaming = false,
   activeToolId,
   toolsUsed,
+  process,
+  onApproveTool,
+  onDenyTool,
   onSaveArtifact,
   onSkillFollowUp,
 }: MessageBubbleProps) {
@@ -189,7 +201,7 @@ function MessageBubbleComponent({
   const canSaveArtifact =
     isAssistant && !isStreaming && isArtifactContentSavable(content);
   const toolStatus =
-    isStreaming && activeToolId ? (TOOL_STATUS[activeToolId] ?? null) : null;
+    isStreaming && activeToolId && !process ? (TOOL_STATUS[activeToolId] ?? null) : null;
   const summaryParts: string[] = [];
   if (!isStreaming) {
     if (toolsUsed) summaryParts.push(`使用 ${toolsUsed} 个工具`);
@@ -218,7 +230,18 @@ function MessageBubbleComponent({
         )}
       >
         <div className={cn("min-w-0", isUser ? "flex w-full flex-col items-end" : "w-full")}>
-        {shouldShowReasoning && (
+        {isAssistant && (process || shouldShowReasoning) && (
+          <AssistantProcess
+            trace={process}
+            reasoningContent={reasoningContent}
+            isStreaming={isStreaming}
+            hasResponse={Boolean(content)}
+            onApprove={onApproveTool}
+            onDeny={onDenyTool}
+          />
+        )}
+
+        {shouldShowReasoning && !process && (
           <Collapsible
             open={showReasoning}
             onOpenChange={setShowReasoning}
@@ -267,7 +290,7 @@ function MessageBubbleComponent({
         >
           {content ? (
             <MarkdownContent content={content} isStreaming={isStreaming} />
-          ) : isStreaming ? (
+          ) : isStreaming && !process ? (
             <div className="py-1">
               {toolStatus ? (
                 <LoadingIndicator size="sm" orb={toolStatus.orb} label={toolStatus.label} />
@@ -370,7 +393,8 @@ export const MessageBubble = memo(
       return (
         previous.content === next.content &&
         previous.reasoningContent === next.reasoningContent &&
-        previous.activeToolId === next.activeToolId
+        previous.activeToolId === next.activeToolId &&
+        previous.process === next.process
       );
     }
     return (
@@ -379,7 +403,10 @@ export const MessageBubble = memo(
       previous.tokenCount === next.tokenCount &&
       previous.sources === next.sources &&
       previous.toolsUsed === next.toolsUsed &&
-      previous.onSaveArtifact === next.onSaveArtifact
+      previous.process === next.process &&
+      previous.onSaveArtifact === next.onSaveArtifact &&
+      previous.onApproveTool === next.onApproveTool &&
+      previous.onDenyTool === next.onDenyTool
     );
   }
 );

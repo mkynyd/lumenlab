@@ -74,4 +74,31 @@ describe("project conversation state", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].isStreaming).toBeUndefined();
   });
+
+  it("preserves a hydrated assistant process when a conversation is loaded", () => {
+    const process = {
+      status: "completed" as const,
+      startedAt: nowMs - 2_000,
+      completedAt: nowMs,
+      tools: [{
+        executionId: "search-1",
+        toolId: "web.search",
+        label: "搜索公开资料",
+        status: "completed" as const,
+        progress: 100,
+        sources: [{ type: "web" as const, title: "来源", url: "https://example.com" }],
+      }],
+    };
+
+    const [message] = toChatMessages([{
+      id: "assistant-1",
+      role: "assistant",
+      content: "完成",
+      process,
+      createdAt: new Date(nowMs).toISOString(),
+    }], nowMs);
+
+    expect(message.process).toEqual(process);
+    expect(message.isStreaming).toBeUndefined();
+  });
 });

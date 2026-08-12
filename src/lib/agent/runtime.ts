@@ -759,7 +759,31 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       );
     }
 
-    const webResult = await runWebSearch(effectivePrompt, searchApiKey);
+    const searchExecutionId = `manual-web-search:${runId}`;
+    emitAgentEvent({
+      type: "tool_proposed",
+      executionId: searchExecutionId,
+      preview: {
+        toolId: "web.search",
+        toolName: "联网搜索",
+        summary: "搜索公开资料",
+        affectedResources: [],
+        sendsToExternal: true,
+        externalTargets: ["公开互联网"],
+        isReversible: false,
+        dataTypes: ["用户问题"],
+      },
+    });
+    emitAgentEvent({ type: "tool_started", executionId: searchExecutionId });
+    const webResult = await runWebSearch(effectivePrompt, searchApiKey).catch((error) => {
+      emitAgentEvent({
+        type: "tool_failed",
+        executionId: searchExecutionId,
+        errorCode: "WEB_SEARCH_FAILED",
+        error: "联网搜索失败",
+      });
+      throw error;
+    });
     manualWebContext = formatManualWebContext(webResult);
     manualWebSources = webResult.sources.map((source) => ({
       type: "web",
@@ -772,6 +796,20 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         provider: "deepseek-web-search",
       },
     }));
+    manualWebSources.forEach((source, index) => {
+      emitAgentEvent({
+        type: "tool_source_discovered",
+        executionId: searchExecutionId,
+        source,
+        index,
+        total: manualWebSources.length,
+      });
+    });
+    emitAgentEvent({
+      type: "tool_completed",
+      executionId: searchExecutionId,
+      resultSummary: { sourceCount: manualWebSources.length },
+    });
     if (manualWebSources.length > 0) {
       emitAgentEvent({
         type: "sources_updated",

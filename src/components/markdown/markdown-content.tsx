@@ -8,10 +8,11 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import type { Root, RootContent } from "hast";
+import type { Element, Root, RootContent } from "hast";
 import { MermaidBlock } from "@/components/chat/mermaid-block";
 import { LumenFlowDiagram } from "@/components/markdown/lumenflow-diagram";
 import { cn } from "@/lib/utils";
+import { CodeBlock } from "@/components/markdown/code-block";
 
 interface MarkdownContentProps {
   content: string;
@@ -50,6 +51,12 @@ function rehypeScopeFootnoteIds(prefix: string) {
   };
 }
 
+function elementText(node: Element): string {
+  return node.children
+    .map((child) => child.type === "text" ? child.value : child.type === "element" ? elementText(child) : "")
+    .join("");
+}
+
 export function MarkdownContent({
   content,
   isStreaming = false,
@@ -78,16 +85,22 @@ export function MarkdownContent({
           rehypeHighlight,
         ]}
         components={{
+          pre({ children }: ComponentProps<"pre">) {
+            return <>{children}</>;
+          },
           code(props) {
-            const { className: codeClassName, children, ...rest } = props;
+            const { className: codeClassName, children, node, ...rest } = props;
             const match = /language-(\w+)/.exec(codeClassName || "");
-            const code = String(children).replace(/\n$/, "");
-          if (match?.[1] === "mermaid") {
-            return <MermaidBlock code={code} isStreaming={isStreaming} />;
-          }
-          if (match?.[1] === "lumenflow") {
-            return <LumenFlowDiagram code={code} isStreaming={isStreaming} />;
-          }
+            const code = (node ? elementText(node) : String(children)).replace(/\n$/, "");
+            if (match?.[1] === "mermaid") {
+              return <MermaidBlock code={code} isStreaming={isStreaming} />;
+            }
+            if (match?.[1] === "lumenflow") {
+              return <LumenFlowDiagram code={code} isStreaming={isStreaming} />;
+            }
+            if (node?.position?.start.line !== node?.position?.end.line || code.includes("\n")) {
+              return <CodeBlock code={code} language={match?.[1]} />;
+            }
             return (
               <code className={codeClassName} {...rest}>
                 {children}
@@ -110,7 +123,7 @@ export function MarkdownContent({
           },
           table(props: ComponentProps<"table">) {
             return (
-              <div className="overflow-x-auto my-3">
+              <div className="markdown-table-wrap">
                 <table {...props} />
               </div>
             );

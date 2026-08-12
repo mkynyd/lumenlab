@@ -1,4 +1,5 @@
 import type { AgentSource } from "@/lib/agent/sources";
+import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
 import type {
   AssistanceLevel,
   ContentFreshness,
@@ -76,6 +77,7 @@ export interface ConversationMessage {
   cacheHitTokens?: number | null;
   cacheMissTokens?: number | null;
   sources?: AgentSource[] | null;
+  process?: AssistantProcessTrace;
   createdAt?: string;
 }
 

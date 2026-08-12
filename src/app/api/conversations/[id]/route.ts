@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { hydrateAssistantProcess } from "@/lib/agent/assistant-process";
 
 // GET — 获取对话及其消息
 export async function GET(
@@ -29,6 +30,16 @@ export async function GET(
           cacheMissTokens: true,
           sources: true,
           createdAt: true,
+          agentExecutionsAsAssistantMessage: {
+            take: 1,
+            orderBy: { createdAt: "desc" },
+            select: {
+              events: {
+                orderBy: { sequence: "asc" },
+                select: { type: true, payload: true, createdAt: true },
+              },
+            },
+          },
         },
       },
     },
@@ -38,7 +49,18 @@ export async function GET(
     return NextResponse.json({ error: "对话不存在" }, { status: 404 });
   }
 
-  return NextResponse.json({ conversation });
+  return NextResponse.json({
+    conversation: {
+      ...conversation,
+      messages: conversation.messages.map((message) => ({
+        ...message,
+        process: hydrateAssistantProcess(
+          message.agentExecutionsAsAssistantMessage?.[0]?.events ?? []
+        ),
+        agentExecutionsAsAssistantMessage: undefined,
+      })),
+    },
+  });
 }
 
 // DELETE — 删除对话

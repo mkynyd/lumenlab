@@ -7,6 +7,7 @@ import type {
   SkillMetadata,
   ToolMetadata,
 } from "../types";
+import { extractSourcesFromToolResult } from "../sources";
 import type { ToolExecutionPersistence } from "../persistence/tool-execution-persistence";
 import type { ExecutedTool, ToolExecutionContext } from "../tool-executor";
 import { toolRegistry } from "../tool-registry";
@@ -251,6 +252,16 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
 
       const summary = executed.result ?? {};
       await dependencies.persistence.markSucceeded(execution.id, summary);
+      const discoveredSources = extractSourcesFromToolResult(tool.toolId, summary);
+      discoveredSources.forEach((source, index) => {
+        emit({
+          type: "tool_source_discovered",
+          executionId: execution.id,
+          source,
+          index,
+          total: discoveredSources.length,
+        });
+      });
       await audit(dependencies, request, execution.id, "tool_completed", "info", {
         resultSummary: summary,
       });

@@ -193,6 +193,16 @@ function sanitizeOperationalEvent(event: AgentEvent): Record<string, unknown> {
       })),
     };
   }
+  if (event.type === "tool_source_discovered") {
+    return {
+      ...event,
+      source: {
+        ...event.source,
+        snippet: event.source.snippet?.slice(0, 500),
+        metadata: undefined,
+      },
+    };
+  }
   return event as unknown as Record<string, unknown>;
 }
 

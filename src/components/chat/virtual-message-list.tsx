@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
+import type { ApprovalScope } from "@/lib/agent/types";
 
 type SaveArtifact = (input: {
   messageId: string;
@@ -29,10 +30,14 @@ const Bubble = memo(function Bubble({
   message,
   onSaveArtifact,
   onSkillFollowUp,
+  onApproveTool,
+  onDenyTool,
 }: {
   message: ChatMessage;
   onSaveArtifact?: SaveArtifact;
   onSkillFollowUp?: SkillFollowUp;
+  onApproveTool?: (executionId: string, token: string, scope: ApprovalScope) => Promise<void> | void;
+  onDenyTool?: (executionId: string) => Promise<void> | void;
 }) {
   return (
     <MessageBubble
@@ -45,12 +50,15 @@ const Bubble = memo(function Bubble({
       isStreaming={message.isStreaming}
       activeToolId={message.activeToolId}
       toolsUsed={message.toolsUsed}
+      process={message.process}
       onSaveArtifact={
         message.role === "assistant" ? onSaveArtifact : undefined
       }
       onSkillFollowUp={
         message.role === "assistant" ? onSkillFollowUp : undefined
       }
+      onApproveTool={message.role === "assistant" ? onApproveTool : undefined}
+      onDenyTool={message.role === "assistant" ? onDenyTool : undefined}
     />
   );
 });
@@ -62,10 +70,14 @@ export function VirtualMessageList({
   messages,
   onSaveArtifact,
   onSkillFollowUp,
+  onApproveTool,
+  onDenyTool,
 }: {
   messages: ChatMessage[];
   onSaveArtifact?: SaveArtifact;
   onSkillFollowUp?: SkillFollowUp;
+  onApproveTool?: (executionId: string, token: string, scope: ApprovalScope) => Promise<void> | void;
+  onDenyTool?: (executionId: string) => Promise<void> | void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { completed, streaming } = splitStreamingMessage(messages);
@@ -158,11 +170,13 @@ export function VirtualMessageList({
             message={message}
             onSaveArtifact={onSaveArtifact}
             onSkillFollowUp={onSkillFollowUp}
+            onApproveTool={onApproveTool}
+            onDenyTool={onDenyTool}
           />
         ))}
       </div>
       {streaming ? (
-        <Bubble message={streaming} onSaveArtifact={onSaveArtifact} onSkillFollowUp={onSkillFollowUp} />
+        <Bubble message={streaming} onSaveArtifact={onSaveArtifact} onSkillFollowUp={onSkillFollowUp} onApproveTool={onApproveTool} onDenyTool={onDenyTool} />
       ) : null}
       {pinned && (
         <button

@@ -512,6 +512,12 @@ describe("POST /api/chat", () => {
 
       const body = await response.text();
       expect(body).toContain("web_access_enabled");
+      expect(body).toContain("tool_proposed");
+      expect(body).toContain('"isReversible":false');
+      expect(body).toContain("tool_started");
+      expect(body).toContain("tool_source_discovered");
+      expect(body).toContain("https://example.com/ai");
+      expect(body).toContain("tool_completed");
       expect(body).toContain("sources_updated");
       expect(body).toContain("MiniMax 回复");
     } finally {

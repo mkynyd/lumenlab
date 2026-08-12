@@ -214,6 +214,14 @@ export type AgentEvent =
       sources: AgentSource[];
     }
   | {
+      /** A source returned by a real tool execution, emitted in result order. */
+      type: "tool_source_discovered";
+      executionId: string;
+      source: AgentSource;
+      index: number;
+      total: number;
+    }
+  | {
       type: "model_adapter_selected";
       provider: "deepseek" | "minimax" | "bailian";
       model: string;

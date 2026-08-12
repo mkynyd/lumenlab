@@ -43,3 +43,24 @@ describe("MarkdownContent 脚注引用", () => {
     }
   });
 });
+
+describe("MarkdownContent 结构化输出", () => {
+  it("把围栏代码渲染为带语言标签和复制操作的独立代码块", () => {
+    const { container, getByRole } = render(
+      <MarkdownContent content={'```ts\nconst answer = 42;\n```'} />
+    );
+
+    expect(container.querySelector(".markdown-code-block")).not.toBeNull();
+    expect(container.querySelector("pre pre")).toBeNull();
+    expect(container.textContent).toContain("TypeScript");
+    expect(getByRole("button", { name: "复制代码" })).toBeTruthy();
+  });
+
+  it("为表格提供独立横向滚动容器", () => {
+    const { container } = render(
+      <MarkdownContent content={'| A | B |\n| - | - |\n| 1 | 2 |'} />
+    );
+
+    expect(container.querySelector(".markdown-table-wrap > table")).not.toBeNull();
+  });
+});

@@ -1,4 +1,6 @@
 import type { ChatMessage } from "@/lib/hooks/use-chat";
+import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
+import type { AgentSource } from "@/lib/agent/sources";
 
 export type PersistedConversationMessage = {
   id: string;
@@ -8,6 +10,8 @@ export type PersistedConversationMessage = {
   tokenCount?: number | null;
   cacheHitTokens?: number | null;
   cacheMissTokens?: number | null;
+  sources?: AgentSource[] | null;
+  process?: AssistantProcessTrace;
   createdAt?: string | Date | null;
 };
 

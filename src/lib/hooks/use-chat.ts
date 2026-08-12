@@ -16,6 +16,12 @@ import { queryKeys } from "@/lib/query-keys";
 import type { AgentEvent, ApprovalScope } from "@/lib/agent/types";
 import type { AgentSource } from "@/lib/agent/sources";
 import type { AgentPlan } from "@/lib/agent/plan";
+import {
+  completeAssistantProcess,
+  createAssistantProcessTrace,
+  reduceAssistantProcess,
+  type AssistantProcessTrace,
+} from "@/lib/agent/assistant-process";
 
 export interface AgentTimelineEntry {
   executionId: string;
@@ -61,6 +67,8 @@ export interface ChatMessage {
   activeToolId?: string | null;
   /** 本轮已完成（completed/failed 终态）的工具调用数，流式结束时定格 */
   toolsUsed?: number;
+  /** Persisted, replayable public process state for this assistant response. */
+  process?: AssistantProcessTrace;
 }
 
 export interface SendMessageInput {
@@ -323,6 +331,7 @@ export function useChat(options: UseChatOptions = {}) {
           isStreaming: true,
           streamingSource: "foreground",
           streamingStartedAt,
+          process: createAssistantProcessTrace(streamingStartedAt),
         },
       ]);
       setContextBudget(null);
@@ -468,6 +477,19 @@ export function useChat(options: UseChatOptions = {}) {
               lastEventSequence = Math.max(lastEventSequence, sequence);
             },
             onAgentEvent: (event) => {
+              setMessages((prev) =>
+                prev.map((message) =>
+                  message.id === streamingId
+                    ? {
+                        ...message,
+                        process: reduceAssistantProcess(
+                          message.process ?? createAssistantProcessTrace(streamingStartedAt),
+                          event
+                        ),
+                      }
+                    : message
+                )
+              );
               if (event.type === "plan_updated") {
                 setAgentSession((current) => ({ ...current, plan: event.plan }));
                 return;
@@ -644,6 +666,10 @@ export function useChat(options: UseChatOptions = {}) {
                   tokenCount: result.usage?.totalTokens ?? null,
                   cacheHitTokens: result.usage?.cacheHitTokens ?? null,
                   cacheMissTokens: result.usage?.cacheMissTokens ?? null,
+                  process: completeAssistantProcess(
+                    m.process ?? createAssistantProcessTrace(streamingStartedAt),
+                    "completed"
+                  ),
                 }
               : m
           )
@@ -672,6 +698,10 @@ export function useChat(options: UseChatOptions = {}) {
                       streamingStartedAt: undefined,
                       activeToolId: null,
                       toolsUsed: toolsFinished,
+                      process: completeAssistantProcess(
+                        m.process ?? createAssistantProcessTrace(streamingStartedAt),
+                        "cancelled"
+                      ),
                     }
                   : m
               )
@@ -790,6 +820,19 @@ export function useChat(options: UseChatOptions = {}) {
           },
         };
       });
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.isStreaming && message.process
+            ? {
+                ...message,
+                process: reduceAssistantProcess(
+                  message.process,
+                  toolApprovalEvent(result)
+                ),
+              }
+            : message
+        )
+      );
     },
     [agentTimeline]
   );
@@ -821,6 +864,19 @@ export function useChat(options: UseChatOptions = {}) {
           },
         };
       });
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.isStreaming && message.process
+            ? {
+                ...message,
+                process: reduceAssistantProcess(message.process, {
+                  type: "approval_denied",
+                  executionId,
+                }),
+              }
+            : message
+        )
+      );
     },
     []
   );
