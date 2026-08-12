@@ -6,6 +6,7 @@ import { HowToSection } from "./how-to-section";
 import { LandingFooter } from "./landing-footer";
 import { LandingNav } from "./landing-nav";
 import { LandingAtmosphere } from "./landing-atmosphere";
+import { LearningHowToSection } from "./learning-howto-section";
 
 /**
  * 公开主页壳层。
@@ -23,6 +24,7 @@ export function LandingSurface() {
           <HeroSection />
           <FeaturesSection />
           <HowToSection />
+          <LearningHowToSection />
         </main>
         <LandingFooter />
       </div>

@@ -232,7 +232,7 @@ function RegisterFlow() {
   const steps: Step[] = [
     {
       id: "email",
-      title: "邮箱",
+      title: "填写邮箱",
       isValid: email.trim().length > 0,
       content: (
         <div className="space-y-4">
@@ -265,7 +265,7 @@ function RegisterFlow() {
     },
     {
       id: "verify",
-      title: "验证",
+      title: "邮箱验证",
       isValid: CODE_PATTERN.test(code),
       content: (
         <div className="space-y-4">
@@ -407,7 +407,7 @@ function RegisterFlow() {
     },
     {
       id: "done",
-      title: "完成",
+      title: "注册完成",
       isValid: true,
       content: (
         <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -453,6 +453,7 @@ function RegisterFlow() {
         onStepChange={handleStepChange}
         onComplete={() => router.push("/login?registered=true")}
         allowForwardJump={false}
+        variant="dots"
         nextLabel={
           step === 0 ? "发送验证邮件" : step === 1 ? "验证" : "创建账户"
         }

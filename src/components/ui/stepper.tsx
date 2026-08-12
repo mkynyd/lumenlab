@@ -37,6 +37,8 @@ interface StepperProps {
   skipLabel?: string;
   nextLabel?: string;
   completeLabel?: string;
+  /** "dots" 时指示条只渲染圆点序号/对勾，当前步骤标题移到内容区上方展示 */
+  variant?: "default" | "dots";
   className?: string;
 }
 
@@ -52,6 +54,7 @@ export function Stepper({
   skipLabel = "Skip",
   nextLabel = "Next",
   completeLabel = "Finish",
+  variant = "default",
   className,
 }: StepperProps) {
   const isFirst = currentStep === 0;
@@ -182,8 +185,10 @@ export function Stepper({
                   onClick={() => { if (jumpable) transitionTo(index); }}
                   disabled={(!isComplete && !isCurrent && !jumpable) || busy}
                   aria-current={isCurrent ? "step" : undefined}
+                  aria-label={variant === "dots" ? step.title : undefined}
                   className={cn(
-                    "relative flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] touch-manipulation max-sm:min-h-11 max-sm:min-w-11 max-sm:justify-center",
+                    "relative flex items-center rounded-full py-1.5 text-sm font-medium transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] touch-manipulation max-sm:min-h-11 max-sm:min-w-11 max-sm:justify-center",
+                    variant === "dots" ? "px-1.5" : "gap-2 px-3",
                     isComplete && "text-[var(--color-accent)]",
                     isCurrent && "text-[var(--color-accent)]",
                     !isComplete && !isCurrent && "text-[var(--color-text-tertiary)]"
@@ -199,15 +204,27 @@ export function Stepper({
                   >
                     {isComplete ? <Check size={12} strokeWidth={2.5} /> : index + 1}
                   </span>
-                  <span id={stepTitleId(index)} className="hidden sm:inline whitespace-nowrap">
-                    {step.title}
-                  </span>
+                  {variant !== "dots" && (
+                    <span id={stepTitleId(index)} className="hidden sm:inline whitespace-nowrap">
+                      {step.title}
+                    </span>
+                  )}
                 </button>
               </li>
             );
           })}
         </ol>
       </nav>
+
+      {/* dots 变体：步骤标题展示在内容区上方，同时充当内容区的 aria-labelledby 目标 */}
+      {variant === "dots" && (
+        <h2
+          id={stepTitleId(currentStep)}
+          className="mb-5 px-0.5 text-lg font-semibold text-[var(--color-text-primary)]"
+        >
+          {steps[currentStep]?.title}
+        </h2>
+      )}
 
       {/* Transitioning from the insertion state keeps successive steps responsive. */}
       <div className="relative min-h-[200px] px-0.5">

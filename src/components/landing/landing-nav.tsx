@@ -43,7 +43,7 @@ export function LandingNav({ showBrand = true }: LandingNavProps) {
             href="#features"
             className="rounded-full px-3 py-1.5 text-[13px] text-[var(--color-text-secondary)] transition-colors duration-200 hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
           >
-            学习闭环
+            工作流
           </Link>
           <Link
             href="#how-to"

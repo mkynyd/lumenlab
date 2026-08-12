@@ -19,10 +19,11 @@ export function LandingFooter() {
               开始使用
             </p>
             <h2
-              className="mt-4 max-w-[16ch] text-[clamp(2.25rem,5vw,4.8rem)] font-semibold leading-[1.02] tracking-[-0.045em] text-[var(--color-text-primary)]"
+              className="mt-4 text-[clamp(2.25rem,5vw,4.8rem)] font-semibold leading-[1.02] tracking-[-0.045em] text-[var(--color-text-primary)]"
               style={{ textWrap: "balance" }}
             >
-              现在开始使用 LumenLab。
+              <span className="inline-block">现在开始使用</span>{" "}
+              <span className="inline-block">LumenLab。</span>
             </h2>
             <p className="mt-5 max-w-[48ch] text-[15px] leading-7 text-[var(--color-text-secondary)]">
               当前为 Alpha 阶段，凭注册码免费注册。

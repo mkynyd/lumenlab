@@ -4,7 +4,8 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { motion, type Variants } from "motion/react";
 import { Button } from "@/components/ui/button";
-import { LearningPracticeDemo } from "./demos/learning-practice-demo";
+import { RotatingText } from "@/components/ui/rotating-text";
+import { ChatDemo } from "./demos/chat-demo";
 import { ScrollReveal } from "./scroll-reveal";
 import { usePrefersReducedMotion } from "./prefers-motion";
 
@@ -54,10 +55,14 @@ export function HeroSection() {
 
           <motion.h1
             variants={heroItem}
-            className="mt-5 max-w-[15ch] text-[clamp(2.8rem,7.2vw,6.6rem)] font-semibold leading-[0.98] tracking-[-0.055em] text-[var(--color-text-primary)]"
-            style={{ textWrap: "balance" }}
+            className="mt-5 whitespace-nowrap text-[clamp(2.5rem,7.2vw,6.6rem)] font-semibold leading-[0.98] tracking-[-0.055em] text-[var(--color-text-primary)]"
           >
-            一门课，真正学会。
+            开启你的
+            <RotatingText
+              texts={["聊天。", "学习。", "项目。"]}
+              interval={2400}
+              rotatingWrapperClassName="align-bottom"
+            />
           </motion.h1>
 
           <motion.p
@@ -65,7 +70,7 @@ export function HeroSection() {
             className="mt-7 max-w-[54ch] text-[16px] leading-7 text-[var(--color-text-secondary)] sm:text-[18px] sm:leading-8"
             style={{ textWrap: "pretty" }}
           >
-            从课程资料生成知识点地图，用诊断练习找到薄弱点，再按节奏复习到掌握——都在同一个项目里。
+            课程资料、AI 对话、学习闭环和文档导出都在同一个项目里，不用反复切换工具。
           </motion.p>
 
           <motion.div
@@ -88,7 +93,7 @@ export function HeroSection() {
               size="lg"
               className="h-11 rounded-full px-4 text-[14px] font-medium"
             >
-              <Link href="#features">查看学习闭环</Link>
+              <Link href="#features">查看工作流</Link>
             </Button>
           </motion.div>
           <motion.p
@@ -104,7 +109,7 @@ export function HeroSection() {
           className="relative mx-auto mt-16 h-[520px] w-full max-w-6xl overflow-hidden rounded-[28px] bg-[var(--color-surface)] ring-1 ring-[var(--color-border-light)] sm:mt-20 sm:h-[640px] sm:rounded-[32px]"
           yOffset={24}
         >
-          <LearningPracticeDemo className="h-full w-full" />
+          <ChatDemo className="h-full w-full" />
         </ScrollReveal>
       </div>
     </section>

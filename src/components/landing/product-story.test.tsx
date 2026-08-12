@@ -48,6 +48,18 @@ vi.mock("gsap/ScrollTrigger", () => ({
   ScrollTrigger: { refresh: gsapMocks.refresh },
 }));
 
+vi.mock("./demos/chat-demo", () => ({
+  ChatDemo: () => <div data-testid="chat-demo" />,
+}));
+
+vi.mock("./demos/project-demo", () => ({
+  ProjectDemo: () => <div data-testid="project-demo" />,
+}));
+
+vi.mock("./demos/conversion-demo", () => ({
+  ConversionDemo: () => <div data-testid="conversion-demo" />,
+}));
+
 vi.mock("./demos/learning-map-demo", () => ({
   LearningMapDemo: () => <div data-testid="learning-map-demo" />,
 }));
@@ -71,11 +83,14 @@ describe("ProductStory", () => {
 
     expect(container.querySelector("#features")).toHaveAttribute(
       "aria-label",
-      "LumenLab 学习闭环"
+      "LumenLab 产品工作流"
     );
+    expect(screen.getAllByText("创建项目").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("围绕资料提问").length).toBeGreaterThan(0);
     expect(screen.getAllByText("从资料生成地图").length).toBeGreaterThan(0);
     expect(screen.getAllByText("做几道题，找到薄弱点").length).toBeGreaterThan(0);
     expect(screen.getAllByText("按节奏复习到掌握").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("解析并导出文档").length).toBeGreaterThan(0);
   });
 
   it("uses a native sticky stage without ScrollTrigger pinning or snapping", async () => {
@@ -87,7 +102,7 @@ describe("ProductStory", () => {
       "sticky-natural"
     );
     expect(container.querySelector("[data-story-stage]")).toHaveClass("sticky");
-    expect(container.querySelectorAll("[data-story-panel]")).toHaveLength(3);
+    expect(container.querySelectorAll("[data-story-panel]")).toHaveLength(6);
     expect(container.innerHTML).not.toContain("snap-mandatory");
 
     await waitFor(() => {
