@@ -328,6 +328,27 @@ async function callSearchFallback(query: string, maxResults: number): Promise<We
   };
 }
 
+/**
+ * 把接近今天的精确日期（如「2026 年 8 月 13 日」「2026-08-13」）改写为「最新」。
+ * 网页正文里几乎不存在当天/近三天的精确日期字符串，带着它检索会严重带偏
+ * （实测「2026年8月13日重庆气温」在 Bing 返回百科/政府/赛程页，而「重庆天气」
+ * 能命中专业气象站）。
+ */
+export function softenExactDates(query: string, now = new Date()): string {
+  return query.replace(
+    /(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?|(20\d{2})[-/](\d{1,2})[-/](\d{1,2})/g,
+    (match, cy, cm, cd, iy, im, id) => {
+      const year = Number(cy ?? iy);
+      const month = Number(cm ?? im);
+      const day = Number(cd ?? id);
+      const date = new Date(year, month - 1, day);
+      if (Number.isNaN(date.getTime()) || date.getDate() !== day) return match;
+      const diffDays = Math.abs(date.getTime() - now.getTime()) / 86_400_000;
+      return diffDays <= 3 ? "最新" : match;
+    }
+  );
+}
+
 export async function runWebSearch(
   query: string,
   apiKey: string,
@@ -338,10 +359,13 @@ export async function runWebSearch(
   const searchQuery = userQuestionIndex >= 0
     ? query.slice(userQuestionIndex + userQuestionMarker.length)
     : query;
-  const trimmed = searchQuery
-    .trim()
-    .replace(/^(?:(?:最终回归|再次(?:联网)?查询|请(?:联网)?查询|联网(?:查询|查找))\s*[：:,，]?\s*)+/i, "")
-    .replace(/[，,。;；]?\s*(?:并|以及)?(?:请)?(?:给出|附上|提供).*?(?:可点击)?(?:的)?来源(?:链接)?[。.]?$/i, "")
+  const trimmed = softenExactDates(
+    searchQuery
+      .trim()
+      .replace(/^(?:(?:最终回归|再次(?:联网)?查询|请(?:联网)?查询|联网(?:查询|查找))\s*[：:,，]?\s*)+/i, "")
+      .replace(/[，,。;；]?\s*(?:并|以及)?(?:请)?(?:给出|附上|提供).*?(?:可点击)?(?:的)?来源(?:链接)?[。.]?$/i, "")
+      .trim()
+  )
     .trim()
     .slice(0, 500);
   if (!trimmed) {

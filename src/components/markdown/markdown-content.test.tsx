@@ -1,5 +1,5 @@
-import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { MarkdownContent } from "./markdown-content";
 
 const MD = "正文引用[^1]。再次引用[^1]。\n\n[^1]: 来源说明";
@@ -41,6 +41,30 @@ describe("MarkdownContent 脚注引用", () => {
       expect(href).toBeTruthy();
       expect(root.querySelector(`[id="${href!.slice(1)}"]`)).not.toBeNull();
     }
+  });
+
+  it("点击脚注引用时阻止默认锚点跳转，只滚动最近的消息容器", () => {
+    const { container } = render(
+      <div style={{ overflowY: "auto" }}>
+        <MarkdownContent content={MD} />
+      </div>
+    );
+    const scroller = container.firstElementChild as HTMLElement;
+    Object.defineProperty(scroller, "clientHeight", { value: 600 });
+    const scrollTo = vi.fn();
+    Object.defineProperty(scroller, "scrollTo", { value: scrollTo });
+    Object.defineProperty(scroller, "scrollTop", { value: 0, writable: true });
+
+    const firstRef = container.querySelector("sup a")!;
+    const href = firstRef.getAttribute("href")!;
+    expect(container.querySelector(`[id="${href.slice(1)}"]`)).not.toBeNull();
+
+    fireEvent.click(firstRef);
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo.mock.calls[0][0]).toMatchObject({ behavior: "smooth" });
+    // hash 手动更新而非浏览器默认跳转
+    expect(window.location.hash).toBe(href);
   });
 });
 

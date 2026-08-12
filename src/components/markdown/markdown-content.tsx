@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ComponentProps } from "react";
+import { useId, useRef, type ComponentProps, type MouseEvent as ReactMouseEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
@@ -66,8 +66,46 @@ export function MarkdownContent({
 }: MarkdownContentProps) {
   // useId 含 ":"，去掉后作为实例级脚注前缀
   const footnotePrefix = `fn${useId().replace(/:/g, "")}-`;
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // 脚注引用/回跳用浏览器默认锚点会连带滚动 window，把整页推出可视范围。
+  // 拦截点击，只滚动最近的消息列表滚动容器。
+  const handleFootnoteClick = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    href: string
+  ) => {
+    event.preventDefault();
+    const root = rootRef.current;
+    if (!root) return;
+    const target = root.querySelector(`[id="${href.slice(1)}"]`);
+    if (!target) return;
+    let scroller: HTMLElement | null = target.parentElement;
+    while (scroller) {
+      const { overflowY } = getComputedStyle(scroller);
+      if (overflowY === "auto" || overflowY === "scroll") break;
+      scroller = scroller.parentElement;
+    }
+    if (!scroller) {
+      target.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    const targetRect = target.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    scroller.scrollTo({
+      top:
+        scroller.scrollTop +
+        targetRect.top -
+        scrollerRect.top -
+        scroller.clientHeight / 3,
+      behavior: "smooth",
+    });
+    // 手动更新 hash，保持浏览器返回/分享行为
+    history.replaceState(null, "", href);
+  };
+
   return (
     <div
+      ref={rootRef}
       className={cn(
         "workbench-readable markdown-body break-words",
         className
@@ -85,6 +123,24 @@ export function MarkdownContent({
           rehypeHighlight,
         ]}
         components={{
+          a({ href = "", children, ...props }: ComponentProps<"a">) {
+            if (href.startsWith(`#${footnotePrefix}`)) {
+              return (
+                <a
+                  {...props}
+                  href={href}
+                  onClick={(event) => handleFootnoteClick(event, href)}
+                >
+                  {children}
+                </a>
+              );
+            }
+            return (
+              <a {...props} href={href}>
+                {children}
+              </a>
+            );
+          },
           pre({ children }: ComponentProps<"pre">) {
             return <>{children}</>;
           },

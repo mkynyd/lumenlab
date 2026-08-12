@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { parseBingRssResults, parseDuckDuckGoResults, runWebSearch } from "./search-engine";
+import { parseBingRssResults, parseDuckDuckGoResults, runWebSearch, softenExactDates } from "./search-engine";
 import * as deepseek from "@/lib/deepseek";
 
 const mockRedisGet = vi.fn();
@@ -33,6 +33,27 @@ function makeTextBlock(text: string) {
 function makeToolUseBlock(input: Record<string, unknown> = {}) {
   return { type: "tool_use", id: "tu-1", name: "web_search", input };
 }
+
+describe("softenExactDates", () => {
+  const now = new Date("2026-08-13T12:00:00Z");
+
+  it("rewrites dates near today to 最新", () => {
+    expect(softenExactDates("2026年8月13日重庆气温", now)).toBe("最新重庆气温");
+    expect(softenExactDates("重庆 2026-08-12 天气", now)).toBe("重庆 最新 天气");
+    expect(softenExactDates("2026/8/14 的新闻", now)).toBe("最新 的新闻");
+  });
+
+  it("keeps dates far from today intact", () => {
+    expect(softenExactDates("2026年1月1日发生了什么", now)).toBe(
+      "2026年1月1日发生了什么"
+    );
+    expect(softenExactDates("2025-08-13 的历史", now)).toBe("2025-08-13 的历史");
+  });
+
+  it("rejects invalid calendar dates", () => {
+    expect(softenExactDates("2026年13月40日", now)).toBe("2026年13月40日");
+  });
+});
 
 describe("runWebSearch", () => {
   beforeEach(() => {
