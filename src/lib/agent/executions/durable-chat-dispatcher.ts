@@ -1,7 +1,10 @@
 import type { AgentRunInput } from "@/lib/agent/contracts";
 import { prisma } from "@/lib/db";
 import { AgentExecutionDispatcher } from "./agent-execution-dispatcher";
-import type { AgentExecutionRecord } from "./agent-execution-store";
+import {
+  AgentExecutionStoreError,
+  type AgentExecutionRecord,
+} from "./agent-execution-store";
 import { buildInitialAgentCheckpoint } from "./durable-agent-runtime";
 import { PrismaAgentExecutionStore } from "./prisma-agent-execution-store";
 import { buildAgentExecutionRequestHash } from "./request-hash";
@@ -48,6 +51,24 @@ export async function dispatchDurableChat(input: {
 }> {
   if (input.runInput.prompt.attachments.length > 0) {
     throw new Error("Durable chat does not persist request attachments");
+  }
+  // 每对话单执行护栏:同一对话存在未终态执行时拒绝新任务,
+  // 防止双开/双击导致的并发写历史与重复计费(客户端发送前会先取消旧执行)。
+  if (input.runInput.conversation.id) {
+    const active = await prisma.agentExecution.findFirst({
+      where: {
+        conversationId: input.runInput.conversation.id,
+        userId: input.userId,
+        status: { in: ["queued", "running", "waiting_approval"] },
+      },
+      select: { id: true },
+    });
+    if (active) {
+      throw new AgentExecutionStoreError(
+        "conversation_execution_in_progress",
+        "该对话已有任务正在执行，请先停止或等待完成后再发送"
+      );
+    }
   }
   const selectedFiles = await materialFingerprints({
     userId: input.userId,

@@ -103,20 +103,33 @@ interface UserPrefRow {
   approvalMode: ApprovalMode;
 }
 
-const userPreferenceCache = new Map<string, UserPrefRow | null>();
+const USER_PREFERENCE_CACHE_TTL_MS = 60_000;
+
+interface UserPrefCacheEntry {
+  value: UserPrefRow | null;
+  expiresAt: number;
+}
+
+const userPreferenceCache = new Map<string, UserPrefCacheEntry>();
 
 async function loadUserPreference(
   userId: string,
   toolId: string
 ): Promise<UserPrefRow | null> {
   const key = `${userId}::${toolId}`;
-  if (userPreferenceCache.has(key)) return userPreferenceCache.get(key) ?? null;
+  const now = Date.now();
+  const cached = userPreferenceCache.get(key);
+  // 短 TTL 缓存:用户改审批模式后最多 60 秒生效,无需重启进程。
+  if (cached && cached.expiresAt > now) return cached.value;
   try {
     const row = await prisma.userToolPreference.findUnique({
       where: { userId_toolId: { userId, toolId } },
     });
     const value = row ? ({ approvalMode: row.approvalMode as ApprovalMode } as UserPrefRow) : null;
-    userPreferenceCache.set(key, value);
+    userPreferenceCache.set(key, {
+      value,
+      expiresAt: now + USER_PREFERENCE_CACHE_TTL_MS,
+    });
     return value;
   } catch {
     return null;

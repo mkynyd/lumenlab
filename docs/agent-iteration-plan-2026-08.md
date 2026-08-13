@@ -23,9 +23,13 @@
 - 2.4 ✅ P1-3 工具统一硬超时：ToolMetadata.timeoutMs（默认 120s），超时信号与取消信号合并传入 handler，handler 抛错折叠为结构化失败（TOOL_TIMEOUT/HANDLER_THREW）。
 - 2.5 ✅ P1-4 循环内工具结果统一 16k 截断；P1-7 Provider 4xx（除 429）fail-fast；P1-8 durable 取消/失败补终态占位消息。
 
-## 第三批（待用户确认后开工）
+## 第三批（本轮已实施，2026-08-14）
 
-- query rewrite / rerank；chunk heading 上下文注入；enhance/PATCH 后重嵌入与缓存刷新；SSE 工具执行事件时间线（tool_execution_start/update/end）；每对话单执行护栏；DSH 式事件日志改造评估；P2-4 审批等待 SSE 收敛；P2-6 审批偏好缓存 TTL。
+- 3.1 ✅ P2-6 审批偏好缓存 60s TTL（policy-engine.ts），改审批模式无需重启进程。
+- 3.2 ✅ P2-7 MiniMax 手动联网预取失败降级：不再把整单打成 5xx，无联网内容继续回答。
+- 3.3 ✅ P1-6 每对话单执行护栏：dispatchDurableChat 对存在未终态执行的对话返回 409 conversation_execution_in_progress；客户端发送前 await 取消旧执行。
+- 3.4 ✅ enhance/PATCH 修订 OCR 后同步重建分块+向量、刷新项目索引与检索缓存（此前新 chunk 全部无 embedding）。
+- 3.5 ⏳ 剩余：query rewrite / rerank；chunk heading 上下文注入；SSE 工具执行事件时间线；DSH 式事件日志改造评估；断连 N 分钟自动软停止。（P2-4 审批等待长连接已由 15s SSE keep-alive 注释缓解）
 
 
 ## 交付与验收约定

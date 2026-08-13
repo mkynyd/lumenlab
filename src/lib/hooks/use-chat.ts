@@ -280,6 +280,16 @@ export function useChat(options: UseChatOptions = {}) {
 
       // Abort any still-attached foreground stream before sending a new message.
       abortRef.current?.abort();
+      // durable 模式:先取消上一个仍在运行的服务端执行并等待其落终态,
+      // 否则服务端"每对话单执行"护栏会拒绝本次发送(409)。
+      const previousExecutionId = agentExecutionIdRef.current;
+      if (previousExecutionId) {
+        agentExecutionIdRef.current = null;
+        await fetch(
+          `/api/agent/executions/${encodeURIComponent(previousExecutionId)}/cancel`,
+          { method: "POST", signal: AbortSignal.timeout(3_000) }
+        ).catch(() => {});
+      }
       setAgentTimeline({});
       setAgentSession({ suggestions: [] });
       const streamSession = streamSessionRef.current + 1;

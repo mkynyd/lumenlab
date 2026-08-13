@@ -7,6 +7,11 @@ import { getProviderApiKey } from "@/lib/data/provider-access";
 import { ProviderAccessError } from "@/lib/provider-access";
 import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
 import { recordFileContentChange } from "@/lib/learning/services";
+import { createDocumentChunks } from "@/lib/rag/vector-store";
+import { embedChunksForFile } from "@/lib/rag/embedding";
+import { refreshProjectIndex } from "@/lib/rag/project-index";
+import { invalidateSearchCache } from "@/lib/cache/rag-search-cache";
+import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
 import { logger } from "@/lib/logger";
 
 const ENHANCE_PROMPT = `你是大学课程资料 OCR 结果整理器。以下内容来自图片 OCR/视觉解析，可能存在识别错误。
@@ -104,6 +109,52 @@ export async function POST(
         }),
       },
     });
+    // 检索索引同步:增强内容需要重建分块、向量与项目索引,
+    // 否则检索仍命中旧 chunk,来源面板与回答内容会与增强结果分裂。
+    try {
+      await createDocumentChunks({
+        fileAssetId: file.id,
+        projectId: file.projectId,
+        userId,
+        textContent: enhancedContent,
+        title: file.originalName,
+        blocks: [],
+        assetResourceUrlMap: new Map(),
+      });
+      const bailianKey = await getProviderApiKey(userId, "bailian").catch(
+        () => undefined
+      );
+      if (bailianKey) {
+        const stats = await embedChunksForFile({
+          fileAssetId: file.id,
+          apiKey: bailianKey,
+        });
+        await prisma.fileAsset.update({
+          where: { id: file.id },
+          data: {
+            processingMetadata: metadataWith(file.processingMetadata, {
+              embeddingStatus:
+                stats.total > 0 && stats.embedded === stats.total
+                  ? "complete"
+                  : "partial",
+            }),
+          },
+        });
+      }
+      if (file.projectId) {
+        await refreshProjectIndex({
+          userId,
+          projectId: file.projectId,
+        }).catch(() => {});
+        await invalidateSearchCache(file.projectId);
+        await invalidateFileSelectCache(file.projectId);
+      }
+    } catch (error) {
+      logger.warn("文件增强后检索索引同步失败", {
+        fileId: file.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     if (file.contentFingerprint) {
       await recordFileContentChange({
         userId,

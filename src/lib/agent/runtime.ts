@@ -784,40 +784,46 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         type: "tool_failed",
         executionId: searchExecutionId,
         errorCode: "WEB_SEARCH_FAILED",
-        error: "联网搜索失败",
+        error: "联网搜索失败，本次回答将不包含联网内容",
       });
-      throw error;
+      // 降级继续:预取失败不应把整单打成 5xx,模型仍可基于项目资料回答。
+      logger.warn("manual web prefetch failed, continuing without web context", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     });
-    manualWebContext = formatManualWebContext(webResult);
-    manualWebSources = webResult.sources.map((source) => ({
-      type: "web",
-      title: source.title || source.url,
-      url: source.url,
-      snippet: webResult.summary.slice(0, 240),
-      metadata: {
-        query: webResult.query,
-        mode: "manual-prefetch",
-        provider: "deepseek-web-search",
-      },
-    }));
-    manualWebSources.forEach((source, index) => {
+    if (webResult) {
+      manualWebContext = formatManualWebContext(webResult);
+      manualWebSources = webResult.sources.map((source) => ({
+        type: "web",
+        title: source.title || source.url,
+        url: source.url,
+        snippet: webResult.summary.slice(0, 240),
+        metadata: {
+          query: webResult.query,
+          mode: "manual-prefetch",
+          provider: "deepseek-web-search",
+        },
+      }));
+      manualWebSources.forEach((source, index) => {
+        emitAgentEvent({
+          type: "tool_source_discovered",
+          executionId: searchExecutionId,
+          source,
+          index,
+          total: manualWebSources.length,
+        });
+      });
+      if (manualWebSources.length > 0) {
+        emitAgentEvent({
+          type: "sources_updated",
+          sources: manualWebSources,
+        });
+      }
       emitAgentEvent({
-        type: "tool_source_discovered",
+        type: "tool_completed",
         executionId: searchExecutionId,
-        source,
-        index,
-        total: manualWebSources.length,
-      });
-    });
-    emitAgentEvent({
-      type: "tool_completed",
-      executionId: searchExecutionId,
-      resultSummary: { sourceCount: manualWebSources.length },
-    });
-    if (manualWebSources.length > 0) {
-      emitAgentEvent({
-        type: "sources_updated",
-        sources: manualWebSources,
+        resultSummary: { sourceCount: manualWebSources.length },
       });
       explainRetrieval(manualWebSources.length, "联网资料");
     }

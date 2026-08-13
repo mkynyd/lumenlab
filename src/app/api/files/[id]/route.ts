@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createDocumentChunks } from "@/lib/rag/vector-store";
+import { embedChunksForFile } from "@/lib/rag/embedding";
+import { getProviderApiKey } from "@/lib/data/provider-access";
+import { invalidateSearchCache } from "@/lib/cache/rag-search-cache";
+import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
 import { FILE_CATEGORIES } from "@/lib/file-categories";
 import {
   fallbackIndexMetadata,
@@ -172,12 +176,51 @@ export async function PATCH(
       textContent: parsed.data.textContent,
       title: file.originalName,
     });
+    // 手工修订 OCR 后同步重建向量:此前新 chunk 全部无 embedding,
+    // 向量检索会静默退化。失败只记录,不影响修订本身。
+    const bailianKey = await getProviderApiKey(
+      session.user.id,
+      "bailian"
+    ).catch(() => undefined);
+    if (bailianKey) {
+      const stats = await embedChunksForFile({
+        fileAssetId: file.id,
+        apiKey: bailianKey,
+      }).catch((error) => {
+        logger.warn("手工修订后向量重建失败", {
+          fileId: file.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
+      if (stats) {
+        await prisma.fileAsset
+          .update({
+            where: { id: file.id },
+            data: {
+              processingMetadata: {
+                ...(file.processingMetadata &&
+                typeof file.processingMetadata === "object"
+                  ? file.processingMetadata
+                  : {}),
+                embeddingStatus:
+                  stats.total > 0 && stats.embedded === stats.total
+                    ? "complete"
+                    : "partial",
+              },
+            },
+          })
+          .catch(() => {});
+      }
+    }
   }
   if (file.projectId) {
     await refreshProjectIndex({
       userId: session.user.id,
       projectId: file.projectId,
     }).catch(() => {});
+    await invalidateSearchCache(file.projectId);
+    await invalidateFileSelectCache(file.projectId);
   }
 
   return NextResponse.json({
