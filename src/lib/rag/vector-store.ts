@@ -478,6 +478,51 @@ export async function searchSimilarChunks(
   return rows || [];
 }
 
+const CORPUS_SAMPLE_BUDGET_CHARS = 30_000;
+const CORPUS_MIN_SNIPPET_CHARS = 600;
+const CORPUS_MAX_SNIPPET_CHARS = 3_000;
+
+/**
+ * 全项目任务的文件采样:头/中/尾三段,保证长文档后半部分内容也能进入上下文。
+ */
+function sampleFileContent(content: string, maxChars: number): string {
+  const compact = content.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxChars) return compact;
+  const head = Math.floor(maxChars * 0.5);
+  const mid = Math.floor(maxChars * 0.3);
+  const tail = maxChars - head - mid;
+  const midStart = Math.max(head, Math.floor((compact.length - mid) / 2));
+  const tailStart = Math.max(midStart + mid, compact.length - tail);
+  return [
+    compact.slice(0, head),
+    "…（中段省略）…",
+    compact.slice(midStart, midStart + mid),
+    "…（后段）…",
+    compact.slice(tailStart),
+  ].join("\n");
+}
+
+/**
+ * 关键词相关性打分:命中次数 × 词权重。
+ * 中文二元组权重 1,完整词(拉丁/数字/短中文整词)权重 3,
+ * 避免长文档仅靠高频二元组霸榜。DB 端 contains 已保证至少命中一个关键词。
+ */
+function keywordScore(content: string, keywords: string[]): number {
+  const lower = content.toLowerCase();
+  let score = 0;
+  for (const keyword of keywords) {
+    const weight = /^\p{Script=Han}{2,}$/u.test(keyword) ? 1 : 3;
+    let count = 0;
+    let index = lower.indexOf(keyword);
+    while (index !== -1 && count < 100) {
+      count += 1;
+      index = lower.indexOf(keyword, index + keyword.length);
+    }
+    score += count * weight;
+  }
+  return score;
+}
+
 function extractKeywords(query: string): string[] {
   const runs = query
     .toLowerCase()
@@ -620,6 +665,10 @@ export async function searchChunksByKeyword(params: {
   const keywords = extractKeywords(params.query);
   if (keywords.length === 0) return [];
 
+  const limit = params.limit || 12;
+  // DB 端 contains 无法打分,先取一个有界候选窗口,再按命中次数×词权重排序,
+  // 修复此前"按随机 fileAssetId 顺序取前 N 条"导致的相关性失真问题。
+  const candidateTake = Math.max(limit * 10, 200);
   const rows = await prisma.documentChunk.findMany({
     where: {
       userId: params.userId,
@@ -632,7 +681,7 @@ export async function searchChunksByKeyword(params: {
       })),
     },
     orderBy: [{ fileAssetId: "asc" }, { chunkIndex: "asc" }],
-    take: params.limit || 12,
+    take: candidateTake,
     select: {
       id: true,
       content: true,
@@ -644,54 +693,24 @@ export async function searchChunksByKeyword(params: {
     },
   });
 
-  return rows.map((row) => ({
-    id: row.id,
-    content: row.content,
-    title: row.title,
-    fileAssetId: row.fileAssetId,
-    projectId: row.projectId,
-    chunkIndex: row.chunkIndex,
-    originalName: row.fileAsset?.originalName || row.title,
-  }));
-}
-
-async function searchCorpusOverviewChunks(params: {
-  userId: string;
-  projectId: string;
-  fileAssetIds: string[];
-  limit?: number;
-}): Promise<KeywordChunkResult[]> {
-  if (params.fileAssetIds.length === 0) return [];
-
-  const rows = await prisma.documentChunk.findMany({
-    where: {
-      userId: params.userId,
-      projectId: params.projectId,
-      fileAssetId: { in: params.fileAssetIds },
-      chunkIndex: 0,
-    },
-    orderBy: [{ fileAssetId: "asc" }, { chunkIndex: "asc" }],
-    take: params.limit || params.fileAssetIds.length,
-    select: {
-      id: true,
-      content: true,
-      title: true,
-      fileAssetId: true,
-      projectId: true,
-      chunkIndex: true,
-      fileAsset: { select: { originalName: true } },
-    },
-  });
-
-  return rows.map((row) => ({
-    id: row.id,
-    content: row.content,
-    title: row.title,
-    fileAssetId: row.fileAssetId,
-    projectId: row.projectId,
-    chunkIndex: row.chunkIndex,
-    originalName: row.fileAsset?.originalName || row.title,
-  }));
+  return rows
+    .map((row) => ({ row, score: keywordScore(row.content, keywords) }))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        (a.row.fileAssetId ?? "").localeCompare(b.row.fileAssetId ?? "") ||
+        a.row.chunkIndex - b.row.chunkIndex
+    )
+    .slice(0, limit)
+    .map(({ row }) => ({
+      id: row.id,
+      content: row.content,
+      title: row.title,
+      fileAssetId: row.fileAssetId,
+      projectId: row.projectId,
+      chunkIndex: row.chunkIndex,
+      originalName: row.fileAsset?.originalName || row.title,
+    }));
 }
 
 export async function hybridSearch(params: {
@@ -947,33 +966,46 @@ export async function retrieveProjectContext(
         },
       });
 
-  if (corpusWideTask && chunkCount > 0 && candidateFileIds.length > 0) {
-    const overviewChunks = await searchCorpusOverviewChunks({
-      userId: params.userId,
-      projectId: params.projectId,
-      fileAssetIds: candidateFileIds,
-      limit: Math.min(candidateFileIds.length, 50),
-    });
-
-    matchedChunkCount += overviewChunks.length;
-    for (const chunk of overviewChunks) {
-      const key = `${chunk.fileAssetId || "none"}:${chunk.chunkIndex}`;
+  if (corpusWideTask && candidateFiles.length > 0) {
+    // 全项目任务:按文件数分配预算,对每份文件做 头/中/尾 三段采样,
+    // 替代此前"只读每份文件第一个 chunk"的做法,让长文档后半部分也能进入上下文。
+    const perFileChars = Math.max(
+      CORPUS_MIN_SNIPPET_CHARS,
+      Math.min(
+        CORPUS_MAX_SNIPPET_CHARS,
+        Math.floor(CORPUS_SAMPLE_BUDGET_CHARS / candidateFiles.length)
+      )
+    );
+    for (const file of candidateFiles) {
+      const content =
+        file.enhancementStatus === "enhanced" && file.enhancedContent
+          ? file.enhancedContent
+          : file.textContent;
+      if (!content) continue;
+      const key = `${file.id}:corpus-sample`;
       if (seen.has(key)) continue;
       seen.add(key);
+      matchedChunkCount += 1;
       sections.push({
         key,
         kind: "chunk",
-        fileAssetId: chunk.fileAssetId || "",
-        markdown: `## 来源：${chunk.originalName || chunk.title || "项目资料"}（chunk ${chunk.chunkIndex + 1}）\n\n> 以下资料来自全项目课件整理范围。\n\n${chunk.content}`,
+        fileAssetId: file.id,
+        markdown: `## 来源：${file.originalName}\n\n> 以下资料来自全项目课件整理范围（节选采样）。${parserNotice(file)}\n\n${sampleFileContent(content, perFileChars)}`,
       });
     }
   }
+
+  let degradationNotice: string | null = null;
 
   if (strategy !== "full_document" && chunkCount > 0) {
     let chunks: KeywordChunkResult[] = [];
     if (strategy === "hybrid_search") {
       const queryEmbedding = await params.loadQueryEmbedding?.();
       generatedQueryEmbedding = Boolean(queryEmbedding?.length);
+      if (!generatedQueryEmbedding) {
+        degradationNotice =
+          "向量检索暂不可用，本次回答基于关键词检索，精度可能略低。";
+      }
       chunks = await hybridSearch({
         userId: params.userId,
         projectId: params.projectId,
@@ -1115,7 +1147,7 @@ export async function retrieveProjectContext(
 
   return {
     context,
-    notice: null,
+    notice: degradationNotice,
     usedFileIds: [...new Set(sections.map((section) => section.fileAssetId).filter(Boolean))],
     truncated,
     debug: debugPayload({

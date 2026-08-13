@@ -716,15 +716,28 @@ describe("PrismaAgentExecutionStore", () => {
       operation({
         agentExecution: { updateMany: mocks.updateMany, update: mocks.update },
         agentExecutionEvent: { create: mocks.createEvent },
+        toolExecution: { updateMany: mocks.updateToolExecution },
       })
     );
     mocks.updateMany.mockResolvedValue({ count: 1 });
     mocks.update.mockResolvedValue({ lastEventSequence: 3 });
     mocks.createEvent.mockResolvedValue({});
+    mocks.updateToolExecution.mockResolvedValue({ count: 0 });
 
     const recovered = await new PrismaAgentExecutionStore().recoverExpired({ now });
 
     expect(recovered).toBe(2);
+    expect(mocks.updateToolExecution).toHaveBeenCalledWith({
+      where: { agentExecutionId: "run-1", status: "executing" },
+      data: {
+        status: "failed",
+        completedAt: now,
+        errorSummary: {
+          code: "TOOL_EXECUTION_OUTCOME_UNKNOWN",
+          message: "执行租约丢失，工具结果未知；请勿盲目重试有副作用的操作",
+        },
+      },
+    });
     expect(mocks.updateMany).toHaveBeenCalledWith({
       where: {
         id: "run-1",
@@ -750,11 +763,13 @@ describe("PrismaAgentExecutionStore", () => {
           update: mocks.update,
         },
         agentExecutionEvent: { create: mocks.createEvent },
+        toolExecution: { updateMany: mocks.updateToolExecution },
       })
     );
     mocks.updateMany.mockResolvedValue({ count: 1 });
     mocks.update.mockResolvedValue({ lastEventSequence: 8 });
     mocks.createEvent.mockResolvedValue({});
+    mocks.updateToolExecution.mockResolvedValue({ count: 0 });
 
     await expect(
       new PrismaAgentExecutionStore().recoverExpired({

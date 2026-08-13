@@ -261,7 +261,10 @@ describe("parseFileAsset", () => {
       keywords: ["a", "b"],
     });
     vi.mocked(vectorStore.createDocumentChunks).mockResolvedValue(1);
-    vi.mocked(embedding.embedChunksForFile).mockResolvedValue(undefined);
+    vi.mocked(embedding.embedChunksForFile).mockResolvedValue({
+  total: 0,
+  embedded: 0,
+});
     vi.mocked(projectIndex.refreshProjectIndex).mockResolvedValue("project index");
     vi.mocked(learningServices.recordFileContentChange).mockResolvedValue({
       changed: true,

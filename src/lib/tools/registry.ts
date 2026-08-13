@@ -249,13 +249,15 @@ const TOOLS: ToolMetadata[] = [
   {
     toolId: "project_files.read",
     name: "读取项目资料",
-    description: "读取已解析项目资料的文本内容。",
+    description:
+      "读取已解析项目资料的文本内容。长文档默认只返回开头一部分；返回的 nextOffset 不为 null 时，可传 offset=nextOffset 继续读取后续内容。",
     inputSchema: {
       type: "object",
       properties: {
         projectId: { type: "string" },
         fileId: { type: "string" },
         maxChars: { type: "integer" },
+        offset: { type: "integer" },
       },
       required: ["fileId"],
     },
@@ -695,7 +697,8 @@ export function registerBuiltinTools(): void {
       ctx.userId,
       String(args.projectId ?? ctx.projectId ?? ""),
       String(args.fileId),
-      args.maxChars ? Number(args.maxChars) : 8000
+      args.maxChars ? Number(args.maxChars) : 8000,
+      args.offset ? Number(args.offset) : 0
     );
   });
   registerToolHandler("project_files.delete", async (ctx, args) => {

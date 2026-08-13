@@ -354,6 +354,23 @@ type DurableUsageRecorder = (
   input: RecordTokenUsageInput
 ) => Promise<unknown>;
 
+/**
+ * durable 执行取消/失败时,为空占位的 assistant 消息补终态文案,
+ * 避免下一条消息 loadHistory 带上空 assistant 内容导致部分 provider 直接 400。
+ */
+async function writeTerminalPlaceholder(
+  messageId: string | null | undefined,
+  content: string
+) {
+  if (!messageId) return;
+  await prisma.message
+    .updateMany({
+      where: { id: messageId, content: "" },
+      data: { content },
+    })
+    .catch(() => {});
+}
+
 function isUniqueConstraintError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -509,7 +526,18 @@ export function createDurableAgentExecutionHandler(input: {
       runInput.prompt.message =
         buildApprovalContinuation(pending, outcome) + "\n\n" + runInput.prompt.message;
     }
-    const agentRun = await run(runInput);
+    let agentRun;
+    try {
+      agentRun = await run(runInput);
+    } catch (error) {
+      if (!(error instanceof LeaseLostDuringRun)) {
+        await writeTerminalPlaceholder(
+          context.execution.assistantMessageId,
+          "（本次回答生成失败）"
+        );
+      }
+      throw error;
+    }
     const operationalEvents: AgentEvent[] = [];
     let text = "";
     let reasoning = "";
@@ -619,6 +647,10 @@ export function createDurableAgentExecutionHandler(input: {
       };
     }
     if (completion.status === "cancelled" || context.signal.aborted) {
+      await writeTerminalPlaceholder(
+        context.execution.assistantMessageId,
+        "（本次回答已取消）"
+      );
       return {
         kind: "cancelled",
         code: "execution_cancelled",

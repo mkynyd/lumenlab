@@ -58,7 +58,7 @@ function execution(currentCheckpoint = checkpoint()): AgentExecutionRecord {
 
 function run(
   events: AgentRun["events"],
-  status: "completed" | "awaiting_approval",
+  status: "completed" | "awaiting_approval" | "cancelled",
   usage = {
     promptTokens: 10,
     completionTokens: 5,
@@ -467,5 +467,25 @@ describe("durable Agent runtime bridge", () => {
     expect(captured.value?.prompt.message).toContain("已批准的工具 artifact.save");
     expect(captured.value?.prompt.message).toContain("artifact-1");
     expect(captured.value?.prompt.message).toContain("Explain Kirchhoff's law");
+  });
+  it("writes a terminal placeholder when a durable run is cancelled", async () => {
+    const result = await createDurableAgentExecutionHandler({
+      run: vi.fn(async () =>
+        run(
+          (async function* () {
+            yield { type: "text_delta" as const, text: "partial" };
+          })(),
+          "cancelled"
+        )
+      ),
+      recordUsage: vi.fn(),
+    })({
+      execution: execution(),
+      signal: new AbortController().signal,
+      saveCheckpoint: vi.fn(),
+      appendEvent: vi.fn(),
+    });
+
+    expect(result.kind).toBe("cancelled");
   });
 });

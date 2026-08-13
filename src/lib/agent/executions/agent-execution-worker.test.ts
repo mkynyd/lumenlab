@@ -146,6 +146,67 @@ describe("AgentExecutionWorker", () => {
       (runner.run.mock.calls[0][0] as { signal: AbortSignal }).signal.aborted
     ).toBe(true);
   });
+  it("tolerates transient renew failures instead of killing a healthy run", async () => {
+    const execution = claimedExecution();
+    let renewCalls = 0;
+    let sawFailure = false;
+    let sawSuccess = false;
+    const renewLease = vi.fn(async () => {
+      renewCalls += 1;
+      // 让出事件循环,避免瞬时 sleep mock 导致的心跳紧循环饿死定时器
+      await new Promise((r) => setTimeout(r, 1));
+      const ok = renewCalls >= 3; // 前两次瞬时失败,第三次恢复
+      if (ok) sawSuccess = true;
+      else sawFailure = true;
+      return ok;
+    });
+    const store = {
+      claimNext: vi.fn().mockResolvedValue(execution),
+      recoverExpired: vi.fn(),
+      renewLease,
+      reconcileWaitingApprovals: vi.fn().mockResolvedValue(0),
+    };
+    const runner = {
+      run: vi.fn(
+        ({ signal }: { signal: AbortSignal }) =>
+          new Promise<{ state: "completed" }>((resolve) => {
+            const poll = () => {
+              if (signal.aborted) {
+                resolve({ state: "lease_lost" as never });
+                return;
+              }
+              if (renewCalls >= 3) {
+                resolve({ state: "completed" });
+                return;
+              }
+              setTimeout(poll, 2);
+            };
+            poll();
+          })
+      ),
+    };
+    const worker = new AgentExecutionWorker({
+      workerId: "worker-a",
+      store,
+      runner,
+      retryPolicy: retryPolicy(),
+      leaseMs: 30_000,
+      heartbeatMs: 10,
+      pollIntervalMs: 1_000,
+      now: () => new Date("2026-07-31T00:00:05.000Z"),
+      sleep: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(worker.drainOnce()).resolves.toBe(true);
+    await vi.waitFor(() => {
+      expect(renewCalls).toBeGreaterThanOrEqual(3);
+      expect(sawFailure).toBe(true);
+      expect(sawSuccess).toBe(true);
+    });
+    expect(
+      (runner.run.mock.calls[0][0] as { signal: AbortSignal }).signal.aborted
+    ).toBe(false);
+  });
 
   it("recovers expired runs once at startup and does not spawn a duplicate loop", async () => {
     const store = {

@@ -230,15 +230,20 @@ export async function embedChunkWithFallback(options: {
   }
 }
 
+export interface EmbedStats {
+  total: number;
+  embedded: number;
+}
+
 export async function embedChunksForFile(options: {
   fileAssetId: string;
   apiKey: string;
-}): Promise<void> {
+}): Promise<EmbedStats> {
   const fileAsset = await prisma.fileAsset.findUnique({
     where: { id: options.fileAssetId },
     select: { textContent: true },
   });
-  if (!fileAsset?.textContent) return;
+  if (!fileAsset?.textContent) return { total: 0, embedded: 0 };
 
   const newHash = crypto
     .createHash("sha256")
@@ -258,10 +263,11 @@ export async function embedChunksForFile(options: {
     existingChunks.length > 0 &&
     existingChunks.every((c) => c.contentHash === newHash && c.embedding !== null)
   ) {
-    return; // Content unchanged and already embedded
+    // Content unchanged and already embedded
+    return { total: existingChunks.length, embedded: existingChunks.length };
   }
 
-  if (existingChunks.length === 0) return;
+  if (existingChunks.length === 0) return { total: 0, embedded: 0 };
 
   const api = getApi(options.apiKey);
 
@@ -281,6 +287,8 @@ export async function embedChunksForFile(options: {
     (chunk) => cloudReachableMediaUrls(chunk.mediaUrls).length > 0
   );
 
+  let embedded = 0;
+
   for (let i = 0; i < textOnlyChunks.length; i += BATCH_SIZE) {
     const batch = textOnlyChunks.slice(i, i + BATCH_SIZE);
     try {
@@ -293,9 +301,10 @@ export async function embedChunksForFile(options: {
           context: `file ${options.fileAssetId} text batch ${i / BATCH_SIZE + 1}`,
         }
       );
-      await Promise.all(
+      const results = await Promise.allSettled(
         batch.map((chunk, index) => persistEmbedding(chunk.id, embeddings[index]))
       );
+      embedded += results.filter((result) => result.status === "fulfilled").length;
     } catch (error) {
       console.error(`Failed to embed text batch for file ${options.fileAssetId}:`, error);
     }
@@ -308,10 +317,13 @@ export async function embedChunksForFile(options: {
         try {
           const embedding = await embedChunkWithFallback({ chunk, api });
           await persistEmbedding(chunk.id, embedding);
+          embedded += 1;
         } catch (error) {
           console.error(`Failed to embed chunk ${chunk.id}:`, error);
         }
       })
     );
   }
+
+  return { total: existingChunks.length, embedded };
 }

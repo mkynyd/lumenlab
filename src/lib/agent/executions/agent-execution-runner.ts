@@ -205,20 +205,12 @@ export class AgentExecutionRunner {
       if (error instanceof LeaseLostDuringRun || input.signal.aborted) {
         return { state: "lease_lost" };
       }
-      // Deterministic client errors (e.g. a quick task with no readable
-      // materials, missing API key, wrong project) will not fix themselves
-      // within the retry window, so fail fast instead of burning attempts.
-      // Provider-mapped 4xx/5xx and network failures stay retryable.
-      const providerStatusKeys = [
-        "piAiStatus",
-        "bailianStatus",
-        "deepseekStatus",
-        "minimaxStatus",
-      ];
+      // 确定性客户端错误(参数/鉴权/欠费/上下文超长等)不会在重试窗口内自愈,
+      // 一律 fail-fast 避免把全量 prompt 重发数倍;仅 429 与 5xx/网络错误可重试。
       const deterministicClientError =
         error instanceof AgentRuntimeError &&
         error.status < 500 &&
-        !providerStatusKeys.some((key) => key in error.details);
+        error.status !== 429;
       result = {
         kind: "failed",
         code: "execution_error",

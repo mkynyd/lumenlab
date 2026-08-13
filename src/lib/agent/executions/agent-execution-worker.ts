@@ -20,6 +20,9 @@ export type AgentExecutionWorkerSleep = (
   signal: AbortSignal
 ) => Promise<void>;
 
+const MAX_CONSECUTIVE_RENEW_FAILURES = 3;
+const RENEW_RETRY_DELAY_MS = 400;
+
 function assertPositiveFinite(value: number, name: string) {
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(`${name} must be a positive finite number`);
@@ -146,7 +149,7 @@ export class AgentExecutionWorker {
     return true;
   }
 
-  private async runLoop(): Promise<void> {
+  private async recoverExpiredRuns(): Promise<void> {
     await this.store.recoverExpired({
       now: this.now(),
       maxAttempts: this.retryPolicy.maxAttempts,
@@ -158,6 +161,10 @@ export class AgentExecutionWorker {
         return decision.action === "retry" ? decision.delayMs : 0;
       },
     });
+  }
+
+  private async runLoop(): Promise<void> {
+    await this.recoverExpiredRuns();
 
     while (!this.stopRequested) {
       const processed = await this.drainOnce();
@@ -168,6 +175,11 @@ export class AgentExecutionWorker {
       await this.sleep(this.pollIntervalMs, idleController.signal);
       if (this.idleController === idleController) {
         this.idleController = null;
+      }
+      // 空闲期周期回收过期租约:此前只在启动时回收一次,
+      // 单实例下进程重启窗口内过期的执行会永久卡死。
+      if (!this.stopRequested) {
+        await this.recoverExpiredRuns();
       }
     }
   }
@@ -200,6 +212,7 @@ export class AgentExecutionWorker {
     stopSignal: AbortSignal,
     leaseLost: AbortController
   ): Promise<void> {
+    let consecutiveFailures = 0;
     while (!stopSignal.aborted) {
       await this.sleep(this.heartbeatMs, stopSignal);
       if (stopSignal.aborted) return;
@@ -215,10 +228,18 @@ export class AgentExecutionWorker {
       } catch {
         renewed = false;
       }
-      if (!renewed) {
+      if (renewed) {
+        consecutiveFailures = 0;
+        continue;
+      }
+      // 瞬时 DB 抖动不应杀死健康运行:允许有限次快速重试,
+      // 全部失败才判定租约真正丢失(停止感知延迟仍控制在秒级)。
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_RENEW_FAILURES) {
         leaseLost.abort();
         return;
       }
+      await this.sleep(RENEW_RETRY_DELAY_MS, stopSignal);
     }
   }
 }

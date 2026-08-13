@@ -510,6 +510,24 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         });
         if (updated.count !== 1) return false;
 
+        // 租约丢失时,正在执行中的工具结果未知;先终态化为"未知结果",
+        // 恢复后的运行只能重放失败结果,防止副作用工具被重复执行。
+        await transaction.toolExecution.updateMany({
+          where: {
+            agentExecutionId: candidate.id,
+            status: "executing",
+          },
+          data: {
+            status: "failed",
+            completedAt: input.now,
+            errorSummary: {
+              code: "TOOL_EXECUTION_OUTCOME_UNKNOWN",
+              message:
+                "执行租约丢失，工具结果未知；请勿盲目重试有副作用的操作",
+            } as Prisma.InputJsonValue,
+          },
+        });
+
         const execution = await transaction.agentExecution.update({
           where: { id: candidate.id },
           data: { lastEventSequence: { increment: 1 } },

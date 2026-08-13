@@ -13,17 +13,20 @@
 | 1.4 | P0-3 durable 审批恢复注入延续消息：checkpoint.pendingToolCall → 加载工具结果 → 在恢复的 prompt 前注入「已批准/失败/拒绝 + 结果摘要」 | ✅ 完成（+回归测试） |
 | 1.5 | P0-4 非 durable 审批断头路：approve/reject 响应带 shouldContinue，客户端批准/拒绝后自动续跑一条延续消息 | ✅ 完成 |
 
-## 第二批（待用户确认后开工）
+## 第二批（本轮已实施，2026-08-14）
 
-- 2.1 RAG 地基：关键词检索真实打分（BM25/tsvector 或命中数+位置加权）；向量腿缺失可见化（文件状态/警告 + 检索降级提示）；corpus-wide 预算化全文采样（替代 chunkIndex=0）。
-- 2.2 file.read 增加 offset/limit（翻页）；页码锚点补全（parser → block → chunk → 来源面板）。
-- 2.3 P1-1/P1-2 租约生命周期：recoverExpired 进每轮 drain、心跳失败重试 N 次；in-flight 工具按 TOOL_EXECUTION_OUTCOME_UNKNOWN 终态化防重复执行。
-- 2.4 P1-3 工具统一超时（tool-runner 外层 deadline）+ run 整体超时 + 断连 N 分钟自动软停止。
-- 2.5 P1-4 循环内工具结果统一截断；P1-7 Provider 4xx fail-fast；P1-8 终态占位消息。
+- 2.1a ✅ 关键词检索真实打分：候选窗口内按命中次数×词权重排序（完整词权重 3、中文二元组权重 1），修复文件序近随机问题（vector-store.ts searchChunksByKeyword）。
+- 2.1b ✅ 向量腿缺失可见化：embedChunksForFile 返回嵌入统计，parse-job 写入 processingMetadata.embeddingStatus（missing/partial/complete），文件列表显示「索引不完整」徽标；混合检索无查询向量时输出降级 notice。
+- 2.1c ✅ corpus-wide 预算化全文采样：按文件数分配预算，每份文件头/中/尾三段采样，替代只读 chunkIndex=0。
+- 2.2 ✅ file.read 翻页：offset/nextOffset 支持分段读取长文档，工具 schema 同步暴露 offset。
+- 2.3 ✅ P1-1/P1-2 租约生命周期：心跳续约失败重试 3 次（400ms 间隔）才判定丢失；空闲期周期回收过期租约；recoverExpired 将 in-flight 工具终态化为 TOOL_EXECUTION_OUTCOME_UNKNOWN 防重复副作用。
+- 2.4 ✅ P1-3 工具统一硬超时：ToolMetadata.timeoutMs（默认 120s），超时信号与取消信号合并传入 handler，handler 抛错折叠为结构化失败（TOOL_TIMEOUT/HANDLER_THREW）。
+- 2.5 ✅ P1-4 循环内工具结果统一 16k 截断；P1-7 Provider 4xx（除 429）fail-fast；P1-8 durable 取消/失败补终态占位消息。
 
-## 第三批
+## 第三批（待用户确认后开工）
 
-- query rewrite / rerank；chunk heading 上下文注入；enhance/PATCH 后重嵌入与缓存刷新；SSE 工具执行事件时间线（tool_execution_start/update/end）；每对话单执行护栏；DSH 式事件日志改造评估。
+- query rewrite / rerank；chunk heading 上下文注入；enhance/PATCH 后重嵌入与缓存刷新；SSE 工具执行事件时间线（tool_execution_start/update/end）；每对话单执行护栏；DSH 式事件日志改造评估；P2-4 审批等待 SSE 收敛；P2-6 审批偏好缓存 TTL。
+
 
 ## 交付与验收约定
 

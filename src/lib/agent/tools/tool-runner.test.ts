@@ -274,6 +274,60 @@ describe("ToolRunner", () => {
     expect(operations).not.toContain("persist:executing");
     expect(operations).toContain("persist:failed");
   });
+  it("aborts a hung handler at the tool timeout with TOOL_TIMEOUT", async () => {
+    const tool = { ...metadata("project_files.list"), timeoutMs: 50 };
+    const operations: string[] = [];
+    const runner = createToolRunner({
+      resolveTool: () => tool,
+      resolveSkill: () => undefined,
+      evaluatePolicy: async () => allow(tool),
+      loadUserScopes: async () => ["project.read"],
+      issueApproval: async () => {
+        throw new Error("approval should not be issued");
+      },
+      persistence: {
+        loadSessionApprovals: async () => new Map(),
+        propose: async () => ({ id: "execution-timeout" }),
+        markBlocked: async () => {},
+        claimPendingAsBlocked: async () => true,
+        markPendingApproval: async () => {},
+        claimApprovedExecution: async () => true,
+        markExecuting: async () => {},
+        markSucceeded: async () => {},
+        markFailed: async (id: string, error: { code: string; message: string }) => {
+          operations.push(`persist:failed:${error.code}`);
+        },
+      },
+      execute: async (_toolId, context) => {
+        // 挂死直到超时信号到来
+        await new Promise<void>((resolve, reject) => {
+          context.signal?.addEventListener(
+            "abort",
+            () => reject(new Error("aborted")),
+            {
+            once: true,
+          });
+        });
+        return { ok: true, result: {} };
+      },
+      audit: async () => {},
+    });
+
+    const result = await runner.run(
+      {
+        call: { id: "call-timeout", toolId: tool.toolId, arguments: {} },
+        context: {
+          userId: "user-1",
+          conversationId: "conversation-1",
+          sessionApprovals: new Map(),
+        },
+      },
+      () => {}
+    );
+
+    expect(result).toMatchObject({ status: "failed", code: "TOOL_TIMEOUT" });
+    expect(operations).toContain("persist:failed:TOOL_TIMEOUT");
+  });
 });
 
 function metadata(toolId: string): ToolMetadata {

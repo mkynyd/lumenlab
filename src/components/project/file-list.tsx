@@ -188,6 +188,16 @@ export function FileList({
             解析中
           </span>
         )}
+        {!parsing &&
+          (file.processingMetadata?.embeddingStatus === "missing" ||
+            file.processingMetadata?.embeddingStatus === "partial") && (
+            <span
+              className="max-w-[3.75rem] shrink-0 truncate text-xs text-[var(--color-text-tertiary)]"
+              title="该文件的向量索引不完整，检索精度可能受影响"
+            >
+              索引不完整
+            </span>
+          )}
       </button>
     );
 

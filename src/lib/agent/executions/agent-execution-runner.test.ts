@@ -238,7 +238,7 @@ describe("AgentExecutionRunner", () => {
     });
   });
 
-  it("keeps provider-mapped 4xx failures retryable", async () => {
+  it("keeps provider-mapped 429 failures retryable", async () => {
     const store = createStore();
     const runner = new AgentExecutionRunner({
       store,
@@ -260,6 +260,27 @@ describe("AgentExecutionRunner", () => {
       scheduledAt: new Date("2026-07-31T00:00:06.000Z"),
     });
     expect(store.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("fails fast on provider 4xx errors like insufficient balance", async () => {
+    const store = createStore();
+    const runner = new AgentExecutionRunner({
+      store,
+      handler: vi.fn().mockRejectedValue(
+        new AgentRuntimeError(402, "insufficient balance", { deepseekStatus: 402 })
+      ),
+      retryPolicy: retryPolicy(),
+      now: () => new Date("2026-07-31T00:00:05.000Z"),
+    });
+
+    await expect(
+      runner.run({
+        execution: claimedExecution({ attempt: 1 }),
+        workerId: "worker-a",
+        signal: new AbortController().signal,
+      })
+    ).resolves.toEqual({ state: "failed" });
+    expect(store.scheduleRetry).not.toHaveBeenCalled();
   });
 
   it("redacts credentials before persisting an execution failure", async () => {

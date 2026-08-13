@@ -75,6 +75,21 @@ export interface ToolRunnerDependencies {
   audit(event: AgentAuditPayload): Promise<void>;
 }
 
+const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
+
+function mergeAbortSignals(
+  base: AbortSignal | undefined,
+  extra: AbortSignal
+): AbortSignal {
+  if (!base) return extra;
+  if (base.aborted) return base;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  base.addEventListener("abort", abort, { once: true });
+  extra.addEventListener("abort", abort, { once: true });
+  return controller.signal;
+}
+
 export interface ToolRunner {
   run(
     request: ToolInvocationRequest,
@@ -217,23 +232,57 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
       if (request.context.signal?.aborted) {
         return failAborted(dependencies, request, execution.id, emit);
       }
-      const executed = await dependencies.execute(
-        tool.toolId,
-        {
-          userId: request.context.userId,
-          conversationId: request.context.conversationId,
-          projectId: request.context.projectId,
-          selectedFileIds: request.context.selectedFileIds,
-          ...(request.context.signal ? { signal: request.context.signal } : {}),
-        },
-        request.call.arguments
+
+      // 工具统一硬超时:任何工具挂死都不会无限阻塞循环。
+      // 超时信号与请求取消信号合并传入,工具 handler 负责响应 abort 自行收尾。
+      const timeoutMs = tool.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
+      const timeoutController = new AbortController();
+      const timeoutTimer = setTimeout(
+        () => timeoutController.abort(),
+        timeoutMs
       );
+      const executeSignal = mergeAbortSignals(
+        request.context.signal,
+        timeoutController.signal
+      );
+      let executed: ExecutedTool;
+      try {
+        executed = await dependencies.execute(
+          tool.toolId,
+          {
+            userId: request.context.userId,
+            conversationId: request.context.conversationId,
+            projectId: request.context.projectId,
+            selectedFileIds: request.context.selectedFileIds,
+            signal: executeSignal,
+          },
+          request.call.arguments
+        );
+      } catch (error) {
+        // 工具 handler 抛错(如超时/取消导致的 abort)也折叠为结构化失败,
+        // 不允许裸异常打断工具循环。
+        executed = {
+          ok: false,
+          errorCode: "HANDLER_THREW",
+          errorMessage:
+            error instanceof Error ? error.message : "工具执行异常",
+        };
+      } finally {
+        clearTimeout(timeoutTimer);
+      }
+      const timedOut =
+        timeoutController.signal.aborted && !request.context.signal?.aborted;
 
       if (!executed.ok) {
-        const error = {
-          code: executed.errorCode ?? "HANDLER_ERROR",
-          message: executed.errorMessage ?? "工具执行失败",
-        };
+        const error = timedOut
+          ? {
+              code: "TOOL_TIMEOUT",
+              message: `工具执行超过 ${Math.round(timeoutMs / 1000)} 秒，已中止`,
+            }
+          : {
+              code: executed.errorCode ?? "HANDLER_ERROR",
+              message: executed.errorMessage ?? "工具执行失败",
+            };
         await dependencies.persistence.markFailed(execution.id, error);
         await audit(dependencies, request, execution.id, "tool_failed", "error", error);
         emit({

@@ -146,8 +146,9 @@ export async function runParseStages(
 
     if (chunksCreated) {
       const bailianKey = await getBailianKey(ctx.userId);
+      let embeddingStatus: "missing" | "complete" | "partial" = "missing";
       if (bailianKey) {
-        await embedChunksForFile({
+        const stats = await embedChunksForFile({
           fileAssetId: file.id,
           apiKey: bailianKey,
         }).catch((error) => {
@@ -155,8 +156,23 @@ export async function runParseStages(
             fileId: file.id,
             error: error instanceof Error ? error.message : String(error),
           });
+          return null;
         });
+        embeddingStatus =
+          stats && stats.total > 0 && stats.embedded === stats.total
+            ? "complete"
+            : "partial";
       }
+      // 向量索引状态写入文件元数据,前端可提示"检索索引不完整",
+      // 避免 embedding 缺失时向量检索静默降级而用户无感知。
+      await prisma.fileAsset.update({
+        where: { id: file.id },
+        data: {
+          processingMetadata: mergeMetadata(file.processingMetadata, {
+            embeddingStatus,
+          }),
+        },
+      });
     }
 
     if (file.projectId) {

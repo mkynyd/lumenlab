@@ -176,7 +176,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         }
         toolResults.push({
           toolUseId: call.id,
-          content: JSON.stringify(result.summary),
+          content: summarizeToolResultForModel(result.summary),
         });
         roundProducedNewContent ||= toolResultProducedNewContent(result.summary);
       } else {
@@ -185,7 +185,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         }
         toolResults.push({
           toolUseId: call.id,
-          content: JSON.stringify({
+          content: summarizeToolResultForModel({
             status: "failed",
             recoveryOfExecutionId: result.executionId,
             error: result.error,
@@ -407,6 +407,18 @@ function isAbortError(error: unknown) {
 
 function toolCallKey(call: NormalizedToolCall) {
   return `${call.name}:${stableStringify(call.input)}`;
+}
+
+const MAX_TOOL_RESULT_CHARS = 16_000;
+
+/** 工具结果注入模型前截断,与 prelude(orchestrator)保持同一预算,防止长工具循环撑爆上下文。 */
+function summarizeToolResultForModel(summary: Record<string, unknown>): string {
+  const json = JSON.stringify(summary);
+  if (json.length <= MAX_TOOL_RESULT_CHARS) return json;
+  return (
+    json.slice(0, MAX_TOOL_RESULT_CHARS) +
+    "\n…（工具结果过长已截断，请基于已有部分继续）"
+  );
 }
 
 function mergeAdapterUsage(

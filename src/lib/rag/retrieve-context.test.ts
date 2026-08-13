@@ -40,7 +40,12 @@ vi.mock("@/lib/redis", () => ({
   }),
 }));
 
-import { hybridSearch, retrieveProjectContext, shouldUseProjectContext } from "@/lib/rag/vector-store";
+import {
+  hybridSearch,
+  retrieveProjectContext,
+  searchChunksByKeyword,
+  shouldUseProjectContext,
+} from "@/lib/rag/vector-store";
 
 describe("shouldUseProjectContext", () => {
   it("forceProjectContext 为 true 时直接返回 true", () => {
@@ -301,41 +306,37 @@ describe("retrieveProjectContext", () => {
   it("uses all parsed courseware instead of agentic narrowing for corpus-wide knowledge extraction", async () => {
     mocks.chunkCount.mockResolvedValue(25);
     mocks.fileFindMany.mockResolvedValueOnce([
-      { id: "file-1", originalName: "1-1 电路模型.ppt", status: "parsed" },
-      { id: "file-2", originalName: "2-1 等效变换.ppt", status: "parsed" },
-      { id: "file-3", originalName: "3-1 电容.ppt", status: "parsed" },
+      {
+        id: "file-1",
+        originalName: "1-1 电路模型.ppt",
+        mimeType: "application/pdf",
+        status: "parsed",
+        textContent: "开头内容。知识点：电路模型与参考方向。" + "中间段落。".repeat(400) + "结尾内容：本章总结。",
+        enhancedContent: null,
+        enhancementStatus: "none",
+        processingMetadata: null,
+      },
+      {
+        id: "file-2",
+        originalName: "2-1 等效变换.ppt",
+        mimeType: "application/pdf",
+        status: "parsed",
+        textContent: "知识点：等效变换与电源变换。",
+        enhancedContent: null,
+        enhancementStatus: "none",
+        processingMetadata: null,
+      },
+      {
+        id: "file-3",
+        originalName: "3-1 电容.ppt",
+        mimeType: "application/pdf",
+        status: "parsed",
+        textContent: "知识点：电容元件与动态响应。",
+        enhancedContent: null,
+        enhancementStatus: "none",
+        processingMetadata: null,
+      },
     ]);
-    mocks.chunkFindMany
-      .mockResolvedValueOnce([
-        {
-          id: "chunk-1",
-          content: "知识点：电路模型与参考方向。",
-          title: "1-1 电路模型.ppt",
-          fileAssetId: "file-1",
-          projectId: "project-1",
-          chunkIndex: 0,
-          fileAsset: { originalName: "1-1 电路模型.ppt" },
-        },
-        {
-          id: "chunk-2",
-          content: "知识点：等效变换与电源变换。",
-          title: "2-1 等效变换.ppt",
-          fileAssetId: "file-2",
-          projectId: "project-1",
-          chunkIndex: 0,
-          fileAsset: { originalName: "2-1 等效变换.ppt" },
-        },
-        {
-          id: "chunk-3",
-          content: "知识点：电容元件与动态响应。",
-          title: "3-1 电容.ppt",
-          fileAssetId: "file-3",
-          projectId: "project-1",
-          chunkIndex: 0,
-          fileAsset: { originalName: "3-1 电容.ppt" },
-        },
-      ])
-      .mockResolvedValueOnce([]);
 
     const result = await retrieveProjectContext({
       userId: "user-1",
@@ -347,17 +348,13 @@ describe("retrieveProjectContext", () => {
     });
 
     expect(mocks.createTextMessage).not.toHaveBeenCalled();
-    expect(mocks.chunkFindMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          fileAssetId: { in: ["file-1", "file-2", "file-3"] },
-        }),
-      })
-    );
     expect(result.debug.scopeSource).toBe("project");
     expect(result.debug.candidateFileCount).toBe(3);
+    expect(result.debug.matchedChunkCount).toBe(3);
     expect(result.context).toContain("1-1 电路模型.ppt");
     expect(result.context).toContain("2-1 等效变换.ppt");
+    // 长文档的尾段采样必须进入上下文(修复此前只读第一个 chunk 的问题)
+    expect(result.context).toContain("本章总结");
     expect(result.context).toContain("3-1 电容.ppt");
   });
 
@@ -538,6 +535,42 @@ describe("hybridSearch", () => {
       "shared",
       "vector-only",
       "keyword-only",
+    ]);
+  });
+
+  it("ranks keyword chunks by hit-count scoring instead of file order", async () => {
+    mocks.chunkFindMany.mockResolvedValueOnce([
+      {
+        id: "chunk-few",
+        content: "缓存策略",
+        title: "B.md",
+        fileAssetId: "file-b",
+        projectId: "project-1",
+        chunkIndex: 1,
+        fileAsset: { originalName: "B.md" },
+      },
+      {
+        id: "chunk-many",
+        content: "缓存策略 缓存策略 缓存策略 缓存策略",
+        title: "A.md",
+        fileAssetId: "file-a",
+        projectId: "project-1",
+        chunkIndex: 0,
+        fileAsset: { originalName: "A.md" },
+      },
+    ]);
+
+    const result = await searchChunksByKeyword({
+      userId: "user-1",
+      projectId: "project-1",
+      query: "缓存策略",
+      limit: 2,
+    });
+
+    // 命中次数多者排在前面,与文件序(chunk-few 在前)无关
+    expect(result.map((chunk) => chunk.id)).toEqual([
+      "chunk-many",
+      "chunk-few",
     ]);
   });
 });

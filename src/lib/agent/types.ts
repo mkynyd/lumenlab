@@ -37,6 +37,8 @@ export interface ToolMetadata {
   containsSensitiveData: boolean;
   requiresNetwork: boolean;
   estimatedCost?: string;
+  /** 工具执行硬超时(毫秒);不进模型 schema,仅供执行层使用。 */
+  timeoutMs?: number;
   defaultApprovalMode: ApprovalMode;
   allowedSkillIds: string[];
   auditLevel: AuditLevel;
