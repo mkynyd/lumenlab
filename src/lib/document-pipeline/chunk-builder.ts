@@ -43,8 +43,13 @@ export function buildChunksFromBlocks(
 ): ChunkCandidate[] {
   const { maxChunkChars = 1500, overlapChars = 150 } = options;
   const chunks: ChunkCandidate[] = [];
+  // 正文块前缀最近标题,让中部段落 chunk 自带章节上下文。
+  let currentHeading = "";
 
   for (const block of blocks) {
+    if (block.type === "heading") {
+      currentHeading = "#".repeat(block.level) + " " + block.content;
+    }
     switch (block.type) {
       case "text":
       case "heading":
@@ -54,7 +59,9 @@ export function buildChunksFromBlocks(
             ? `${"#".repeat(block.level)} ${block.content}`
             : block.type === "code"
               ? [`\`\`\`${block.language || ""}`, block.content, "```"].join("\n")
-              : block.content;
+              : block.type === "text" && currentHeading
+                ? currentHeading + "\n" + block.content
+                : block.content;
         splitText(text, maxChunkChars, overlapChars).forEach(
           (content, index) => {
             chunks.push({

@@ -35,6 +35,22 @@ describe("buildChunksFromBlocks", () => {
     expect(imageChunks[0].mediaUrls).toContain("https://example.com/res/a1");
   });
 
+  it("prefixes text chunks with the most recent heading for chapter context", () => {
+    const blocks: DocumentBlock[] = [
+      { type: "heading", id: "h1", level: 2, content: "第三章 TCP/IP" },
+      { type: "text", id: "t1", content: "拥塞控制通过窗口调节。" },
+      { type: "code", id: "c1", language: "py", content: "print(1)" },
+    ];
+    const chunks = buildChunksFromBlocks(blocks, new Map());
+    const textChunk = chunks.find((c) => c.metadata?.blockId === "t1");
+    const codeChunk = chunks.find((c) => c.metadata?.blockId === "c1");
+    expect(textChunk?.content).toContain("## 第三章 TCP/IP");
+    expect(textChunk?.content).toContain("拥塞控制");
+    // 代码块保持原样,不加标题前缀
+    expect(codeChunk?.content).not.toContain("第三章 TCP/IP");
+    expect(codeChunk?.content).toContain("```py");
+  });
+
   it("sets sourceType to block type for heading and code blocks", () => {
     const blocks: DocumentBlock[] = [
       { type: "heading", id: "h1", level: 2, content: "Section A" },
