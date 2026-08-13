@@ -121,12 +121,15 @@ export class PrismaConversationAdapter implements ConversationPersistence {
     return prisma.message.findMany({
       where: {
         conversationId,
+        // 已被压缩摘要替换的旧消息不再进入模型上下文,
+        // 否则每次压缩都会让 prompt 只增不减。
+        subtype: { not: "compressed-replaced" },
         ...(excludeMessageIds.length > 0
           ? { id: { notIn: excludeMessageIds } }
           : {}),
       },
       orderBy: { createdAt: "asc" },
-      select: { role: true, content: true },
+      select: { id: true, role: true, content: true },
     });
   }
 
@@ -148,7 +151,7 @@ export class PrismaConversationAdapter implements ConversationPersistence {
     content: string;
     compressedCount: number;
   }) {
-    await prisma.message.create({
+    return prisma.message.create({
       data: {
         conversationId: input.conversationId,
         role: "system",
@@ -173,6 +176,29 @@ export class PrismaConversationAdapter implements ConversationPersistence {
         sources: input.sources as unknown as Prisma.InputJsonValue,
       },
       select: { id: true },
+    });
+  }
+
+  async markMessagesCompressed(input: {
+    conversationId: string;
+    messageIds: string[];
+    replacedBySummaryId: string;
+  }) {
+    if (input.messageIds.length === 0) return;
+    await prisma.message.updateMany({
+      where: {
+        conversationId: input.conversationId,
+        id: { in: input.messageIds },
+        // 摘要消息与已替换消息本身不可再被标记。
+        subtype: { not: "context-summary" },
+      },
+      data: {
+        subtype: "compressed-replaced",
+        metadata: {
+          replacedBySummaryId: input.replacedBySummaryId,
+          replacedAt: new Date().toISOString(),
+        } as Prisma.InputJsonValue,
+      },
     });
   }
 

@@ -12,6 +12,7 @@ export interface ConversationState {
 }
 
 export interface ConversationHistoryMessage {
+  id: string;
   role: string;
   content: string;
 }
@@ -71,6 +72,11 @@ export interface ConversationPersistence {
     conversationId: string;
     content: string;
     compressedCount: number;
+  }): Promise<{ id: string }>;
+  markMessagesCompressed(input: {
+    conversationId: string;
+    messageIds: string[];
+    replacedBySummaryId: string;
   }): Promise<void>;
   createAssistantMessage(input: {
     conversationId: string;

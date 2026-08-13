@@ -21,6 +21,8 @@ export type CompressionResult = {
 const DEFAULT_SUMMARY_PROMPT =
   "请把以下对话历史压缩成一份摘要。保留关键事实、用户偏好、约束条件和未完成事项；丢弃寒暄和重复内容。用中文输出。";
 
+export const DEFAULT_PROTECTED_WINDOW = 6;
+
 /**
  * 从完整消息列表中提取可被压缩的部分：
  * - 保留所有 system 消息
@@ -56,7 +58,11 @@ export function selectCompressibleMessages(
 export async function compressHistory(
   options: CompressionOptions
 ): Promise<CompressionResult | null> {
-  const { protectedWindow = 6, userPrompt, maxSummaryTokens = 2000 } = options;
+  const {
+    protectedWindow = DEFAULT_PROTECTED_WINDOW,
+    userPrompt,
+    maxSummaryTokens = 2000,
+  } = options;
   const { compressible } = selectCompressibleMessages(
     options.messages,
     protectedWindow
@@ -90,23 +96,26 @@ export async function compressHistory(
 }
 
 /**
- * 将摘要插入到消息列表中：放在 system 提示之后、受保护的近期对话之前。
+ * 用摘要替换被压缩的旧对话：保留 system 提示与最近 protectedWindow 轮对话，
+ * 摘要插入在 system 提示之后、受保护对话之前。被压缩的旧消息必须丢弃，
+ * 否则每次压缩都会让 prompt 只增不减。
  */
 export function buildCompressedMessages(
   originalMessages: ChatMessage[],
-  summary: string
+  summary: string,
+  protectedWindow = DEFAULT_PROTECTED_WINDOW
 ): ChatMessage[] {
-  const systemMessages = originalMessages.filter((m) => m.role === "system");
-  const dialogue = originalMessages.filter(
-    (m) => m.role === "user" || m.role === "assistant"
+  const { protectedMessages } = selectCompressibleMessages(
+    originalMessages,
+    protectedWindow
   );
 
   return [
-    ...systemMessages,
+    ...protectedMessages.filter((m) => m.role === "system"),
     {
       role: "system",
       content: `【此前对话压缩上下文】\n${summary}\n\n请在后续回答中继承这些事实与约束。`,
     },
-    ...dialogue,
+    ...protectedMessages.filter((m) => m.role !== "system"),
   ];
 }

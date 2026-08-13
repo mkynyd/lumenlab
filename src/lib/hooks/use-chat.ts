@@ -127,6 +127,8 @@ export type ToolApprovalResponse =
       scope: ApprovalScope;
       executionId: string;
       resultSummary: Record<string, unknown>;
+      /** 非 durable 父执行需要客户端续跑一次,模型才会继续回答。 */
+      shouldContinue?: boolean;
     }
   | {
       ok: false;
@@ -134,6 +136,7 @@ export type ToolApprovalResponse =
       scope: ApprovalScope;
       executionId: string;
       error: { code: string; message: string };
+      shouldContinue?: boolean;
     };
 
 export async function requestToolApproval(input: {
@@ -854,8 +857,13 @@ export function useChat(options: UseChatOptions = {}) {
             : message
         )
       );
+      // 非 durable 父执行:批准后原流已结束,自动续跑一次让模型基于
+      // 工具结果继续输出最终回答(durable 由服务端 worker 自动恢复)。
+      if (result.ok && result.shouldContinue) {
+        void sendMessage("继续完成刚才的任务。").catch(() => {});
+      }
     },
-    [agentTimeline]
+    [agentTimeline, sendMessage]
   );
 
   const rejectExecution = useCallback(
@@ -868,6 +876,15 @@ export function useChat(options: UseChatOptions = {}) {
       if (!response.ok) {
         setError(`拒绝失败 (${response.status})`);
         return;
+      }
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        shouldContinue?: boolean;
+      };
+      if (payload.ok && payload.shouldContinue) {
+        void sendMessage(
+          "继续完成刚才的任务，但不要执行刚才被拒绝的操作。"
+        ).catch(() => {});
       }
       setAgentTimeline((prev) => {
         const existing = prev[executionId];
@@ -899,7 +916,7 @@ export function useChat(options: UseChatOptions = {}) {
         )
       );
     },
-    []
+    [sendMessage]
   );
 
   return {

@@ -2,6 +2,7 @@ import { sanitizeModelText } from "../tool-call-parser";
 import { toolResultProducedNewContent } from "../orchestrator";
 import { materializePlanUpdate, parsePlanUpdate } from "../plan";
 import type {
+  AdapterUsage,
   NormalizedToolCall,
   ProviderAdapter,
   ProviderRound,
@@ -54,11 +55,13 @@ export interface AgentLoopResult {
   finalRound: ProviderRound;
   pendingExecutionIds: string[];
   stopReason: string | null;
+  /** 全部轮次（含初始轮与所有续跑轮）累计的 token 用量。 */
+  usage: AdapterUsage | null;
 }
 
 export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResult> {
   if (input.activeTools.length === 0) {
-    return completed(input.initialRound);
+    return completed(input.initialRound, null);
   }
 
   const allowedToolNames = new Set(input.activeTools.map((tool) => tool.toolId));
@@ -72,21 +75,27 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   let messages = input.messages;
   let previousRoundProducedNewContent = true;
   const failedExecutionIds = new Set<string>();
+  let loopUsage: AdapterUsage | null = null;
+  const captureRoundUsage = (round: ProviderRound) => {
+    const usage = round.getUsage();
+    if (usage) loopUsage = mergeAdapterUsage(loopUsage, usage);
+  };
 
   for (let round = 0; round < maxRounds; round += 1) {
     if (input.signal.aborted) {
       void roundResult.events.cancel("request aborted").catch(() => {});
-      return cancelled(roundResult);
+      return cancelled(roundResult, loopUsage);
     }
 
     try {
       roundResult = await bufferRound(roundResult, input.signal, input.onModelEvent);
     } catch (error) {
       if (input.signal.aborted || isAbortError(error)) {
-        return cancelled(roundResult);
+        return cancelled(roundResult, loopUsage);
       }
       throw error;
     }
+    captureRoundUsage(roundResult);
     const normalizedCalls = roundResult.getToolCalls();
     const executable: NormalizedToolCall[] = [];
     const scheduledKeys = new Set(executedKeys);
@@ -111,13 +120,14 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         finalRound: roundResult,
         pendingExecutionIds: [],
         stopReason: previousRoundProducedNewContent ? null : "no_progress",
+        usage: loopUsage,
       };
     }
 
     const toolResults: ProviderToolResult[] = [];
     let roundProducedNewContent = false;
     for (const call of executable) {
-      if (input.signal.aborted) return cancelled(roundResult);
+      if (input.signal.aborted) return cancelled(roundResult, loopUsage);
       executedKeys.add(toolCallKey(call));
       const recoveryOfExecutionId =
         typeof call.input.recoveryOfExecutionId === "string"
@@ -133,7 +143,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         input.emit
       );
 
-      if (input.signal.aborted) return cancelled(roundResult);
+      if (input.signal.aborted) return cancelled(roundResult, loopUsage);
 
       const isDeclaredRecovery = Boolean(
         recoveryOfExecutionId && failedExecutionIds.has(recoveryOfExecutionId)
@@ -152,6 +162,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
           finalRound: sanitizePendingRound(roundResult),
           pendingExecutionIds: [result.executionId],
           stopReason: "approval_required",
+          usage: loopUsage,
         };
       }
 
@@ -211,11 +222,13 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       // 这一轮由 continueRound 产生、尚未经过 bufferRound,内容还没实时转发。
       // 缓冲并转发后再返回,保持"每一轮内容都实时送达"的契约。
       roundResult = await bufferRound(roundResult, input.signal, input.onModelEvent);
+      captureRoundUsage(roundResult);
       return {
         status: "completed",
         finalRound: roundResult,
         pendingExecutionIds: [],
         stopReason: noProgress ? "no_progress" : "round_limit",
+        usage: loopUsage,
       };
     }
     previousRoundProducedNewContent = roundProducedNewContent;
@@ -226,24 +239,33 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     finalRound: roundResult,
     pendingExecutionIds: [],
     stopReason: "round_limit",
+    usage: loopUsage,
   };
 }
 
-function completed(finalRound: ProviderRound): AgentLoopResult {
+function completed(
+  finalRound: ProviderRound,
+  usage: AdapterUsage | null
+): AgentLoopResult {
   return {
     status: "completed",
     finalRound,
     pendingExecutionIds: [],
     stopReason: null,
+    usage,
   };
 }
 
-function cancelled(finalRound: ProviderRound): AgentLoopResult {
+function cancelled(
+  finalRound: ProviderRound,
+  usage: AdapterUsage | null
+): AgentLoopResult {
   return {
     status: "cancelled",
     finalRound: replaceRoundEvents(finalRound, "", ""),
     pendingExecutionIds: [],
     stopReason: "cancelled",
+    usage,
   };
 }
 
@@ -385,6 +407,22 @@ function isAbortError(error: unknown) {
 
 function toolCallKey(call: NormalizedToolCall) {
   return `${call.name}:${stableStringify(call.input)}`;
+}
+
+function mergeAdapterUsage(
+  total: AdapterUsage | null,
+  next: AdapterUsage
+): AdapterUsage {
+  if (!total) return { ...next };
+  return {
+    prompt_tokens: total.prompt_tokens + next.prompt_tokens,
+    completion_tokens: total.completion_tokens + next.completion_tokens,
+    total_tokens: total.total_tokens + next.total_tokens,
+    prompt_cache_hit_tokens:
+      (total.prompt_cache_hit_tokens ?? 0) + (next.prompt_cache_hit_tokens ?? 0),
+    prompt_cache_miss_tokens:
+      (total.prompt_cache_miss_tokens ?? 0) + (next.prompt_cache_miss_tokens ?? 0),
+  };
 }
 
 function stableStringify(value: unknown): string {

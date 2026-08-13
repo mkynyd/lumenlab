@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentRun } from "@/lib/agent/contracts";
+import type { AgentRun, AgentRunInput } from "@/lib/agent/contracts";
 import type {
   AgentCheckpoint,
   AgentExecutionRecord,
@@ -327,6 +327,7 @@ describe("durable Agent runtime bridge", () => {
     const recordUsage = vi.fn().mockResolvedValue({ id: "usage-1" });
     const saved: AgentCheckpoint[] = [];
     const completed = await createDurableAgentExecutionHandler({
+      loadApprovedToolOutcome: vi.fn(async () => null),
       run: vi.fn(async () =>
         run(
           (async function* () {
@@ -424,5 +425,47 @@ describe("durable Agent runtime bridge", () => {
       request: { message: "Start" },
     });
     expect(JSON.stringify(initial)).not.toContain("attachments");
+  });
+  it("injects the approved tool result when resuming after approval", async () => {
+    const resumed = {
+      ...checkpoint(),
+      pendingToolCall: {
+        id: "tool-execution-1",
+        toolId: "artifact.save",
+        arguments: {},
+      },
+    };
+    const captured = { value: null as AgentRunInput | null };
+    const runMock = vi.fn(async (runInput: AgentRunInput) => {
+      captured.value = runInput;
+      return run(
+        (async function* () {
+          yield { type: "text_delta" as const, text: "Saved" };
+        })(),
+        "completed"
+      );
+    });
+    const loadOutcome = vi.fn(async () => ({
+      status: "succeeded" as const,
+      resultSummary: { id: "artifact-1", title: "笔记" },
+      errorSummary: null,
+    }));
+
+    const result = await createDurableAgentExecutionHandler({
+      run: runMock,
+      recordUsage: vi.fn(),
+      loadApprovedToolOutcome: loadOutcome,
+    })({
+      execution: execution(resumed),
+      signal: new AbortController().signal,
+      saveCheckpoint: vi.fn(),
+      appendEvent: vi.fn(),
+    });
+
+    expect(result.kind).toBe("completed");
+    expect(loadOutcome).toHaveBeenCalledWith("tool-execution-1");
+    expect(captured.value?.prompt.message).toContain("已批准的工具 artifact.save");
+    expect(captured.value?.prompt.message).toContain("artifact-1");
+    expect(captured.value?.prompt.message).toContain("Explain Kirchhoff's law");
   });
 });

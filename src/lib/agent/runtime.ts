@@ -36,7 +36,11 @@ import {
   checkContextBudget,
   recordTokenUsage,
 } from "@/lib/tokens";
-import { compressHistory, buildCompressedMessages } from "@/lib/chat/compression";
+import {
+  compressHistory,
+  buildCompressedMessages,
+  DEFAULT_PROTECTED_WINDOW,
+} from "@/lib/chat/compression";
 import { effectiveWebSearchActive } from "@/lib/chat/model-capabilities";
 import {
   buildPlannedToolCalls,
@@ -1006,10 +1010,27 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         messages: messages as unknown as StringMessage[],
       });
       if (compressionResult) {
-        await conversationPersistence.createContextSummary({
+        const summaryMessage = await conversationPersistence.createContextSummary({
           conversationId: conversation.id,
           content: `【此前对话压缩上下文】\n${compressionResult.summary}\n\n请在后续回答中继承这些事实与约束。`,
           compressedCount: compressionResult.compressedCount,
+        });
+        // 把已进入摘要的旧消息在库中标记为 replaced,后续 loadHistory 不再加载。
+        // compressHistory 的输入是 systemPrompt + history + 当前用户消息,
+        // 当前用户消息永远落在受保护尾部,所以可压缩的都是 history 中的旧对话。
+        const historyDialogue = history.filter(
+          (m) => m.role === "user" || m.role === "assistant"
+        );
+        const compressibleCount = Math.max(
+          0,
+          historyDialogue.length + 1 - DEFAULT_PROTECTED_WINDOW * 2
+        );
+        await conversationPersistence.markMessagesCompressed({
+          conversationId: conversation.id,
+          messageIds: historyDialogue
+            .slice(0, compressibleCount)
+            .map((m) => m.id),
+          replacedBySummaryId: summaryMessage.id,
         });
         messages = buildCompressedMessages(
           messages as unknown as StringMessage[],
@@ -1161,6 +1182,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           finalRound: streamResult,
           pendingExecutionIds: preludePendingExecutionIds,
           stopReason: "approval_required",
+          usage: null,
         };
       } else {
         try {
@@ -1226,7 +1248,8 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           conversationPersistence,
           Boolean(input.durable),
           !input.durable,
-          input.durable?.priorUsage ?? null
+          input.durable?.priorUsage ?? null,
+          loopResult.usage ?? null
         )
           .then(async (result) => {
             runMetrics.recordUsage(result.usage);
@@ -1408,6 +1431,13 @@ export async function accumulateAndSave(
     preserveEmptyMessage?: boolean;
     persistTokenUsage?: boolean;
     priorUsage?: AgentUsage | null;
+    loopUsage?: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+      prompt_cache_hit_tokens?: number;
+      prompt_cache_miss_tokens?: number;
+    } | null;
   } = {}
 ): Promise<AgentCompletion> {
   return accumulateAndSaveEvents(
@@ -1423,7 +1453,8 @@ export async function accumulateAndSave(
     persistence,
     options.preserveEmptyMessage ?? false,
     options.persistTokenUsage ?? true,
-    options.priorUsage ?? null
+    options.priorUsage ?? null,
+    options.loopUsage ?? null
   );
 }
 
@@ -1446,7 +1477,14 @@ async function accumulateAndSaveEvents(
   persistence: ConversationPersistence,
   preserveEmptyMessage = false,
   persistTokenUsage = true,
-  priorUsage: AgentUsage | null = null
+  priorUsage: AgentUsage | null = null,
+  loopUsage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    prompt_cache_hit_tokens?: number;
+    prompt_cache_miss_tokens?: number;
+  } | null = null
 ): Promise<AgentCompletion> {
   const reader = stream.getReader();
   let fullContent = "";
@@ -1468,7 +1506,9 @@ async function accumulateAndSaveEvents(
     reader.releaseLock();
   }
 
-  const usage = getUsage();
+  // loopUsage 是 runAgentLoop 逐轮累计的全部轮次用量;仅在未经过
+  // 工具循环(或循环未产出用量)时回退到最后一轮的 getUsage()。
+  const usage = loopUsage ?? getUsage();
   if (usage) {
     const promptTokens = usage?.prompt_tokens ?? 0;
     const completionTokens = usage?.completion_tokens ?? 0;

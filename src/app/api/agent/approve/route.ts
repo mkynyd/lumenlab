@@ -338,6 +338,9 @@ export async function POST(request: NextRequest) {
       scope,
       executionId: execution.id,
       error,
+      // 非 durable 父执行:模型流已结束,客户端批准后需要主动续跑一次,
+      // 否则"审批"在默认配置下是断头路。
+      ...(durableParent ? {} : { shouldContinue: true }),
     });
   }
 
@@ -373,6 +376,7 @@ export async function POST(request: NextRequest) {
     scope,
     executionId: execution.id,
     resultSummary,
+    ...(durableParent ? {} : { shouldContinue: true }),
   });
 }
 

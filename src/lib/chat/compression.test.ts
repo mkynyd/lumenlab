@@ -104,5 +104,24 @@ describe("compression", () => {
       expect(result[2]).toEqual({ role: "user", content: "a" });
       expect(result[3]).toEqual({ role: "assistant", content: "b" });
     });
+    it("drops compressed old dialogue so the prompt never grows", () => {
+      const messages = [
+        { role: "system", content: "sys" },
+        ...Array.from({ length: 20 }, (_, i) => ({
+          role: i % 2 === 0 ? "user" : "assistant",
+          content: "msg-" + i,
+        })),
+      ];
+      const result = buildCompressedMessages(messages, "summary", 6);
+      // system 1 + 摘要 1 + 受保护 12 轮对话
+      expect(result).toHaveLength(1 + 1 + 12);
+      expect(result[0]).toEqual({ role: "system", content: "sys" });
+      expect(result[1].role).toBe("system");
+      expect(result[1].content).toContain("summary");
+      // 旧消息被丢弃：最早的可压缩消息 msg-0 不再出现
+      expect(result.map((m) => m.content)).not.toContain("msg-0");
+      // 最近对话保留
+      expect(result.map((m) => m.content)).toContain("msg-19");
+    });
   });
 });

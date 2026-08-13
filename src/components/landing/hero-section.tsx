@@ -100,7 +100,7 @@ export function HeroSection() {
             variants={heroItem}
             className="mt-3 text-[12px] text-[var(--color-text-tertiary)]"
           >
-            Alpha 阶段免费 · 凭注册码使用
+            Alpha 阶段免费 · 邮箱注册即可使用
           </motion.p>
         </motion.div>
 

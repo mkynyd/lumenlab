@@ -6,6 +6,7 @@ import { ProviderAccessError } from "@/lib/provider-access";
 import {
   compressHistory,
   buildCompressedMessages,
+  DEFAULT_PROTECTED_WINDOW,
 } from "@/lib/chat/compression";
 import { checkContextBudget } from "@/lib/tokens";
 import { logger } from "@/lib/logger";
@@ -40,9 +41,12 @@ export async function POST(request: NextRequest) {
   }
 
   const history = await prisma.message.findMany({
-    where: { conversationId: conversation.id },
+    where: {
+      conversationId: conversation.id,
+      subtype: { not: "compressed-replaced" },
+    },
     orderBy: { createdAt: "asc" },
-    select: { role: true, content: true },
+    select: { id: true, role: true, content: true },
   });
 
   if (history.length === 0) {
@@ -87,6 +91,28 @@ export async function POST(request: NextRequest) {
         metadata: {
           compressedCount: result.compressedCount,
           userPrompt: prompt || null,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    // 把已进入摘要的旧消息标记为 replaced,避免后续请求再次加载。
+    const dialogue = history.filter(
+      (m) => m.role === "user" || m.role === "assistant"
+    );
+    const compressibleCount = Math.max(
+      0,
+      dialogue.length - DEFAULT_PROTECTED_WINDOW * 2
+    );
+    await prisma.message.updateMany({
+      where: {
+        conversationId: conversation.id,
+        id: { in: dialogue.slice(0, compressibleCount).map((m) => m.id) },
+      },
+      data: {
+        subtype: "compressed-replaced",
+        metadata: {
+          replacedBySummaryId: summaryMessage.id,
+          replacedAt: new Date().toISOString(),
         } as Prisma.InputJsonValue,
       },
     });

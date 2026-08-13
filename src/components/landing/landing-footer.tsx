@@ -26,7 +26,7 @@ export function LandingFooter() {
               <span className="inline-block">LumenLab。</span>
             </h2>
             <p className="mt-5 max-w-[48ch] text-[15px] leading-7 text-[var(--color-text-secondary)]">
-              当前为 Alpha 阶段，凭注册码免费注册。
+              当前为 Alpha 阶段，邮箱注册即可免费使用。
             </p>
           </div>
 

@@ -88,5 +88,10 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  return NextResponse.json({ ok: true, executionId: body.executionId });
+  return NextResponse.json({
+    ok: true,
+    executionId: body.executionId,
+    // 非 durable 父执行需要客户端主动续跑,让模型知道工具被拒绝后换个方式继续。
+    ...(execution.agentExecutionId ? {} : { shouldContinue: true }),
+  });
 }

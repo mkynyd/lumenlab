@@ -515,11 +515,91 @@ describe("runAgentLoop", () => {
 
     expect(emitted).toContain("plan_updated");
   });
+
+  it("accumulates token usage across every round of the tool loop", async () => {
+    const initialRound = providerRound({
+      rawContent: "",
+      toolCalls: [
+        {
+          id: "native-usage-1",
+          name: "project_files.list",
+          input: { projectId: "project-1" },
+          source: "native",
+        },
+      ],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 10,
+        total_tokens: 110,
+        prompt_cache_hit_tokens: 50,
+        prompt_cache_miss_tokens: 50,
+      },
+    });
+
+    const result = await runAgentLoop({
+      provider: {
+        provider: "deepseek",
+        stream: vi.fn(),
+        toolProtocol: () => "native",
+        startRound: vi.fn(),
+        continueRound: vi.fn().mockResolvedValue(
+          providerRound({
+            rawContent: "完成",
+            toolCalls: [],
+            usage: {
+              prompt_tokens: 200,
+              completion_tokens: 20,
+              total_tokens: 220,
+              prompt_cache_miss_tokens: 200,
+            },
+          })
+        ),
+      } as unknown as ProviderAdapter,
+      initialRound,
+      model: "deepseek-v4-pro",
+      thinkingEnabled: true,
+      reasoningEffort: "max",
+      activeTools: [tool("project_files.list")],
+      messages: initialRound.requestMessages,
+      context: {
+        userId: "user-1",
+        conversationId: "conversation-1",
+        projectId: "project-1",
+        sessionApprovals: new Map(),
+      },
+      signal: new AbortController().signal,
+      toolRunner: {
+        run: async () => ({
+          status: "succeeded",
+          executionId: "execution-usage-1",
+          summary: { files: [{ id: "file-1", name: "notes.pdf" }] },
+        }),
+      },
+      emit: () => {},
+      audit: async () => {},
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.usage).toEqual({
+      prompt_tokens: 300,
+      completion_tokens: 30,
+      total_tokens: 330,
+      prompt_cache_hit_tokens: 50,
+      prompt_cache_miss_tokens: 250,
+    });
+  });
 });
 
 function providerRound(input: {
   rawContent: string;
   toolCalls: ProviderRound["getToolCalls"] extends () => infer T ? T : never;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    prompt_cache_hit_tokens?: number;
+    prompt_cache_miss_tokens?: number;
+  } | null;
 }): ProviderRound {
   return {
     requestMessages: [
@@ -534,7 +614,7 @@ function providerRound(input: {
         controller.close();
       },
     }),
-    getUsage: () => null,
+    getUsage: () => input.usage ?? null,
     getToolCalls: () => input.toolCalls,
     getRawContent: () => input.rawContent,
     getRawReasoning: () => "",

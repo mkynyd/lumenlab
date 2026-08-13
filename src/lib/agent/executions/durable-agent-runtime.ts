@@ -11,6 +11,7 @@ import type { AgentRuntimeEvent } from "@/lib/agent/runtime-events";
 import { runAgentRuntime } from "@/lib/agent/runtime";
 import type { AgentEvent, ToolCallPreview } from "@/lib/agent/types";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
+import { prisma } from "@/lib/db";
 import { mergeAgentUsage } from "@/lib/agent/usage";
 import { logger } from "@/lib/logger";
 import {
@@ -400,12 +401,86 @@ function isOperationalEvent(event: AgentRuntimeEvent): event is AgentEvent {
   ].includes(event.type);
 }
 
+export type ApprovedToolOutcome = {
+  status:
+    | "succeeded"
+    | "failed"
+    | "blocked"
+    | "rejected"
+    | "pending_approval"
+    | "unknown";
+  resultSummary: unknown;
+  errorSummary: unknown;
+};
+
+async function loadApprovedToolOutcome(
+  executionId: string
+): Promise<ApprovedToolOutcome | null> {
+  const row = await prisma.toolExecution.findUnique({
+    where: { id: executionId },
+    select: {
+      status: true,
+      resultSummary: true,
+      errorSummary: true,
+    },
+  });
+  if (!row) return null;
+  return {
+    status: (row.status ?? "unknown") as ApprovedToolOutcome["status"],
+    resultSummary: row.resultSummary,
+    errorSummary: row.errorSummary,
+  };
+}
+
+/**
+ * 审批通过后恢复执行时,把"工具已执行/失败"的结果作为延续消息注入模型:
+ * 否则 durable 恢复会从原始 prompt 从零重跑,模型看不到审批前的推理与结果。
+ */
+function buildApprovalContinuation(
+  pending: { id: string; toolId: string },
+  outcome: ApprovedToolOutcome | null
+): string {
+  const statusText =
+    outcome?.status === "succeeded"
+      ? "已成功执行"
+      : outcome?.status === "failed"
+        ? "执行失败"
+        : outcome?.status === "blocked"
+          ? "执行被策略拦截"
+          : outcome?.status === "rejected"
+            ? "被用户拒绝"
+            : "执行状态未知";
+  const payload =
+    outcome?.status === "succeeded"
+      ? (outcome.resultSummary ?? null)
+      : outcome?.status === "failed" ||
+          outcome?.status === "blocked" ||
+          outcome?.status === "rejected"
+        ? (outcome.errorSummary ?? null)
+        : null;
+  const payloadText =
+    payload === null || payload === undefined
+      ? "（无结果摘要）"
+      : JSON.stringify(payload).slice(0, 6000);
+
+  return [
+    "【继续执行】上一次回答在等待工具批准时暂停，现已在用户确认后恢复。",
+    "已批准的工具 " + pending.toolId + "（执行编号 " + pending.id + "）" + statusText + "，结果如下：",
+    payloadText,
+    "请直接基于以上结果继续完成用户的问题：不要重复调用已经成功的工具，不要再请求审批，也不要复述“我将调用工具”。",
+  ].join("\n");
+}
+
 export function createDurableAgentExecutionHandler(input: {
   run?: (runInput: AgentRunInput) => ReturnType<typeof runAgentRuntime>;
   recordUsage?: DurableUsageRecorder;
+  loadApprovedToolOutcome?: (
+    executionId: string
+  ) => Promise<ApprovedToolOutcome | null>;
 } = {}): AgentExecutionHandler {
   const run = input.run ?? runAgentRuntime;
   const recordUsage = input.recordUsage ?? recordTokenUsage;
+  const loadOutcome = input.loadApprovedToolOutcome ?? loadApprovedToolOutcome;
 
   return async (context) => {
     const checkpoint = context.execution.checkpoint;
@@ -427,9 +502,14 @@ export function createDurableAgentExecutionHandler(input: {
       return { kind: "completed", checkpoint };
     }
 
-    const agentRun = await run(
-      runInputFromExecution(context.execution, context.signal)
-    );
+    const runInput = runInputFromExecution(context.execution, context.signal);
+    const pending = checkpoint.pendingToolCall;
+    if (pending) {
+      const outcome = await loadOutcome(pending.id);
+      runInput.prompt.message =
+        buildApprovalContinuation(pending, outcome) + "\n\n" + runInput.prompt.message;
+    }
+    const agentRun = await run(runInput);
     const operationalEvents: AgentEvent[] = [];
     let text = "";
     let reasoning = "";
