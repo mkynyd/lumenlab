@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { cacheExperiments } from "@/lib/cache/experiment-config";
 import { applyActiveCache } from "@/lib/cache/minimax-active-cache";
+import { repairPdfBuffer } from "@/lib/files/pdf-integrity";
 
 const MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic";
 
@@ -123,6 +124,20 @@ export async function parseDocumentWithMiniMax(options: {
     maxRetries: 0,
   });
 
+  // MiniMax 的 document block 要求严格的 PDF 字节布局（%PDF- 文件头等），
+  // 发送前先校验并修复杂质字节，损坏文件直接给出可操作错误而非模型报错。
+  let data = options.data;
+  if (options.mediaType === "application/pdf") {
+    const repaired = repairPdfBuffer(options.data);
+    if (!repaired.ok) {
+      throw new MiniMaxError(
+        400,
+        `${options.filename || "PDF 文件"}：${repaired.reason}`
+      );
+    }
+    data = repaired.data;
+  }
+
   try {
     const requestBody: Anthropic.MessageCreateParamsNonStreaming = {
       model: "MiniMax-M3",
@@ -143,7 +158,7 @@ export async function parseDocumentWithMiniMax(options: {
               source: {
                 type: "base64",
                 media_type: options.mediaType,
-                data: options.data.toString("base64"),
+                data: data.toString("base64"),
               },
             } as never,
           ],

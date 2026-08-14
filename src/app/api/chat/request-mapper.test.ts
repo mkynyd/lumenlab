@@ -54,6 +54,56 @@ describe("parseChatRequest", () => {
     expect(parsed.attachments[0].data.toString("utf8")).toBe("course notes");
   });
 
+  it("repairs PDF attachments with leading junk bytes at the HTTP boundary", async () => {
+    const pdf = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from("%PDF-1.7\n1 0 obj\n<<>>\nendobj\nstartxref\n0\n%%EOF\n"),
+    ]);
+    const upload = {
+      name: "lecture.pdf",
+      type: "application/pdf",
+      size: pdf.length,
+      arrayBuffer: async () =>
+        pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength),
+    };
+    const request = {
+      headers: new Headers({ "content-type": "multipart/form-data; boundary=test" }),
+      formData: async () => ({
+        get: (key: string) => (key === "message" ? JSON.stringify(validBody) : null),
+        getAll: (key: string) => (key === "attachments" ? [upload] : []),
+      }),
+    } as unknown as Request;
+
+    const parsed = await parseChatRequest(request);
+
+    expect(parsed.attachments).toHaveLength(1);
+    expect(parsed.attachments[0].data.subarray(0, 5).toString("ascii")).toBe(
+      "%PDF-"
+    );
+    expect(parsed.attachments[0].data.length).toBe(pdf.length - 3);
+  });
+
+  it("rejects a PDF attachment that lacks the %PDF- header", async () => {
+    const upload = {
+      name: "broken.pdf",
+      type: "application/pdf",
+      size: 10,
+      arrayBuffer: async () =>
+        new TextEncoder().encode("this is not a pdf").buffer,
+    };
+    const request = {
+      headers: new Headers({ "content-type": "multipart/form-data; boundary=test" }),
+      formData: async () => ({
+        get: (key: string) => (key === "message" ? JSON.stringify(validBody) : null),
+        getAll: (key: string) => (key === "attachments" ? [upload] : []),
+      }),
+    } as unknown as Request;
+
+    await expect(parseChatRequest(request)).rejects.toThrow(
+      "broken.pdf：不是有效的 PDF 文件（缺少 %PDF- 文件头）"
+    );
+  });
+
   it("rejects malformed input at the HTTP mapping boundary", async () => {
     const request = new Request("http://localhost/api/chat", {
       method: "POST",

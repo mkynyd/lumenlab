@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { DeepSeekMessage, DeepSeekUsage, ToolUseBlock } from "@/lib/deepseek";
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
+import { isPdfLike, repairPdfBuffer } from "@/lib/files/pdf-integrity";
 
 const MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic";
 
@@ -38,7 +39,21 @@ function splitMessages(messages: DeepSeekMessage[]) {
 }
 
 function contentBlockForAttachment(attachment: ServerFileAttachment) {
-  const data = attachment.data.toString("base64");
+  // 聊天附件与资料解析共用同一套 PDF 字节校验：修复文件头/文件尾杂质，
+  // 确实损坏的文件在发往模型前就以明确错误拒绝，避免 MiniMax 后端
+  // 报出 "missing %PDF- header" 这类难以理解的错误。
+  let payload = attachment.data;
+  if (isPdfLike(attachment.mimeType, attachment.name)) {
+    const repaired = repairPdfBuffer(attachment.data);
+    if (!repaired.ok) {
+      throw new MiniMaxChatError(
+        400,
+        `${attachment.name}：${repaired.reason}`
+      );
+    }
+    payload = repaired.data;
+  }
+  const data = payload.toString("base64");
   if (attachment.mimeType.startsWith("image/")) {
     return {
       type: "image",
@@ -92,6 +107,7 @@ function applyAttachmentsToLastUserMessage(
 }
 
 function toMiniMaxError(error: unknown): MiniMaxChatError {
+  if (error instanceof MiniMaxChatError) return error;
   if (error instanceof Anthropic.APIError) {
     const messages: Record<number, string> = {
       400: "MiniMax 请求格式无效",

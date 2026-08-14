@@ -1,4 +1,5 @@
 import { validateUploadBatch } from "@/lib/files/file-upload-policy";
+import { isPdfLike, repairPdfBuffer } from "@/lib/files/pdf-integrity";
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import { sendMessageSchema, type SendMessageInput } from "@/lib/validators";
 import type { AgentRunInput } from "@/lib/agent/contracts";
@@ -83,11 +84,21 @@ export async function parseChatRequest(request: Request): Promise<ParsedChatRequ
   const attachments: ServerFileAttachment[] = [];
   for (const value of formData.getAll("attachments")) {
     if (!isUploadFile(value)) continue;
+    let data = Buffer.from(await value.arrayBuffer());
+    // PDF 附件在请求边界就完成字节校验与修复：损坏文件立即以 400 拒绝，
+    // 避免把注定失败的 document block 送进模型执行。
+    if (isPdfLike(value.type || "", value.name)) {
+      const repaired = repairPdfBuffer(data);
+      if (!repaired.ok) {
+        throw new Error(`${value.name}：${repaired.reason}`);
+      }
+      data = repaired.data;
+    }
     attachments.push({
       name: value.name,
       mimeType: value.type || "application/octet-stream",
       size: value.size,
-      data: Buffer.from(await value.arrayBuffer()),
+      data,
     });
   }
 
