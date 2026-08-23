@@ -40,6 +40,13 @@ export interface TemplateUpstreamSnapshot {
   license: string | null;
   materialized: boolean;
   sourceFiles: string[];
+  sourceArchive?: {
+    provider: "local" | "qiniu";
+    key: string;
+    sha256: string;
+    bytes: number;
+    format: "zip";
+  } | null;
 }
 
 export interface AcademicTemplateManifest {
@@ -78,7 +85,7 @@ export function buildGeneralAcademicTemplateManifest(): AcademicTemplateManifest
     requiredMetadata: ["title", "authors"],
     fieldMappings: { title: "\\title", authors: "\\author", abstract: "abstract", bibliography: "references.bib" },
     adapterId: "latex-academic-v1",
-    upstreamSnapshot: { snapshotId: "general-academic-v1:1", repositoryUrl: null, commitOrVersion: "1", sourceType: "builtin", license: "MIT", materialized: true, sourceFiles: ["main.tex", "generated-content.tex"] },
+    upstreamSnapshot: { snapshotId: "general-academic-v1:1", repositoryUrl: null, commitOrVersion: "1", sourceType: "builtin", license: "MIT", materialized: true, sourceFiles: ["main.tex", "generated-content.tex"], sourceArchive: null },
     validation: { status: "Verified", lastValidatedAt: null },
     sample: { fixtureId: "sample-academic-v1", status: "verified" },
   };
@@ -115,6 +122,7 @@ export function buildTemplateManifest(record: TemplateRegistryRecord, variantKey
       license: record.license ?? null,
       materialized: false,
       sourceFiles: [],
+      sourceArchive: null,
     },
     validation: { status: "pending", lastValidatedAt: null },
     sample: { fixtureId: "sample-academic-v1", status: "pending" },
@@ -161,6 +169,15 @@ function normalizeUpstreamSnapshot(value: unknown): TemplateUpstreamSnapshot | n
     license: typeof record.license === "string" ? record.license : null,
     materialized: record.materialized === true,
     sourceFiles: Array.isArray(record.sourceFiles) ? record.sourceFiles.filter((item): item is string => typeof item === "string") : [],
+    sourceArchive: record.sourceArchive && typeof record.sourceArchive === "object" && !Array.isArray(record.sourceArchive)
+      ? {
+          provider: (record.sourceArchive as Record<string, unknown>).provider === "qiniu" ? "qiniu" : "local",
+          key: typeof (record.sourceArchive as Record<string, unknown>).key === "string" ? (record.sourceArchive as Record<string, unknown>).key as string : "",
+          sha256: typeof (record.sourceArchive as Record<string, unknown>).sha256 === "string" ? (record.sourceArchive as Record<string, unknown>).sha256 as string : "",
+          bytes: typeof (record.sourceArchive as Record<string, unknown>).bytes === "number" ? (record.sourceArchive as Record<string, unknown>).bytes as number : 0,
+          format: "zip",
+        }
+      : null,
   };
 }
 

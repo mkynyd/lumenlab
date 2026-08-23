@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { uploadObjectBuffer } from "@/lib/storage/object-storage";
-import { runAgentRuntime } from "@/lib/agent/runtime";
 import type { AgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
+import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { AgentExecutionHandler, AgentExecutionHandlerContext, AgentExecutionHandlerResult } from "@/lib/agent/executions/agent-execution-runner";
 import { evaluateResearchStop, getResearchBudget } from "./budget";
 import { buildSourceIdentity } from "./source-identity";
@@ -11,8 +11,16 @@ import { computeSourceDiversity } from "./quality";
 import { assertResearchRunTransition } from "./state-machine";
 import type { ResearchRunStatus } from "./contracts";
 import { nextResearchTaskRetryStatus } from "./task-retry";
-import { selectResearchModel } from "./model-routing";
 import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
+import {
+  normalizeResearchEvaluatorDecision,
+  normalizeResearchVerifierDecision,
+  normalizeResearchWorkerDecision,
+  runResearchModelStage,
+  type ResearchEvaluatorDecision,
+  type ResearchVerifierDecision,
+  type ResearchWorkerDecision,
+} from "./model-stage";
 
 type ResearchState = NonNullable<AgentCheckpoint["researchState"]>;
 
@@ -22,6 +30,16 @@ function json(value: unknown) {
 
 function checkpointWithResearch(checkpoint: AgentCheckpoint, researchState: ResearchState): AgentCheckpoint {
   return { ...checkpoint, researchState };
+}
+
+function recordResearchModelStage(state: ResearchState, result: { attempted: boolean; usage: AgentUsage | null; model: AgentModel }) {
+  if (result.attempted) state.modelCalls += 1;
+  if (!result.usage) return;
+  const usage = addResearchUsage({ promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 }, result.usage, result.model);
+  state.promptTokens = usage.promptTokens;
+  state.completionTokens = usage.completionTokens;
+  state.totalTokens = usage.totalTokens;
+  state.costCredits = usage.costCredits;
 }
 
 async function appendPublicEvent(context: AgentExecutionHandlerContext, input: {
@@ -173,34 +191,23 @@ async function synthesizeWithExistingRuntime(input: {
     "\n已保存 Evidence：\n",
     evidenceText || "（没有可用 Evidence）",
   ].join("\n");
-  try {
-    if (!input.useModel) throw new Error("research_synthesis_budget_exhausted");
-    const selection = selectResearchModel("research.synthesizer");
-    const run = await runAgentRuntime({
-      user: { id: input.userId },
-      conversation: { id: input.conversationId, ...(input.projectId ? { projectId: input.projectId } : {}) },
-      prompt: { message: prompt, attachments: [] },
-      model: { requestedModel: selection.model, thinkingEnabled: false, reasoningEffort: selection.reasoningEffort },
-      capabilities: { webSearchActive: false, skillOff: true, selectedFileIds: [], isQuickTask: false, mode: "general" },
-      signal: input.signal,
-    });
-    for await (const event of run.events) {
-      // Drain the existing Runtime event stream so the internal synthesis run can finish cleanly.
-      if (event.type === "completed") break;
-    }
-    const completion = await run.completion;
-    const message = await prisma.message.findUnique({ where: { id: completion.messageId }, select: { content: true } });
-    if (completion.status === "completed" && message?.content?.trim()) return { content: message.content.trim(), usage: completion.usage, model: selection.model };
-  } catch {
-    // The durable Research run remains usable with a deterministic evidence report
-    // when the optional synthesis model is unavailable.
-  }
+  const stage = input.useModel ? await runResearchModelStage<string>({
+    role: "research.synthesizer",
+    userId: input.userId,
+    conversationId: input.conversationId,
+    projectId: input.projectId,
+    signal: input.signal,
+    prompt,
+    parse: (content) => content.trim() || null,
+  }) : { value: null, usage: null, model: "deepseek-v4-pro" as const, attempted: false };
+  if (stage.value) return { content: stage.value, usage: stage.usage, model: stage.model, attempted: stage.attempted };
   return {
     content: evidenceText
       ? `## 研究结论\n\n本次研究围绕“${input.question}”收集了以下可核验证据：\n\n${input.evidence.map((item) => `- ${item.statement}（来源：${item.source}）`).join("\n")}\n\n## 限制\n\n以上内容只代表当前 Run 已成功读取的来源，不替代未完成的独立验证。`
       : `## 研究结论\n\n当前 Run 没有成功读取可核验来源，不能对“${input.question}”形成可靠结论。`,
     usage: null,
-    model: selectResearchModel("research.synthesizer").model,
+    model: stage.model,
+    attempted: stage.attempted,
   };
 }
 
@@ -269,7 +276,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
         where: { runId: run.id, status: "running" },
         data: { status: "retrying", lastError: json({ code: "worker_recovered_running_task" }) },
       });
-      const tasks = await prisma.researchTask.findMany({ where: { runId: run.id, status: { in: ["pending", "retrying"] } }, include: { question: true }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }], take: limits.researcherConcurrency });
+      const tasks = await prisma.researchTask.findMany({ where: { runId: run.id, status: { in: ["pending", "retrying"] } }, include: { question: true }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }], take: Math.min(limits.researcherConcurrency, Math.max(0, limits.modelCalls - state.modelCalls)) });
       const directives = await prisma.researchUserDirective.findMany({ where: { runId: run.id, status: "applied" }, orderBy: { createdAt: "asc" }, select: { text: true } });
       const directiveContext = directives.length > 0 ? `\n用户追加研究方向（在当前预算内吸收）：${directives.map((directive) => directive.text).join("；")}` : "";
       await appendPublicEvent(context, { key: "research:stage:researching", kind: "stage_changed", runId: run.id, message: "已进入研究阶段", publicData: { taskCount: tasks.length, concurrency: limits.researcherConcurrency } });
@@ -280,20 +287,40 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
         await prisma.researchQuestion.update({ where: { id: task.question.id }, data: { status: "researching", researchAttempts: { increment: 1 } } });
         await appendPublicEvent(context, { key: `research:task:start:${task.id}`, kind: "task_started", runId: run.id, message: `开始研究：${task.question.title}`, publicData: { questionId: task.question.id, priority: task.question.priority } });
         try {
-          const candidates = state.searchCalls < limits.searchCalls ? await provider.search(providerContext, `${task.question.question}${directiveContext}`) : [];
-          state.searchCalls += 1;
-          for (const candidate of candidates.slice(0, Math.max(0, limits.maxSources - state.sourceCount))) {
-            const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate });
-            await appendPublicEvent(context, { key: `research:candidate:${savedCandidate.id}`, kind: "source_candidate_discovered", runId: run.id, message: `发现来源候选：${candidate.title}`, publicData: { candidateId: savedCandidate.id, provider: candidate.provider, url: candidate.url } });
-            if (state.fetchCalls >= limits.fetchCalls || context.signal.aborted) continue;
-            const read = await provider.read(providerContext, candidate);
-            state.fetchCalls += 1;
-            if (!read) continue;
-            const saved = await persistReadSource({ userId: context.execution.userId, workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, read });
-            if (!saved) continue;
-            state.sourceCount += 1;
-            await prisma.researchSourceCandidate.update({ where: { id: savedCandidate.id }, data: { status: "fetched" } });
-            await appendPublicEvent(context, { key: `research:snapshot:${saved.snapshot.id}`, kind: "source_snapshot_created", runId: run.id, message: `已读取并保存来源：${read.title}`, publicData: { sourceId: saved.source.id, snapshotId: saved.snapshot.id, evidenceId: saved.evidence.id, evidenceCount: state.sourceCount } });
+          const workerResult = await runResearchModelStage<ResearchWorkerDecision>({
+            role: "research.worker",
+            userId: context.execution.userId,
+            conversationId: context.execution.conversationId,
+            projectId: run.workspace.projectId,
+            signal: context.signal,
+            prompt: [
+              "你是 LumenLab Research Worker 的 Query Generation 阶段。只返回 JSON，不要 Markdown，不要隐藏推理。",
+              "JSON 格式：{\"queries\":[\"最多三个短而互补的检索词\"],\"rationale\":\"一句话\"}。",
+              `全局研究问题：${run.question}`,
+              `当前 Research Question：${task.question.question}`,
+              `约束：${directiveContext || "优先学术、官方和项目资料；不要扩大研究范围。"}`,
+            ].join("\n"),
+          });
+          recordResearchModelStage(state, workerResult);
+          const workerDecision = normalizeResearchWorkerDecision(workerResult.value, task.question.question);
+          await appendPublicEvent(context, { key: `research:query:${task.id}:${attempt}`, kind: "task_started", runId: run.id, message: `已生成检索策略：${task.question.title}`, publicData: { questionId: task.question.id, queries: workerDecision.queries } });
+          for (const query of workerDecision.queries) {
+            if (state.searchCalls >= limits.searchCalls || context.signal.aborted) break;
+            const candidates = await provider.search(providerContext, query);
+            state.searchCalls += 1;
+            for (const candidate of candidates.slice(0, Math.max(0, limits.maxSources - state.sourceCount))) {
+              const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate });
+              await appendPublicEvent(context, { key: `research:candidate:${savedCandidate.id}`, kind: "source_candidate_discovered", runId: run.id, message: `发现来源候选：${candidate.title}`, publicData: { candidateId: savedCandidate.id, provider: candidate.provider, url: candidate.url, query } });
+              if (state.fetchCalls >= limits.fetchCalls || context.signal.aborted) continue;
+              const read = await provider.read(providerContext, candidate);
+              state.fetchCalls += 1;
+              if (!read) continue;
+              const saved = await persistReadSource({ userId: context.execution.userId, workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, read });
+              if (!saved) continue;
+              state.sourceCount += 1;
+              await prisma.researchSourceCandidate.update({ where: { id: savedCandidate.id }, data: { status: "fetched" } });
+              await appendPublicEvent(context, { key: `research:snapshot:${saved.snapshot.id}`, kind: "source_snapshot_created", runId: run.id, message: `已读取并保存来源：${read.title}`, publicData: { sourceId: saved.source.id, snapshotId: saved.snapshot.id, evidenceId: saved.evidence.id, evidenceCount: state.sourceCount, query } });
+            }
           }
           await prisma.researchTask.update({ where: { id: task.id }, data: { status: "completed", completedAt: new Date() } });
           await appendPublicEvent(context, { key: `research:task:complete:${task.id}`, kind: "task_completed", runId: run.id, message: `已完成研究：${task.question.title}`, publicData: { questionId: task.question.id } });
@@ -318,14 +345,43 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
       const questions = await prisma.researchQuestion.findMany({ where: { runId: run.id }, include: { evidence: { where: { status: "active" }, select: { id: true, statement: true, sourceSnapshot: { select: { source: { select: { kind: true } } } } } } }, orderBy: { orderIndex: "asc" } });
       let unresolvedCritical: typeof questions[number] | undefined;
       for (const question of questions) {
-        const status = question.evidence.length >= 2 ? "resolved" : question.evidence.length === 1 ? "partially_resolved" : "unresolved";
-        await prisma.researchQuestion.update({ where: { id: question.id }, data: { status, evaluateAttempts: { increment: 1 }, qualitySummary: json({ coverage: question.evidence.length > 0 ? Math.min(1, question.evidence.length / 2) : 0, directness: question.evidence.length > 0 ? 0.7 : 0 }) } });
+        const fallbackDecision: ResearchEvaluatorDecision = {
+          status: question.evidence.length >= 2 ? "resolved" : question.evidence.length === 1 ? "partially_resolved" : "unresolved",
+          coverage: question.evidence.length > 0 ? Math.min(1, question.evidence.length / 2) : 0,
+          directness: question.evidence.length > 0 ? 0.7 : 0,
+        };
+        let decision = fallbackDecision;
+        if (state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits) {
+          const evaluatorResult = await runResearchModelStage<ResearchEvaluatorDecision>({
+            role: "research.evaluator",
+            userId: context.execution.userId,
+            conversationId: context.execution.conversationId,
+            projectId: run.workspace.projectId,
+            signal: context.signal,
+            prompt: [
+              "你是 LumenLab Research Evaluator。只返回 JSON，不要 Markdown，不要隐藏推理。",
+              "格式：{\"status\":\"resolved|partially_resolved|unresolved|controversial\",\"coverage\":0到1,\"directness\":0到1,\"gap\":\"缺口\",\"followUpQueries\":[\"可选检索词\"]}。",
+              `研究问题：${question.question}`,
+              `完成标准：${JSON.stringify(question.completionCriteria)}`,
+              `已有 Evidence：${JSON.stringify(question.evidence.map((item) => ({ statement: item.statement, sourceKind: item.sourceSnapshot.source.kind })))}`,
+              "只根据这些 Evidence 判断；没有证据不能判定 resolved。",
+            ].join("\n"),
+          });
+          recordResearchModelStage(state, evaluatorResult);
+          decision = normalizeResearchEvaluatorDecision(evaluatorResult.value, fallbackDecision);
+        }
+        const status = question.evidence.length === 0
+          ? "unresolved"
+          : question.evidence.length === 1 && decision.status === "resolved"
+            ? "partially_resolved"
+            : decision.status;
+        await prisma.researchQuestion.update({ where: { id: question.id }, data: { status, evaluateAttempts: { increment: 1 }, qualitySummary: json({ coverage: decision.coverage, directness: decision.directness, gap: decision.gap, followUpQueries: decision.followUpQueries ?? [] }) } });
         if (question.evidence.length > 0) {
           const claim = await prisma.claim.findFirst({ where: { runId: run.id, questionId: question.id, status: "active" } });
-          const activeClaim = claim ?? await prisma.claim.create({ data: { workspaceId: run.workspaceId, runId: run.id, questionId: question.id, statement: question.evidence.length === 1 ? question.evidence[0].statement : `关于“${question.title}”的证据已获得独立来源支持。`, quality: json({ evidenceCount: question.evidence.length, label: question.evidence.length >= 2 ? "证据充分" : "中等" }) } });
+          const activeClaim = claim ?? await prisma.claim.create({ data: { workspaceId: run.workspaceId, runId: run.id, questionId: question.id, statement: question.evidence.length === 1 ? question.evidence[0].statement : `关于“${question.title}”的证据已获得独立来源支持。`, quality: json({ evidenceCount: question.evidence.length, label: status === "resolved" ? "证据充分" : status === "controversial" ? "存在争议" : "中等" }) } });
           await prisma.claimEvidenceRelation.createMany({ data: question.evidence.map((evidence) => ({ claimId: activeClaim.id, evidenceId: evidence.id, relation: "supports" as const, confidence: question.evidence.length >= 2 ? 0.8 : 0.55 })), skipDuplicates: true });
         }
-        if (question.priority === "critical" && question.evidence.length === 0) unresolvedCritical = question;
+        if (question.priority === "critical" && (status === "unresolved" || status === "controversial")) unresolvedCritical = question;
         await appendPublicEvent(context, { key: `research:question:evaluated:${question.id}:${state.replanCount}`, kind: "question_evaluated", runId: run.id, message: `${question.title}：${status === "resolved" ? "已解决" : status === "partially_resolved" ? "部分解决" : "未解决"}`, publicData: { questionId: question.id, status, evidenceCount: question.evidence.length } });
       }
       const allEvidence = questions.flatMap((question) => question.evidence);
@@ -353,14 +409,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
       const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
       const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, evidence: evidence.map((item) => ({ statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
       state.draftReport = synthesis.content;
-      if (synthesis.usage) {
-        const usage = addResearchUsage({ promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 }, synthesis.usage, synthesis.model);
-        state.promptTokens = usage.promptTokens;
-        state.completionTokens = usage.completionTokens;
-        state.totalTokens = usage.totalTokens;
-        state.costCredits = usage.costCredits;
-        state.modelCalls += 1;
-      }
+      recordResearchModelStage(state, synthesis);
       state.stage = "verifying";
       await transitionRun(run.id, "verifying");
       await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
@@ -373,14 +422,41 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     const claims = await prisma.claim.findMany({ where: { runId: run.id, status: "active" }, include: { evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } } });
     const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } } });
     const sourceSnapshots = [...new Set(evidence.map((item) => item.sourceSnapshotId))];
-    const unsupportedClaims = claims.filter((claim) => claim.evidenceRelations.length === 0);
-    const conflictedClaims = claims.filter((claim) => claim.evidenceRelations.some((relation) => relation.relation === "contradicts"));
+    let verifierDecision: ResearchVerifierDecision = { claims: {} };
+    if (state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits) {
+      const verifierResult = await runResearchModelStage<ResearchVerifierDecision>({
+        role: "research.verifier",
+        userId: context.execution.userId,
+        conversationId: context.execution.conversationId,
+        projectId: run.workspace.projectId,
+        signal: context.signal,
+        prompt: [
+          "你是 LumenLab Citation Verifier。只返回 JSON，不要 Markdown，不要隐藏推理，也不要联网。",
+          "格式：{\"claims\":{\"claimId\":{\"status\":\"verified|needs_qualification|unsupported|conflicted\",\"reasonCode\":\"机器可处理原因\"}}}。",
+          "逐条检查来源是否属于当前 Run、Evidence 是否直接支持 Claim、范围/日期/因果是否夸大，以及是否存在反驳或需要限定的措辞。",
+          `Claims 与 Evidence：${JSON.stringify(claims.map((claim) => ({ id: claim.id, statement: claim.statement, relations: claim.evidenceRelations.map((relation) => ({ relation: relation.relation, statement: relation.evidence.statement, excerpt: relation.evidence.excerpt, sourceSnapshotId: relation.evidence.sourceSnapshotId })) })))}`,
+        ].join("\n"),
+      });
+      recordResearchModelStage(state, verifierResult);
+      verifierDecision = normalizeResearchVerifierDecision(verifierResult.value);
+      await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+    }
+    const claimStatuses = Object.fromEntries(claims.map((claim) => {
+      const hasContradiction = claim.evidenceRelations.some((relation) => relation.relation === "contradicts");
+      const fallbackStatus = claim.evidenceRelations.length === 0 ? "unsupported" : hasContradiction ? "conflicted" : "verified";
+      const modelStatus = verifierDecision.claims[claim.id]?.status;
+      const status = fallbackStatus === "unsupported" || fallbackStatus === "conflicted" ? fallbackStatus : modelStatus ?? fallbackStatus;
+      return [claim.id, { status, reasonCode: verifierDecision.claims[claim.id]?.reasonCode ?? "deterministic_relation_check" }];
+    }));
+    const unsupportedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "unsupported");
+    const conflictedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "conflicted");
+    const qualifiedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "needs_qualification");
     const citationMap = Object.fromEntries(claims.map((claim) => [claim.id, claim.evidenceRelations.map((relation) => ({ evidenceId: relation.evidenceId, sourceSnapshotId: relation.evidence.sourceSnapshotId, relation: relation.relation }))]));
-    const verificationSummary = { citationExistence: claims.length > 0 && unsupportedClaims.length === 0 ? "verified" : "needs_qualification", citationSupport: unsupportedClaims.length === 0 ? "verified" : "unsupported", citationAdequacy: conflictedClaims.length > 0 ? "conflicted" : sourceSnapshots.length > 0 ? "verified" : "unsupported", unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length };
-    for (const claim of claims) await prisma.claim.update({ where: { id: claim.id }, data: { verificationStatus: claim.evidenceRelations.length === 0 ? "unsupported" : claim.evidenceRelations.some((relation) => relation.relation === "contradicts") ? "conflicted" : "verified" } });
+    const verificationSummary = { citationExistence: claims.length > 0 && unsupportedClaims.length === 0 ? "verified" : "needs_qualification", citationSupport: unsupportedClaims.length === 0 ? "verified" : "unsupported", citationAdequacy: conflictedClaims.length > 0 ? "conflicted" : sourceSnapshots.length > 0 ? "verified" : "unsupported", unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length, needsQualification: qualifiedClaims.length, verifierReasons: claimStatuses };
+    for (const claim of claims) await prisma.claim.update({ where: { id: claim.id }, data: { verificationStatus: claimStatuses[claim.id]?.status } });
     const reportDocument = { schemaVersion: "1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots };
     const contentHash = createHash("sha256").update(JSON.stringify({ reportDocument, citationMap, verificationSummary })).digest("hex");
-    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claim.evidenceRelations.length === 0 ? "unsupported" : "verified" }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
+    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
     await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, verificationSummary }) } });
     await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: "研究报告已完成并冻结为不可修改快照", publicData: { reportId: report.id, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, verificationSummary } });
     return { kind: "completed", checkpoint };

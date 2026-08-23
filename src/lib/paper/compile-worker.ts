@@ -1,17 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { spawn } from "node:child_process";
 import JSZip from "jszip";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { readStoredObject, uploadObjectBuffer, type StorageProvider } from "@/lib/storage/object-storage";
+import { assertCompileArtifactSize, assertCompileBundleLimits, CompilePolicyError, compileResourceLimits, safeCompilePath } from "./compile-policy";
 import { renderAcademicDocumentToLatex } from "./latex-renderer";
 import { parseAcademicDocument } from "./document-schema";
 import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
 
-const DEFAULT_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 1_000;
 
 type CompilationError = {
@@ -73,17 +73,14 @@ export function buildCompileCommands(input: { engine?: string | null; bibliograp
 }
 
 function timeoutMs(): number {
-  const configured = Number(process.env.PAPER_COMPILE_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
-  return Number.isFinite(configured) && configured >= 10_000
-    ? Math.min(configured, 300_000)
-    : DEFAULT_TIMEOUT_MS;
+  return compileResourceLimits().wallTimeMs;
 }
 
 function normalizeOutput(output: string): string {
   return output
     .replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, "")
     .replace(/(?:https?|s?ftp):\/\/[^\s]+/gi, "[url]")
-    .slice(-12_000);
+    .slice(-compileResourceLimits().maxLogBytes);
 }
 
 async function runCompileCommand(input: { cwd: string; command: CompileCommand }): Promise<string> {
@@ -93,10 +90,14 @@ async function runCompileCommand(input: { cwd: string; command: CompileCommand }
       cwd: input.cwd,
       shell: false,
       env: {
-        ...process.env,
+        NODE_ENV: "production",
         PATH: process.env.PATH ?? "/Library/TeX/texbin:/usr/bin:/bin:/opt/homebrew/bin",
         LANG: "C.UTF-8",
         LC_ALL: "C.UTF-8",
+        HOME: join(input.cwd, ".home"),
+        TMPDIR: join(input.cwd, ".tmp"),
+        TEXMFOUTPUT: join(input.cwd, ".texmf-output"),
+        SOURCE_DATE_EPOCH: "0",
       },
     });
     const timer = setTimeout(() => {
@@ -149,19 +150,41 @@ async function runCompilePipeline(input: { cwd: string; engine?: string | null; 
   return { output: normalizeOutput(output.join("\n")), lastPhase: "engine" };
 }
 
+async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnType<typeof normalizeTemplateManifest> }): Promise<Array<{ path: string; buffer: Buffer }>> {
+  const snapshot = input.manifest.upstreamSnapshot;
+  if (!snapshot?.materialized || !snapshot.sourceArchive?.key) return [];
+  const archiveBuffer = await readStoredObject({ provider: snapshot.sourceArchive.provider, key: snapshot.sourceArchive.key });
+  const archive = await JSZip.loadAsync(archiveBuffer);
+  const files: Array<{ path: string; buffer: Buffer }> = [];
+  for (const [rawPath, entry] of Object.entries(archive.files)) {
+    if (entry.dir) continue;
+    const path = safeCompilePath(rawPath);
+    // The adapter owns the generated entry files. Upstream class/style/assets
+    // remain available without allowing an archive to replace generated input.
+    if (["main.tex", "generated-content.tex", "references.bib"].includes(path)) continue;
+    const buffer = await entry.async("nodebuffer");
+    await mkdir(join(input.cwd, dirname(path)), { recursive: true });
+    await writeFile(join(input.cwd, path), buffer);
+    files.push({ path, buffer });
+  }
+  return files;
+}
+
 export async function sourceBundle(input: {
   mainTex: string;
   generatedContentTex: string;
   referencesBib: string;
   manifest: unknown;
   assets?: Array<{ path: string; buffer: Buffer }>;
+  files?: Array<{ path: string; buffer: Buffer }>;
 }): Promise<Buffer> {
   const zip = new JSZip();
   zip.file("main.tex", input.mainTex);
   zip.file("generated-content.tex", input.generatedContentTex);
   zip.file("references.bib", input.referencesBib);
   zip.file("template-manifest.json", JSON.stringify(input.manifest, null, 2));
-  for (const asset of input.assets ?? []) zip.file(asset.path, asset.buffer);
+  for (const file of input.files ?? []) zip.file(safeCompilePath(file.path), file.buffer);
+  for (const asset of input.assets ?? []) zip.file(safeCompilePath(asset.path), asset.buffer);
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
@@ -214,21 +237,37 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
     });
     engine = compilerCommand(compilation.engine);
     nodeMap = rendered.nodeMap;
+    const upstreamFiles = await materializeTemplateFiles({ cwd: tempDirectory, manifest });
     await writeFile(join(tempDirectory, "main.tex"), rendered.mainTex, "utf8");
     await writeFile(join(tempDirectory, "generated-content.tex"), rendered.generatedContentTex, "utf8");
     await writeFile(join(tempDirectory, "references.bib"), rendered.referencesBib, "utf8");
     await mkdir(join(tempDirectory, "assets"), { recursive: true });
+    await mkdir(join(tempDirectory, ".home"), { recursive: true });
+    await mkdir(join(tempDirectory, ".tmp"), { recursive: true });
+    await mkdir(join(tempDirectory, ".texmf-output"), { recursive: true });
     const assetFiles = await Promise.all(assets.map(async (asset) => {
       const buffer = await readStoredObject({ provider: asset.storageProvider as StorageProvider, key: asset.storagePath });
       const path = assetPaths[asset.id];
       await writeFile(join(tempDirectory, path), buffer);
       return { path, buffer };
     }));
-    const source = await sourceBundle({ ...rendered, manifest, assets: assetFiles });
+    assertCompileBundleLimits({
+      files: [
+        { path: "main.tex", bytes: Buffer.byteLength(rendered.mainTex) },
+        { path: "generated-content.tex", bytes: Buffer.byteLength(rendered.generatedContentTex) },
+        { path: "references.bib", bytes: Buffer.byteLength(rendered.referencesBib) },
+        ...assetFiles.map((asset) => ({ path: asset.path, bytes: asset.buffer.byteLength })),
+        ...upstreamFiles.map((file) => ({ path: file.path, bytes: file.buffer.byteLength })),
+      ],
+    });
+    const source = await sourceBundle({ ...rendered, manifest, assets: assetFiles, files: upstreamFiles });
+    assertCompileArtifactSize(source.byteLength);
 
     await runCompilePipeline({ cwd: tempDirectory, engine, bibliography: manifest.bibliography });
     const pdf = await readFile(join(tempDirectory, "main.pdf"));
     const syncTexBuffer = await readFile(join(tempDirectory, "main.synctex.gz")).catch(() => null);
+    assertCompileArtifactSize(pdf.byteLength);
+    if (syncTexBuffer) assertCompileArtifactSize(syncTexBuffer.byteLength);
     const baseKey = `papers/${compilation.documentVersion.document.userId}/${compilation.documentVersionId}/${compilation.id}`;
     const [pdfObject, sourceObject, syncTexObject] = await Promise.all([
       uploadObjectBuffer({ key: `${baseKey}/main.pdf`, mimeType: "application/pdf", buffer: pdf }),
@@ -251,7 +290,7 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
     });
   } catch (error) {
     const detail: CompilationError = {
-      code: error instanceof Error && (error as CompileProcessError).code === "COMPILE_TIMEOUT" ? "COMPILE_TIMEOUT" : error instanceof Error && (error as CompileProcessError).code === "MISSING_EXECUTABLE" ? "COMPILER_MISSING" : "COMPILE_FAILED",
+      code: error instanceof CompilePolicyError ? error.code : error instanceof Error && (error as CompileProcessError).code === "COMPILE_TIMEOUT" ? "COMPILE_TIMEOUT" : error instanceof Error && (error as CompileProcessError).code === "MISSING_EXECUTABLE" ? "COMPILER_MISSING" : "COMPILE_FAILED",
       message: error instanceof Error ? error.message : String(error),
       output: error instanceof Error ? (error as CompileProcessError).output : undefined,
       nodeMap,

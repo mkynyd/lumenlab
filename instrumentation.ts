@@ -42,7 +42,7 @@ export async function register() {
     }
   }
 
-  if (process.env.PAPER_COMPILE_WORKER_ENABLED !== "false") {
+  if (process.env.PAPER_COMPILE_SERVICE_MODE !== "true" && process.env.PAPER_COMPILE_WORKER_ENABLED !== "false") {
     try {
       const { startPaperCompilationWorker } = await import("@/lib/paper/compile-worker");
       const result = startPaperCompilationWorker();
