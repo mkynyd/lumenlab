@@ -307,12 +307,13 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [ ] Validate the materialized A/B packs end to end in the isolated Linux compiler image.
 - [x] Add an owner-scoped SyncTeX JSON mapping endpoint and a PDF.js right-panel viewer with continuous pages, page navigation and Outline-to-PDF node jumping; keep the raw `.synctex.gz` download for debugging/export.
 - [x] Extend DOCX import beyond plain paragraphs: preserve embedded images as Paper-owned FileAsset resources, create Figure/Table/Equation blocks, retain footnote inline nodes, and send uncertain structure through the existing Runtime-backed classifier as advisory suggestions before user confirmation.
+- [x] Add an explicit, credential-gated real-provider Research integration test that exercises the existing Runtime/model-stage seam and cleans up its hidden system conversation; ordinary unit tests never call external models.
 
 ### Phase 6 — verification and release gates
 
 - [x] Add targeted tests for plan confirmation/revision, transitions, durable resume, task retry, source dedupe/snapshot, Evidence immutability, Claim relations, budget/stop conditions, follow-up runs, immutable reports and citation verification.
 - [x] Add Paper tests for schema/serialization, patches/version recovery, DOCX/Markdown/LaTeX import, references, registry ingestion/version locking, compile jobs, node-to-LaTeX rendering, error mapping and deterministic Template Conformance.
-- [x] For this completed slice, ran lint, typecheck, full tests, Prisma validate/migration checks, production build and headed Playwright checks; updated this TODO, local `REPOSITORY_INDEX.md` and root `log.md`. Commit/push remains the final GitHub handoff step.
+- [x] For this completed slice, ran lint, typecheck, full tests, Prisma validate/migration checks, production build and headed Playwright checks; updated this TODO, local `REPOSITORY_INDEX.md` and root `log.md`. The credential-gated Provider integration test is present and intentionally skipped locally because no E2E user/credentialed environment was supplied; isolated Linux template validation remains gated on a running Docker daemon.
 
 #### Implementation guardrails
 
@@ -330,5 +331,5 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Phase 3 core: first-level navigation, real workspace/run planning and confirmation UI, public progress events and report rendering.
 - [x] Phase 4 core: Academic Document schema, version/patch APIs, Paper Workspace and continuous editor shell.
 - [x] Phase 5 first slice: deterministic registry ingestion (all 738 machine-readable records), Markdown/TXT/LaTeX/DOCX import with original/snapshot/report/version persistence, asset-aware ephemeral compile worker with `--no-shell-escape`, PDF/source upload, references and deterministic conformance checker.
-- [ ] Remaining before declaring the full roadmap complete: retry the 25 inaccessible A/B GitHub sources and improve the 106 reviewed template packs, validate the materialized A/B packs inside the isolated Linux compiler image, and complete real-provider end-to-end validation/repair coverage for all model-backed Research stages.
+- [ ] Remaining before declaring the full roadmap complete: retry the 25 inaccessible A/B GitHub sources and improve the 106 reviewed template packs, validate the materialized A/B packs inside the isolated Linux compiler image, and execute/record credentialed real-provider end-to-end validation/repair coverage for all model-backed Research stages.
 - [x] Research role model routing and token/credit accounting now use the existing provider catalog, durable checkpoint, `calculateCredits` weights and public budget events. Planner, Worker, Evaluator, Synthesizer and Verifier now call the existing Runtime through structured-output seams with deterministic fallback; real-provider end-to-end validation remains a release-gate item.

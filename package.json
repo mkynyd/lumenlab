@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run --exclude '.worktrees/**'",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:research-provider": "RESEARCH_REAL_PROVIDER_E2E=1 vitest run --config vitest.integration.config.ts src/lib/research/model-stage.real-provider.integration.test.ts",
     "eval:agent": "tsx scripts/evaluate-agent-results.ts",
     "eval:learning": "tsx --tsconfig scripts/tsconfig.eval.json scripts/evaluate-learning-release.ts",
     "paper:compiler": "tsx services/paper-compiler/index.ts",
