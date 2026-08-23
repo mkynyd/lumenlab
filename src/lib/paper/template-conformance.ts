@@ -46,7 +46,7 @@ export function runTemplateConformance(input: { document?: AcademicDocument; man
   const issues: string[] = [];
   const warnings: string[] = [];
   const documentClass = input.manifest.documentClass ?? "ctexart";
-  if (!rendered.mainTex.includes(`\\documentclass[UTF8]{${documentClass}}`)) issues.push("主文件没有使用 Manifest 声明的 documentClass");
+  if (!rendered.mainTex.includes(`\\documentclass{${documentClass}}`)) issues.push("主文件没有使用 Manifest 声明的 documentClass");
   if (!rendered.mainTex.includes("\\input{generated-content.tex}")) issues.push("主文件没有接入 generated-content.tex");
   if (!rendered.generatedContentTex.trim()) issues.push("生成内容为空");
 

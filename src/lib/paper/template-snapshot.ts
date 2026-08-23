@@ -18,8 +18,7 @@ export function githubRepositorySlug(repositoryUrl: string): string | null {
 
 export async function normalizeTemplateZip(input: Buffer): Promise<{ buffer: Buffer; files: string[]; sha256: string; bytes: number }> {
   const source = await JSZip.loadAsync(input);
-  const output = new JSZip();
-  const files: string[] = [];
+  const entries: Array<{ path: string; bytes: Buffer }> = [];
   let totalBytes = 0;
   for (const [rawName, entry] of Object.entries(source.files)) {
     if (entry.dir || rawName.startsWith("__MACOSX/")) continue;
@@ -28,10 +27,15 @@ export async function normalizeTemplateZip(input: Buffer): Promise<{ buffer: Buf
     const relativeName = safeCompilePath(normalizedName.slice(1).join("/"));
     const bytes = await entry.async("nodebuffer");
     totalBytes += bytes.byteLength;
-    if (files.length >= MAX_TEMPLATE_FILES || totalBytes > MAX_TEMPLATE_BYTES) throw new Error("模板上游快照超过文件数量或大小限制");
-    output.file(relativeName, bytes);
-    files.push(relativeName);
+    if (entries.length >= MAX_TEMPLATE_FILES || totalBytes > MAX_TEMPLATE_BYTES) throw new Error("模板上游快照超过文件数量或大小限制");
+    entries.push({ path: relativeName, bytes });
   }
-  const buffer = await output.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  const output = new JSZip();
+  const sortedEntries = entries.sort((left, right) => left.path.localeCompare(right.path));
+  const files = sortedEntries.map((entry) => entry.path);
+  for (const entry of sortedEntries) {
+    output.file(entry.path, entry.bytes, { date: new Date(0), createFolders: false });
+  }
+  const buffer = await output.generateAsync({ type: "nodebuffer", compression: "DEFLATE", platform: "UNIX" });
   return { buffer, files: files.sort(), sha256: createHash("sha256").update(buffer).digest("hex"), bytes: buffer.byteLength };
 }

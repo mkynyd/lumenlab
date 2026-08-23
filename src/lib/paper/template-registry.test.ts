@@ -20,4 +20,9 @@ describe("template registry", () => {
     expect(manifest.upstreamSnapshot).toMatchObject({ commitOrVersion: "v3.x", materialized: false, repositoryUrl: "https://github.com/BITNP/BIThesis" });
     expect(manifest.sample).toEqual({ fixtureId: "sample-academic-v1", status: "pending" });
   });
+
+  it("does not turn human-readable class metadata into executable LaTeX", () => {
+    const manifest = buildTemplateManifest({ id: "pkuthss", university: "北京大学", format: "latex", documentClass: "pkuthss v1.9.4" });
+    expect(manifest.documentClass).toBeNull();
+  });
 });

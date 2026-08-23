@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { spawn } from "node:child_process";
 import JSZip from "jszip";
 import { prisma } from "@/lib/db";
@@ -21,7 +21,7 @@ type CompilationError = {
   nodeMap?: Record<string, { line: number; kind: string }>;
 };
 
-type CompileCommand = {
+export type CompileCommand = {
   command: string;
   args: string[];
   phase: "latexmk" | "engine" | "bibtex" | "biber";
@@ -43,7 +43,7 @@ export function compilerCommand(requested?: string | null): string {
 function bibliographyBackend(value?: string | null): "bibtex" | "biber" | null {
   const normalized = value?.trim().toLowerCase() ?? "";
   if (!normalized || normalized === "none") return null;
-  if (normalized.includes("biber")) return "biber";
+  if (normalized.includes("biber") || normalized.includes("biblatex")) return "biber";
   if (normalized.includes("bibtex") || normalized === "bib") return "bibtex";
   throw new Error("模板 bibliography backend 只允许 bibtex、biber 或 none");
 }
@@ -54,21 +54,22 @@ function engineFlag(engine: string): string {
 
 const LATEX_ARGS = ["-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-no-shell-escape", "-synctex=1"];
 
-export function buildCompileCommands(input: { engine?: string | null; bibliography?: string | null; preferLatexmk?: boolean } = {}): CompileCommand[] {
+export function buildCompileCommands(input: { engine?: string | null; bibliography?: string | null; preferLatexmk?: boolean; entryFile?: string } = {}): CompileCommand[] {
   const engine = compilerCommand(input.engine);
   const bibliography = bibliographyBackend(input.bibliography);
+  const entryFile = safeCompilePath(input.entryFile ?? "main.tex");
   const commands: CompileCommand[] = [];
   if (input.preferLatexmk !== false) {
     commands.push({
       command: "latexmk",
-      args: [engineFlag(engine), ...(bibliography === "biber" ? ["-usebiber"] : bibliography === "bibtex" ? ["-bibtex"] : []), ...LATEX_ARGS, "main.tex"],
+      args: ["-norc", engineFlag(engine), ...LATEX_ARGS, entryFile],
       phase: "latexmk",
     });
   }
-  commands.push({ command: engine, args: [...LATEX_ARGS, "main.tex"], phase: "engine" });
+  commands.push({ command: engine, args: [...LATEX_ARGS, entryFile], phase: "engine" });
   if (bibliography) commands.push({ command: bibliography, args: ["main"], phase: bibliography });
-  commands.push({ command: engine, args: [...LATEX_ARGS, "main.tex"], phase: "engine" });
-  if (bibliography) commands.push({ command: engine, args: [...LATEX_ARGS, "main.tex"], phase: "engine" });
+  commands.push({ command: engine, args: [...LATEX_ARGS, entryFile], phase: "engine" });
+  if (bibliography) commands.push({ command: engine, args: [...LATEX_ARGS, entryFile], phase: "engine" });
   return commands;
 }
 
@@ -83,7 +84,7 @@ function normalizeOutput(output: string): string {
     .slice(-compileResourceLimits().maxLogBytes);
 }
 
-async function runCompileCommand(input: { cwd: string; command: CompileCommand }): Promise<string> {
+export async function runCompileCommand(input: { cwd: string; command: CompileCommand }): Promise<string> {
   const output: string[] = [];
   await new Promise<void>((resolve, reject) => {
     const child = spawn(input.command.command, input.command.args, {
@@ -131,8 +132,8 @@ async function runCompileCommand(input: { cwd: string; command: CompileCommand }
   return normalizeOutput(output.join(""));
 }
 
-async function runCompilePipeline(input: { cwd: string; engine?: string | null; bibliography?: string | null }): Promise<{ output: string; lastPhase: CompileCommand["phase"] }> {
-  const commands = buildCompileCommands({ engine: input.engine, bibliography: input.bibliography });
+export async function runCompilePipeline(input: { cwd: string; engine?: string | null; bibliography?: string | null; entryFile?: string }): Promise<{ output: string; lastPhase: CompileCommand["phase"] }> {
+  const commands = buildCompileCommands({ engine: input.engine, bibliography: input.bibliography, entryFile: input.entryFile });
   const output: string[] = [];
   for (const command of commands) {
     try {
@@ -166,6 +167,35 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
     await mkdir(join(input.cwd, dirname(path)), { recursive: true });
     await writeFile(join(input.cwd, path), buffer);
     files.push({ path, buffer });
+  }
+  const documentClass = input.manifest.documentClass && /^[A-Za-z][A-Za-z0-9_-]*$/.test(input.manifest.documentClass) ? input.manifest.documentClass : null;
+  if (documentClass && !files.some((file) => file.path === `${documentClass}.cls` || file.path.endsWith(`/${documentClass}.cls`))) {
+    const installer = files.find((file) => file.path === `${documentClass}.ins` || file.path.endsWith(`/${documentClass}.ins`));
+    if (installer) {
+      const installerDirectory = dirname(installer.path) === "." ? "" : dirname(installer.path);
+      const installerStem = basename(installer.path, ".ins");
+      const bootstrapEntry = `${installerStem}.tex`;
+      const installerPrefix = installerDirectory ? `${installerDirectory}/` : "";
+      const installerDtx = files.filter((file) => file.path.startsWith(installerPrefix) && file.path.endsWith(".dtx"));
+      const copiedDtx = installerDirectory ? installerDtx.map((file) => basename(file.path)) : [];
+      for (const file of installerDtx) await writeFile(join(input.cwd, basename(file.path)), file.buffer);
+      await writeFile(join(input.cwd, bootstrapEntry), `\\input{${installer.path}}\n`, "utf8");
+      try {
+        await runCompileCommand({ cwd: input.cwd, command: { command: "xelatex", args: [...LATEX_ARGS, bootstrapEntry], phase: "engine" } });
+      } finally {
+        await rm(join(input.cwd, bootstrapEntry), { force: true });
+        for (const file of copiedDtx) await rm(join(input.cwd, file), { force: true });
+        for (const output of ["aux", "log", "pdf", "synctex.gz", "fdb_latexmk", "fls"].map((suffix) => `${installerStem}.${suffix}`)) {
+          await rm(join(input.cwd, output), { force: true });
+        }
+      }
+      const generatedClassPath = `${documentClass}.cls`;
+      const generatedClass = join(input.cwd, generatedClassPath);
+      await access(generatedClass).catch(() => { throw new Error(`TEMPLATE_BOOTSTRAP_FAILED：未生成 ${generatedClassPath}`); });
+      const rootClass = join(input.cwd, generatedClassPath);
+      if (generatedClass !== rootClass) await writeFile(rootClass, await readFile(generatedClass));
+      files.push({ path: generatedClassPath, buffer: await readFile(rootClass) });
+    }
   }
   return files;
 }

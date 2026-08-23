@@ -1,14 +1,16 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { prisma } from "@/lib/db";
-import { uploadObjectBuffer } from "@/lib/storage/object-storage";
+import { activeStorageProvider, readStoredObject, uploadObjectBuffer, type StoredObjectRef } from "@/lib/storage/object-storage";
 import { normalizeTemplateManifest, parseTemplateRegistry, type TemplateRegistryRecord } from "@/lib/paper/template-registry";
 import { githubRepositorySlug, normalizeTemplateZip } from "@/lib/paper/template-snapshot";
 
 const root = process.env.TEMPLATE_REGISTRY_ROOT
   ? path.resolve(process.env.TEMPLATE_REGISTRY_ROOT)
   : path.resolve(process.cwd(), "resources/cn-thesis-templates");
+const NORMALIZATION_VERSION = "normalized-v2";
 
 function requestedRepositories(): Set<string> | null {
   const value = process.env.TEMPLATE_MATERIALIZE_REPOSITORIES?.trim();
@@ -48,13 +50,26 @@ async function downloadSnapshot(slug: string, commit: string) {
   return normalizeTemplateZip(archive);
 }
 
+async function uploadOrReuseSnapshot(key: string, buffer: Buffer): Promise<StoredObjectRef> {
+  try {
+    return await uploadObjectBuffer({ key, mimeType: "application/zip", buffer });
+  } catch (error) {
+    // Qiniu insertOnly uploads return 614 when a deterministic commit key is
+    // already present. Reuse it only after reading and hashing the object;
+    // silently accepting a different payload would corrupt a pinned snapshot.
+    if (!/614/.test(error instanceof Error ? error.message : String(error))) throw error;
+    const existing = { provider: activeStorageProvider(), key } satisfies StoredObjectRef;
+    const stored = await readStoredObject(existing);
+    const expectedHash = createHash("sha256").update(buffer).digest("hex");
+    const actualHash = createHash("sha256").update(stored).digest("hex");
+    if (actualHash !== expectedHash) throw new Error(`模板快照已存在但校验和不匹配：${key}`);
+    return existing;
+  }
+}
+
 async function updateVariants(records: TemplateRegistryRecord[], slug: string, commit: string, snapshot: Awaited<ReturnType<typeof downloadSnapshot>>) {
   const matching = records.filter((record) => githubRepositorySlug(record.repositoryUrl ?? "") === slug);
-  const sourceArchive = await uploadObjectBuffer({
-    key: `template-snapshots/${slug.replace("/", "__")}/${commit}.zip`,
-    mimeType: "application/zip",
-    buffer: snapshot.buffer,
-  });
+  const sourceArchive = await uploadOrReuseSnapshot(`template-snapshots/${slug.replace("/", "__")}/${commit}.${NORMALIZATION_VERSION}.zip`, snapshot.buffer);
   let updated = 0;
   for (const record of matching) {
     const variantKey = `${record.id}:default`;

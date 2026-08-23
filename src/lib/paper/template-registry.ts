@@ -96,6 +96,7 @@ export function buildTemplateManifest(record: TemplateRegistryRecord, variantKey
   const executable = format === "latex" || format === "overleaf";
   const adapterId = `${format}-academic-v1`;
   const commitOrVersion = record.version ?? record.lastCommit ?? null;
+  const documentClass = record.documentClass && /^[A-Za-z][A-Za-z0-9_-]*$/.test(record.documentClass) ? record.documentClass : null;
   return {
     id: variantKey,
     university: record.university,
@@ -104,7 +105,7 @@ export function buildTemplateManifest(record: TemplateRegistryRecord, variantKey
     format: record.format,
     engine: record.engine ?? (executable ? "xelatex" : null),
     entryFile: record.entryFile ?? (executable ? "main.tex" : null),
-    documentClass: record.documentClass,
+    documentClass,
     bibliography: record.bibliography,
     supportedBlocks: ["paper_metadata", "abstract", "keywords", "heading", "paragraph", "figure", "table", "equation", "list", "quote", "bibliography", "appendix", "acknowledgement", "page_break", "raw_latex"],
     requiredMetadata: ["title", "authors"],

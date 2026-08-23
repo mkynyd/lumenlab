@@ -13,6 +13,7 @@
     "eval:learning": "tsx --tsconfig scripts/tsconfig.eval.json scripts/evaluate-learning-release.ts",
     "paper:compiler": "tsx services/paper-compiler/index.ts",
     "paper:materialize": "tsx scripts/materialize-template-snapshots.ts",
+    "paper:validate-templates": "tsx scripts/validate-template-snapshots.ts",
     "alpha:clear-users": "prisma db execute --file scripts/clear-alpha-users.sql",
     "setup:api-key": "tsx scripts/setup-api-key.ts",
     "seed:dev-access": "tsx scripts/seed-dev-access.ts"

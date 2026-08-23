@@ -23,8 +23,8 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument, option
   const manifest = options.manifest;
   const documentClass = /^[A-Za-z][A-Za-z0-9_-]*$/.test(manifest?.documentClass ?? "") ? manifest!.documentClass! : "ctexart";
   const lines = [
-    `\\documentclass[UTF8]{${documentClass}}`,
-    "\\usepackage{amsmath,amssymb,graphicx,booktabs,hyperref}",
+    `\\documentclass{${documentClass}}`,
+    "\\usepackage{amsmath,graphicx,booktabs,hyperref}",
     "\\begin{document}",
   ];
   const generated: string[] = [];

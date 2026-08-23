@@ -79,24 +79,31 @@ async function main() {
     if (executable) {
       const variantKey = `${record.id}:default`;
       const manifest = buildTemplateManifest(record, variantKey);
+      const existingVariant = await prisma.templateVariant.findUnique({ where: { variantKey }, select: { pinnedUpstreamSnapshot: true, validation: true, sample: true } });
+      const existingSnapshot = existingVariant?.pinnedUpstreamSnapshot && typeof existingVariant.pinnedUpstreamSnapshot === "object" && !Array.isArray(existingVariant.pinnedUpstreamSnapshot) ? existingVariant.pinnedUpstreamSnapshot as Record<string, unknown> : null;
+      const preservedManifest = existingSnapshot?.materialized === true ? { ...manifest, upstreamSnapshot: existingSnapshot } : manifest;
+      const preservedValidation = existingSnapshot?.materialized === true && existingVariant?.validation && typeof existingVariant.validation === "object" && !Array.isArray(existingVariant.validation)
+        ? { ...manifest.validation, ...(existingVariant.validation as Record<string, unknown>) }
+        : manifest.validation;
+      const preservedSample = existingSnapshot?.materialized === true && existingVariant?.sample ? existingVariant.sample : manifest.sample;
       await prisma.templateVariant.upsert({
         where: { variantKey },
         create: {
           registryEntry: { connect: { externalId: record.id } },
           variantKey,
-          manifest: JSON.parse(JSON.stringify(manifest)),
-          pinnedUpstreamSnapshot: JSON.parse(JSON.stringify(manifest.upstreamSnapshot)),
-          adapterId: manifest.adapterId ?? `${record.format.toLowerCase()}-academic-v1`,
+          manifest: JSON.parse(JSON.stringify(preservedManifest)),
+          pinnedUpstreamSnapshot: JSON.parse(JSON.stringify(preservedManifest.upstreamSnapshot)),
+          adapterId: preservedManifest.adapterId ?? `${record.format.toLowerCase()}-academic-v1`,
           status: runtimeStatus,
-          validation: JSON.parse(JSON.stringify(manifest.validation)),
-          sample: JSON.parse(JSON.stringify(manifest.sample)),
+          validation: JSON.parse(JSON.stringify(preservedValidation)),
+          sample: JSON.parse(JSON.stringify(preservedSample)),
         },
         update: {
-          manifest: JSON.parse(JSON.stringify(manifest)),
-          pinnedUpstreamSnapshot: JSON.parse(JSON.stringify(manifest.upstreamSnapshot)),
-          adapterId: manifest.adapterId ?? `${record.format.toLowerCase()}-academic-v1`,
-          validation: JSON.parse(JSON.stringify(manifest.validation)),
-          sample: JSON.parse(JSON.stringify(manifest.sample)),
+          manifest: JSON.parse(JSON.stringify(preservedManifest)),
+          pinnedUpstreamSnapshot: JSON.parse(JSON.stringify(preservedManifest.upstreamSnapshot)),
+          adapterId: preservedManifest.adapterId ?? `${record.format.toLowerCase()}-academic-v1`,
+          validation: JSON.parse(JSON.stringify(preservedValidation)),
+          sample: JSON.parse(JSON.stringify(preservedSample)),
           status: runtimeStatus,
         },
       });

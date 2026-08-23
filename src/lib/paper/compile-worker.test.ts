@@ -5,7 +5,8 @@ describe("paper compilation command planning", () => {
   it("plans latexmk with the selected engine and BibTeX without shell escape", () => {
     const commands = buildCompileCommands({ engine: "xelatex", bibliography: "bibtex" });
     expect(commands[0]).toMatchObject({ command: "latexmk", phase: "latexmk" });
-    expect(commands[0].args).toEqual(expect.arrayContaining(["-xelatex", "-bibtex", "-no-shell-escape", "-synctex=1", "main.tex"]));
+    expect(commands[0].args).toEqual(expect.arrayContaining(["-norc", "-xelatex", "-no-shell-escape", "-synctex=1", "main.tex"]));
+    expect(commands.map((command) => command.command)).toContain("bibtex");
     expect(commands.every((command) => !command.args.includes("-shell-escape"))).toBe(true);
   });
 
