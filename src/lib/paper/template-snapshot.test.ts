@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import type { AcademicTemplateManifest } from "./template-registry";
-import { buildDtxBootstrapPlan, githubRepositorySlug, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
+import { buildDtxBootstrapPlan, githubRepositorySlug, normalizeTemplateTarGz, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
 
 describe("template upstream snapshots", () => {
   it("accepts only GitHub owner/repository identities", () => {
@@ -19,6 +19,23 @@ describe("template upstream snapshots", () => {
     expect(result.sha256).toHaveLength(64);
     expect(repeated.sha256).toBe(result.sha256);
     expect(repeated.buffer.equals(result.buffer)).toBe(true);
+  });
+
+  it("normalizes a public Typst tar.gz package deterministically", async () => {
+    const tarHeader = (name: string, content: Buffer) => {
+      const header = Buffer.alloc(512);
+      header.write(name, 0, 100, "utf8");
+      header.write("0000644", 100, 8, "ascii");
+      header.write(content.byteLength.toString(8).padStart(11, "0"), 124, 12, "ascii");
+      header[156] = 48;
+      header.write("ustar", 257, 5, "ascii");
+      return Buffer.concat([header, content, Buffer.alloc((512 - (content.byteLength % 512)) % 512)]);
+    };
+    const rawTar = Buffer.concat([tarHeader("README.md", Buffer.from("Typst package")), Buffer.alloc(1024)]);
+    const { gzipSync } = await import("node:zlib");
+    const result = await normalizeTemplateTarGz(gzipSync(rawTar));
+    expect(result.files).toEqual(["README.md"]);
+    expect(result.sha256).toHaveLength(64);
   });
 
   it("infers a custom class from pinned files without selecting bundled generic classes", () => {

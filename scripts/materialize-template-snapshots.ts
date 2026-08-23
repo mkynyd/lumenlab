@@ -7,7 +7,7 @@ import path from "node:path";
 import { prisma } from "@/lib/db";
 import { activeStorageProvider, readStoredObject, uploadObjectBuffer, type StoredObjectRef } from "@/lib/storage/object-storage";
 import { normalizeTemplateManifest, parseTemplateRegistry, type TemplateRegistryRecord } from "@/lib/paper/template-registry";
-import { githubRepositorySlug, normalizeTemplateZip } from "@/lib/paper/template-snapshot";
+import { githubRepositorySlug, normalizeTemplateTarGz, normalizeTemplateZip } from "@/lib/paper/template-snapshot";
 
 const root = process.env.TEMPLATE_REGISTRY_ROOT
   ? path.resolve(process.env.TEMPLATE_REGISTRY_ROOT)
@@ -88,6 +88,12 @@ async function downloadSnapshot(slug: string, commit: string) {
   return normalizeTemplateZip(archive);
 }
 
+async function downloadTypstSnapshot(url: string) {
+  const response = await fetchWithTimeout(url, { headers: { Accept: "application/gzip" } });
+  if (!response.ok) throw new Error(`Typst 包下载失败：${url} (${response.status})`);
+  return normalizeTemplateTarGz(Buffer.from(await response.arrayBuffer()));
+}
+
 async function uploadOrReuseSnapshot(key: string, buffer: Buffer): Promise<StoredObjectRef> {
   try {
     return await uploadObjectBuffer({ key, mimeType: "application/zip", buffer });
@@ -123,6 +129,18 @@ async function discoverGithubRepository(sourceUrl: string): Promise<string | nul
   })[0] ?? null;
 }
 
+async function discoverTypstPackage(sourceUrl: string): Promise<{ archiveUrl: string; packageName: string; version: string } | null> {
+  let url: URL;
+  try { url = new URL(sourceUrl); } catch { return null; }
+  if (url.hostname !== "typst.app") return null;
+  const response = await fetchWithTimeout(sourceUrl, { headers: { Accept: "text/html" } });
+  if (!response.ok) throw new Error(`Typst 来源页面读取失败：${sourceUrl} (${response.status})`);
+  const html = await response.text();
+  const match = html.match(/https:\/\/packages\.typst\.org\/[^"'\s]+\/([^/?#]+?)-(\d+\.\d+(?:\.\d+)?)\.tar\.gz/i);
+  if (!match) return null;
+  return { archiveUrl: match[0], packageName: match[1], version: match[2] };
+}
+
 function sourceKey(record: TemplateRegistryRecord): string | null {
   const slug = githubRepositorySlug(record.repositoryUrl ?? "");
   if (slug) return `github:${slug}`;
@@ -133,9 +151,9 @@ function matchingRecords(records: TemplateRegistryRecord[], source: TemplateRegi
   return records.filter((record) => githubRepositorySlug(record.repositoryUrl ?? "") === slug || record.repositoryUrl === source.repositoryUrl);
 }
 
-async function updateVariants(records: TemplateRegistryRecord[], source: TemplateRegistryRecord, slug: string, commit: string, snapshot: Awaited<ReturnType<typeof downloadSnapshot>>) {
+async function updateVariants(records: TemplateRegistryRecord[], source: TemplateRegistryRecord, slug: string, commit: string, snapshot: Awaited<ReturnType<typeof downloadSnapshot>> | Awaited<ReturnType<typeof downloadTypstSnapshot>>) {
   const matching = matchingRecords(records, source, slug);
-  const sourceArchive = await uploadOrReuseSnapshot(`template-snapshots/${slug.replace("/", "__")}/${commit}.${NORMALIZATION_VERSION}.zip`, snapshot.buffer);
+  const sourceArchive = await uploadOrReuseSnapshot(`template-snapshots/${slug.replace(/[^A-Za-z0-9_.-]+/g, "__")}/${commit}.${NORMALIZATION_VERSION}.zip`, snapshot.buffer);
   let updated = 0;
   for (const record of matching) {
     const variantKey = `${record.id}:default`;
@@ -193,12 +211,14 @@ async function main() {
   for (const record of selected) {
     const sourceUrl = record.repositoryUrl ?? "";
     try {
-      const slug = githubRepositorySlug(sourceUrl) ?? await discoverGithubRepository(sourceUrl);
-      if (!slug) throw new Error(`来源页面未发现可固定的 GitHub 模板仓库：${sourceUrl}`);
-      const commit = await resolveCommit(slug, record.version ?? null);
-      const snapshot = await downloadSnapshot(slug, commit);
+      const githubSlug = githubRepositorySlug(sourceUrl) ?? await discoverGithubRepository(sourceUrl);
+      const typstPackage = githubSlug ? null : await discoverTypstPackage(sourceUrl);
+      if (!githubSlug && !typstPackage) throw new Error(`来源页面未发现可固定的 GitHub 仓库或版本化 Typst 包：${sourceUrl}`);
+      const slug = githubSlug ?? `typst-${typstPackage!.packageName}`;
+      const commit = githubSlug ? await resolveCommit(githubSlug, record.version ?? null) : typstPackage!.version;
+      const snapshot = githubSlug ? await downloadSnapshot(githubSlug, commit) : await downloadTypstSnapshot(typstPackage!.archiveUrl);
       const updated = await updateVariants(records, record, slug, commit, snapshot);
-      const result = { source: sourceUrl, slug, commit, files: snapshot.files.length, bytes: snapshot.bytes, variants: updated };
+      const result = { source: sourceUrl, slug, commit, ...(typstPackage ? { archiveUrl: typstPackage.archiveUrl } : {}), files: snapshot.files.length, bytes: snapshot.bytes, variants: updated };
       results.push(result);
       console.log(JSON.stringify({ completed: results.length, total: selected.length, ...result }));
     } catch (error) {

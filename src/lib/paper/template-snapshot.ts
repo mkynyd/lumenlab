@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
+import { gunzipSync } from "node:zlib";
 import JSZip from "jszip";
 import { safeCompilePath } from "./compile-policy";
 import type { AcademicTemplateManifest } from "./template-registry";
@@ -43,6 +44,61 @@ export function buildDtxBootstrapPlan(documentClass: string, dtxName: string, dt
     outputFiles,
     installerSource: `\\input docstrip.tex\n\\keepsilent\n\\askforoverwritefalse\n\\preamble\nLumenLab pinned Template Pack bootstrap.\n\\endpreamble\n\\generate{\n${generation}\n}\\endbatchfile\n`,
   };
+}
+
+async function normalizeTemplateEntries(entries: Array<{ path: string; bytes: Buffer }>): Promise<{ buffer: Buffer; files: string[]; sha256: string; bytes: number }> {
+  let totalBytes = 0;
+  if (entries.length > MAX_TEMPLATE_FILES) throw new Error("模板上游快照超过文件数量或大小限制");
+  for (const entry of entries) {
+    safeCompilePath(entry.path);
+    totalBytes += entry.bytes.byteLength;
+    if (totalBytes > MAX_TEMPLATE_BYTES) throw new Error("模板上游快照超过文件数量或大小限制");
+  }
+  const output = new JSZip();
+  const sortedEntries = entries.sort((left, right) => left.path.localeCompare(right.path));
+  const files = sortedEntries.map((entry) => entry.path);
+  for (const entry of sortedEntries) output.file(entry.path, entry.bytes, { date: new Date(0), createFolders: false });
+  const buffer = await output.generateAsync({ type: "nodebuffer", compression: "DEFLATE", platform: "UNIX" });
+  return {
+    buffer,
+    files: [...files].sort(),
+    sha256: createHash("sha256").update(buffer).digest("hex"),
+    bytes: buffer.byteLength,
+  };
+}
+
+function tarString(header: Buffer, start: number, length: number): string {
+  return header.subarray(start, start + length).toString("utf8").replace(/\0.*$/, "").trim();
+}
+
+function tarOctal(header: Buffer, start: number, length: number): number {
+  const value = tarString(header, start, length).replace(/[^0-7]/g, "");
+  const parsed = value ? Number.parseInt(value, 8) : 0;
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error("模板 tar.gz 包含无效文件大小");
+  return parsed;
+}
+
+/** Normalize a public Typst package tar.gz into the same deterministic zip format as Git snapshots. */
+export function normalizeTemplateTarGz(input: Buffer): Promise<{ buffer: Buffer; files: string[]; sha256: string; bytes: number }> {
+  const tar = gunzipSync(input);
+  const entries: Array<{ path: string; bytes: Buffer }> = [];
+  for (let offset = 0; offset + 512 <= tar.byteLength;) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const name = tarString(header, 0, 100);
+    const prefix = tarString(header, 345, 155);
+    const size = tarOctal(header, 124, 12);
+    const type = header[156];
+    const contentStart = offset + 512;
+    const contentEnd = contentStart + size;
+    if (contentEnd > tar.byteLength) throw new Error("模板 tar.gz 包含越界文件");
+    if ((type === 0 || type === 48) && name) {
+      const path = safeCompilePath(prefix ? `${prefix}/${name}` : name);
+      entries.push({ path, bytes: tar.subarray(contentStart, contentEnd) });
+    }
+    offset = contentStart + Math.ceil(size / 512) * 512;
+  }
+  return normalizeTemplateEntries(entries);
 }
 
 export function isSystemDocumentClass(value: string | null | undefined): boolean {
@@ -198,12 +254,5 @@ export async function normalizeTemplateZip(input: Buffer): Promise<{ buffer: Buf
     if (entries.length >= MAX_TEMPLATE_FILES || totalBytes > MAX_TEMPLATE_BYTES) throw new Error("模板上游快照超过文件数量或大小限制");
     entries.push({ path: relativeName, bytes });
   }
-  const output = new JSZip();
-  const sortedEntries = entries.sort((left, right) => left.path.localeCompare(right.path));
-  const files = sortedEntries.map((entry) => entry.path);
-  for (const entry of sortedEntries) {
-    output.file(entry.path, entry.bytes, { date: new Date(0), createFolders: false });
-  }
-  const buffer = await output.generateAsync({ type: "nodebuffer", compression: "DEFLATE", platform: "UNIX" });
-  return { buffer, files: files.sort(), sha256: createHash("sha256").update(buffer).digest("hex"), bytes: buffer.byteLength };
+  return normalizeTemplateEntries(entries);
 }
