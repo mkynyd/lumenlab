@@ -8,6 +8,7 @@ import { parsePaperImport, type PaperImportSourceType } from "./importer";
 import { parseBibTeX } from "./reference-import";
 import { normalizeDoi } from "@/lib/research/source-identity";
 import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
+import { classifyAmbiguousPaperImport } from "./import-classifier";
 
 export class PaperServiceError extends Error {
   constructor(public readonly code: "NOT_FOUND" | "INVALID_STATE" | "INVALID_INPUT", message: string) {
@@ -17,6 +18,49 @@ export class PaperServiceError extends Error {
 
 function documentHash(document: AcademicDocument): string {
   return createHash("sha256").update(JSON.stringify(document)).digest("hex");
+}
+
+async function persistImportedAssets(input: {
+  userId: string;
+  documentId: string;
+  projectId: string | null;
+  importId: string;
+  assets: Array<{ placeholderId: string; originalName: string; mimeType: string; buffer: Buffer }>;
+}) {
+  const replacements = new Map<string, string>();
+  for (const asset of input.assets) {
+    const safeName = asset.originalName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120) || "asset.bin";
+    const stored = await uploadObjectBuffer({
+      key: `papers/${input.userId}/${input.documentId}/imports/${input.importId}/assets/${asset.placeholderId}-${safeName}`,
+      mimeType: asset.mimeType,
+      buffer: asset.buffer,
+    });
+    const file = await prisma.fileAsset.create({
+      data: {
+        userId: input.userId,
+        projectId: input.projectId,
+        filename: safeName,
+        originalName: asset.originalName.slice(0, 255),
+        mimeType: asset.mimeType,
+        size: asset.buffer.byteLength,
+        storageProvider: stored.provider,
+        storagePath: stored.key,
+        category: "paper-asset",
+        processingMetadata: { source: "paper-import", importId: input.importId, documentId: input.documentId },
+        contentFingerprint: createHash("sha256").update(asset.buffer).digest("hex"),
+      },
+      select: { id: true },
+    });
+    replacements.set(asset.placeholderId, file.id);
+  }
+  return replacements;
+}
+
+function replaceImportedAssetPlaceholders(document: AcademicDocument, replacements: Map<string, string>): AcademicDocument {
+  return {
+    ...document,
+    blocks: document.blocks.map((block) => block.kind === "figure" && replacements.has(block.assetId) ? { ...block, assetId: replacements.get(block.assetId)! } : block),
+  };
 }
 
 export async function listPaperWorkspaces(userId: string) {
@@ -415,7 +459,12 @@ export async function importPaperDocument(input: {
       buffer: input.buffer,
     });
     const parsed = parsePaperImport({ filename: input.filename, buffer: input.buffer });
-    const version = await createDocumentVersion({ userId: input.userId, documentId: document.id, content: parsed.document });
+    const assetReplacements = await persistImportedAssets({ userId: input.userId, documentId: document.id, projectId: document.workspace.projectId, importId: importRow.id, assets: parsed.assets });
+    const importedDocument = replaceImportedAssetPlaceholders(parsed.document, assetReplacements);
+    const aiClassification = parsed.report.lowConfidenceBlocks.length > 0
+      ? await classifyAmbiguousPaperImport({ userId: input.userId, sourceType, document: importedDocument, lowConfidenceBlocks: parsed.report.lowConfidenceBlocks })
+      : null;
+    const version = await createDocumentVersion({ userId: input.userId, documentId: document.id, content: importedDocument });
     const snapshot = await prisma.paperImportSnapshot.create({
       data: {
         importId: importRow.id,
@@ -432,7 +481,7 @@ export async function importPaperDocument(input: {
         originalProvider: original.provider,
         originalObjectKey: original.key,
         generatedVersionId: version.id,
-        importReport: JSON.parse(JSON.stringify(parsed.report)),
+        importReport: JSON.parse(JSON.stringify({ ...parsed.report, assetCount: parsed.assets.length, aiClassification })),
       },
     });
     return { import: await prisma.paperImport.findUniqueOrThrow({ where: { id: importRow.id }, include: { snapshots: true, generatedVersion: true } }), version, snapshot };

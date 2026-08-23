@@ -94,9 +94,14 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     if (!workspace?.document) return;
     const formData = new FormData();
     formData.set("file", file);
-    const result = await fetchJson<{ version: { content: AcademicDocumentRecord }; import: { id: string; status: string; importReport?: { warnings?: string[]; lowConfidenceBlocks?: Array<{ index: number; reason: string }> } } }>(`/api/papers/documents/${workspace.document.id}/imports`, { method: "POST", body: formData });
+    const result = await fetchJson<{ version: { content: AcademicDocumentRecord }; import: { id: string; status: string; importReport?: { warnings?: string[]; lowConfidenceBlocks?: Array<{ index: number; reason: string }>; aiClassification?: { suggestions?: Array<{ index: number; kind: string; confidence: number; reason: string }> } } } }>(`/api/papers/documents/${workspace.document.id}/imports`, { method: "POST", body: formData });
     setDraftDocument(result.version.content);
-    setPendingImport(result.import.status === "awaiting_confirmation" ? { id: result.import.id, lowConfidenceBlocks: result.import.importReport?.lowConfidenceBlocks ?? [] } : null);
+    const suggestions = result.import.importReport?.aiClassification?.suggestions ?? [];
+    const lowConfidenceBlocks = (result.import.importReport?.lowConfidenceBlocks ?? []).map((item) => {
+      const suggestion = suggestions.find((candidate) => candidate.index === item.index);
+      return suggestion ? { ...item, reason: `${item.reason}；AI 建议：${suggestion.kind}（${Math.round(suggestion.confidence * 100)}%）— ${suggestion.reason}` } : item;
+    });
+    setPendingImport(result.import.status === "awaiting_confirmation" ? { id: result.import.id, lowConfidenceBlocks } : null);
     setImportMessage(result.import.importReport?.warnings?.[0] ?? "已导入为新的 Document Draft，请检查低置信度结构后再编译");
   }
 

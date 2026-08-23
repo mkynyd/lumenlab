@@ -306,6 +306,7 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Add production-oriented Compile Service container orchestration: non-root/read-only/tmpfs/capability/PID/CPU/memory/file limits, no published compiler port, and a fail-closed bubblewrap child namespace with `--unshare-net`; the Worker keeps only the control-plane network required by PostgreSQL/object storage.
 - [ ] Validate the materialized A/B packs end to end in the isolated Linux compiler image.
 - [x] Add an owner-scoped SyncTeX JSON mapping endpoint and a PDF.js right-panel viewer with continuous pages, page navigation and Outline-to-PDF node jumping; keep the raw `.synctex.gz` download for debugging/export.
+- [x] Extend DOCX import beyond plain paragraphs: preserve embedded images as Paper-owned FileAsset resources, create Figure/Table/Equation blocks, retain footnote inline nodes, and send uncertain structure through the existing Runtime-backed classifier as advisory suggestions before user confirmation.
 
 ### Phase 6 — verification and release gates
 
@@ -329,5 +330,5 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Phase 3 core: first-level navigation, real workspace/run planning and confirmation UI, public progress events and report rendering.
 - [x] Phase 4 core: Academic Document schema, version/patch APIs, Paper Workspace and continuous editor shell.
 - [x] Phase 5 first slice: deterministic registry ingestion (all 738 machine-readable records), Markdown/TXT/LaTeX/DOCX import with original/snapshot/report/version persistence, asset-aware ephemeral compile worker with `--no-shell-escape`, PDF/source upload, references and deterministic conformance checker.
-- [ ] Remaining before declaring the full roadmap complete: retry the 25 inaccessible A/B GitHub sources and improve the 106 reviewed template packs, validate the materialized A/B packs inside the isolated Linux compiler image, add AI-assisted ambiguous import classification, richer DOCX assets/footnotes/equations, and real-provider end-to-end validation/repair coverage for all model-backed Research stages.
+- [ ] Remaining before declaring the full roadmap complete: retry the 25 inaccessible A/B GitHub sources and improve the 106 reviewed template packs, validate the materialized A/B packs inside the isolated Linux compiler image, and complete real-provider end-to-end validation/repair coverage for all model-backed Research stages.
 - [x] Research role model routing and token/credit accounting now use the existing provider catalog, durable checkpoint, `calculateCredits` weights and public budget events. Planner, Worker, Evaluator, Synthesizer and Verifier now call the existing Runtime through structured-output seams with deterministic fallback; real-provider end-to-end validation remains a release-gate item.

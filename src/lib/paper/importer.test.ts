@@ -23,4 +23,22 @@ describe("paper deterministic importers", () => {
     const result = parsePaperImport({ filename: "demo.docx", buffer: archive.toBuffer() });
     expect(result.report.lowConfidenceBlocks[0]?.reason).toContain("图片");
   });
+
+  it("extracts DOCX tables, OMML equations, footnotes and embedded assets", () => {
+    const archive = new AdmZip();
+    archive.addFile("word/document.xml", Buffer.from(`<w:document><w:body>
+      <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>标题</w:t></w:r></w:p>
+      <w:tbl><w:tr><w:tc><w:p><w:r><w:t>列一</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>列二</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+      <w:p><m:oMath><m:r><m:t>x^2</m:t></m:r></m:oMath></w:p>
+      <w:p><w:r><w:t>正文</w:t><w:footnoteReference w:id="1"/></w:r></w:p>
+      <w:p><w:r><w:drawing><wp:inline><wp:docPr descr="实验图"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId1"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>
+    </w:body></w:document>`));
+    archive.addFile("word/_rels/document.xml.rels", Buffer.from(`<Relationships><Relationship Id="rId1" Target="media/image1.png" Type="image"/></Relationships>`));
+    archive.addFile("word/media/image1.png", Buffer.from("png"));
+    archive.addFile("word/footnotes.xml", Buffer.from(`<w:footnotes><w:footnote w:id="1"><w:p><w:r><w:t>脚注</w:t></w:r></w:p></w:footnote></w:footnotes>`));
+    const result = parsePaperImport({ filename: "rich.docx", buffer: archive.toBuffer() });
+    expect(result.assets).toHaveLength(1);
+    expect(result.document.blocks.map((block) => block.kind)).toEqual(expect.arrayContaining(["heading", "table", "equation", "paragraph", "figure"]));
+    expect(result.document.blocks.find((block) => block.kind === "paragraph")).toMatchObject({ children: [{ kind: "text", text: "正文" }, { kind: "footnote", id: "footnote-1" }] });
+  });
 });
