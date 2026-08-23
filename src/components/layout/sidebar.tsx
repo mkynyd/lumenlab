@@ -55,6 +55,8 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import {
+  BookStack,
+  BrainResearch,
   ChatLines,
   Folder,
   PageEdit,
@@ -82,6 +84,7 @@ import {
   useDeleteConversion,
 } from "@/lib/hooks/use-conversions";
 import { DEFAULT_AVATAR_PRESET } from "@/lib/user-profile";
+import { useSidebarPaperWorkspaces, useSidebarResearchWorkspaces } from "@/lib/hooks/use-sidebar-workspaces";
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -108,6 +111,10 @@ export function Sidebar({
   const activeSection =
     pathname.startsWith("/learning") || pathname.startsWith("/today")
       ? "learning"
+    : pathname.startsWith("/research")
+      ? "research"
+    : pathname.startsWith("/papers")
+      ? "papers"
     : pathname.startsWith("/projects")
       ? "projects"
       : pathname.startsWith("/tools")
@@ -118,6 +125,8 @@ export function Sidebar({
   const conversationsQuery = useConversations();
   const projectsQuery = useProjects();
   const conversionsQuery = useConversions();
+  const researchWorkspacesQuery = useSidebarResearchWorkspaces();
+  const paperWorkspacesQuery = useSidebarPaperWorkspaces();
   const deleteConversationMutation = useDeleteConversation();
   const deleteProjectMutation = useDeleteProject();
   const deleteConversionMutation = useDeleteConversion();
@@ -152,11 +161,17 @@ export function Sidebar({
   const conversations = conversationsQuery.data || [];
   const projects = projectsQuery.data || [];
   const conversions = conversionsQuery.data || [];
+  const researchWorkspaces = researchWorkspacesQuery.data || [];
+  const paperWorkspaces = paperWorkspacesQuery.data || [];
   const isLoading =
     activeSection === "chat"
       ? conversationsQuery.isPending
       : activeSection === "projects" || activeSection === "learning"
         ? projectsQuery.isPending
+        : activeSection === "research"
+          ? researchWorkspacesQuery.isPending
+        : activeSection === "papers"
+          ? paperWorkspacesQuery.isPending
         : conversionsQuery.isPending;
 
   async function deleteConversation(id: string) {
@@ -184,12 +199,14 @@ export function Sidebar({
     setConversionDeleteTarget(conversion);
   }
 
-  function openSection(section: "learning" | "chat" | "projects" | "tools") {
+  function openSection(section: "learning" | "chat" | "projects" | "tools" | "research" | "papers") {
     onExpand();
     onClose();
     if (section === "learning") router.push("/learning");
     else if (section === "chat") router.push("/chat");
     else if (section === "projects") router.push("/projects");
+    else if (section === "research") router.push("/research");
+    else if (section === "papers") router.push("/papers");
     else router.push("/tools");
   }
 
@@ -203,6 +220,14 @@ export function Sidebar({
       // 先派发重置事件：URL 被 replaceState 改写时 push("/chat") 不会重挂载
       emitNewChat();
       router.push("/chat");
+      return;
+    }
+    if (activeSection === "research") {
+      router.push("/research?new=1");
+      return;
+    }
+    if (activeSection === "papers") {
+      router.push("/papers?new=1");
       return;
     }
     router.push("/projects/new");
@@ -232,6 +257,8 @@ export function Sidebar({
   const activeProjectId = pathname.startsWith("/projects/")
     ? pathname.split("/")[2]
     : null;
+  const activeResearchWorkspaceId = pathname.startsWith("/research/") ? pathname.split("/")[2] : null;
+  const activePaperWorkspaceId = pathname.startsWith("/papers/") ? pathname.split("/")[2] : null;
   const activeConversionId = pathname.startsWith("/tools/")
     ? pathname.split("/")[2]
     : null;
@@ -395,6 +422,32 @@ export function Sidebar({
             <SidebarMenuItem>
               <SidebarMenuButton
                 type="button"
+                onClick={() => openSection("research")}
+                isActive={activeSection === "research"}
+                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
+                aria-current={activeSection === "research" ? "page" : undefined}
+                title={collapsed ? "深度研究" : undefined}
+              >
+                <BrainResearch strokeWidth={1.8} />
+                <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>深度研究</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                type="button"
+                onClick={() => openSection("papers")}
+                isActive={activeSection === "papers"}
+                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
+                aria-current={activeSection === "papers" ? "page" : undefined}
+                title={collapsed ? "论文" : undefined}
+              >
+                <BookStack strokeWidth={1.8} />
+                <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>论文</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                type="button"
                 onClick={() => openSection("projects")}
                 isActive={activeSection === "projects"}
                 className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
@@ -459,6 +512,10 @@ export function Sidebar({
                   ? "最近对话"
                   : activeSection === "learning"
                     ? "学习项目"
+                  : activeSection === "research"
+                    ? "最近研究"
+                  : activeSection === "papers"
+                    ? "我的论文"
                   : activeSection === "tools"
                     ? "最近转换"
                     : "最近项目"}
@@ -472,6 +529,10 @@ export function Sidebar({
                 aria-label={
                   activeSection === "chat"
                     ? "新对话"
+                    : activeSection === "research"
+                      ? "新建研究"
+                    : activeSection === "papers"
+                      ? "新建论文"
                     : activeSection === "tools"
                       ? "新转换"
                       : "新建项目"
@@ -546,6 +607,43 @@ export function Sidebar({
                   <br />
                   点击右上角 + 开始聊天
                 </p>
+              )
+            ) : activeSection === "research" ? (
+              researchWorkspaces.length > 0 ? (
+                <SidebarMenu className="gap-0.5">
+                  {researchWorkspaces.map((workspace) => (
+                    <SidebarMenuItem key={workspace.id}>
+                      <SidebarMenuButton asChild isActive={activeResearchWorkspaceId === workspace.id} className="min-h-10">
+                        <Link href={`/research/${workspace.id}`} onClick={onClose}>
+                          <BrainResearch strokeWidth={2} />
+                          <span className="min-w-0">
+                            <span className="block truncate">{workspace.name}</span>
+                            {workspace.runs[0] ? <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">{workspace.runs[0].status}</span> : null}
+                          </span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              ) : (
+                <p className="px-2 py-8 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">暂无研究工作区<br />点击右上角 + 开始研究</p>
+              )
+            ) : activeSection === "papers" ? (
+              paperWorkspaces.length > 0 ? (
+                <SidebarMenu className="gap-0.5">
+                  {paperWorkspaces.map((workspace) => (
+                    <SidebarMenuItem key={workspace.id}>
+                      <SidebarMenuButton asChild isActive={activePaperWorkspaceId === workspace.id} className="min-h-10">
+                        <Link href={`/papers/${workspace.id}`} onClick={onClose}>
+                          <BookStack strokeWidth={2} />
+                          <span>{workspace.name}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              ) : (
+                <p className="px-2 py-8 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">暂无论文<br />点击右上角 + 创建论文</p>
               )
             ) : activeSection === "tools" ? (
               conversions.length > 0 ? (

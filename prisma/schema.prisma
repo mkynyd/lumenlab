@@ -54,6 +54,15 @@ model User {
   goalRevisions        LearningGoalRevision[]
   profileResets        LearningProfileReset[]
   studyPacks           StudyPack[]
+  researchWorkspaces   ResearchWorkspace[]
+  researchRuns         ResearchRun[]
+  researchDirectives   ResearchUserDirective[]
+  researchSources      ResearchSource[]
+  paperWorkspaces      PaperWorkspace[]
+  paperDocuments       PaperDocument[]
+  documentVersions     PaperDocumentVersion[]
+  documentPatches      PaperDocumentPatch[]
+  paperImports         PaperImport[]
   credentialProfile    CredentialProfile?           @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption           RegistrationRedemption?
   authChallenges       EmailChallenge[]
@@ -188,6 +197,7 @@ model Conversation {
   activeSkillSource  String?
   activeSkillStatus  String?
   skillDisabled      Boolean  @default(false)
+  kind               String   @default("chat") // chat | research-system
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -267,16 +277,18 @@ model Project {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversations   Conversation[]
-  files           FileAsset[]
-  chunks          DocumentChunk[]
-  artifacts       Artifact[]
-  projectIndex    ProjectIndex?
-  quickActions    QuickAction[]
-  agentExecutions AgentExecution[]
-  learningGoals   LearningGoal[]
-  sourceAnchors   SourceAnchor[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations      Conversation[]
+  files              FileAsset[]
+  chunks             DocumentChunk[]
+  artifacts          Artifact[]
+  projectIndex       ProjectIndex?
+  quickActions       QuickAction[]
+  agentExecutions    AgentExecution[]
+  learningGoals      LearningGoal[]
+  sourceAnchors      SourceAnchor[]
+  researchWorkspaces ResearchWorkspace[]
+  paperWorkspaces    PaperWorkspace[]
 
   @@index([userId])
 }
@@ -360,6 +372,7 @@ model Artifact {
   message      Message?            @relation(fields: [messageId], references: [id], onDelete: SetNull)
   references   ReferenceListItem[]
   studyPacks   StudyPack[]
+  compilations PaperCompilation[]
 
   @@index([userId])
   @@index([projectId])
@@ -689,6 +702,7 @@ model AgentExecution {
   events           AgentExecutionEvent[]
   toolExecutions   ToolExecution[]
   learningSessions LearningSession[]
+  researchRun      ResearchRun?
 
   @@unique([userId, clientRunKey])
   @@index([userId, createdAt])
@@ -1369,26 +1383,29 @@ model EmailLogEvent {
 // ============================================================
 
 model Reference {
-  id        String   @id @default(cuid())
-  userId    String
-  projectId String?
-  doi       String?
-  arxivId   String?
-  title     String
-  authors   String[]
-  year      Int?
-  venue     String?
-  url       String?
-  rawMeta   Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(cuid())
+  userId           String
+  projectId        String?
+  paperWorkspaceId String?
+  doi              String?
+  arxivId          String?
+  title            String
+  authors          String[]
+  year             Int?
+  venue            String?
+  url              String?
+  rawMeta          Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  listItems ReferenceListItem[]
+  listItems      ReferenceListItem[]
+  paperWorkspace PaperWorkspace?     @relation(fields: [paperWorkspaceId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([projectId])
   @@index([arxivId])
   @@index([doi])
+  @@index([paperWorkspaceId])
 }
 
 model ReferenceListItem {
@@ -1445,4 +1462,808 @@ model ErrorEvent {
 
   @@unique([digest])
   @@index([status, lastSeenAt])
+}
+
+// ============================================================
+// Deep Research domain
+// ============================================================
+
+enum ResearchWorkspaceStatus {
+  active
+  archived
+}
+
+enum ResearchRunStatus {
+  planning
+  awaiting_confirmation
+  queued
+  researching
+  evaluating
+  synthesizing
+  verifying
+  completed
+  cancelled
+  failed
+  awaiting_scope_confirmation
+}
+
+enum ResearchQuestionStatus {
+  pending
+  researching
+  evaluating
+  resolved
+  partially_resolved
+  unresolved
+  controversial
+}
+
+enum ResearchTaskStatus {
+  pending
+  queued
+  running
+  completed
+  failed
+  cancelled
+  retrying
+}
+
+enum ResearchTaskKind {
+  planner
+  researcher
+  evaluator
+  replanner
+  synthesizer
+  verifier
+}
+
+enum ResearchPriority {
+  critical
+  important
+  supporting
+}
+
+enum ResearchBudgetProfile {
+  quick
+  deep
+  comprehensive
+}
+
+enum ResearchSourceKind {
+  web
+  academic_paper
+  arxiv
+  doi
+  pmid
+  github
+  dataset
+  official_document
+  book
+  project_file
+  uploaded_file
+}
+
+enum ResearchSourceSnapshotStatus {
+  fetched
+  failed
+}
+
+enum ResearchEvidenceStatus {
+  active
+  superseded
+  disputed
+  invalidated
+}
+
+enum ResearchEvidenceType {
+  direct_quote
+  paraphrase
+  dataset_measurement
+  project_context
+  expert_assessment
+}
+
+enum ResearchClaimStatus {
+  active
+  superseded
+  disputed
+}
+
+enum ClaimEvidenceRelationType {
+  supports
+  contradicts
+  qualifies
+  context
+}
+
+enum ResearchVerificationStatus {
+  pending
+  verified
+  needs_qualification
+  unsupported
+  conflicted
+}
+
+enum ResearchDirectiveStatus {
+  pending
+  applied
+  needs_confirmation
+  rejected
+}
+
+model ResearchDomainProfile {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  name           String
+  description    String?
+  sourcePolicy   Json
+  evidencePolicy Json
+  citationPolicy Json
+  outputPolicy   Json
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+}
+
+model ResearchWorkspace {
+  id               String                  @id @default(cuid())
+  userId           String
+  projectId        String?
+  name             String
+  description      String?
+  domainProfileKey String                  @default("general")
+  budgetProfile    ResearchBudgetProfile   @default(deep)
+  status           ResearchWorkspaceStatus @default(active)
+  settings         Json?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project          Project?                  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  runs             ResearchRun[]
+  planVersions     ResearchPlanVersion[]
+  directives       ResearchUserDirective[]
+  sources          ResearchSource[]
+  sourceCandidates ResearchSourceCandidate[]
+  sourceSnapshots  ResearchSourceSnapshot[]
+  evidence         Evidence[]
+  claims           Claim[]
+  reports          ResearchReportSnapshot[]
+  paperLinks       PaperResearchLink[]
+  paperMaterials   PaperResearchMaterial[]
+
+  @@index([userId, updatedAt])
+  @@index([projectId])
+  @@index([status, updatedAt])
+}
+
+model ResearchRun {
+  id                 String            @id @default(cuid())
+  workspaceId        String
+  userId             String
+  followUpOfId       String?
+  agentExecutionId   String?           @unique
+  planVersionId      String?
+  question           String
+  status             ResearchRunStatus @default(planning)
+  budgetSnapshot     Json?
+  modelConfiguration Json?
+  checkpoint         Json?
+  metrics            Json?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  workspace         ResearchWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  followUpOf        ResearchRun?              @relation("ResearchRunFollowUp", fields: [followUpOfId], references: [id], onDelete: SetNull)
+  followUps         ResearchRun[]             @relation("ResearchRunFollowUp")
+  agentExecution    AgentExecution?           @relation(fields: [agentExecutionId], references: [id], onDelete: SetNull)
+  planVersions      ResearchPlanVersion[]     @relation("ResearchPlanRun")
+  activePlanVersion ResearchPlanVersion?      @relation("ResearchRunActivePlan", fields: [planVersionId], references: [id], onDelete: SetNull)
+  questions         ResearchQuestion[]
+  tasks             ResearchTask[]
+  directives        ResearchUserDirective[]
+  sourceCandidates  ResearchSourceCandidate[]
+  sourceSnapshots   ResearchSourceSnapshot[]
+  evidence          Evidence[]
+  claims            Claim[]
+  reportSnapshot    ResearchReportSnapshot?
+  paperMaterials    PaperResearchMaterial[]
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, status, updatedAt])
+  @@index([status, updatedAt])
+  @@index([followUpOfId])
+}
+
+model ResearchPlanVersion {
+  id          String    @id @default(cuid())
+  workspaceId String
+  runId       String?
+  version     Int
+  plan        Json
+  reason      String?
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace  ResearchWorkspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run        ResearchRun?             @relation("ResearchPlanRun", fields: [runId], references: [id], onDelete: SetNull)
+  activeRuns ResearchRun[]            @relation("ResearchRunActivePlan")
+  reports    ResearchReportSnapshot[]
+
+  @@unique([workspaceId, version])
+  @@index([runId, createdAt])
+}
+
+model ResearchQuestion {
+  id                 String                 @id @default(cuid())
+  runId              String
+  key                String
+  title              String
+  question           String
+  priority           ResearchPriority       @default(important)
+  status             ResearchQuestionStatus @default(pending)
+  orderIndex         Int
+  completionCriteria Json
+  sourceStrategy     Json?
+  qualitySummary     Json?
+  researchAttempts   Int                    @default(0)
+  evaluateAttempts   Int                    @default(0)
+  replanAttempts     Int                    @default(0)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  run        ResearchRun               @relation(fields: [runId], references: [id], onDelete: Cascade)
+  tasks      ResearchTask[]
+  candidates ResearchSourceCandidate[]
+  evidence   Evidence[]
+  claims     Claim[]
+
+  @@unique([runId, key])
+  @@unique([runId, orderIndex])
+  @@index([runId, status])
+}
+
+model ResearchTask {
+  id             String             @id @default(cuid())
+  runId          String
+  questionId     String?
+  parentTaskId   String?
+  kind           ResearchTaskKind
+  status         ResearchTaskStatus @default(pending)
+  priority       ResearchPriority   @default(important)
+  title          String
+  instructions   String?
+  payload        Json?
+  checkpoint     Json?
+  idempotencyKey String
+  attempt        Int                @default(0)
+  maxAttempts    Int                @default(2)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  lastError      Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  run      ResearchRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  question ResearchQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  parent   ResearchTask?     @relation("ResearchTaskTree", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  children ResearchTask[]    @relation("ResearchTaskTree")
+
+  @@unique([runId, idempotencyKey])
+  @@index([runId, status, priority])
+  @@index([questionId, status])
+  @@index([parentTaskId])
+}
+
+model ResearchUserDirective {
+  id          String                  @id @default(cuid())
+  workspaceId String
+  runId       String?
+  userId      String
+  text        String
+  impact      String                  @default("normal") // normal | scope_expansion | budget_expansion
+  status      ResearchDirectiveStatus @default(pending)
+  appliedAt   DateTime?
+  createdAt   DateTime                @default(now())
+
+  workspace ResearchWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run       ResearchRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([runId, status])
+}
+
+model ResearchSource {
+  id           String             @id @default(cuid())
+  workspaceId  String
+  userId       String
+  kind         ResearchSourceKind
+  canonicalKey String
+  title        String?
+  doi          String?
+  arxivId      String?
+  pmid         String?
+  canonicalUrl String?
+  aliases      Json?
+  metadata     Json?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  workspace      ResearchWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  candidates     ResearchSourceCandidate[]
+  snapshots      ResearchSourceSnapshot[]
+  paperMaterials PaperResearchMaterial[]
+
+  @@unique([workspaceId, canonicalKey])
+  @@index([userId, canonicalKey])
+  @@index([doi])
+  @@index([arxivId])
+  @@index([pmid])
+}
+
+model ResearchSourceCandidate {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  runId        String
+  questionId   String?
+  provider     String
+  externalId   String?
+  title        String?
+  url          String?
+  metadata     Json?
+  status       String   @default("discovered") // discovered | selected | fetched | rejected
+  discoveredAt DateTime @default(now())
+
+  workspace        ResearchWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run              ResearchRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  question         ResearchQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  researchSource   ResearchSource?   @relation(fields: [researchSourceId], references: [id])
+  researchSourceId String?
+
+  @@unique([runId, provider, externalId])
+  @@index([workspaceId, discoveredAt])
+  @@index([runId, status])
+  @@index([questionId])
+}
+
+model ResearchSourceSnapshot {
+  id                 String                       @id @default(cuid())
+  workspaceId        String
+  runId              String
+  sourceId           String
+  retrievedAt        DateTime                     @default(now())
+  contentHash        String
+  sourceVersion      String?
+  rawContentLocation Json?
+  excerpt            String?
+  metadata           Json?
+  status             ResearchSourceSnapshotStatus @default(fetched)
+  createdAt          DateTime                     @default(now())
+
+  workspace ResearchWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run       ResearchRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source    ResearchSource    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  evidence  Evidence[]
+
+  @@unique([runId, sourceId, contentHash])
+  @@index([workspaceId, retrievedAt])
+  @@index([sourceId, retrievedAt])
+  @@index([runId])
+}
+
+model Evidence {
+  id               String                 @id @default(cuid())
+  workspaceId      String
+  runId            String
+  questionId       String?
+  sourceSnapshotId String
+  statement        String
+  locator          Json
+  excerpt          String
+  evidenceType     ResearchEvidenceType
+  provenance       Json?
+  status           ResearchEvidenceStatus @default(active)
+  supersedesId     String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  workspace      ResearchWorkspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run            ResearchRun             @relation(fields: [runId], references: [id], onDelete: Cascade)
+  question       ResearchQuestion?       @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  sourceSnapshot ResearchSourceSnapshot  @relation(fields: [sourceSnapshotId], references: [id], onDelete: Restrict)
+  supersedes     Evidence?               @relation("EvidenceRevision", fields: [supersedesId], references: [id], onDelete: SetNull)
+  revisions      Evidence[]              @relation("EvidenceRevision")
+  claimRelations ClaimEvidenceRelation[]
+  paperMaterials PaperResearchMaterial[]
+
+  @@index([workspaceId, status, createdAt])
+  @@index([runId, questionId])
+  @@index([sourceSnapshotId])
+  @@index([supersedesId])
+}
+
+model Claim {
+  id                 String                     @id @default(cuid())
+  workspaceId        String
+  runId              String
+  questionId         String?
+  statement          String
+  status             ResearchClaimStatus        @default(active)
+  userEdited         Boolean                    @default(false)
+  verificationStatus ResearchVerificationStatus @default(pending)
+  quality            Json?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  workspace         ResearchWorkspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run               ResearchRun             @relation(fields: [runId], references: [id], onDelete: Cascade)
+  question          ResearchQuestion?       @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  evidenceRelations ClaimEvidenceRelation[]
+  paperMaterials    PaperResearchMaterial[]
+
+  @@index([workspaceId, status, createdAt])
+  @@index([runId, questionId])
+  @@index([verificationStatus])
+}
+
+model ClaimEvidenceRelation {
+  claimId    String
+  evidenceId String
+  relation   ClaimEvidenceRelationType
+  confidence Float?
+  rationale  String?
+  createdAt  DateTime                  @default(now())
+
+  claim    Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([claimId, evidenceId])
+  @@index([evidenceId])
+}
+
+model ResearchReportSnapshot {
+  id                  String   @id @default(cuid())
+  workspaceId         String
+  runId               String   @unique
+  planVersionId       String?
+  reportDocument      Json
+  claimSnapshots      Json
+  evidenceIds         String[]
+  sourceSnapshotIds   String[]
+  citationMap         Json
+  coverageSummary     Json
+  verificationSummary Json
+  modelConfiguration  Json
+  contentHash         String
+  generatedAt         DateTime @default(now())
+
+  workspace      ResearchWorkspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run            ResearchRun             @relation(fields: [runId], references: [id], onDelete: Cascade)
+  planVersion    ResearchPlanVersion?    @relation(fields: [planVersionId], references: [id], onDelete: SetNull)
+  paperMaterials PaperResearchMaterial[]
+
+  @@index([workspaceId, generatedAt])
+  @@index([planVersionId])
+}
+
+// ============================================================
+// Paper domain
+// ============================================================
+
+enum PaperWorkspaceStatus {
+  active
+  archived
+}
+
+enum PaperDocumentVersionStatus {
+  draft
+  published
+  superseded
+}
+
+enum PaperDocumentPatchStatus {
+  pending
+  accepted
+  rejected
+}
+
+enum PaperImportStatus {
+  uploaded
+  parsing
+  awaiting_confirmation
+  completed
+  failed
+}
+
+enum PaperCompilationStatus {
+  queued
+  running
+  succeeded
+  failed
+}
+
+enum PaperResearchMaterialType {
+  source
+  claim
+  evidence
+}
+
+model PaperWorkspace {
+  id          String               @id @default(cuid())
+  userId      String
+  projectId   String?
+  name        String
+  description String?
+  status      PaperWorkspaceStatus @default(active)
+  settings    Json?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  document      PaperDocument?
+  references    Reference[]
+  researchLinks PaperResearchLink[]
+  materials     PaperResearchMaterial[]
+
+  @@index([userId, updatedAt])
+  @@index([projectId])
+  @@index([status, updatedAt])
+}
+
+model PaperDocument {
+  id               String   @id @default(cuid())
+  paperWorkspaceId String   @unique
+  userId           String
+  title            String   @default("未命名论文")
+  currentVersionId String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace      PaperWorkspace         @relation(fields: [paperWorkspaceId], references: [id], onDelete: Cascade)
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions       PaperDocumentVersion[] @relation("PaperDocumentVersions")
+  currentVersion PaperDocumentVersion?  @relation("PaperDocumentCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  patches        PaperDocumentPatch[]
+  bindings       TemplateBinding[]
+  imports        PaperImport[]
+
+  @@index([userId, updatedAt])
+}
+
+model PaperDocumentVersion {
+  id            String                     @id @default(cuid())
+  documentId    String
+  version       Int
+  status        PaperDocumentVersionStatus @default(draft)
+  schemaVersion String                     @default("1")
+  content       Json
+  sourceHash    String
+  createdBy     String
+  createdAt     DateTime                   @default(now())
+
+  document         PaperDocument        @relation("PaperDocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  currentFor       PaperDocument?       @relation("PaperDocumentCurrentVersion")
+  patches          PaperDocumentPatch[]
+  generatedImports PaperImport[]        @relation("PaperImportGeneratedVersion")
+  compilations     PaperCompilation[]
+  user             User?                @relation(fields: [userId], references: [id])
+  userId           String?
+
+  @@unique([documentId, version])
+  @@index([documentId, createdAt])
+  @@index([status])
+}
+
+model PaperDocumentPatch {
+  id            String                   @id @default(cuid())
+  documentId    String
+  baseVersionId String?
+  status        PaperDocumentPatchStatus @default(pending)
+  patch         Json
+  summary       String?
+  createdBy     String
+  createdAt     DateTime                 @default(now())
+  decidedAt     DateTime?
+
+  document    PaperDocument         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  baseVersion PaperDocumentVersion? @relation(fields: [baseVersionId], references: [id], onDelete: SetNull)
+  user        User?                 @relation(fields: [userId], references: [id])
+  userId      String?
+
+  @@index([documentId, createdAt])
+  @@index([baseVersionId])
+  @@index([status])
+}
+
+model TemplateRegistryEntry {
+  id                  String   @id @default(cuid())
+  externalId          String   @unique
+  university          String
+  universityType      String?
+  degreeType          String?
+  year                String?
+  specVersion         String?
+  format              String
+  sourceType          String?
+  officialSpecUrl     String?
+  repositoryUrl       String?
+  repositoryHost      String?
+  sourceVersion       String?
+  engine              String?
+  entryFile           String?
+  documentClass       String?
+  bibliography        String?
+  license             String?
+  recommendationLevel String?
+  status              String   @default("Unverified")
+  metadata            Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  variants TemplateVariant[]
+
+  @@index([university])
+  @@index([degreeType, year])
+  @@index([format, status])
+  @@index([recommendationLevel])
+}
+
+model TemplateVariant {
+  id                     String   @id @default(cuid())
+  registryEntryId        String
+  variantKey             String   @unique
+  manifest               Json
+  pinnedUpstreamSnapshot Json
+  adapterId              String
+  validation             Json?
+  sample                 Json?
+  status                 String   @default("Unverified")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  registryEntry TemplateRegistryEntry @relation(fields: [registryEntryId], references: [id], onDelete: Cascade)
+  bindings      TemplateBinding[]
+
+  @@index([registryEntryId])
+  @@index([status])
+}
+
+model TemplateBinding {
+  id                String   @id @default(cuid())
+  paperDocumentId   String   @unique
+  templateVariantId String
+  lockedVersion     String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  document        PaperDocument            @relation(fields: [paperDocumentId], references: [id], onDelete: Cascade)
+  templateVariant TemplateVariant          @relation(fields: [templateVariantId], references: [id], onDelete: Restrict)
+  versions        TemplateBindingVersion[]
+
+  @@index([templateVariantId])
+}
+
+model TemplateBindingVersion {
+  id               String   @id @default(cuid())
+  bindingId        String
+  version          Int
+  manifestSnapshot Json
+  createdAt        DateTime @default(now())
+
+  binding      TemplateBinding    @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+  compilations PaperCompilation[]
+
+  @@unique([bindingId, version])
+}
+
+model PaperCompilation {
+  id                    String                 @id @default(cuid())
+  documentVersionId     String
+  bindingVersionId      String?
+  status                PaperCompilationStatus @default(queued)
+  engine                String?
+  jobKey                String                 @unique
+  pdfStorageProvider    String?
+  pdfObjectKey          String?
+  sourceStorageProvider String?
+  sourceObjectKey       String?
+  errorLog              Json?
+  syncTex               Json?
+  startedAt             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime               @default(now())
+
+  documentVersion PaperDocumentVersion    @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+  bindingVersion  TemplateBindingVersion? @relation(fields: [bindingVersionId], references: [id], onDelete: SetNull)
+  artifact        Artifact?               @relation(fields: [artifactId], references: [id], onDelete: SetNull)
+  artifactId      String?
+
+  @@index([documentVersionId, createdAt])
+  @@index([status, createdAt])
+  @@index([bindingVersionId])
+}
+
+model PaperImport {
+  id                 String            @id @default(cuid())
+  paperDocumentId    String
+  userId             String
+  originalName       String
+  sourceType         String
+  status             PaperImportStatus @default(uploaded)
+  originalProvider   String?
+  originalObjectKey  String?
+  sourceHash         String?
+  importReport       Json?
+  generatedVersionId String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  document         PaperDocument         @relation(fields: [paperDocumentId], references: [id], onDelete: Cascade)
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshots        PaperImportSnapshot[]
+  generatedVersion PaperDocumentVersion? @relation("PaperImportGeneratedVersion", fields: [generatedVersionId], references: [id], onDelete: SetNull)
+
+  @@index([paperDocumentId, createdAt])
+  @@index([userId, status])
+}
+
+model PaperImportSnapshot {
+  id            String   @id @default(cuid())
+  importId      String
+  contentHash   String
+  rawLocation   Json?
+  parserVersion String
+  parsedOutline Json?
+  createdAt     DateTime @default(now())
+
+  import PaperImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@unique([importId, contentHash])
+}
+
+model PaperResearchLink {
+  id                  String   @id @default(cuid())
+  paperWorkspaceId    String
+  researchWorkspaceId String
+  createdAt           DateTime @default(now())
+
+  paperWorkspace    PaperWorkspace    @relation(fields: [paperWorkspaceId], references: [id], onDelete: Cascade)
+  researchWorkspace ResearchWorkspace @relation(fields: [researchWorkspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([paperWorkspaceId, researchWorkspaceId])
+  @@index([researchWorkspaceId])
+}
+
+model PaperResearchMaterial {
+  id                  String                    @id @default(cuid())
+  paperWorkspaceId    String
+  researchWorkspaceId String
+  researchRunId       String?
+  researchReportId    String?
+  sourceId            String?
+  claimId             String?
+  evidenceId          String?
+  type                PaperResearchMaterialType
+  createdAt           DateTime                  @default(now())
+
+  paperWorkspace    PaperWorkspace          @relation(fields: [paperWorkspaceId], references: [id], onDelete: Cascade)
+  researchWorkspace ResearchWorkspace       @relation(fields: [researchWorkspaceId], references: [id], onDelete: Cascade)
+  researchRun       ResearchRun?            @relation(fields: [researchRunId], references: [id], onDelete: SetNull)
+  researchReport    ResearchReportSnapshot? @relation(fields: [researchReportId], references: [id], onDelete: SetNull)
+  source            ResearchSource?         @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  claim             Claim?                  @relation(fields: [claimId], references: [id], onDelete: SetNull)
+  evidence          Evidence?               @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  @@index([paperWorkspaceId, createdAt])
+  @@index([researchWorkspaceId, createdAt])
+  @@index([sourceId])
+  @@index([claimId])
+  @@index([evidenceId])
 }

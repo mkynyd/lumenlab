@@ -152,6 +152,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
                 title: input.conversation.title,
                 model: input.conversation.model,
                 thinkingEnabled: input.conversation.thinkingEnabled,
+                kind: input.conversation.kind ?? "chat",
               },
               select: { id: true, projectId: true },
             });
@@ -748,6 +749,32 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           scheduledAt: input.scheduledAt.toISOString(),
           failureCode: failureCode(input.failure),
         },
+      }),
+    });
+  }
+
+  async requeue(input: {
+    executionId: string;
+    workerId: string;
+    checkpoint: AgentCheckpoint;
+    scheduledAt: Date;
+    now: Date;
+  }): Promise<boolean> {
+    return this.transitionRunningExecution({
+      executionId: input.executionId,
+      workerId: input.workerId,
+      now: input.now,
+      data: {
+        status: "queued",
+        checkpoint: input.checkpoint as unknown as Prisma.InputJsonValue,
+        scheduledAt: input.scheduledAt,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
+      event: () => ({
+        key: `run_rescheduled:${input.scheduledAt.getTime()}`,
+        type: "run_rescheduled",
+        payload: { scheduledAt: input.scheduledAt.toISOString() },
       }),
     });
   }

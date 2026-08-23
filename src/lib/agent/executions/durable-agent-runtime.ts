@@ -33,6 +33,7 @@ import {
 import { AgentExecutionWorker } from "./agent-execution-worker";
 import { PrismaAgentExecutionStore } from "./prisma-agent-execution-store";
 import { AgentExecutionRetryPolicy } from "./retry-policy";
+import { createDurableResearchExecutionHandler } from "@/lib/research/durable-handler";
 
 const OUTPUT_CHUNK_SIZE = 16_000;
 /** 增量落盘的分段阈值：攒够字符数或距上次写入超过该间隔即写入事件存储 */
@@ -498,6 +499,7 @@ export function createDurableAgentExecutionHandler(input: {
   const run = input.run ?? runAgentRuntime;
   const recordUsage = input.recordUsage ?? recordTokenUsage;
   const loadOutcome = input.loadApprovedToolOutcome ?? loadApprovedToolOutcome;
+  const researchHandler = createDurableResearchExecutionHandler();
 
   return async (context) => {
     const checkpoint = context.execution.checkpoint;
@@ -508,6 +510,9 @@ export function createDurableAgentExecutionHandler(input: {
         message: "Durable execution request checkpoint is missing",
         retryable: false,
       };
+    }
+    if (checkpoint.request.executionKind === "research") {
+      return researchHandler(context);
     }
     if (checkpoint.output) {
       await persistCompletedUsage(

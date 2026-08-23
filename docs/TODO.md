@@ -1,6 +1,6 @@
 # TODO
 
-> Last updated: 2026-08-01
+> Last updated: 2026-08-24
 
 This document tracks the completed Agent Runtime consolidation plus deferred Skill, Tool, and production-hardening work.
 
@@ -250,3 +250,75 @@ Status: Iteration 0-2 MVP is complete. The document pipeline now supports text, 
 - [x] Iteration 6: Agent roles and quality checker. Done — see `src/lib/document-pipeline/quality-checker.ts` and `src/lib/document-pipeline/pipeline.ts`.
 - [ ] Iteration 7: UI parsing-mode controls and per-file quality reports.
   - **Status: will not do.** User explicitly excluded UI controls from this phase.
+
+## Deep Research + Paper — staged implementation plan (2026-08-24)
+
+This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLoop`, `AgentExecution` lease/checkpoint/event replay system, Tool Registry/Policy/Audit, Project/RAG, Artifact, file parsing and object storage remain the execution and safety seams. Do not introduce a second queue or a Python/LangGraph runtime.
+
+### Phase 0 — contracts, boundaries and migration (in progress)
+
+- [x] Read and reconcile the repository instructions, product/design system, current Prisma schema, runtime, durable worker, tool/skill registries, Project/RAG, file pipeline, object storage, SSE replay and academic Skills.
+- [x] Add additive Research and Paper Prisma models with immutable Research evidence/report snapshots, Paper document versions/patches, template bindings, imports, compilations and Research-to-Paper material links.
+- [ ] Add a small ADR and extend `CONTEXT.md` with the Research/Paper domain vocabulary.
+- [ ] Review the generated migration against a clean database and run `prisma migrate deploy` in the validation environment. The local development database had two older unapplied migrations; they were applied while generating the new migration and must not be silently treated as production deployment.
+
+### Phase 1 — Research Domain primitives
+
+- [ ] Define public Research contracts: lifecycle states, plan snapshot, question/task DAG, directive impact, budget profile, role model routing, public event payloads and user-facing quality labels.
+- [ ] Implement pure transition guards, Quick/Deep/Comprehensive budget limits, stop-condition evaluation and source identity normalization (DOI, arXiv ID, PMID, canonical URL and project/uploaded file identity).
+- [ ] Build Source Provider adapters over existing audited tools: web search/fetch, arXiv, Project RAG/files. Add provider seams for OpenAlex, Crossref, Semantic Scholar and PubMed without making them prerequisites for the first usable path.
+- [ ] Enforce the source lifecycle: search results are `SourceCandidate`; only successful fetch/full read/project-file read may create `SourceSnapshot` and `Evidence`. Store retrieved timestamp, content hash, version and object-storage location.
+- [ ] Implement append-only Evidence revisions, Claim/Evidence relations, source/evidence quality dimensions, conflict detection and domain profile policy.
+
+### Phase 2 — durable Research Orchestrator
+
+- [ ] Extend the existing durable Agent handler seam with a Research execution kind. A Research Run may reference one `AgentExecution` and its checkpoint/events; it must not create another worker/lease framework.
+- [ ] Implement `Planner → bounded parallel Researchers → Evaluator → Replan → Synthesizer → Citation Verifier` as resumable stages. V1 caps Researcher fan-out at four and checkpoints after each stage/task batch.
+- [ ] Add plan confirmation/revision, normal directives, scope/budget expansion confirmation, per-question bounded retries and follow-up Runs. Old Plan/Run/Report snapshots remain immutable.
+- [ ] Add Claim Consolidation, Evidence Packs, structured `ResearchReportDocument`, citation map and local verification/repair. Synthesizer may consume only current-run Claim/Evidence/SourceSnapshot records.
+- [ ] Add owner-scoped APIs and durable replay for workspace/run/plan/directive/report; continue to hide model hidden reasoning and only expose public execution events.
+
+### Phase 3 — Research UI and navigation
+
+- [ ] Add first-level `深度研究` navigation and an API-backed workspace list showing recent Runs and status.
+- [ ] Implement planning/awaiting-confirmation, plan revision, run progress, directive, budget and report views. Show current task, query, source/evidence counts, question completion and verification/conflict state; never render hidden chain-of-thought.
+- [ ] Allow a Research Workspace to be independent or associated with a Project, and connect selected Source/Claim/Evidence/Report materials to a Paper Workspace.
+
+### Phase 4 — Paper document foundation
+
+- [ ] Implement the stable Academic Document Schema: metadata, abstract, keywords, heading tree, paragraph, figure, table, equation, list, quote, bibliography, appendix, acknowledgement, page break, raw LaTeX and inline marks/citation/cross-reference/footnote.
+- [ ] Implement append-only `DocumentVersion`, AI `DocumentPatch` accept/reject and deterministic serialization. The Document is the source of truth; generated LaTeX is a Template Adapter output only.
+- [ ] Add Paper Workspace APIs and UI: overview, Writing (outline + continuous editor + PDF/AI side panel), materials/references and typesetting settings. Use local `iconoir-react` and current shell/design rules.
+- [ ] Keep Paper References separate from Research Evidence. Support manual references, DOI/BibTeX import and Research material transfer.
+
+### Phase 5 — import, Template Registry and compilation
+
+- [ ] Add deterministic import pipeline: DOCX/OpenXML first, then Markdown AST, TXT and LaTeX. Preserve Original Source, Import Snapshot, Import Report and generated Document Version; route only ambiguous structure to AI classification and require confirmation.
+- [ ] Ingest `cn-thesis-templates/templates.json` and related README/raw metadata through a repeatable script, never a hardcoded university list. The current machine-readable file contains 738 records while `INDEX.md` states 671; surface and reconcile this data-quality discrepancy during ingestion rather than silently dropping rows.
+- [ ] Model Template Manifest, pinned upstream snapshot, Adapter, Validation and Sample. Keep recommendation A/B/C/D separate from runtime `Verified/Compatible/Needs Review/Deprecated/Unverified`; Word-only records remain visible without inventing LaTeX implementations.
+- [ ] Add a general Academic Template plus registry search/filter and real sample/conformance validation for A/B packs first. Lock each Paper to a Template Binding Version.
+- [ ] Add isolated CompileJob/Worker using existing Artifact/Object Storage. Ephemeral workspace, read-only base files, network/shell-escape disabled, CPU/memory/time/file/output limits, XeLaTeX/pdfLaTeX/LuaLaTeX and BibTeX/Biber as required by the pinned pack; map normalized errors to Document nodes and keep the last successful PDF visible.
+
+### Phase 6 — verification and release gates
+
+- [ ] Add targeted tests for plan confirmation/revision, transitions, durable resume, task retry, source dedupe/snapshot, Evidence immutability, Claim relations, budget/stop conditions, follow-up runs, immutable reports and citation verification.
+- [ ] Add Paper tests for schema/serialization, patches/version recovery, DOCX/Markdown/LaTeX import, references, registry ingestion/version locking, compile jobs, node-to-LaTeX rendering, error mapping and Template Conformance.
+- [ ] For each completed phase run lint, typecheck, tests, Prisma validate/migration checks, production build and necessary headed Playwright checks; update this TODO, local `REPOSITORY_INDEX.md`, root `log.md`, and commit/push only after the phase is actually verified.
+
+#### Implementation guardrails
+
+- Search/fetch results never become formal Evidence without a successful read and immutable SourceSnapshot.
+- A Report Snapshot is immutable. Corrections, additions and continued research create a new Follow-up Run.
+- Budget hard limits and semantic coverage/independence/conflict/information-gain gates jointly stop a Run; critical Questions take precedence when budget is scarce.
+- Research role routing uses `research.planner`, `research.worker`, `research.evaluator`, `research.synthesizer` and `research.verifier` over the existing provider abstraction.
+- Paper compilation is a real background job; AI is optional for typesetting and never owns the document source of truth.
+
+### Current implementation status (2026-08-24)
+
+- [x] Phase 0: additive Prisma migration, ADR, domain vocabulary and clean local `prisma migrate deploy` validation.
+- [x] Phase 1 core: public contracts, lifecycle/budget/identity pure modules, existing Tool Registry-backed source provider, candidate→snapshot→evidence persistence, claim relations and quality labels.
+- [x] Phase 2 core: resumable Research stage handler on the existing `AgentExecution` worker, bounded fan-out, evaluator/replan, synthesis, verification, immutable report snapshots, owner-scoped API and SSE replay.
+- [x] Phase 3 core: first-level navigation, real workspace/run planning and confirmation UI, public progress events and report rendering.
+- [x] Phase 4 core: Academic Document schema, version/patch APIs, Paper Workspace and continuous editor shell.
+- [x] Phase 5 first slice: deterministic registry ingestion (all 738 machine-readable records), Markdown/TXT/LaTeX/DOCX import with original/snapshot/report/version persistence, and an isolated-flagged compile worker using an ephemeral `--no-shell-escape` workspace with PDF/source upload.
+- [ ] Remaining before declaring the full roadmap complete: resumable scope-confirmation continuation, append-only Evidence revision UI, OpenAlex/Crossref/Semantic Scholar/PubMed adapters, Research→Paper material transfer UI, DOI/BibTeX/reference workflows, template-pack upstream snapshots/adapters/conformance fixtures, asset-aware LaTeX compilation, PDF/SyncTeX viewer, and AI-assisted ambiguous import classification.

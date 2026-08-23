@@ -1,0 +1,13 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { BookStack, Search } from "iconoir-react";
+import { usePaperTemplates } from "@/lib/hooks/use-papers";
+
+export default function PaperTemplatesPage() {
+  const [query, setQuery] = useState("");
+  const templatesQuery = usePaperTemplates(query);
+  const templates = (templatesQuery.data ?? []) as Array<{ id: string; externalId: string; university: string; degreeType?: string | null; year?: string | null; format: string; status: string; recommendationLevel?: string | null; variants?: Array<{ status: string }> }>;
+  return <main className="h-full overflow-y-auto bg-[var(--color-bg)]"><div className="mx-auto max-w-6xl px-5 py-8 sm:px-8"><Link href="/papers" className="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]">← 我的论文</Link><div className="mt-6 flex items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">模板库</h1><p className="mt-2 text-sm text-[var(--color-text-secondary)]">来自真实 registry 数据的学校、学位、年份、格式与运行状态。</p></div><BookStack className="text-[var(--color-accent)]" width={28} height={28} strokeWidth={1.5} /></div><div className="relative mt-7 max-w-xl"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" width={16} height={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索学校或学位层级" aria-label="搜索学校或学位层级" className="min-h-10 w-full rounded-[var(--radius-md)] bg-[var(--color-panel)] pl-9 pr-3 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" /></div><p className="mt-5 text-xs text-[var(--color-text-tertiary)]">{templatesQuery.isPending ? "正在读取 registry…" : `当前显示 ${templates.length} 条`}</p><div className="mt-3 divide-y divide-[var(--color-separator)] bg-[var(--color-panel)]">{templates.map((template) => <div key={template.externalId ?? template.id} className="flex flex-wrap items-center gap-4 px-4 py-4"><div className="min-w-[13rem] flex-1"><h2 className="text-sm font-medium text-[var(--color-text-primary)]">{template.university}</h2><p className="mt-1 text-xs text-[var(--color-text-secondary)]">{template.degreeType ?? "未标明学位"} · {template.year ?? "年份未知"}</p></div><span className="text-xs text-[var(--color-text-tertiary)]">{template.format}</span><span className="text-xs text-[var(--color-text-tertiary)]">推荐 {template.recommendationLevel ?? "-"}</span><span className="text-xs text-[var(--color-text-secondary)]">{template.status}</span></div>)}</div></div></main>;
+}

@@ -41,4 +41,16 @@ export async function register() {
       });
     }
   }
+
+  if (process.env.PAPER_COMPILE_WORKER_ENABLED !== "false") {
+    try {
+      const { startPaperCompilationWorker } = await import("@/lib/paper/compile-worker");
+      const result = startPaperCompilationWorker();
+      logger.info("Paper compilation worker ready", result);
+    } catch (error) {
+      logger.error("Failed to start Paper compilation worker", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }

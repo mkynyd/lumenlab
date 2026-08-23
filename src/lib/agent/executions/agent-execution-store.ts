@@ -40,6 +40,8 @@ const durableRequestSchema = z
       .optional(),
     isQuickTask: z.boolean(),
     materialScope: z.enum(["project-corpus", "none"]).optional(),
+    executionKind: z.enum(["chat", "research"]).optional(),
+    researchRunId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -139,6 +141,19 @@ export const agentCheckpointSchema = z
       .strict(),
     allowedToolIds: z.array(z.string().min(1)),
     request: durableRequestSchema.optional(),
+    researchState: z
+      .object({
+        stage: z.enum(["researching", "evaluating", "synthesizing", "verifying"]),
+        modelCalls: z.number().int().nonnegative(),
+        searchCalls: z.number().int().nonnegative(),
+        fetchCalls: z.number().int().nonnegative(),
+        sourceCount: z.number().int().nonnegative(),
+        replanCount: z.number().int().nonnegative(),
+        verificationRepairs: z.number().int().nonnegative(),
+        draftReport: z.string().max(200_000).optional(),
+      })
+      .strict()
+      .optional(),
     usage: checkpointUsageSchema.optional(),
     output: z
       .object({
@@ -225,6 +240,7 @@ export type CreateOrGetAgentExecutionInput = {
     title: string;
     model: string;
     thinkingEnabled: boolean;
+    kind?: "chat" | "research-system";
   };
   userMessageContent: string;
   assistantMessageSources?: Prisma.InputJsonValue;
@@ -307,6 +323,13 @@ export interface AgentExecutionStore {
     scheduledAt: Date;
     now: Date;
     checkpoint?: AgentCheckpoint;
+  }): Promise<boolean>;
+  requeue(input: {
+    executionId: string;
+    workerId: string;
+    checkpoint: AgentCheckpoint;
+    scheduledAt: Date;
+    now: Date;
   }): Promise<boolean>;
   markWaitingForApproval(input: {
     executionId: string;

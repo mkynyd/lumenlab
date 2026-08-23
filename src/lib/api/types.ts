@@ -163,6 +163,32 @@ export interface ProjectSummary {
   _count: { conversations: number; files: number };
 }
 
+export interface ResearchWorkspaceSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  domainProfileKey: string;
+  budgetProfile: "quick" | "deep" | "comprehensive";
+  status: string;
+  project?: { id: string; name: string } | null;
+  runs: Array<{ id: string; question: string; status: string; createdAt: string; updatedAt: string }>;
+  _count: { runs: number; sources: number; evidence: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaperWorkspaceSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  project?: { id: string; name: string } | null;
+  document?: { id: string; title: string; updatedAt: string; currentVersionId: string | null } | null;
+  _count: { materials: number; references: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ProjectDetail extends ProjectSummary {
   files: ProjectFile[];
   conversations: ConversationSummary[];

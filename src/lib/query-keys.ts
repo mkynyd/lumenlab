@@ -25,6 +25,18 @@ export const queryKeys = {
     all: ["conversions"] as const,
     detail: (id: string) => ["conversions", id] as const,
   },
+  research: {
+    all: ["research"] as const,
+    workspaces: ["research", "workspaces"] as const,
+    workspace: (id: string) => ["research", "workspaces", id] as const,
+    run: (id: string) => ["research", "runs", id] as const,
+  },
+  papers: {
+    all: ["papers"] as const,
+    workspaces: ["papers", "workspaces"] as const,
+    workspace: (id: string) => ["papers", "workspaces", id] as const,
+    templates: (query = "") => ["papers", "templates", query] as const,
+  },
   learning: {
     all: learningAll,
     goals: (projectId: string) =>
