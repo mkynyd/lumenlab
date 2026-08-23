@@ -34,17 +34,28 @@ describe("template upstream snapshots", () => {
       { id: "plain", university: "示例", repositoryUrl: null, documentClass: null },
       [{ path: "article.cls" }],
     )).toBeNull();
+    expect(resolveTemplateDocumentClass(
+      { id: "jnu", university: "暨南大学", repositoryUrl: "https://github.com/example/jnu", documentClass: null },
+      [{ path: "JNUThesis.tex", buffer: Buffer.from("\\documentclass{book}") }],
+    )).toBe("book");
+    expect(resolveTemplateDocumentClass(
+      { id: "nuaa", university: "南京航空航天大学", repositoryUrl: "https://github.com/example/nuaa", documentClass: null },
+      [{ path: "nuaathesis.dtx", buffer: Buffer.from("\\ProvidesClass{nuaathesis}") }],
+    )).toBe("nuaathesis");
   });
 
   it("uses documented degree option shapes for common thesis classes", () => {
     expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "thuthesis")).toEqual(["master"]);
     expect(resolveTemplateClassOptions({ degreeType: "博士" }, "shtthesis")).toEqual(["doctor"]);
     expect(resolveTemplateClassOptions({ degreeType: "本科" }, "buctthesis")).toEqual(["type=bachelor"]);
+    expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "jnuthesis")).toEqual(["master"]);
+    expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "nuaathesis")).toEqual(["degree=master", "fontset=fandol"]);
   });
 
   it("prefers the pinned class bibliography implementation over stale registry metadata", () => {
     const manifest = { id: "demo", university: "示例", format: "latex", supportedBlocks: [], bibliography: "biblatex-gb7714-2015" } satisfies AcademicTemplateManifest;
     expect(resolveTemplateBibliography(manifest, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{natbib}") }]).bibliography).toBe("bibtex");
     expect(resolveTemplateBibliography(manifest, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{biblatex}") }]).bibliography).toBe("biblatex-gb7714-2015");
+    expect(resolveTemplateBibliography({ ...manifest, bibliography: null }, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{biblatex}") }]).bibliography).toBe("biblatex");
   });
 });

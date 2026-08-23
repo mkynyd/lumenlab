@@ -1,6 +1,6 @@
 import type { AcademicDocument, DocumentBlock, InlineNode } from "./document-schema";
 import type { AcademicTemplateManifest } from "./template-registry";
-import { resolveTemplateClassOptions } from "./template-snapshot";
+import { resolveTemplateClassOptions, type TemplateSourceFile } from "./template-snapshot";
 
 export interface LatexReference {
   id: string;
@@ -19,25 +19,29 @@ export interface LatexRenderResult {
   nodeMap: Record<string, { line: number; kind: string }>;
 }
 
-export function renderAcademicDocumentToLatex(document: AcademicDocument, options: { manifest?: AcademicTemplateManifest; references?: LatexReference[]; assetPaths?: Record<string, string> } = {}): LatexRenderResult {
+export function renderAcademicDocumentToLatex(document: AcademicDocument, options: { manifest?: AcademicTemplateManifest; references?: LatexReference[]; assetPaths?: Record<string, string>; templateFiles?: TemplateSourceFile[] } = {}): LatexRenderResult {
   const nodeMap: Record<string, { line: number; kind: string }> = {};
   const manifest = options.manifest;
+  const templateFiles = options.templateFiles ?? [];
   const documentClass = /^[A-Za-z][A-Za-z0-9_-]*$/.test(manifest?.documentClass ?? "") ? manifest!.documentClass! : "ctexart";
   const classOptions = resolveTemplateClassOptions(manifest ?? { degreeType: null }, documentClass);
   const metadata = document.blocks.find((block): block is Extract<DocumentBlock, { kind: "paper_metadata" }> => block.kind === "paper_metadata");
   const usesBiber = /biber|biblatex/i.test(manifest?.bibliography ?? "");
-  const usesTemplateBiblatex = usesBiber || isBiblatexTemplateClass(documentClass);
+  const sourceUsesBiblatex = templateFiles.some((file) => /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(file.buffer?.toString("utf8") ?? ""));
+  const usesTemplateBiblatex = usesBiber || sourceUsesBiblatex || isBiblatexTemplateClass(documentClass);
   const lines = [
+    ...renderTemplatePreClassOptions(documentClass, templateFiles),
     `\\documentclass${classOptions.length > 0 ? `[${classOptions.join(",")}]` : ""}{${documentClass}}`,
+    ...renderTemplatePreamble(templateFiles, manifest),
     "\\usepackage{amsmath,graphicx,booktabs,hyperref}",
-    ...(usesBiber && !isBiblatexTemplateClass(documentClass) ? [`\\usepackage[backend=biber,style=${biblatexStyle(documentClass)}]{biblatex}`, "\\addbibresource{references.bib}"] : []),
-    ...(metadata ? renderTemplateMetadataSetup(metadata, documentClass, usesTemplateBiblatex) : []),
+    ...(usesBiber && !isBiblatexTemplateClass(documentClass) && !sourceUsesBiblatex ? [`\\usepackage[backend=biber,style=${biblatexStyle(documentClass)}]{biblatex}`, "\\addbibresource{references.bib}"] : []),
+    ...(metadata ? renderTemplateMetadataSetup(metadata, documentClass, usesTemplateBiblatex, templateFiles) : []),
     "\\begin{document}",
   ];
   const generated: string[] = [];
   for (const block of document.blocks) {
     const startLine = lines.length + generated.length + 1;
-    const blockText = renderBlock(block, options.assetPaths, manifest, usesTemplateBiblatex);
+    const blockText = renderBlock(block, options.assetPaths, manifest, usesTemplateBiblatex, templateFiles);
     generated.push(blockText);
     const id = "id" in block && typeof block.id === "string" ? block.id : block.kind;
     nodeMap[id] = { line: startLine, kind: block.kind };
@@ -49,6 +53,13 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument, option
     referencesBib: (options.references ?? []).map(toBibtex).join("\n\n") + (options.references?.length ? "\n" : ""),
     nodeMap,
   };
+}
+
+function renderTemplatePreClassOptions(documentClass: string, files: TemplateSourceFile[]): string[] {
+  if (documentClass.toLowerCase() !== "nuaathesis") return [];
+  const source = files.map((file) => file.buffer?.toString("utf8") ?? "").join("\n");
+  if (!/\\DeclareStringOption\s*\{fontset\}/i.test(source)) return [];
+  return ["\\PassOptionsToClass{fontset=fandol}{ctexbook}", "\\PassOptionsToPackage{fontset=fandol}{ctex}"];
 }
 
 function bibtexField(value: string | number | null | undefined): string {
@@ -68,18 +79,20 @@ function toBibtex(reference: LatexReference): string {
   return `@article{${bibtexField(reference.id)},\n${fields.join(",\n")}\n}`;
 }
 
-function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, manifest?: AcademicTemplateManifest, usesTemplateBiblatex = false): string {
+function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, manifest?: AcademicTemplateManifest, usesTemplateBiblatex = false, templateFiles: TemplateSourceFile[] = []): string {
   switch (block.kind) {
     case "paper_metadata":
-      return (manifest?.documentClass ?? "").toLowerCase() === "ccnuthesis"
+      return hasCustomMetadataAdapter(templateFiles)
+        ? "\\maketitle"
+        : (manifest?.documentClass ?? "").toLowerCase() === "ccnuthesis"
         ? "\\frontmatter"
         : isSpecialMetadataClass(manifest?.documentClass)
           ? "\\maketitle"
-          : `\\title{${escapeLatex(block.title)}}\n\\author{${block.authors.map(escapeLatex).join(" \\and ")}}\n\\maketitle`;
+          : `\\title{${escapeLatex(block.title)}}\n\\author{${block.authors.map(escapeLatex).join(templateFiles.length > 0 ? "、" : " \\and ")}}\n\\maketitle`;
     case "abstract":
-      return renderAbstractBlock(block, manifest?.documentClass);
+      return renderAbstractBlock(block, manifest?.documentClass, templateFiles);
     case "keywords":
-      return `\\textbf{关键词：}${block.keywords.map(escapeLatex).join("；")}`;
+      return renderKeywordsBlock(block, templateFiles);
     case "heading":
       return `\\${sectionCommand(block.level)}{${renderInline(block.children)}}\\label{${escapeLatex(block.id)}}`;
     case "paragraph":
@@ -119,9 +132,12 @@ function biblatexStyle(documentClass: string): string {
   return documentClass.toLowerCase() === "thuthesis" ? "thuthesis-numeric" : "numeric";
 }
 
-function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "paper_metadata" }>, documentClass: string, usesBiblatex: boolean): string[] {
+function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "paper_metadata" }>, documentClass: string, usesBiblatex: boolean, templateFiles: TemplateSourceFile[]): string[] {
   const title = escapeLatex(metadata.title);
   const templateAuthor = metadata.authors.map(escapeLatex).join("、");
+  const degree = escapeLatex(metadata.degreeType ?? "硕士");
+  const englishDegree = degree.includes("博士") ? "Doctor" : degree.includes("本科") || degree.includes("学士") ? "Bachelor" : "Master";
+  const institution = escapeLatex(metadata.institution ?? "");
   switch (documentClass.toLowerCase()) {
     case "thuthesis":
       return [`\\thusetup{title = {${title}}, author = {${templateAuthor}}}`];
@@ -129,8 +145,31 @@ function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "p
       return [`\\shtsetup{title = {${title}}, author = {${templateAuthor}}${usesBiblatex ? ", bib-resource = {references.bib}" : ""}}`];
     case "ccnuthesis":
       return [`\\ccnusetup{info = {title = {${title}}, author = {${templateAuthor}}}, style = {bib-resource = {references.bib}}}`];
-    default:
-      return [];
+    default: {
+      const lines: string[] = [];
+      if (hasTemplateCommand(templateFiles, "cumtsetup")) {
+        lines.push(`\\cumtsetup{title = {${title}}, author = {${templateAuthor}}, thesis-type = {${degree}学位论文}, affiliation = {${institution}}, year = {${escapeLatex(metadata.date ?? "2026")}}}`);
+      }
+      if (hasTemplateCommand(templateFiles, "nuaaset")) {
+        lines.push(`\\nuaaset{title = {${title}}, author = {${templateAuthor}}}`);
+        lines.push(`\\title{${title}}`, `\\author{${templateAuthor}}`);
+      }
+      if (hasTemplateCommand(templateFiles, "Title")) lines.push(`\\Title{${title}}{${title}}`);
+      if (hasTemplateCommand(templateFiles, "Author")) lines.push(`\\Author{${templateAuthor}}{${templateAuthor}}`);
+      if (hasTemplateCommand(templateFiles, "thesisTitle")) lines.push(`\\thesisTitle{${title}}{${title}}`);
+      if (hasTemplateCommand(templateFiles, "zhtitle")) lines.push(`\\zhtitle{${title}}`);
+      if (hasTemplateCommand(templateFiles, "entitle")) lines.push(`\\entitle{${title}}`);
+      if (hasTemplateCommand(templateFiles, "englishtitle")) lines.push(`\\englishtitle{${title}}`);
+      if (hasTemplateCommand(templateFiles, "englishauthor")) lines.push(`\\englishauthor{${templateAuthor}}`);
+      if (hasTemplateCommand(templateFiles, "institute") && institution) lines.push(`\\institute{${institution}}`);
+      if (hasTemplateCommand(templateFiles, "degree")) lines.push(`\\degree{${degree}}`);
+      if (hasTemplateCommand(templateFiles, "englishdegree")) lines.push(`\\englishdegree{${englishDegree}}`);
+      if (hasTemplateCommand(templateFiles, "thesiskeywords")) lines.push("\\thesiskeywords{深度研究、论文排版、证据}");
+      if (hasTemplateCommand(templateFiles, "title") && !lines.some((line) => /\\(?:Title|thesisTitle)\b/.test(line))) lines.push(`\\title{${title}}`);
+      if (hasTemplateCommand(templateFiles, "author") && !lines.some((line) => /\\Author\b/.test(line))) lines.push(`\\author{${templateAuthor}}`);
+      if (usesBiblatex && hasTemplateToken(templateFiles, "addbibresource")) lines.push("\\addbibresource{references.bib}");
+      return lines;
+    }
   }
 }
 
@@ -138,7 +177,7 @@ function needsChapterAbstract(documentClass: string | null | undefined): boolean
   return ["book", "ctexbook", "ctexrep", "cquthesis", "buctthesis", "ctexreport", "report", "scrbook", "scrreprt", "ucasthesis", "tongjithesis"].includes((documentClass ?? "").toLowerCase());
 }
 
-function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>, documentClass: string | null | undefined): string {
+function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>, documentClass: string | null | undefined, templateFiles: TemplateSourceFile[]): string {
   const content = renderInline(block.children);
   const normalized = (documentClass ?? "").toLowerCase();
   if (normalized === "seuthesiy") {
@@ -147,9 +186,72 @@ function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>
     return `\\begin{${environment}}{${keywords}}\n${content}\n\\end{${environment}}`;
   }
   if (normalized === "shuthesis") return `\\begin{${block.language === "en" ? "eabstract" : "cabstract"}}\n${content}\n\\end{${block.language === "en" ? "eabstract" : "cabstract"}}`;
-  return needsChapterAbstract(documentClass)
+  const environment = block.language === "en"
+    ? hasTemplateEnvironment(templateFiles, "abstractEn") ? "abstractEn" : hasTemplateEnvironment(templateFiles, "enabstract") ? "enabstract" : null
+    : hasTemplateEnvironment(templateFiles, "abstract") ? "abstract" : null;
+  return (needsChapterAbstract(documentClass) && !environment) || (templateFiles.length > 0 && !environment)
     ? `\\chapter*{${block.language === "en" ? "Abstract" : "摘要"}}\n${content}`
-    : `\\begin{abstract}\n${content}\n\\end{abstract}`;
+    : `\\begin{${environment ?? "abstract"}}\n${content}\n\\end{${environment ?? "abstract"}}`;
+}
+
+function renderKeywordsBlock(block: Extract<DocumentBlock, { kind: "keywords" }>, templateFiles: TemplateSourceFile[]): string {
+  const keywords = block.keywords.map(escapeLatex).join("；");
+  if (hasTemplateCommand(templateFiles, "keywords")) return `\\keywords{${keywords}}`;
+  if (hasTemplateCommand(templateFiles, "thesiskeywords")) return `\\thesiskeywords{${keywords}}`;
+  return `\\textbf{关键词：}${keywords}`;
+}
+
+function hasTemplateCommand(files: TemplateSourceFile[], command: string): boolean {
+  if (!files.length) return false;
+  const pattern = new RegExp(`\\\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand|def)\\s*\\*?\\s*(?:\\\\?\\{)?\\\\${command}\\b`, "i");
+  return files.some((file) => file.buffer?.toString("utf8").match(pattern));
+}
+
+function hasTemplateToken(files: TemplateSourceFile[], token: string): boolean {
+  return files.some((file) => (file.buffer?.toString("utf8") ?? "").includes(`\\${token}`));
+}
+
+function hasTemplateEnvironment(files: TemplateSourceFile[], environment: string): boolean {
+  const pattern = new RegExp(`\\\\(?:newenvironment|renewenvironment|NewDocumentEnvironment)\\s*(?:\\*\\s*)?\\{${environment}\\}`, "i");
+  return files.some((file) => pattern.test(file.buffer?.toString("utf8") ?? ""));
+}
+
+function hasCustomMetadataAdapter(files: TemplateSourceFile[]): boolean {
+  return ["cumtsetup", "nuaaset", "Title", "Author", "thesisTitle", "zhtitle", "chinesetitle", "englishtitle"].some((command) => hasTemplateCommand(files, command));
+}
+
+function renderTemplatePreamble(files: TemplateSourceFile[], manifest?: AcademicTemplateManifest): string[] {
+  const entry = files.find((file) => file.path === manifest?.entryFile)
+    ?? files.filter((file) => /\.tex$/i.test(file.path) && !/\.dtx$/i.test(file.path) && file.buffer).sort((left, right) => {
+      const score = (file: TemplateSourceFile) => {
+        const source = file.buffer?.toString("utf8") ?? "";
+        const name = file.path.split("/").at(-1) ?? file.path;
+        return (source.includes("\\documentclass") ? -100 : 0)
+          + (/^(?:main|thesis|template|paper)/i.test(name) ? -20 : 0)
+          + (file.path.includes("/") ? 10 : 0)
+          + (/(?:readme|example|sample|test)/i.test(file.path) ? 20 : 0);
+      };
+      return score(left) - score(right) || left.path.localeCompare(right.path);
+    })[0];
+  if (!entry?.buffer) return [];
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  const source = entry.buffer.toString("utf8");
+  const pattern = /\\usepackage(?:\[([^\]]*)\])?\s*\{([^}]+)\}/gi;
+  for (const match of source.matchAll(pattern)) {
+    const options = (match[1] ?? "").trim();
+    for (const rawName of (match[2] ?? "").split(",").map((value) => value.trim()).filter(Boolean)) {
+      const name = rawName.replace(/\.sty$/i, "");
+      const standardPackage = /^(?:amsmath|graphicx|booktabs|hyperref)$/i.test(name);
+      if (!/^[A-Za-z0-9_.\/-]+$/.test(name) || name.includes("..") || seen.has(name) || standardPackage) continue;
+      seen.add(name);
+      const normalizedOptions = /^ctex$/i.test(name) && /(?:^|,)\s*fontset\s*=\s*none\s*(?:,|$)/i.test(options)
+        ? options.replace(/fontset\s*=\s*none/gi, "fontset=fandol")
+        : options;
+      lines.push(`\\usepackage${normalizedOptions ? `[${normalizedOptions}]` : ""}{${name}}`);
+    }
+  }
+  return lines;
 }
 
 function sectionCommand(level: number): string {

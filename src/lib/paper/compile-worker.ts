@@ -264,6 +264,29 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
       const rootClass = join(input.cwd, generatedClassPath);
       if (generatedClass !== rootClass) await writeFile(rootClass, await readFile(generatedClass));
       files.push({ path: generatedClassPath, buffer: await readFile(rootClass) });
+    } else {
+      const dtx = files.find((file) => file.path.endsWith(`/${documentClass}.dtx`) || file.path === `${documentClass}.dtx` || file.buffer?.toString("utf8").match(new RegExp(`\\\\ProvidesClass\\s*\\{${documentClass}\\}`, "i")));
+      if (dtx) {
+        const dtxName = basename(dtx.path);
+        const installerName = `${documentClass}.ins`;
+        await writeFile(join(input.cwd, dtxName), dtx.buffer ?? Buffer.alloc(0));
+        await writeFile(join(input.cwd, installerName), `\\input docstrip.tex\n\\keepsilent\n\\askforoverwritefalse\n\\preamble\nLumenLab pinned Template Pack bootstrap.\n\\endpreamble\n\\generate{\\file{${documentClass}.cls}{\\from{${dtxName}}{cls}}\\file{${documentClass}.cfg}{\\from{${dtxName}}{cfg}}}\\endbatchfile\n`, "utf8");
+        try {
+          await runCompileCommand({ cwd: input.cwd, command: { command: "tex", args: ["-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", installerName], phase: "engine" } });
+        } finally {
+          await rm(join(input.cwd, installerName), { force: true });
+          await rm(join(input.cwd, dtxName), { force: true });
+          for (const output of ["aux", "log", "pdf", "synctex.gz", "fdb_latexmk", "fls"].map((suffix) => `${documentClass}.${suffix}`)) {
+            await rm(join(input.cwd, output), { force: true });
+          }
+        }
+        const generatedClassPath = `${documentClass}.cls`;
+        const generatedClass = join(input.cwd, generatedClassPath);
+        await access(generatedClass).catch(() => { throw new Error(`TEMPLATE_BOOTSTRAP_FAILED：未生成 ${generatedClassPath}`); });
+        files.push({ path: generatedClassPath, buffer: await readFile(generatedClass) });
+        const generatedConfig = join(input.cwd, `${documentClass}.cfg`);
+        await access(generatedConfig).then(async () => files.push({ path: `${documentClass}.cfg`, buffer: await readFile(generatedConfig) })).catch(() => undefined);
+      }
     }
   }
   return files;
@@ -341,6 +364,7 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
       manifest: compileManifest,
       references: compilation.documentVersion.document.workspace.references,
       assetPaths,
+      templateFiles: upstreamFiles,
     });
     nodeMap = rendered.nodeMap;
     await writeFile(join(tempDirectory, "main.tex"), rendered.mainTex, "utf8");

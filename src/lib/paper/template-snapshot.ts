@@ -22,6 +22,11 @@ const GENERIC_DOCUMENT_CLASSES = new Set([
   "IEEEtran",
 ]);
 
+export interface TemplateSourceFile {
+  path: string;
+  buffer?: Buffer;
+}
+
 export function isSystemDocumentClass(value: string | null | undefined): boolean {
   return Boolean(value && GENERIC_DOCUMENT_CLASSES.has(value));
 }
@@ -43,7 +48,7 @@ export function isLatexTemplateFormat(format: string | null | undefined): boolea
 }
 
 function validDocumentClass(value: string): string | null {
-  const normalized = value.replace(/\.(?:cls|ins)$/i, "");
+  const normalized = value.replace(/\.(?:cls|ins)$/i, "").split("/").at(-1) ?? "";
   return /^[A-Za-z][A-Za-z0-9_-]*$/.test(normalized) ? normalized : null;
 }
 
@@ -62,17 +67,26 @@ function hintTokens(manifest: Pick<AcademicTemplateManifest, "id" | "university"
  */
 export function resolveTemplateDocumentClass(
   manifest: Pick<AcademicTemplateManifest, "documentClass" | "id" | "university" | "repositoryUrl">,
-  files: Array<{ path: string }>,
+  files: TemplateSourceFile[],
 ): string | null {
   const explicit = manifest.documentClass ? validDocumentClass(manifest.documentClass) : null;
   if (explicit) return explicit;
 
   const candidates = files
-    .filter((file) => /\.(?:cls|ins)$/i.test(file.path))
+    .filter((file) => /\.(?:cls|ins|dtx)$/i.test(file.path))
     .map((file) => ({ path: file.path, name: validDocumentClass(basename(file.path)) }))
     .filter((file): file is { path: string; name: string } => Boolean(file.name))
     .filter((file) => !GENERIC_DOCUMENT_CLASSES.has(file.name));
-  const unique = [...new Map(candidates.map((candidate) => [candidate.name, candidate])).values()];
+  const declared = files.flatMap((file) => {
+    if (!file.buffer) return [];
+    const source = file.buffer.toString("utf8");
+    const names = [
+      ...source.matchAll(/\\ProvidesClass\s*\{([^}]+)\}/gi),
+      ...source.matchAll(/\\documentclass(?:\[[^\]]*\])?\s*\{([^}]+)\}/gi),
+    ].map((match) => validDocumentClass(match[1] ?? "")).filter((name): name is string => Boolean(name));
+    return names.map((name) => ({ path: file.path, name }));
+  });
+  const unique = [...new Map([...declared, ...candidates].map((candidate) => [candidate.name, candidate])).values()];
   if (unique.length === 0) return null;
 
   const hints = hintTokens(manifest);
@@ -90,7 +104,10 @@ export function resolveTemplateDocumentClass(
     return { ...candidate, score };
   });
   scored.sort((left, right) => right.score - left.score || left.name.localeCompare(right.name));
-  return scored[0]?.name ?? null;
+  const custom = scored.find((candidate) => !GENERIC_DOCUMENT_CLASSES.has(candidate.name));
+  if (custom) return custom.name;
+  const declaredGeneric = declared.find((candidate) => GENERIC_DOCUMENT_CLASSES.has(candidate.name));
+  return declaredGeneric?.name ?? null;
 }
 
 function degreeToken(value: string | null | undefined): "bachelor" | "master" | "doctor" | null {
@@ -114,6 +131,8 @@ export function resolveTemplateClassOptions(
   if (!degree || !documentClass) return [];
   const normalized = documentClass.toLowerCase();
   if (["thuthesis", "xjtuthesis", "hithesis", "shtthesis"].includes(normalized)) return [degree];
+  if (normalized === "jnuthesis") return [degree === "doctor" ? "phd" : degree];
+  if (normalized === "nuaathesis") return [`degree=${degree}`, "fontset=fandol"];
   if (["ccnuthesis", "cquthesis", "buaathesis", "buctthesis", "shuthesis", "csuthesis"].includes(normalized)) return [`type=${degree}`];
   if (["tongjithesis"].includes(normalized)) return [`degree=${degree}`];
   return [];
@@ -129,12 +148,14 @@ export function resolveTemplateBibliography(
   manifest: AcademicTemplateManifest,
   files: Array<{ path: string; buffer?: Buffer }>,
 ): AcademicTemplateManifest {
-  if (!/biber|biblatex/i.test(manifest.bibliography ?? "")) return manifest;
   const classSources = files
     .filter((file) => /\.(?:cls|sty)$/i.test(file.path) && file.buffer)
     .map((file) => file.buffer!.toString("utf8"))
     .join("\n");
-  if (/\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(classSources)) return manifest;
+  const classUsesBiblatex = /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(classSources);
+  if (classUsesBiblatex && !/biber|biblatex/i.test(manifest.bibliography ?? "")) return { ...manifest, bibliography: "biblatex" };
+  if (!/biber|biblatex/i.test(manifest.bibliography ?? "")) return manifest;
+  if (classUsesBiblatex) return manifest;
   if (/\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*natbib\s*\}/i.test(classSources)) {
     return { ...manifest, bibliography: "bibtex" };
   }

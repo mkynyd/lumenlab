@@ -61,7 +61,9 @@ function normalizeValidationFailure(error: unknown): { code: string; message: st
     }
   }
   const diagnostic = [...raw.matchAll(/(?:^|\n)(?:[^\n]*?:\d+:\s*)([^\n]+)/g)].at(-1)?.[1]?.trim();
-  return { code: "COMPILE_FAILED", message: (diagnostic || raw.split("\n").filter(Boolean).at(-1) || raw).slice(0, 500) };
+  const fallback = diagnostic || raw.split("\n").filter(Boolean).at(-1) || raw;
+  const context = raw.slice(-720).replace(/\s+/g, " ").trim();
+  return { code: "COMPILE_FAILED", message: `${fallback}${context && context !== fallback ? ` | ${context}` : ""}`.slice(0, 500) };
 }
 
 async function materializeArchive(directory: string, archiveBuffer: Buffer) {
@@ -98,7 +100,7 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
     const effectiveManifest = manifest.documentClass ? manifest : { ...manifest, documentClass };
     const compileManifest = resolveTemplateBibliography(effectiveManifest, upstreamFiles);
     const document = buildSampleAcademicDocument();
-    const rendered = renderAcademicDocumentToLatex(document, { manifest: compileManifest, references: [{ id: "ref-sample", title: "Sample Reference", authors: ["Author"], year: 2026, venue: "Journal", doi: null, url: null }], assetPaths: { "sample-figure": "assets/sample-figure.png" } });
+    const rendered = renderAcademicDocumentToLatex(document, { manifest: compileManifest, references: [{ id: "ref-sample", title: "Sample Reference", authors: ["Author"], year: 2026, venue: "Journal", doi: null, url: null }], assetPaths: { "sample-figure": "assets/sample-figure.png" }, templateFiles: upstreamFiles });
     await mkdir(join(directory, "assets"), { recursive: true });
     await mkdir(join(directory, ".home"), { recursive: true });
     await mkdir(join(directory, ".tmp"), { recursive: true });
@@ -106,22 +108,37 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
     await writeFile(join(directory, "assets/sample-figure.png"), ONE_PIXEL_PNG);
     if (!isSystemDocumentClass(documentClass) && !upstreamFiles.some((file) => file.path === `${documentClass}.cls` || file.path.endsWith(`/${documentClass}.cls`))) {
       const installer = upstreamFiles.find((file) => file.path === `${documentClass}.ins` || file.path.endsWith(`/${documentClass}.ins`));
-      if (!installer) throw new Error(`pinned snapshot 缺少 ${documentClass}.cls，且没有可执行的 ${documentClass}.ins`);
-      const installerDirectory = dirname(installer.path) === "." ? "" : dirname(installer.path);
-      const installerStem = basename(installer.path, ".ins");
-      const bootstrapEntry = `${installerStem}.tex`;
-      const installerPrefix = installerDirectory ? `${installerDirectory}/` : "";
-      const installerDtx = upstreamFiles.filter((file) => file.path.startsWith(installerPrefix) && file.path.endsWith(".dtx"));
-      const copiedDtx = installerDirectory ? installerDtx.map((file) => basename(file.path)) : [];
-      for (const file of installerDtx) await writeFile(join(directory, basename(file.path)), file.buffer);
-      await writeFile(join(directory, bootstrapEntry), `\\input{${installer.path}}\n`, "utf8");
-      await runCompileCommand({ cwd: directory, command: { command: "xelatex", args: ["-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-no-shell-escape", "-synctex=1", bootstrapEntry], phase: "engine" } });
-      const generatedPath = join(directory, `${documentClass}.cls`);
-      const generated = await readFile(generatedPath);
-      if (installerDirectory) await writeFile(join(directory, `${documentClass}.cls`), generated);
-      upstreamFiles.push({ path: `${documentClass}.cls`, buffer: generated });
-      await rm(join(directory, bootstrapEntry), { force: true });
-      for (const file of copiedDtx) await rm(join(directory, file), { force: true });
+      if (installer) {
+        const installerDirectory = dirname(installer.path) === "." ? "" : dirname(installer.path);
+        const installerStem = basename(installer.path, ".ins");
+        const bootstrapEntry = `${installerStem}.tex`;
+        const installerPrefix = installerDirectory ? `${installerDirectory}/` : "";
+        const installerDtx = upstreamFiles.filter((file) => file.path.startsWith(installerPrefix) && file.path.endsWith(".dtx"));
+        const copiedDtx = installerDirectory ? installerDtx.map((file) => basename(file.path)) : [];
+        for (const file of installerDtx) await writeFile(join(directory, basename(file.path)), file.buffer);
+        await writeFile(join(directory, bootstrapEntry), `\\input{${installer.path}}\n`, "utf8");
+        await runCompileCommand({ cwd: directory, command: { command: "xelatex", args: ["-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-no-shell-escape", "-synctex=1", bootstrapEntry], phase: "engine" } });
+        const generatedPath = join(directory, `${documentClass}.cls`);
+        const generated = await readFile(generatedPath);
+        if (installerDirectory) await writeFile(join(directory, `${documentClass}.cls`), generated);
+        upstreamFiles.push({ path: `${documentClass}.cls`, buffer: generated });
+        await rm(join(directory, bootstrapEntry), { force: true });
+        for (const file of copiedDtx) await rm(join(directory, file), { force: true });
+      } else {
+        const dtx = upstreamFiles.find((file) => file.path.endsWith(`/${documentClass}.dtx`) || file.path === `${documentClass}.dtx` || file.buffer.toString("utf8").match(new RegExp(`\\\\ProvidesClass\\s*\\{${documentClass}\\}`, "i")));
+        if (!dtx) throw new Error(`pinned snapshot 缺少 ${documentClass}.cls，且没有可执行的 class source`);
+        const dtxName = basename(dtx.path);
+        const installerName = `${documentClass}.ins`;
+        await writeFile(join(directory, dtxName), dtx.buffer);
+        await writeFile(join(directory, installerName), `\\input docstrip.tex\n\\keepsilent\n\\askforoverwritefalse\n\\preamble\nLumenLab pinned Template Pack bootstrap.\n\\endpreamble\n\\generate{\\file{${documentClass}.cls}{\\from{${dtxName}}{cls}}\\file{${documentClass}.cfg}{\\from{${dtxName}}{cfg}}}\\endbatchfile\n`, "utf8");
+        await runCompileCommand({ cwd: directory, command: { command: "tex", args: ["-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", installerName], phase: "engine" } });
+        const generated = await readFile(join(directory, `${documentClass}.cls`));
+        upstreamFiles.push({ path: `${documentClass}.cls`, buffer: generated });
+        const generatedConfig = join(directory, `${documentClass}.cfg`);
+        await readFile(generatedConfig).then((buffer) => upstreamFiles.push({ path: `${documentClass}.cfg`, buffer })).catch(() => undefined);
+        await rm(join(directory, installerName), { force: true });
+        await rm(join(directory, dtxName), { force: true });
+      }
     }
     await writeFile(join(directory, "main.tex"), rendered.mainTex, "utf8");
     await writeFile(join(directory, "generated-content.tex"), rendered.generatedContentTex, "utf8");
