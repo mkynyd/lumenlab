@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { promisify } from "node:util";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -11,6 +13,7 @@ const root = process.env.TEMPLATE_REGISTRY_ROOT
   ? path.resolve(process.env.TEMPLATE_REGISTRY_ROOT)
   : path.resolve(process.cwd(), "resources/cn-thesis-templates");
 const NORMALIZATION_VERSION = "normalized-v2";
+const execFileAsync = promisify(execFile);
 
 function requestedRepositories(): Set<string> | null {
   const value = process.env.TEMPLATE_MATERIALIZE_REPOSITORIES?.trim();
@@ -33,18 +36,43 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}) {
   }
 }
 
+function versionRefs(value: string | null): string[] {
+  if (!value) return [];
+  const trimmed = value.trim();
+  if (!/^[A-Za-z0-9._/-]+$/.test(trimmed)) return [];
+  const refs = [trimmed];
+  if (/^\d+\.\d+(?:\.\d+)?$/.test(trimmed)) refs.push(`v${trimmed}`);
+  return [...new Set(refs)];
+}
+
+async function resolveGitRemote(slug: string, refs: string[]): Promise<string | null> {
+  const remote = `https://github.com/${slug}.git`;
+  const args = refs.length > 0
+    ? ["ls-remote", "--refs", remote, ...refs.flatMap((ref) => [`refs/tags/${ref}`, `refs/heads/${ref}`])]
+    : ["ls-remote", remote, "HEAD"];
+  try {
+    const result = await execFileAsync("git", args, { timeout: 90_000, maxBuffer: 1024 * 1024 });
+    const lines = result.stdout.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      const sha = line.split(/\s+/)[0];
+      if (/^[0-9a-f]{40}$/i.test(sha)) return sha;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 async function resolveCommit(slug: string, requestedVersion: string | null): Promise<string> {
   if (requestedVersion && /^[0-9a-f]{7,40}$/i.test(requestedVersion)) return requestedVersion;
-  const response = await fetchWithTimeout(`https://api.github.com/repos/${slug}/commits?per_page=1`);
-  if (!response.ok) throw new Error(`GitHub commit 查询失败：${slug} (${response.status})`);
-  const payload = await response.json() as Array<{ sha?: unknown }>;
-  const sha = payload[0]?.sha;
-  if (typeof sha !== "string" || !/^[0-9a-f]{7,40}$/i.test(sha)) throw new Error(`GitHub commit 响应无有效 SHA：${slug}`);
-  return sha;
+  const tagged = await resolveGitRemote(slug, versionRefs(requestedVersion));
+  const head = tagged ?? await resolveGitRemote(slug, []);
+  if (!head) throw new Error(`GitHub commit 查询失败：${slug}`);
+  return head;
 }
 
 async function downloadSnapshot(slug: string, commit: string) {
-  const response = await fetchWithTimeout(`https://api.github.com/repos/${slug}/zipball/${commit}`);
+  const response = await fetchWithTimeout(`https://github.com/${slug}/archive/${commit}.zip`, { headers: { Accept: "application/zip" } });
   if (!response.ok) throw new Error(`GitHub snapshot 下载失败：${slug}@${commit} (${response.status})`);
   const archive = Buffer.from(await response.arrayBuffer());
   return normalizeTemplateZip(archive);
@@ -91,12 +119,27 @@ async function updateVariants(records: TemplateRegistryRecord[], slug: string, c
       data: {
         manifest: JSON.parse(JSON.stringify(nextManifest)),
         pinnedUpstreamSnapshot: JSON.parse(JSON.stringify(upstreamSnapshot)),
-        validation: JSON.parse(JSON.stringify({ ...(variant.validation && typeof variant.validation === "object" ? variant.validation : {}), sourceMaterializedAt: new Date().toISOString(), sourceCommit: commit })),
+        validation: JSON.parse(JSON.stringify({ ...(variant.validation && typeof variant.validation === "object" ? variant.validation : {}), sourceMaterializationStatus: "materialized", sourceMaterializedAt: new Date().toISOString(), sourceCommit: commit })),
       },
     });
     updated += 1;
   }
   return updated;
+}
+
+async function markMaterializationFailure(records: TemplateRegistryRecord[], slug: string, error: string) {
+  const matching = records.filter((record) => githubRepositorySlug(record.repositoryUrl ?? "") === slug);
+  for (const record of matching) {
+    const variant = await prisma.templateVariant.findUnique({ where: { variantKey: `${record.id}:default` }, select: { id: true, validation: true } });
+    if (!variant) continue;
+    const validation = variant.validation && typeof variant.validation === "object" && !Array.isArray(variant.validation) ? variant.validation as Record<string, unknown> : {};
+    await prisma.templateVariant.update({
+      where: { id: variant.id },
+      data: {
+        validation: JSON.parse(JSON.stringify({ ...validation, sourceMaterializationStatus: "failed", sourceMaterializationAttemptedAt: new Date().toISOString(), sourceMaterializationError: error.slice(0, 500) })),
+      },
+    });
+  }
 }
 
 async function main() {
@@ -116,9 +159,15 @@ async function main() {
       const commit = await resolveCommit(slug, record.version ?? null);
       const snapshot = await downloadSnapshot(slug, commit);
       const updated = await updateVariants(records, slug, commit, snapshot);
-      results.push({ slug, commit, files: snapshot.files.length, bytes: snapshot.bytes, variants: updated });
+      const result = { slug, commit, files: snapshot.files.length, bytes: snapshot.bytes, variants: updated };
+      results.push(result);
+      console.log(JSON.stringify({ completed: results.length, total: selected.length, ...result }));
     } catch (error) {
-      results.push({ slug, error: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      await markMaterializationFailure(records, slug, message);
+      const result = { slug, error: message };
+      results.push(result);
+      console.error(JSON.stringify({ completed: results.length, total: selected.length, ...result }));
     }
   }
   console.log(JSON.stringify({ root, selected: selected.length, results }, null, 2));

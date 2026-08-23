@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
-import { githubRepositorySlug, normalizeTemplateZip } from "./template-snapshot";
+import type { AcademicTemplateManifest } from "./template-registry";
+import { githubRepositorySlug, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
 
 describe("template upstream snapshots", () => {
   it("accepts only GitHub owner/repository identities", () => {
@@ -18,5 +19,32 @@ describe("template upstream snapshots", () => {
     expect(result.sha256).toHaveLength(64);
     expect(repeated.sha256).toBe(result.sha256);
     expect(repeated.buffer.equals(result.buffer)).toBe(true);
+  });
+
+  it("infers a custom class from pinned files without selecting bundled generic classes", () => {
+    expect(resolveTemplateDocumentClass(
+      { id: "uestc", university: "电子科技大学", repositoryUrl: "https://github.com/example/uestc", documentClass: null },
+      [
+        { path: "template/dependencies/tex/latex/base/book.cls" },
+        { path: "template/dependencies/tex/latex/ctex/ctexbook.cls" },
+        { path: "template/uestcthesis.cls" },
+      ],
+    )).toBe("uestcthesis");
+    expect(resolveTemplateDocumentClass(
+      { id: "plain", university: "示例", repositoryUrl: null, documentClass: null },
+      [{ path: "article.cls" }],
+    )).toBeNull();
+  });
+
+  it("uses documented degree option shapes for common thesis classes", () => {
+    expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "thuthesis")).toEqual(["master"]);
+    expect(resolveTemplateClassOptions({ degreeType: "博士" }, "shtthesis")).toEqual(["doctor"]);
+    expect(resolveTemplateClassOptions({ degreeType: "本科" }, "buctthesis")).toEqual(["type=bachelor"]);
+  });
+
+  it("prefers the pinned class bibliography implementation over stale registry metadata", () => {
+    const manifest = { id: "demo", university: "示例", format: "latex", supportedBlocks: [], bibliography: "biblatex-gb7714-2015" } satisfies AcademicTemplateManifest;
+    expect(resolveTemplateBibliography(manifest, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{natbib}") }]).bibliography).toBe("bibtex");
+    expect(resolveTemplateBibliography(manifest, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{biblatex}") }]).bibliography).toBe("biblatex-gb7714-2015");
   });
 });

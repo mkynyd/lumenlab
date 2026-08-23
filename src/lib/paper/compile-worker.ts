@@ -11,6 +11,7 @@ import { assertCompileArtifactSize, assertCompileBundleLimits, CompilePolicyErro
 import { renderAcademicDocumentToLatex } from "./latex-renderer";
 import { parseAcademicDocument } from "./document-schema";
 import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
+import { resolveTemplateBibliography, resolveTemplateDocumentClass } from "./template-snapshot";
 
 const POLL_INTERVAL_MS = 1_000;
 
@@ -98,6 +99,9 @@ export async function runCompileCommand(input: { cwd: string; command: CompileCo
         HOME: join(input.cwd, ".home"),
         TMPDIR: join(input.cwd, ".tmp"),
         TEXMFOUTPUT: join(input.cwd, ".texmf-output"),
+        TEXINPUTS: `${input.cwd}//:`,
+        BIBINPUTS: `${input.cwd}//:`,
+        BSTINPUTS: `${input.cwd}//:`,
         SOURCE_DATE_EPOCH: "0",
       },
     });
@@ -168,7 +172,7 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
     await writeFile(join(input.cwd, path), buffer);
     files.push({ path, buffer });
   }
-  const documentClass = input.manifest.documentClass && /^[A-Za-z][A-Za-z0-9_-]*$/.test(input.manifest.documentClass) ? input.manifest.documentClass : null;
+  const documentClass = resolveTemplateDocumentClass(input.manifest, files);
   if (documentClass && !files.some((file) => file.path === `${documentClass}.cls` || file.path.endsWith(`/${documentClass}.cls`))) {
     const installer = files.find((file) => file.path === `${documentClass}.ins` || file.path.endsWith(`/${documentClass}.ins`));
     if (installer) {
@@ -260,14 +264,20 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
     const assets = await prisma.fileAsset.findMany({ where: { id: { in: figureIds }, userId: compilation.documentVersion.document.userId }, select: { id: true, originalName: true, storageProvider: true, storagePath: true } });
     if (assets.length !== new Set(figureIds).size) throw new Error("FIGURE_ASSET_MISSING：论文图片资源不存在或无权访问");
     const assetPaths = Object.fromEntries(assets.map((asset) => [asset.id, `assets/${asset.id}${extname(asset.originalName).toLowerCase() || ".bin"}`]));
+    engine = compilerCommand(compilation.engine);
+    const upstreamFiles = await materializeTemplateFiles({ cwd: tempDirectory, manifest });
+    const resolvedClass = resolveTemplateDocumentClass(manifest, upstreamFiles);
+    if (manifest.upstreamSnapshot?.materialized && !resolvedClass) {
+      throw new Error("TEMPLATE_MANIFEST_INCOMPLETE：pinned Template Pack 没有可用 documentClass");
+    }
+    const effectiveManifest = !manifest.documentClass && resolvedClass ? { ...manifest, documentClass: resolvedClass } : manifest;
+    const compileManifest = resolveTemplateBibliography(effectiveManifest, upstreamFiles);
     const rendered = renderAcademicDocumentToLatex(document, {
-      manifest,
+      manifest: compileManifest,
       references: compilation.documentVersion.document.workspace.references,
       assetPaths,
     });
-    engine = compilerCommand(compilation.engine);
     nodeMap = rendered.nodeMap;
-    const upstreamFiles = await materializeTemplateFiles({ cwd: tempDirectory, manifest });
     await writeFile(join(tempDirectory, "main.tex"), rendered.mainTex, "utf8");
     await writeFile(join(tempDirectory, "generated-content.tex"), rendered.generatedContentTex, "utf8");
     await writeFile(join(tempDirectory, "references.bib"), rendered.referencesBib, "utf8");
@@ -290,10 +300,10 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
         ...upstreamFiles.map((file) => ({ path: file.path, bytes: file.buffer.byteLength })),
       ],
     });
-    const source = await sourceBundle({ ...rendered, manifest, assets: assetFiles, files: upstreamFiles });
+    const source = await sourceBundle({ ...rendered, manifest: compileManifest, assets: assetFiles, files: upstreamFiles });
     assertCompileArtifactSize(source.byteLength);
 
-    await runCompilePipeline({ cwd: tempDirectory, engine, bibliography: manifest.bibliography });
+    await runCompilePipeline({ cwd: tempDirectory, engine, bibliography: compileManifest.bibliography });
     const pdf = await readFile(join(tempDirectory, "main.pdf"));
     const syncTexBuffer = await readFile(join(tempDirectory, "main.synctex.gz")).catch(() => null);
     assertCompileArtifactSize(pdf.byteLength);
@@ -320,7 +330,7 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
     });
   } catch (error) {
     const detail: CompilationError = {
-      code: error instanceof CompilePolicyError ? error.code : error instanceof Error && (error as CompileProcessError).code === "COMPILE_TIMEOUT" ? "COMPILE_TIMEOUT" : error instanceof Error && (error as CompileProcessError).code === "MISSING_EXECUTABLE" ? "COMPILER_MISSING" : "COMPILE_FAILED",
+      code: error instanceof CompilePolicyError ? error.code : error instanceof Error && /(?:usage:\s*lipo|Could not open biber log file)/i.test(error.message) ? "BIBLIOGRAPHY_BACKEND_UNAVAILABLE" : error instanceof Error && (error as CompileProcessError).code === "COMPILE_TIMEOUT" ? "COMPILE_TIMEOUT" : error instanceof Error && (error as CompileProcessError).code === "MISSING_EXECUTABLE" ? "COMPILER_MISSING" : "COMPILE_FAILED",
       message: error instanceof Error ? error.message : String(error),
       output: error instanceof Error ? (error as CompileProcessError).output : undefined,
       nodeMap,

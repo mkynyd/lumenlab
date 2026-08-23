@@ -1,9 +1,30 @@
 import { createHash } from "node:crypto";
+import { basename } from "node:path";
 import JSZip from "jszip";
 import { safeCompilePath } from "./compile-policy";
+import type { AcademicTemplateManifest } from "./template-registry";
 
 const MAX_TEMPLATE_FILES = 2_000;
 const MAX_TEMPLATE_BYTES = 200 * 1024 * 1024;
+const GENERIC_DOCUMENT_CLASSES = new Set([
+  "article",
+  "book",
+  "report",
+  "letter",
+  "scrartcl",
+  "scrbook",
+  "scrreprt",
+  "ctexart",
+  "ctexbook",
+  "ctexrep",
+  "ctexbeamer",
+  "beamer",
+  "IEEEtran",
+]);
+
+export function isSystemDocumentClass(value: string | null | undefined): boolean {
+  return Boolean(value && GENERIC_DOCUMENT_CLASSES.has(value));
+}
 
 export function githubRepositorySlug(repositoryUrl: string): string | null {
   try {
@@ -14,6 +35,110 @@ export function githubRepositorySlug(repositoryUrl: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function isLatexTemplateFormat(format: string | null | undefined): boolean {
+  const normalized = format?.trim().toLowerCase();
+  return normalized === "latex" || normalized === "overleaf";
+}
+
+function validDocumentClass(value: string): string | null {
+  const normalized = value.replace(/\.(?:cls|ins)$/i, "");
+  return /^[A-Za-z][A-Za-z0-9_-]*$/.test(normalized) ? normalized : null;
+}
+
+function hintTokens(manifest: Pick<AcademicTemplateManifest, "id" | "university" | "repositoryUrl">): string[] {
+  return [manifest.id, manifest.university, manifest.repositoryUrl ?? ""]
+    .join(" ")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 3);
+}
+
+/**
+ * Resolve a class from a pinned snapshot only when the registry metadata does
+ * not provide one. This never mutates registry metadata or treats a generic
+ * class as a school template.
+ */
+export function resolveTemplateDocumentClass(
+  manifest: Pick<AcademicTemplateManifest, "documentClass" | "id" | "university" | "repositoryUrl">,
+  files: Array<{ path: string }>,
+): string | null {
+  const explicit = manifest.documentClass ? validDocumentClass(manifest.documentClass) : null;
+  if (explicit) return explicit;
+
+  const candidates = files
+    .filter((file) => /\.(?:cls|ins)$/i.test(file.path))
+    .map((file) => ({ path: file.path, name: validDocumentClass(basename(file.path)) }))
+    .filter((file): file is { path: string; name: string } => Boolean(file.name))
+    .filter((file) => !GENERIC_DOCUMENT_CLASSES.has(file.name));
+  const unique = [...new Map(candidates.map((candidate) => [candidate.name, candidate])).values()];
+  if (unique.length === 0) return null;
+
+  const hints = hintTokens(manifest);
+  const scored = unique.map((candidate) => {
+    const normalizedName = candidate.name.toLowerCase();
+    const normalizedPath = candidate.path.toLowerCase();
+    let score = 0;
+    if (!candidate.path.includes("/")) score += 8;
+    if (normalizedName.includes("thesis") || normalizedName.includes("dissert")) score += 6;
+    if (normalizedPath.includes("dependency") || normalizedPath.includes("/base/") || normalizedPath.includes("/ctex/")) score -= 20;
+    for (const hint of hints) {
+      if (normalizedName === hint || normalizedName.includes(hint) || hint.includes(normalizedName)) score += 12;
+    }
+    if (/slide|backup|bak|doc|translation|undergraduate|graduate/.test(normalizedName)) score -= 4;
+    return { ...candidate, score };
+  });
+  scored.sort((left, right) => right.score - left.score || left.name.localeCompare(right.name));
+  return scored[0]?.name ?? null;
+}
+
+function degreeToken(value: string | null | undefined): "bachelor" | "master" | "doctor" | null {
+  const normalized = value ?? "";
+  if (normalized.includes("博士") && !normalized.includes("硕士")) return "doctor";
+  if (normalized.includes("本科") && !normalized.includes("硕士") && !normalized.includes("博士")) return "bachelor";
+  if (normalized.includes("硕士") || normalized.includes("博士")) return "master";
+  return null;
+}
+
+/**
+ * Small, explicit adapter hook for common Chinese thesis classes. It only
+ * supplies the degree selector that the class itself documents; all other
+ * metadata remains owned by the Academic Document renderer.
+ */
+export function resolveTemplateClassOptions(
+  manifest: Pick<AcademicTemplateManifest, "degreeType">,
+  documentClass: string | null | undefined,
+): string[] {
+  const degree = degreeToken(manifest.degreeType);
+  if (!degree || !documentClass) return [];
+  const normalized = documentClass.toLowerCase();
+  if (["thuthesis", "xjtuthesis", "hithesis", "shtthesis"].includes(normalized)) return [degree];
+  if (["ccnuthesis", "cquthesis", "buaathesis", "buctthesis", "shuthesis", "csuthesis"].includes(normalized)) return [`type=${degree}`];
+  if (["tongjithesis"].includes(normalized)) return [`degree=${degree}`];
+  return [];
+}
+
+/**
+ * Reconciles registry metadata with the pinned class implementation. Some
+ * historical registry rows describe BibLaTeX while the pinned class still
+ * loads natbib; compiling those rows with both packages creates an avoidable
+ * option clash. The class source is authoritative for the executable pack.
+ */
+export function resolveTemplateBibliography(
+  manifest: AcademicTemplateManifest,
+  files: Array<{ path: string; buffer?: Buffer }>,
+): AcademicTemplateManifest {
+  if (!/biber|biblatex/i.test(manifest.bibliography ?? "")) return manifest;
+  const classSources = files
+    .filter((file) => /\.(?:cls|sty)$/i.test(file.path) && file.buffer)
+    .map((file) => file.buffer!.toString("utf8"))
+    .join("\n");
+  if (/\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(classSources)) return manifest;
+  if (/\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*natbib\s*\}/i.test(classSources)) {
+    return { ...manifest, bibliography: "bibtex" };
+  }
+  return manifest;
 }
 
 export async function normalizeTemplateZip(input: Buffer): Promise<{ buffer: Buffer; files: string[]; sha256: string; bytes: number }> {
