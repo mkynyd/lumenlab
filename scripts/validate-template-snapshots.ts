@@ -11,7 +11,7 @@ import { compileResourceLimits, safeCompilePath } from "@/lib/paper/compile-poli
 import { runCompileCommand, runCompilePipeline } from "@/lib/paper/compile-worker";
 import { normalizeTemplateManifest } from "@/lib/paper/template-registry";
 import { renderAcademicDocumentToLatex } from "@/lib/paper/latex-renderer";
-import { isLatexTemplateFormat, isSystemDocumentClass, resolveTemplateBibliography, resolveTemplateDocumentClass } from "@/lib/paper/template-snapshot";
+import { buildDtxBootstrapPlan, isLatexTemplateFormat, isSystemDocumentClass, resolveTemplateBibliography, resolveTemplateDocumentClass } from "@/lib/paper/template-snapshot";
 
 const ONE_PIXEL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
@@ -125,17 +125,17 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
         await rm(join(directory, bootstrapEntry), { force: true });
         for (const file of copiedDtx) await rm(join(directory, file), { force: true });
       } else {
-        const dtx = upstreamFiles.find((file) => file.path.endsWith(`/${documentClass}.dtx`) || file.path === `${documentClass}.dtx` || file.buffer.toString("utf8").match(new RegExp(`\\\\ProvidesClass\\s*\\{${documentClass}\\}`, "i")));
+        const dtx = upstreamFiles.find((file) => file.path.endsWith(`/${documentClass}.dtx`) || file.path === `${documentClass}.dtx` || file.buffer.toString("utf8").match(new RegExp(`\\\\Provides(?:Expl)?Class\\s*\\{${documentClass}\\}`, "i")));
         if (!dtx) throw new Error(`pinned snapshot 缺少 ${documentClass}.cls，且没有可执行的 class source`);
         const dtxName = basename(dtx.path);
         const installerName = `${documentClass}.ins`;
+        const bootstrap = buildDtxBootstrapPlan(documentClass, dtxName, dtx.buffer.toString("utf8"));
         await writeFile(join(directory, dtxName), dtx.buffer);
-        await writeFile(join(directory, installerName), `\\input docstrip.tex\n\\keepsilent\n\\askforoverwritefalse\n\\preamble\nLumenLab pinned Template Pack bootstrap.\n\\endpreamble\n\\generate{\\file{${documentClass}.cls}{\\from{${dtxName}}{cls}}\\file{${documentClass}.cfg}{\\from{${dtxName}}{cfg}}}\\endbatchfile\n`, "utf8");
+        await writeFile(join(directory, installerName), bootstrap.installerSource, "utf8");
         await runCompileCommand({ cwd: directory, command: { command: "tex", args: ["-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", installerName], phase: "engine" } });
-        const generated = await readFile(join(directory, `${documentClass}.cls`));
-        upstreamFiles.push({ path: `${documentClass}.cls`, buffer: generated });
-        const generatedConfig = join(directory, `${documentClass}.cfg`);
-        await readFile(generatedConfig).then((buffer) => upstreamFiles.push({ path: `${documentClass}.cfg`, buffer })).catch(() => undefined);
+        for (const outputFile of bootstrap.outputFiles) {
+          await readFile(join(directory, outputFile)).then((buffer) => upstreamFiles.push({ path: outputFile, buffer })).catch(() => undefined);
+        }
         await rm(join(directory, installerName), { force: true });
         await rm(join(directory, dtxName), { force: true });
       }

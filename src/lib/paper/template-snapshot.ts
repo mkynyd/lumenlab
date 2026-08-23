@@ -27,6 +27,24 @@ export interface TemplateSourceFile {
   buffer?: Buffer;
 }
 
+export interface DtxBootstrapPlan {
+  installerSource: string;
+  outputFiles: string[];
+}
+
+export function buildDtxBootstrapPlan(documentClass: string, dtxName: string, dtxSource: string): DtxBootstrapPlan {
+  const generated = [...dtxSource.matchAll(/\\file\s*\{([^}]+)\}\s*\{\s*\\from\s*\{[^}]+\}\s*\{([^}]+)\}\s*\}/gi)]
+    .map((match) => ({ output: (match[1] ?? "").replace(/\\jobname/g, documentClass), tag: match[2] ?? "" }))
+    .filter((item) => /^[A-Za-z][A-Za-z0-9_.-]*$/.test(item.output) && /^[A-Za-z][A-Za-z0-9_.-]*$/.test(item.tag));
+  const outputs = generated.length > 0 ? generated : [{ output: `${documentClass}.cls`, tag: "class" }];
+  const outputFiles = [...new Set(outputs.map((item) => item.output))];
+  const generation = outputs.map((item) => `\\file{${item.output}}{\\from{${dtxName}}{${item.tag}}}`).join("\n");
+  return {
+    outputFiles,
+    installerSource: `\\input docstrip.tex\n\\keepsilent\n\\askforoverwritefalse\n\\preamble\nLumenLab pinned Template Pack bootstrap.\n\\endpreamble\n\\generate{\n${generation}\n}\\endbatchfile\n`,
+  };
+}
+
 export function isSystemDocumentClass(value: string | null | undefined): boolean {
   return Boolean(value && GENERIC_DOCUMENT_CLASSES.has(value));
 }
@@ -79,9 +97,9 @@ export function resolveTemplateDocumentClass(
     .filter((file) => !GENERIC_DOCUMENT_CLASSES.has(file.name));
   const declared = files.flatMap((file) => {
     if (!file.buffer) return [];
-    const source = file.buffer.toString("utf8");
+    const source = stripLatexComments(file.buffer.toString("utf8"));
     const names = [
-      ...source.matchAll(/\\ProvidesClass\s*\{([^}]+)\}/gi),
+      ...source.matchAll(/\\Provides(?:Expl)?Class\s*\{([^}]+)\}/gi),
       ...source.matchAll(/\\documentclass(?:\[[^\]]*\])?\s*\{([^}]+)\}/gi),
     ].map((match) => validDocumentClass(match[1] ?? "")).filter((name): name is string => Boolean(name));
     return names.map((name) => ({ path: file.path, name }));
@@ -149,8 +167,8 @@ export function resolveTemplateBibliography(
   files: Array<{ path: string; buffer?: Buffer }>,
 ): AcademicTemplateManifest {
   const classSources = files
-    .filter((file) => /\.(?:cls|sty)$/i.test(file.path) && file.buffer)
-    .map((file) => file.buffer!.toString("utf8"))
+    .filter((file) => /\.(?:cls|sty|dtx)$/i.test(file.path) && file.buffer)
+    .map((file) => stripLatexComments(file.buffer!.toString("utf8")))
     .join("\n");
   const classUsesBiblatex = /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(classSources);
   if (classUsesBiblatex && !/biber|biblatex/i.test(manifest.bibliography ?? "")) return { ...manifest, bibliography: "biblatex" };
@@ -160,6 +178,10 @@ export function resolveTemplateBibliography(
     return { ...manifest, bibliography: "bibtex" };
   }
   return manifest;
+}
+
+function stripLatexComments(source: string): string {
+  return source.replace(/(^|[^\\])%[^\n]*/g, "$1");
 }
 
 export async function normalizeTemplateZip(input: Buffer): Promise<{ buffer: Buffer; files: string[]; sha256: string; bytes: number }> {

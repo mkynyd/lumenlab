@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import type { AcademicTemplateManifest } from "./template-registry";
-import { githubRepositorySlug, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
+import { buildDtxBootstrapPlan, githubRepositorySlug, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
 
 describe("template upstream snapshots", () => {
   it("accepts only GitHub owner/repository identities", () => {
@@ -50,6 +50,12 @@ describe("template upstream snapshots", () => {
     expect(resolveTemplateClassOptions({ degreeType: "本科" }, "buctthesis")).toEqual(["type=bachelor"]);
     expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "jnuthesis")).toEqual(["master"]);
     expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "nuaathesis")).toEqual(["degree=master", "fontset=fandol"]);
+  });
+
+  it("bootstraps every generated artifact declared by a DTX installer", () => {
+    const plan = buildDtxBootstrapPlan("hustthesis", "hustthesis.dtx", "\\file{\\jobname.cls}{\\from{\\jobname.dtx}{class}}\\file{\\jobname-m.def}{\\from{\\jobname.dtx}{def-m}}\\file{\\jobname.cbx}{\\from{\\jobname.dtx}{cbx}}");
+    expect(plan.outputFiles).toEqual(["hustthesis.cls", "hustthesis-m.def", "hustthesis.cbx"]);
+    expect(plan.installerSource).toContain("\\file{hustthesis-m.def}{\\from{hustthesis.dtx}{def-m}}");
   });
 
   it("prefers the pinned class bibliography implementation over stale registry metadata", () => {

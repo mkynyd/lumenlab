@@ -21,6 +21,16 @@ function requestedRepositories(): Set<string> | null {
   return new Set(value.split(",").map((item) => item.trim()).filter(Boolean));
 }
 
+function discoverableSourceUrl(value: string | null | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return /(?:^|\.)overleaf\.com$/i.test(url.hostname) || url.hostname === "ctan.org" || url.hostname === "www.ctan.org" || url.hostname === "typst.app";
+  } catch {
+    return false;
+  }
+}
+
 function materializationLimit(): number {
   const value = Number(process.env.TEMPLATE_MATERIALIZE_LIMIT ?? 12);
   return Number.isInteger(value) && value > 0 ? Math.min(value, 200) : 12;
@@ -95,8 +105,36 @@ async function uploadOrReuseSnapshot(key: string, buffer: Buffer): Promise<Store
   }
 }
 
-async function updateVariants(records: TemplateRegistryRecord[], slug: string, commit: string, snapshot: Awaited<ReturnType<typeof downloadSnapshot>>) {
-  const matching = records.filter((record) => githubRepositorySlug(record.repositoryUrl ?? "") === slug);
+async function discoverGithubRepository(sourceUrl: string): Promise<string | null> {
+  const response = await fetchWithTimeout(sourceUrl, { headers: { Accept: "text/html" } });
+  if (!response.ok) throw new Error(`模板来源页面读取失败：${sourceUrl} (${response.status})`);
+  const html = await response.text();
+  const slugs = [...new Set([...html.matchAll(/https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/gi)]
+    .map((match) => githubRepositorySlug(`https://github.com/${match[1]}`))
+    .filter((slug): slug is string => Boolean(slug))
+    .filter((slug) => !/^typst\/(?:packages|typst)$/i.test(slug)))];
+  const sourceName = sourceUrl.split("/").filter(Boolean).at(-1)?.replace(/[^a-z0-9]+/gi, "").toLowerCase() ?? "";
+  return slugs.sort((left, right) => {
+    const score = (slug: string) => {
+      const normalized = slug.replace(/[^a-z0-9]+/gi, "").toLowerCase();
+      return sourceName && normalized.includes(sourceName) ? 2 : normalized.includes("thesis") ? 1 : 0;
+    };
+    return score(right) - score(left) || left.localeCompare(right);
+  })[0] ?? null;
+}
+
+function sourceKey(record: TemplateRegistryRecord): string | null {
+  const slug = githubRepositorySlug(record.repositoryUrl ?? "");
+  if (slug) return `github:${slug}`;
+  return discoverableSourceUrl(record.repositoryUrl) ? `page:${record.repositoryUrl}` : null;
+}
+
+function matchingRecords(records: TemplateRegistryRecord[], source: TemplateRegistryRecord, slug: string): TemplateRegistryRecord[] {
+  return records.filter((record) => githubRepositorySlug(record.repositoryUrl ?? "") === slug || record.repositoryUrl === source.repositoryUrl);
+}
+
+async function updateVariants(records: TemplateRegistryRecord[], source: TemplateRegistryRecord, slug: string, commit: string, snapshot: Awaited<ReturnType<typeof downloadSnapshot>>) {
+  const matching = matchingRecords(records, source, slug);
   const sourceArchive = await uploadOrReuseSnapshot(`template-snapshots/${slug.replace("/", "__")}/${commit}.${NORMALIZATION_VERSION}.zip`, snapshot.buffer);
   let updated = 0;
   for (const record of matching) {
@@ -127,8 +165,8 @@ async function updateVariants(records: TemplateRegistryRecord[], slug: string, c
   return updated;
 }
 
-async function markMaterializationFailure(records: TemplateRegistryRecord[], slug: string, error: string) {
-  const matching = records.filter((record) => githubRepositorySlug(record.repositoryUrl ?? "") === slug);
+async function markMaterializationFailure(records: TemplateRegistryRecord[], source: TemplateRegistryRecord, slug: string | null, error: string) {
+  const matching = slug ? matchingRecords(records, source, slug) : [source];
   for (const record of matching) {
     const variant = await prisma.templateVariant.findUnique({ where: { variantKey: `${record.id}:default` }, select: { id: true, validation: true } });
     if (!variant) continue;
@@ -147,25 +185,27 @@ async function main() {
   const allowed = requestedRepositories();
   const candidates = [...new Map(records
     .filter((record) => ["A", "B"].includes(record.recommendationLevel ?? "") && ["latex", "overleaf", "typst"].includes(record.format.toLowerCase()))
-    .map((record) => [githubRepositorySlug(record.repositoryUrl ?? ""), record] as const)
-    .filter(([slug]) => slug && (!allowed || allowed.has(slug))))
+    .map((record) => [sourceKey(record), record] as const)
+    .filter(([key, record]) => key && (!allowed || allowed.has(key.replace(/^github:/, "")) || allowed.has(record.repositoryUrl ?? ""))))
     .values()];
   const selected = allowed ? candidates : candidates.slice(0, materializationLimit());
   const results: Array<Record<string, unknown>> = [];
   for (const record of selected) {
-    const slug = githubRepositorySlug(record.repositoryUrl ?? "");
-    if (!slug) continue;
+    const sourceUrl = record.repositoryUrl ?? "";
     try {
+      const slug = githubRepositorySlug(sourceUrl) ?? await discoverGithubRepository(sourceUrl);
+      if (!slug) throw new Error(`来源页面未发现可固定的 GitHub 模板仓库：${sourceUrl}`);
       const commit = await resolveCommit(slug, record.version ?? null);
       const snapshot = await downloadSnapshot(slug, commit);
-      const updated = await updateVariants(records, slug, commit, snapshot);
-      const result = { slug, commit, files: snapshot.files.length, bytes: snapshot.bytes, variants: updated };
+      const updated = await updateVariants(records, record, slug, commit, snapshot);
+      const result = { source: sourceUrl, slug, commit, files: snapshot.files.length, bytes: snapshot.bytes, variants: updated };
       results.push(result);
       console.log(JSON.stringify({ completed: results.length, total: selected.length, ...result }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await markMaterializationFailure(records, slug, message);
-      const result = { slug, error: message };
+      const slug = githubRepositorySlug(sourceUrl);
+      await markMaterializationFailure(records, record, slug, message);
+      const result = { source: sourceUrl, ...(slug ? { slug } : {}), error: message };
       results.push(result);
       console.error(JSON.stringify({ completed: results.length, total: selected.length, ...result }));
     }

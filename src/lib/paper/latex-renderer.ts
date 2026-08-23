@@ -27,7 +27,9 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument, option
   const classOptions = resolveTemplateClassOptions(manifest ?? { degreeType: null }, documentClass);
   const metadata = document.blocks.find((block): block is Extract<DocumentBlock, { kind: "paper_metadata" }> => block.kind === "paper_metadata");
   const usesBiber = /biber|biblatex/i.test(manifest?.bibliography ?? "");
-  const sourceUsesBiblatex = templateFiles.some((file) => /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(file.buffer?.toString("utf8") ?? ""));
+  const sourceUsesBiblatex = templateFiles
+    .filter((file) => /\.(?:cls|sty)$/i.test(file.path))
+    .some((file) => /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(stripLatexComments(file.buffer?.toString("utf8") ?? "")));
   const usesTemplateBiblatex = usesBiber || sourceUsesBiblatex || isBiblatexTemplateClass(documentClass);
   const lines = [
     ...renderTemplatePreClassOptions(documentClass, templateFiles),
@@ -60,6 +62,10 @@ function renderTemplatePreClassOptions(documentClass: string, files: TemplateSou
   const source = files.map((file) => file.buffer?.toString("utf8") ?? "").join("\n");
   if (!/\\DeclareStringOption\s*\{fontset\}/i.test(source)) return [];
   return ["\\PassOptionsToClass{fontset=fandol}{ctexbook}", "\\PassOptionsToPackage{fontset=fandol}{ctex}"];
+}
+
+function stripLatexComments(source: string): string {
+  return source.replace(/(^|[^\\])%[^\n]*/g, "$1");
 }
 
 function bibtexField(value: string | number | null | undefined): string {

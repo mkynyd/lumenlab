@@ -11,7 +11,7 @@ import { assertCompileArtifactSize, assertCompileBundleLimits, CompilePolicyErro
 import { renderAcademicDocumentToLatex } from "./latex-renderer";
 import { parseAcademicDocument } from "./document-schema";
 import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
-import { resolveTemplateBibliography, resolveTemplateDocumentClass } from "./template-snapshot";
+import { buildDtxBootstrapPlan, resolveTemplateBibliography, resolveTemplateDocumentClass } from "./template-snapshot";
 
 const POLL_INTERVAL_MS = 1_000;
 
@@ -265,12 +265,13 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
       if (generatedClass !== rootClass) await writeFile(rootClass, await readFile(generatedClass));
       files.push({ path: generatedClassPath, buffer: await readFile(rootClass) });
     } else {
-      const dtx = files.find((file) => file.path.endsWith(`/${documentClass}.dtx`) || file.path === `${documentClass}.dtx` || file.buffer?.toString("utf8").match(new RegExp(`\\\\ProvidesClass\\s*\\{${documentClass}\\}`, "i")));
+      const dtx = files.find((file) => file.path.endsWith(`/${documentClass}.dtx`) || file.path === `${documentClass}.dtx` || file.buffer?.toString("utf8").match(new RegExp(`\\\\Provides(?:Expl)?Class\\s*\\{${documentClass}\\}`, "i")));
       if (dtx) {
         const dtxName = basename(dtx.path);
         const installerName = `${documentClass}.ins`;
+        const bootstrap = buildDtxBootstrapPlan(documentClass, dtxName, dtx.buffer?.toString("utf8") ?? "");
         await writeFile(join(input.cwd, dtxName), dtx.buffer ?? Buffer.alloc(0));
-        await writeFile(join(input.cwd, installerName), `\\input docstrip.tex\n\\keepsilent\n\\askforoverwritefalse\n\\preamble\nLumenLab pinned Template Pack bootstrap.\n\\endpreamble\n\\generate{\\file{${documentClass}.cls}{\\from{${dtxName}}{cls}}\\file{${documentClass}.cfg}{\\from{${dtxName}}{cfg}}}\\endbatchfile\n`, "utf8");
+        await writeFile(join(input.cwd, installerName), bootstrap.installerSource, "utf8");
         try {
           await runCompileCommand({ cwd: input.cwd, command: { command: "tex", args: ["-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", installerName], phase: "engine" } });
         } finally {
@@ -283,9 +284,10 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
         const generatedClassPath = `${documentClass}.cls`;
         const generatedClass = join(input.cwd, generatedClassPath);
         await access(generatedClass).catch(() => { throw new Error(`TEMPLATE_BOOTSTRAP_FAILED：未生成 ${generatedClassPath}`); });
-        files.push({ path: generatedClassPath, buffer: await readFile(generatedClass) });
-        const generatedConfig = join(input.cwd, `${documentClass}.cfg`);
-        await access(generatedConfig).then(async () => files.push({ path: `${documentClass}.cfg`, buffer: await readFile(generatedConfig) })).catch(() => undefined);
+        for (const outputFile of bootstrap.outputFiles) {
+          const generatedPath = join(input.cwd, outputFile);
+          await access(generatedPath).then(async () => files.push({ path: outputFile, buffer: await readFile(generatedPath) })).catch(() => undefined);
+        }
       }
     }
   }
