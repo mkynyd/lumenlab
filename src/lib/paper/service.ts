@@ -329,10 +329,11 @@ export async function bindTemplate(input: { userId: string; documentId: string; 
   } catch (error) {
     throw new PaperServiceError("INVALID_INPUT", error instanceof Error ? error.message : "模板 Manifest 无效");
   }
-  const pinned = variant.pinnedUpstreamSnapshot && typeof variant.pinnedUpstreamSnapshot === "object" && !Array.isArray(variant.pinnedUpstreamSnapshot)
-    ? (variant.pinnedUpstreamSnapshot as Record<string, unknown>).commitOrVersion
+  const pinnedSnapshot = variant.pinnedUpstreamSnapshot && typeof variant.pinnedUpstreamSnapshot === "object" && !Array.isArray(variant.pinnedUpstreamSnapshot)
+    ? variant.pinnedUpstreamSnapshot as Record<string, unknown>
     : null;
-  if (typeof pinned === "string" && pinned && input.lockedVersion !== pinned) {
+  const acceptedLocks = [pinnedSnapshot?.snapshotId, pinnedSnapshot?.commitOrVersion].filter((value): value is string => typeof value === "string" && value.length > 0);
+  if (acceptedLocks.length > 0 && !acceptedLocks.includes(input.lockedVersion)) {
     throw new PaperServiceError("INVALID_INPUT", "Template Binding 必须锁定已审核的 upstream snapshot 版本");
   }
   return prisma.$transaction(async (tx) => {
@@ -427,7 +428,7 @@ export async function importPaperDocument(input: {
     await prisma.paperImport.update({
       where: { id: importRow.id },
       data: {
-        status: "completed",
+        status: parsed.report.lowConfidenceBlocks.length > 0 ? "awaiting_confirmation" : "completed",
         originalProvider: original.provider,
         originalObjectKey: original.key,
         generatedVersionId: version.id,
@@ -442,4 +443,32 @@ export async function importPaperDocument(input: {
     });
     throw error;
   }
+}
+
+export async function getPaperImport(userId: string, importId: string) {
+  const importRow = await prisma.paperImport.findFirst({
+    where: { id: importId, userId, document: { userId } },
+    include: { snapshots: { orderBy: { createdAt: "desc" } }, generatedVersion: true },
+  });
+  if (!importRow) throw new PaperServiceError("NOT_FOUND", "导入记录不存在或无权访问");
+  return importRow;
+}
+
+export async function confirmPaperImport(input: { userId: string; importId: string; content?: unknown }) {
+  const importRow = await getPaperImport(input.userId, input.importId);
+  if (importRow.status !== "awaiting_confirmation") throw new PaperServiceError("INVALID_STATE", "当前导入记录不需要结构确认");
+  let generatedVersionId = importRow.generatedVersionId;
+  if (input.content !== undefined) {
+    const content = parseAcademicDocument(input.content);
+    const currentContent = importRow.generatedVersion?.content;
+    if (JSON.stringify(content) !== JSON.stringify(currentContent)) {
+      const version = await createDocumentVersion({ userId: input.userId, documentId: importRow.paperDocumentId, content });
+      generatedVersionId = version.id;
+    }
+  }
+  return prisma.paperImport.update({
+    where: { id: importRow.id },
+    data: { status: "completed", generatedVersionId: generatedVersionId ?? undefined },
+    include: { snapshots: { orderBy: { createdAt: "desc" } }, generatedVersion: true },
+  });
 }

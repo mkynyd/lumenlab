@@ -62,6 +62,8 @@ export function evaluateResearchStop(input: ResearchStopInput): ResearchStopDeci
   const hardBudgetExceeded =
     input.elapsedMs >= input.limits.wallTimeMs ||
     input.modelCalls >= input.limits.modelCalls ||
+    (input.totalTokens ?? 0) >= input.limits.maxTokens ||
+    (input.costCredits ?? 0) >= input.limits.maxCostCredits ||
     input.searchCalls >= input.limits.searchCalls ||
     input.fetchCalls >= input.limits.fetchCalls ||
     input.sourceCount >= input.limits.maxSources;

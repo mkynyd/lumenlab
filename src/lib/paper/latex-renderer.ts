@@ -119,8 +119,8 @@ function renderInline(nodes: InlineNode[]): string {
 function renderTable(block: Extract<DocumentBlock, { kind: "table" }>): string {
   const columns = "l".repeat(block.columns.length);
   const header = block.columns.map(escapeLatex).join(" & ");
-  const rows = block.rows.map((row) => row.map(escapeLatex).join(" & ")).join(" \\\n");
-  return `\\begin{table}[htbp]\n\\centering\n\\begin{tabular}{${columns}}\n\\toprule\n${header} \\\n\\midrule\n${rows}\n\\bottomrule\n\\end{tabular}\n${block.caption ? `\\caption{${escapeLatex(block.caption)}}` : ""}\n\\end{table}`;
+  const rows = block.rows.map((row) => `${row.map(escapeLatex).join(" & ")} \\\\`).join("\n");
+  return `\\begin{table}[htbp]\n\\centering\n\\begin{tabular}{${columns}}\n\\toprule\n${header} \\\\\n\\midrule\n${rows}\n\\bottomrule\n\\end{tabular}\n${block.caption ? `\\caption{${escapeLatex(block.caption)}}` : ""}\n\\end{table}`;
 }
 
 export function escapeLatex(value: string): string {

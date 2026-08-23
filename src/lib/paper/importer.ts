@@ -173,7 +173,10 @@ function fromDocx(input: { buffer: Buffer; filename: string }): PaperImportResul
       blocks.push({ kind: "paragraph", id: idFor("paragraph", value, index), children: text(value) });
     }
   }
-  if (xml.includes("<w:drawing") || xml.includes("<w:object")) warnings.push("DOCX 图片已检测到，但首轮导入只保留文字结构，图片需在结构确认后重新绑定 Asset");
+  if (xml.includes("<w:drawing") || xml.includes("<w:object")) {
+    warnings.push("DOCX 图片已检测到，但首轮导入只保留文字结构，图片需在结构确认后重新绑定 Asset");
+    lowConfidenceBlocks.push({ index: blocks.length, reason: "DOCX 图片尚未确定为 Figure、正文内图片或装饰资源" });
+  }
   if (!blocks.length) {
     warnings.push("DOCX 未找到可识别段落");
     lowConfidenceBlocks.push({ index: 0, reason: "DOCX 中未找到可识别的段落结构" });

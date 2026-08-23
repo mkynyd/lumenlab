@@ -77,6 +77,8 @@ export interface ResearchPlanSnapshot {
 export interface ResearchStopInput {
   limits: ResearchBudgetLimits;
   modelCalls: number;
+  totalTokens?: number;
+  costCredits?: number;
   searchCalls: number;
   fetchCalls: number;
   sourceCount: number;

@@ -47,4 +47,25 @@ describe("research budget", () => {
       })
     ).toMatchObject({ stop: true, reason: "semantic_coverage" });
   });
+
+  it("stops when token or credit hard budgets are exhausted", () => {
+    const limits = getResearchBudget("quick");
+    expect(evaluateResearchStop({
+      limits,
+      modelCalls: 0,
+      totalTokens: limits.maxTokens,
+      costCredits: 0,
+      searchCalls: 0,
+      fetchCalls: 0,
+      sourceCount: 0,
+      elapsedMs: 0,
+      criticalQuestionsResolved: true,
+      semanticCoverage: 0,
+      sourceDiversity: 0,
+      independentCorroboration: 0,
+      conflictCoverage: 0,
+      informationGain: 0,
+      hasPendingCriticalWork: false,
+    })).toMatchObject({ stop: true, reason: "hard_budget" });
+  });
 });

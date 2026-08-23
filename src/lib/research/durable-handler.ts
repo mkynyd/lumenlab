@@ -11,6 +11,8 @@ import { computeSourceDiversity } from "./quality";
 import { assertResearchRunTransition } from "./state-machine";
 import type { ResearchRunStatus } from "./contracts";
 import { nextResearchTaskRetryStatus } from "./task-retry";
+import { selectResearchModel } from "./model-routing";
+import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
 
 type ResearchState = NonNullable<AgentCheckpoint["researchState"]>;
 
@@ -161,6 +163,7 @@ async function synthesizeWithExistingRuntime(input: {
   signal: AbortSignal;
   question: string;
   evidence: Array<{ statement: string; excerpt: string; source: string }>;
+  useModel: boolean;
 }) {
   const evidenceText = input.evidence.map((item, index) => `${index + 1}. ${item.statement}\n来源：${item.source}\n摘录：${item.excerpt}`).join("\n\n").slice(0, 60_000);
   const prompt = [
@@ -171,11 +174,13 @@ async function synthesizeWithExistingRuntime(input: {
     evidenceText || "（没有可用 Evidence）",
   ].join("\n");
   try {
+    if (!input.useModel) throw new Error("research_synthesis_budget_exhausted");
+    const selection = selectResearchModel("research.synthesizer");
     const run = await runAgentRuntime({
       user: { id: input.userId },
       conversation: { id: input.conversationId, ...(input.projectId ? { projectId: input.projectId } : {}) },
       prompt: { message: prompt, attachments: [] },
-      model: { requestedModel: "deepseek-v4-pro", thinkingEnabled: false, reasoningEffort: "high" },
+      model: { requestedModel: selection.model, thinkingEnabled: false, reasoningEffort: selection.reasoningEffort },
       capabilities: { webSearchActive: false, skillOff: true, selectedFileIds: [], isQuickTask: false, mode: "general" },
       signal: input.signal,
     });
@@ -185,14 +190,18 @@ async function synthesizeWithExistingRuntime(input: {
     }
     const completion = await run.completion;
     const message = await prisma.message.findUnique({ where: { id: completion.messageId }, select: { content: true } });
-    if (completion.status === "completed" && message?.content?.trim()) return message.content.trim();
+    if (completion.status === "completed" && message?.content?.trim()) return { content: message.content.trim(), usage: completion.usage, model: selection.model };
   } catch {
     // The durable Research run remains usable with a deterministic evidence report
     // when the optional synthesis model is unavailable.
   }
-  return evidenceText
-    ? `## 研究结论\n\n本次研究围绕“${input.question}”收集了以下可核验证据：\n\n${input.evidence.map((item) => `- ${item.statement}（来源：${item.source}）`).join("\n")}\n\n## 限制\n\n以上内容只代表当前 Run 已成功读取的来源，不替代未完成的独立验证。`
-    : `## 研究结论\n\n当前 Run 没有成功读取可核验来源，不能对“${input.question}”形成可靠结论。`;
+  return {
+    content: evidenceText
+      ? `## 研究结论\n\n本次研究围绕“${input.question}”收集了以下可核验证据：\n\n${input.evidence.map((item) => `- ${item.statement}（来源：${item.source}）`).join("\n")}\n\n## 限制\n\n以上内容只代表当前 Run 已成功读取的来源，不替代未完成的独立验证。`
+      : `## 研究结论\n\n当前 Run 没有成功读取可核验来源，不能对“${input.question}”形成可靠结论。`,
+    usage: null,
+    model: selectResearchModel("research.synthesizer").model,
+  };
 }
 
 export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
@@ -228,6 +237,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     const state: ResearchState = existing ?? {
       stage: "researching",
       modelCalls: 0,
+      ...EMPTY_RESEARCH_USAGE,
       searchCalls: 0,
       fetchCalls: 0,
       sourceCount: 0,
@@ -247,10 +257,10 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     if (state.stage === "researching") {
       await transitionRun(run.id, "researching");
       const elapsedMs = Date.now() - (run.startedAt ?? run.createdAt).getTime();
-      const hardBudgetReached = elapsedMs >= limits.wallTimeMs || state.modelCalls >= limits.modelCalls || state.searchCalls >= limits.searchCalls || state.fetchCalls >= limits.fetchCalls || state.sourceCount >= limits.maxSources;
+      const hardBudgetReached = elapsedMs >= limits.wallTimeMs || state.modelCalls >= limits.modelCalls || (state.totalTokens ?? 0) >= limits.maxTokens || (state.costCredits ?? 0) >= limits.maxCostCredits || state.searchCalls >= limits.searchCalls || state.fetchCalls >= limits.fetchCalls || state.sourceCount >= limits.maxSources;
       if (hardBudgetReached) {
         state.stage = "evaluating";
-        await appendPublicEvent(context, { key: `research:budget:reached:${run.id}:${state.searchCalls}:${state.fetchCalls}`, kind: "budget_updated", runId: run.id, message: "已达到研究硬预算，进入评估阶段", publicData: { elapsedMs, modelCalls: state.modelCalls, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, limits } });
+        await appendPublicEvent(context, { key: `research:budget:reached:${run.id}:${state.searchCalls}:${state.fetchCalls}`, kind: "budget_updated", runId: run.id, message: "已达到研究硬预算，进入评估阶段", publicData: { elapsedMs, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, limits } });
         await transitionRun(run.id, "evaluating");
         await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
         return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
@@ -323,8 +333,8 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
       const sourceDiversity = computeSourceDiversity(allEvidence.map((evidence) => evidence.sourceSnapshot.source.kind));
       const independentCorroboration = questions.length === 0 ? 0 : questions.filter((question) => question.evidence.length >= 2).length / questions.length;
       const conflictCoverage = allEvidence.length === 0 ? 0 : independentCorroboration >= 0.5 ? 0.8 : 0.4;
-      const stopDecision = evaluateResearchStop({ limits, modelCalls: state.modelCalls, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, elapsedMs: Date.now() - (run.startedAt ?? run.createdAt).getTime(), criticalQuestionsResolved: !unresolvedCritical, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain: allEvidence.length > 0 ? 1 : 0, hasPendingCriticalWork: Boolean(unresolvedCritical) });
-      await appendPublicEvent(context, { key: `research:budget:evaluated:${run.id}:${state.replanCount}`, kind: "budget_updated", runId: run.id, message: stopDecision.summary, publicData: { ...stopDecision, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, counters: { modelCalls: state.modelCalls, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount } } });
+      const stopDecision = evaluateResearchStop({ limits, modelCalls: state.modelCalls, totalTokens: state.totalTokens, costCredits: state.costCredits, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, elapsedMs: Date.now() - (run.startedAt ?? run.createdAt).getTime(), criticalQuestionsResolved: !unresolvedCritical, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain: allEvidence.length > 0 ? 1 : 0, hasPendingCriticalWork: Boolean(unresolvedCritical) });
+      await appendPublicEvent(context, { key: `research:budget:evaluated:${run.id}:${state.replanCount}`, kind: "budget_updated", runId: run.id, message: stopDecision.summary, publicData: { ...stopDecision, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, counters: { modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount } } });
       if (!stopDecision.stop && unresolvedCritical && state.replanCount < limits.maxReplans && state.searchCalls < limits.searchCalls) {
         state.replanCount += 1;
         await prisma.researchQuestion.update({ where: { id: unresolvedCritical.id }, data: { replanAttempts: { increment: 1 } } });
@@ -341,8 +351,16 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
 
     if (state.stage === "synthesizing") {
       const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
-      const draftReport = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, evidence: evidence.map((item) => ({ statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
-      state.draftReport = draftReport;
+      const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, evidence: evidence.map((item) => ({ statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
+      state.draftReport = synthesis.content;
+      if (synthesis.usage) {
+        const usage = addResearchUsage({ promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 }, synthesis.usage, synthesis.model);
+        state.promptTokens = usage.promptTokens;
+        state.completionTokens = usage.completionTokens;
+        state.totalTokens = usage.totalTokens;
+        state.costCredits = usage.costCredits;
+        state.modelCalls += 1;
+      }
       state.stage = "verifying";
       await transitionRun(run.id, "verifying");
       await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
@@ -363,7 +381,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     const reportDocument = { schemaVersion: "1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots };
     const contentHash = createHash("sha256").update(JSON.stringify({ reportDocument, citationMap, verificationSummary })).digest("hex");
     const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claim.evidenceRelations.length === 0 ? "unsupported" : "verified" }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
-    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, verificationSummary }) } });
+    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, verificationSummary }) } });
     await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: "研究报告已完成并冻结为不可修改快照", publicData: { reportId: report.id, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, verificationSummary } });
     return { kind: "completed", checkpoint };
   };

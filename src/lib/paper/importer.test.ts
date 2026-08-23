@@ -1,4 +1,7 @@
+// @vitest-environment node
+
 import { describe, expect, it } from "vitest";
+import AdmZip from "adm-zip";
 import { parsePaperImport } from "./importer";
 
 describe("paper deterministic importers", () => {
@@ -12,5 +15,12 @@ describe("paper deterministic importers", () => {
     const result = parsePaperImport({ filename: "demo.tex", buffer: Buffer.from("\\customenvironment{a}") });
     expect(result.document.blocks.at(-1)?.kind).toBe("raw_latex");
     expect(result.report.lowConfidenceBlocks).toHaveLength(1);
+  });
+
+  it("routes DOCX images into structure confirmation instead of silently completing", () => {
+    const archive = new AdmZip();
+    archive.addFile("word/document.xml", Buffer.from("<w:document><w:body><w:p><w:r><w:t>正文</w:t><w:drawing><wp:inline /></w:drawing></w:r></w:p></w:body></w:document>"));
+    const result = parsePaperImport({ filename: "demo.docx", buffer: archive.toBuffer() });
+    expect(result.report.lowConfidenceBlocks[0]?.reason).toContain("图片");
   });
 });

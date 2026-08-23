@@ -21,12 +21,55 @@ type CompilationError = {
   nodeMap?: Record<string, { line: number; kind: string }>;
 };
 
-function compilerCommand(requested?: string | null): string {
+type CompileCommand = {
+  command: string;
+  args: string[];
+  phase: "latexmk" | "engine" | "bibtex" | "biber";
+};
+
+type CompileProcessError = Error & {
+  code?: "MISSING_EXECUTABLE" | "COMMAND_FAILED" | "COMPILE_TIMEOUT";
+  output?: string;
+};
+
+export function compilerCommand(requested?: string | null): string {
   const engine = requested ?? process.env.PAPER_TEX_ENGINE ?? "xelatex";
   if (!/^(xelatex|pdflatex|lualatex)$/.test(engine)) {
     throw new Error("PAPER_TEX_ENGINE 只允许 xelatex、pdflatex 或 lualatex");
   }
   return engine;
+}
+
+function bibliographyBackend(value?: string | null): "bibtex" | "biber" | null {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (!normalized || normalized === "none") return null;
+  if (normalized.includes("biber")) return "biber";
+  if (normalized.includes("bibtex") || normalized === "bib") return "bibtex";
+  throw new Error("模板 bibliography backend 只允许 bibtex、biber 或 none");
+}
+
+function engineFlag(engine: string): string {
+  return engine === "pdflatex" ? "-pdf" : `-${engine}`;
+}
+
+const LATEX_ARGS = ["-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-no-shell-escape", "-synctex=1"];
+
+export function buildCompileCommands(input: { engine?: string | null; bibliography?: string | null; preferLatexmk?: boolean } = {}): CompileCommand[] {
+  const engine = compilerCommand(input.engine);
+  const bibliography = bibliographyBackend(input.bibliography);
+  const commands: CompileCommand[] = [];
+  if (input.preferLatexmk !== false) {
+    commands.push({
+      command: "latexmk",
+      args: [engineFlag(engine), ...(bibliography === "biber" ? ["-usebiber"] : bibliography === "bibtex" ? ["-bibtex"] : []), ...LATEX_ARGS, "main.tex"],
+      phase: "latexmk",
+    });
+  }
+  commands.push({ command: engine, args: [...LATEX_ARGS, "main.tex"], phase: "engine" });
+  if (bibliography) commands.push({ command: bibliography, args: ["main"], phase: bibliography });
+  commands.push({ command: engine, args: [...LATEX_ARGS, "main.tex"], phase: "engine" });
+  if (bibliography) commands.push({ command: engine, args: [...LATEX_ARGS, "main.tex"], phase: "engine" });
+  return commands;
 }
 
 function timeoutMs(): number {
@@ -43,17 +86,10 @@ function normalizeOutput(output: string): string {
     .slice(-12_000);
 }
 
-async function runCompiler(input: { cwd: string; command: string }): Promise<string> {
-  const args = [
-    "-interaction=nonstopmode",
-    "-halt-on-error",
-    "-file-line-error",
-    "-no-shell-escape",
-    "main.tex",
-  ];
+async function runCompileCommand(input: { cwd: string; command: CompileCommand }): Promise<string> {
   const output: string[] = [];
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(input.command, args, {
+    const child = spawn(input.command.command, input.command.args, {
       cwd: input.cwd,
       shell: false,
       env: {
@@ -65,13 +101,18 @@ async function runCompiler(input: { cwd: string; command: string }): Promise<str
     });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error("LaTeX 编译超时"));
+      const error = new Error("LaTeX 编译超时") as CompileProcessError;
+      error.code = "COMPILE_TIMEOUT";
+      reject(error);
     }, timeoutMs());
     child.stdout.on("data", (chunk: Buffer) => output.push(chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => output.push(chunk.toString()));
     child.once("error", (error) => {
       clearTimeout(timer);
-      reject(error);
+      const processError = error as CompileProcessError;
+      const systemCode = (error as NodeJS.ErrnoException).code;
+      processError.code = systemCode === "ENOENT" ? "MISSING_EXECUTABLE" : "COMMAND_FAILED";
+      reject(processError);
     });
     child.once("close", (code) => {
       clearTimeout(timer);
@@ -79,22 +120,48 @@ async function runCompiler(input: { cwd: string; command: string }): Promise<str
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(result || `LaTeX 编译退出码 ${code ?? "unknown"}`));
+        const error = new Error(result || `LaTeX 编译退出码 ${code ?? "unknown"}`) as CompileProcessError;
+        error.code = "COMMAND_FAILED";
+        error.output = result;
+        reject(error);
       }
     });
   });
   return normalizeOutput(output.join(""));
 }
 
-async function sourceBundle(input: {
+async function runCompilePipeline(input: { cwd: string; engine?: string | null; bibliography?: string | null }): Promise<{ output: string; lastPhase: CompileCommand["phase"] }> {
+  const commands = buildCompileCommands({ engine: input.engine, bibliography: input.bibliography });
+  const output: string[] = [];
+  for (const command of commands) {
+    try {
+      output.push(await runCompileCommand({ cwd: input.cwd, command }));
+      if (command.phase === "latexmk") return { output: normalizeOutput(output.join("\n")), lastPhase: command.phase };
+    } catch (error) {
+      const processError = error as CompileProcessError;
+      // latexmk is an optional convenience wrapper. A missing executable falls
+      // back to the explicit engine/bibliography sequence; a real TeX failure
+      // must be surfaced and must not be hidden by a second attempt.
+      if (command.phase === "latexmk" && processError.code === "MISSING_EXECUTABLE") continue;
+      throw error;
+    }
+  }
+  return { output: normalizeOutput(output.join("\n")), lastPhase: "engine" };
+}
+
+export async function sourceBundle(input: {
   mainTex: string;
   generatedContentTex: string;
   referencesBib: string;
+  manifest: unknown;
+  assets?: Array<{ path: string; buffer: Buffer }>;
 }): Promise<Buffer> {
   const zip = new JSZip();
   zip.file("main.tex", input.mainTex);
   zip.file("generated-content.tex", input.generatedContentTex);
   zip.file("references.bib", input.referencesBib);
+  zip.file("template-manifest.json", JSON.stringify(input.manifest, null, 2));
+  for (const asset of input.assets ?? []) zip.file(asset.path, asset.buffer);
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
@@ -130,7 +197,7 @@ async function claimCompilation() {
 
 async function processCompilation(compilation: NonNullable<Awaited<ReturnType<typeof claimCompilation>>>) {
   const tempDirectory = await mkdtemp(join(tmpdir(), "lumenlab-paper-"));
-  let command = "xelatex";
+  let engine = "xelatex";
   let nodeMap: Record<string, { line: number; kind: string }> = {};
   try {
     const document = parseAcademicDocument(compilation.documentVersion.content);
@@ -145,50 +212,53 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
       references: compilation.documentVersion.document.workspace.references,
       assetPaths,
     });
-    command = compilerCommand(compilation.engine);
-    const source = await sourceBundle(rendered);
+    engine = compilerCommand(compilation.engine);
     nodeMap = rendered.nodeMap;
     await writeFile(join(tempDirectory, "main.tex"), rendered.mainTex, "utf8");
     await writeFile(join(tempDirectory, "generated-content.tex"), rendered.generatedContentTex, "utf8");
     await writeFile(join(tempDirectory, "references.bib"), rendered.referencesBib, "utf8");
     await mkdir(join(tempDirectory, "assets"), { recursive: true });
-    await Promise.all(assets.map(async (asset) => {
+    const assetFiles = await Promise.all(assets.map(async (asset) => {
       const buffer = await readStoredObject({ provider: asset.storageProvider as StorageProvider, key: asset.storagePath });
-      await writeFile(join(tempDirectory, assetPaths[asset.id]), buffer);
+      const path = assetPaths[asset.id];
+      await writeFile(join(tempDirectory, path), buffer);
+      return { path, buffer };
     }));
+    const source = await sourceBundle({ ...rendered, manifest, assets: assetFiles });
 
-    // Run twice so labels and cross references settle without relying on a
-    // user-provided shell command or an unrestricted latexmk invocation.
-    await runCompiler({ cwd: tempDirectory, command });
-    await runCompiler({ cwd: tempDirectory, command });
+    await runCompilePipeline({ cwd: tempDirectory, engine, bibliography: manifest.bibliography });
     const pdf = await readFile(join(tempDirectory, "main.pdf"));
+    const syncTexBuffer = await readFile(join(tempDirectory, "main.synctex.gz")).catch(() => null);
     const baseKey = `papers/${compilation.documentVersion.document.userId}/${compilation.documentVersionId}/${compilation.id}`;
-    const [pdfObject, sourceObject] = await Promise.all([
+    const [pdfObject, sourceObject, syncTexObject] = await Promise.all([
       uploadObjectBuffer({ key: `${baseKey}/main.pdf`, mimeType: "application/pdf", buffer: pdf }),
       uploadObjectBuffer({ key: `${baseKey}/source.zip`, mimeType: "application/zip", buffer: source }),
+      syncTexBuffer ? uploadObjectBuffer({ key: `${baseKey}/main.synctex.gz`, mimeType: "application/gzip", buffer: syncTexBuffer }) : Promise.resolve(null),
     ]);
     await prisma.paperCompilation.update({
       where: { id: compilation.id },
       data: {
         status: "succeeded",
-        engine: command,
+        engine,
         pdfStorageProvider: pdfObject.provider,
         pdfObjectKey: pdfObject.key,
         sourceStorageProvider: sourceObject.provider,
         sourceObjectKey: sourceObject.key,
+        syncTex: syncTexObject ? { provider: syncTexObject.provider, key: syncTexObject.key, format: "synctex.gz" } : undefined,
         errorLog: { nodeMap },
         completedAt: new Date(),
       },
     });
   } catch (error) {
     const detail: CompilationError = {
-      code: error instanceof Error && /超时/.test(error.message) ? "COMPILE_TIMEOUT" : "COMPILE_FAILED",
+      code: error instanceof Error && (error as CompileProcessError).code === "COMPILE_TIMEOUT" ? "COMPILE_TIMEOUT" : error instanceof Error && (error as CompileProcessError).code === "MISSING_EXECUTABLE" ? "COMPILER_MISSING" : "COMPILE_FAILED",
       message: error instanceof Error ? error.message : String(error),
+      output: error instanceof Error ? (error as CompileProcessError).output : undefined,
       nodeMap,
     };
     await prisma.paperCompilation.update({
       where: { id: compilation.id },
-      data: { status: "failed", engine: command, errorLog: detail, completedAt: new Date() },
+      data: { status: "failed", engine, errorLog: detail, completedAt: new Date() },
     });
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });

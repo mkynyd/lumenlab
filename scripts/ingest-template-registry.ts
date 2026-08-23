@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import {
+  buildTemplateManifest,
   mapTemplateRuntimeStatus,
   parseTemplateRegistry,
 } from "@/lib/paper/template-registry";
@@ -76,54 +77,26 @@ async function main() {
 
     const executable = ["latex", "overleaf", "typst"].includes(record.format.toLowerCase());
     if (executable) {
+      const variantKey = `${record.id}:default`;
+      const manifest = buildTemplateManifest(record, variantKey);
       await prisma.templateVariant.upsert({
-        where: { variantKey: `${record.id}:default` },
+        where: { variantKey },
         create: {
           registryEntry: { connect: { externalId: record.id } },
-          variantKey: `${record.id}:default`,
-          manifest: {
-            id: `${record.id}:default`,
-            university: record.university,
-            degreeType: record.degreeType,
-            year: record.year,
-            format: record.format,
-            officialSpecUrl: record.officialSpecUrl,
-            repositoryUrl: record.repositoryUrl,
-            engine: record.engine,
-            entryFile: record.entryFile,
-            documentClass: record.documentClass,
-            bibliography: record.bibliography,
-            supportedBlocks: ["metadata", "abstract", "heading", "paragraph", "figure", "table", "equation", "citation", "appendix"],
-          },
-          pinnedUpstreamSnapshot: {
-            repositoryUrl: record.repositoryUrl,
-            commitOrVersion: record.version ?? record.lastCommit,
-            sourceType: record.sourceType,
-          },
-          adapterId: `${record.format.toLowerCase()}-academic-v1`,
+          variantKey,
+          manifest: JSON.parse(JSON.stringify(manifest)),
+          pinnedUpstreamSnapshot: JSON.parse(JSON.stringify(manifest.upstreamSnapshot)),
+          adapterId: manifest.adapterId ?? `${record.format.toLowerCase()}-academic-v1`,
           status: runtimeStatus,
-          validation: { status: "pending", lastValidatedAt: null },
+          validation: JSON.parse(JSON.stringify(manifest.validation)),
+          sample: JSON.parse(JSON.stringify(manifest.sample)),
         },
         update: {
-          manifest: {
-            id: `${record.id}:default`,
-            university: record.university,
-            degreeType: record.degreeType,
-            year: record.year,
-            format: record.format,
-            officialSpecUrl: record.officialSpecUrl,
-            repositoryUrl: record.repositoryUrl,
-            engine: record.engine,
-            entryFile: record.entryFile,
-            documentClass: record.documentClass,
-            bibliography: record.bibliography,
-            supportedBlocks: ["metadata", "abstract", "heading", "paragraph", "figure", "table", "equation", "citation", "appendix"],
-          },
-          pinnedUpstreamSnapshot: {
-            repositoryUrl: record.repositoryUrl,
-            commitOrVersion: record.version ?? record.lastCommit,
-            sourceType: record.sourceType,
-          },
+          manifest: JSON.parse(JSON.stringify(manifest)),
+          pinnedUpstreamSnapshot: JSON.parse(JSON.stringify(manifest.upstreamSnapshot)),
+          adapterId: manifest.adapterId ?? `${record.format.toLowerCase()}-academic-v1`,
+          validation: JSON.parse(JSON.stringify(manifest.validation)),
+          sample: JSON.parse(JSON.stringify(manifest.sample)),
           status: runtimeStatus,
         },
       });

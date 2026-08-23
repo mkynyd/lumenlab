@@ -1,22 +1,24 @@
 import { createHash } from "node:crypto";
+import type { AgentModel } from "@/lib/agent/contracts";
 import { PrismaAgentExecutionStore } from "@/lib/agent/executions/prisma-agent-execution-store";
 import { parseAgentCheckpoint, type AgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
 import { prisma } from "@/lib/db";
+import { selectResearchModel, type ResearchModelSelection } from "./model-routing";
 
-function researchCheckpoint(input: { runId: string; question: string; model: "deepseek-v4-flash" | "deepseek-v4-pro" }): AgentCheckpoint {
+function researchCheckpoint(input: { runId: string; question: string; selection: ResearchModelSelection }): AgentCheckpoint {
   return parseAgentCheckpoint({
     version: 1,
     messages: [{ role: "user", content: input.question }],
     round: 0,
-    model: { provider: "deepseek", name: input.model },
+    model: { provider: input.selection.provider, name: input.selection.model },
     skill: { id: null, version: null },
     rag: { sourceIds: [], selectedFileIds: [] },
     allowedToolIds: ["web.search", "web.fetch", "arxiv.search", "arxiv.read", "arxiv.fetch", "project_rag.search", "project_files.read"],
     request: {
       message: input.question,
-      model: input.model,
+      model: input.selection.model,
       thinkingEnabled: false,
-      reasoningEffort: "high",
+      reasoningEffort: input.selection.reasoningEffort,
       webSearchActive: true,
       skillOff: true,
       isQuickTask: false,
@@ -40,8 +42,9 @@ export async function createResearchAgentExecution(userId: string, runId: string
   if (!run) throw new Error("Research Run 不存在或无权访问");
   if (run.agentExecutionId) return run.agentExecutionId;
 
-  const model = "deepseek-v4-flash" as const;
-  const checkpoint = researchCheckpoint({ runId: run.id, question: run.question, model });
+  const selection = selectResearchModel("research.worker");
+  const model: AgentModel = selection.model;
+  const checkpoint = researchCheckpoint({ runId: run.id, question: run.question, selection });
   const clientRunKey = `research:${run.id}:v1`;
   const requestHash = createHash("sha256").update(JSON.stringify({ runId: run.id, question: run.question, planVersionId: run.planVersionId })).digest("hex");
   const result = await new PrismaAgentExecutionStore().createOrGetByClientRunKey({

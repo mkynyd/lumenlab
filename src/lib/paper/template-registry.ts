@@ -32,6 +32,16 @@ export type TemplateRuntimeStatus =
   | "Deprecated"
   | "Unverified";
 
+export interface TemplateUpstreamSnapshot {
+  snapshotId: string;
+  repositoryUrl: string | null;
+  commitOrVersion: string | null;
+  sourceType: string | null;
+  license: string | null;
+  materialized: boolean;
+  sourceFiles: string[];
+}
+
 export interface AcademicTemplateManifest {
   id: string;
   university: string;
@@ -45,6 +55,14 @@ export interface AcademicTemplateManifest {
   supportedBlocks: string[];
   requiredMetadata?: string[];
   fieldMappings?: Record<string, string>;
+  officialSpecUrl?: string | null;
+  repositoryUrl?: string | null;
+  repositoryHost?: string | null;
+  license?: string | null;
+  adapterId?: string | null;
+  upstreamSnapshot?: TemplateUpstreamSnapshot | null;
+  validation?: { status: string; lastValidatedAt?: string | null };
+  sample?: { fixtureId: string; status: string };
 }
 
 export function buildGeneralAcademicTemplateManifest(): AcademicTemplateManifest {
@@ -59,6 +77,47 @@ export function buildGeneralAcademicTemplateManifest(): AcademicTemplateManifest
     supportedBlocks: ["paper_metadata", "abstract", "keywords", "heading", "paragraph", "figure", "table", "equation", "list", "quote", "bibliography", "appendix", "acknowledgement", "page_break", "raw_latex"],
     requiredMetadata: ["title", "authors"],
     fieldMappings: { title: "\\title", authors: "\\author", abstract: "abstract", bibliography: "references.bib" },
+    adapterId: "latex-academic-v1",
+    upstreamSnapshot: { snapshotId: "general-academic-v1:1", repositoryUrl: null, commitOrVersion: "1", sourceType: "builtin", license: "MIT", materialized: true, sourceFiles: ["main.tex", "generated-content.tex"] },
+    validation: { status: "Verified", lastValidatedAt: null },
+    sample: { fixtureId: "sample-academic-v1", status: "verified" },
+  };
+}
+
+export function buildTemplateManifest(record: TemplateRegistryRecord, variantKey = `${record.id}:default`): AcademicTemplateManifest {
+  const format = record.format.toLowerCase();
+  const executable = format === "latex" || format === "overleaf";
+  const adapterId = `${format}-academic-v1`;
+  const commitOrVersion = record.version ?? record.lastCommit ?? null;
+  return {
+    id: variantKey,
+    university: record.university,
+    degreeType: record.degreeType,
+    year: record.year,
+    format: record.format,
+    engine: record.engine ?? (executable ? "xelatex" : null),
+    entryFile: record.entryFile ?? (executable ? "main.tex" : null),
+    documentClass: record.documentClass,
+    bibliography: record.bibliography,
+    supportedBlocks: ["paper_metadata", "abstract", "keywords", "heading", "paragraph", "figure", "table", "equation", "list", "quote", "bibliography", "appendix", "acknowledgement", "page_break", "raw_latex"],
+    requiredMetadata: ["title", "authors"],
+    fieldMappings: { title: "\\title", authors: "\\author", abstract: "abstract", bibliography: "references.bib" },
+    officialSpecUrl: record.officialSpecUrl,
+    repositoryUrl: record.repositoryUrl,
+    repositoryHost: record.repositoryHost,
+    license: record.license,
+    adapterId,
+    upstreamSnapshot: {
+      snapshotId: `${variantKey}:${commitOrVersion ?? "unversioned"}`,
+      repositoryUrl: record.repositoryUrl ?? null,
+      commitOrVersion,
+      sourceType: record.sourceType ?? null,
+      license: record.license ?? null,
+      materialized: false,
+      sourceFiles: [],
+    },
+    validation: { status: "pending", lastValidatedAt: null },
+    sample: { fixtureId: "sample-academic-v1", status: "pending" },
   };
 }
 
@@ -79,6 +138,29 @@ export function normalizeTemplateManifest(value: unknown): AcademicTemplateManif
     supportedBlocks: Array.isArray(record.supportedBlocks) ? record.supportedBlocks.filter((item): item is string => typeof item === "string") : [],
     requiredMetadata: Array.isArray(record.requiredMetadata) ? record.requiredMetadata.filter((item): item is string => typeof item === "string") : [],
     fieldMappings: record.fieldMappings && typeof record.fieldMappings === "object" && !Array.isArray(record.fieldMappings) ? Object.fromEntries(Object.entries(record.fieldMappings).filter((entry): entry is [string, string] => typeof entry[1] === "string")) : {},
+    officialSpecUrl: typeof record.officialSpecUrl === "string" ? record.officialSpecUrl : null,
+    repositoryUrl: typeof record.repositoryUrl === "string" ? record.repositoryUrl : null,
+    repositoryHost: typeof record.repositoryHost === "string" ? record.repositoryHost : null,
+    license: typeof record.license === "string" ? record.license : null,
+    adapterId: typeof record.adapterId === "string" ? record.adapterId : null,
+    upstreamSnapshot: normalizeUpstreamSnapshot(record.upstreamSnapshot),
+    validation: record.validation && typeof record.validation === "object" && !Array.isArray(record.validation) ? { status: typeof (record.validation as Record<string, unknown>).status === "string" ? (record.validation as Record<string, unknown>).status as string : "pending", lastValidatedAt: typeof (record.validation as Record<string, unknown>).lastValidatedAt === "string" ? (record.validation as Record<string, unknown>).lastValidatedAt as string : null } : undefined,
+    sample: record.sample && typeof record.sample === "object" && !Array.isArray(record.sample) && typeof (record.sample as Record<string, unknown>).fixtureId === "string" ? { fixtureId: (record.sample as Record<string, unknown>).fixtureId as string, status: typeof (record.sample as Record<string, unknown>).status === "string" ? (record.sample as Record<string, unknown>).status as string : "pending" } : undefined,
+  };
+}
+
+function normalizeUpstreamSnapshot(value: unknown): TemplateUpstreamSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.snapshotId !== "string") return null;
+  return {
+    snapshotId: record.snapshotId,
+    repositoryUrl: typeof record.repositoryUrl === "string" ? record.repositoryUrl : null,
+    commitOrVersion: typeof record.commitOrVersion === "string" ? record.commitOrVersion : null,
+    sourceType: typeof record.sourceType === "string" ? record.sourceType : null,
+    license: typeof record.license === "string" ? record.license : null,
+    materialized: record.materialized === true,
+    sourceFiles: Array.isArray(record.sourceFiles) ? record.sourceFiles.filter((item): item is string => typeof item === "string") : [],
   };
 }
 

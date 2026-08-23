@@ -12,6 +12,7 @@ import { createResearchAgentExecution, resumeResearchAgentExecution } from "./du
 import type { ResearchBudgetProfile, ResearchPlanSnapshot, ResearchRunStatus } from "./contracts";
 import { applyConfirmedScopeDirectives, assertBudgetExpansion } from "./scope-confirmation";
 import { assertEvidenceRevisionInput, normalizeEvidenceTags, isUserEditableEvidenceStatus } from "./evidence";
+import { researchModelConfiguration } from "./model-routing";
 
 export class ResearchServiceError extends Error {
   constructor(public readonly code: "NOT_FOUND" | "INVALID_STATE" | "INVALID_INPUT", message: string) {
@@ -120,13 +121,7 @@ export async function createResearchRun(input: {
         question: plan.researchGoal,
         status: "awaiting_confirmation",
         budgetSnapshot: JSON.parse(JSON.stringify(budget)),
-        modelConfiguration: {
-          planner: "research.planner",
-          worker: "research.worker",
-          evaluator: "research.evaluator",
-          synthesizer: "research.synthesizer",
-          verifier: "research.verifier",
-        },
+        modelConfiguration: JSON.parse(JSON.stringify(researchModelConfiguration())),
       },
     });
     const planVersion = await tx.researchPlanVersion.create({
