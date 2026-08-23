@@ -1,13 +1,17 @@
 import { prisma } from "@/lib/db";
 import {
   ResearchBudgetProfile as PrismaResearchBudgetProfile,
+  ResearchEvidenceType as PrismaResearchEvidenceType,
+  ClaimEvidenceRelationType as PrismaClaimEvidenceRelationType,
   ResearchRunStatus as PrismaResearchRunStatus,
 } from "@/generated/prisma/client";
 import { getResearchBudget } from "./budget";
 import { buildResearchPlan, applyResearchDirective, classifyResearchDirective } from "./plan";
 import { assertResearchRunTransition } from "./state-machine";
-import { createResearchAgentExecution } from "./durable-dispatcher";
-import type { ResearchBudgetProfile, ResearchRunStatus } from "./contracts";
+import { createResearchAgentExecution, resumeResearchAgentExecution } from "./durable-dispatcher";
+import type { ResearchBudgetProfile, ResearchPlanSnapshot, ResearchRunStatus } from "./contracts";
+import { applyConfirmedScopeDirectives, assertBudgetExpansion } from "./scope-confirmation";
+import { assertEvidenceRevisionInput, normalizeEvidenceTags, isUserEditableEvidenceStatus } from "./evidence";
 
 export class ResearchServiceError extends Error {
   constructor(public readonly code: "NOT_FOUND" | "INVALID_STATE" | "INVALID_INPUT", message: string) {
@@ -17,6 +21,14 @@ export class ResearchServiceError extends Error {
 
 function asBudgetProfile(value: string | undefined, fallback: ResearchBudgetProfile): ResearchBudgetProfile {
   return value === "quick" || value === "deep" || value === "comprehensive" ? value : fallback;
+}
+
+function isBudgetProfile(value: unknown): value is ResearchBudgetProfile {
+  return value === "quick" || value === "deep" || value === "comprehensive";
+}
+
+function planFromJson(value: unknown): ResearchPlanSnapshot {
+  return value as ResearchPlanSnapshot;
 }
 
 export async function listResearchWorkspaces(userId: string) {
@@ -224,6 +236,12 @@ export async function confirmResearchRunPlan(userId: string, runId: string) {
 export async function appendResearchDirective(input: { userId: string; runId: string; text: string }) {
   const run = await prisma.researchRun.findFirst({ where: { id: input.runId, userId: input.userId } });
   if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
+  if (run.status === "planning" || run.status === "awaiting_confirmation") {
+    throw new ResearchServiceError("INVALID_STATE", "计划确认前请使用计划修订入口");
+  }
+  if (run.status === "completed" || run.status === "cancelled" || run.status === "failed") {
+    throw new ResearchServiceError("INVALID_STATE", "终态运行不能追加执行指令，请创建 Follow-up Run");
+  }
   const impact = classifyResearchDirective(input.text);
   const needsConfirmation = impact !== "normal";
   const directive = await prisma.researchUserDirective.create({
@@ -237,10 +255,322 @@ export async function appendResearchDirective(input: { userId: string; runId: st
       appliedAt: needsConfirmation ? null : new Date(),
     },
   });
-  if (needsConfirmation && run.status !== "completed" && run.status !== "cancelled" && run.status !== "failed") {
+  if (needsConfirmation) {
+    if (run.status !== "awaiting_scope_confirmation") {
+      try {
+        assertResearchRunTransition(run.status as ResearchRunStatus, "awaiting_scope_confirmation");
+      } catch (error) {
+        throw new ResearchServiceError("INVALID_STATE", error instanceof Error ? error.message : "当前阶段不能暂停等待范围确认");
+      }
+    }
     await prisma.researchRun.update({ where: { id: run.id }, data: { status: "awaiting_scope_confirmation" } });
   }
   return directive;
+}
+
+export async function confirmResearchScope(input: {
+  userId: string;
+  runId: string;
+  approved: boolean;
+  budgetProfile?: ResearchBudgetProfile;
+}) {
+  const run = await prisma.researchRun.findFirst({
+    where: { id: input.runId, userId: input.userId },
+    include: {
+      workspace: true,
+      activePlanVersion: true,
+      questions: { select: { key: true } },
+      directives: { where: { status: "needs_confirmation" }, orderBy: { createdAt: "asc" } },
+      agentExecution: { select: { id: true, status: true } },
+    },
+  });
+  if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
+  if (run.status !== "awaiting_scope_confirmation") {
+    throw new ResearchServiceError("INVALID_STATE", "当前运行没有等待范围确认");
+  }
+  if (!run.activePlanVersion) {
+    throw new ResearchServiceError("INVALID_STATE", "研究运行缺少有效计划快照");
+  }
+  const activePlanVersion = run.activePlanVersion;
+  if (run.directives.length === 0) {
+    throw new ResearchServiceError("INVALID_STATE", "没有待确认的研究指令");
+  }
+
+  const currentPlan = planFromJson(activePlanVersion.plan);
+  const currentBudget = isBudgetProfile(currentPlan.researchIntensity)
+    ? currentPlan.researchIntensity
+    : run.workspace.budgetProfile;
+  const hasBudgetExpansion = run.directives.some((directive) => directive.impact === "budget_expansion");
+  const nextBudget = input.approved ? input.budgetProfile ?? currentBudget : currentBudget;
+  if (input.approved && hasBudgetExpansion) {
+    if (!input.budgetProfile) {
+      throw new ResearchServiceError("INVALID_INPUT", "确认预算扩大时必须选择新的预算配置");
+    }
+    try {
+      assertBudgetExpansion(currentBudget, input.budgetProfile);
+    } catch (error) {
+      throw new ResearchServiceError("INVALID_INPUT", error instanceof Error ? error.message : "新的预算配置无效");
+    }
+  }
+
+  const scopeDirectives = input.approved
+    ? run.directives.filter((directive) => directive.impact === "scope_expansion").map((directive) => directive.text)
+    : [];
+  const nextPlan = input.approved
+    ? applyConfirmedScopeDirectives(currentPlan, scopeDirectives, nextBudget)
+    : currentPlan;
+  const existingQuestionKeys = new Set(run.questions.map((question) => question.key));
+  const addedQuestions = nextPlan.researchQuestions.filter((question) => !existingQuestionKeys.has(question.key));
+  if (input.approved && scopeDirectives.length > 0 && addedQuestions.length === 0) {
+    throw new ResearchServiceError("INVALID_INPUT", "当前运行已经达到最多八个研究问题，无法继续扩大范围");
+  }
+
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    let planVersionId = activePlanVersion.id;
+    if (input.approved && (scopeDirectives.length > 0 || nextBudget !== currentBudget)) {
+      const maxVersion = await tx.researchPlanVersion.aggregate({ where: { workspaceId: run.workspaceId }, _max: { version: true } });
+      const planVersion = await tx.researchPlanVersion.create({
+        data: {
+          workspaceId: run.workspaceId,
+          runId: run.id,
+          version: (maxVersion._max.version ?? 0) + 1,
+          plan: JSON.parse(JSON.stringify(nextPlan)),
+          reason: run.directives.map((directive) => directive.text).join("；"),
+          confirmedAt: now,
+        },
+      });
+      planVersionId = planVersion.id;
+      await tx.researchRun.update({ where: { id: run.id }, data: { planVersionId } });
+      await tx.researchQuestion.createMany({
+        data: addedQuestions.map((question, index) => ({
+          runId: run.id,
+          key: question.key,
+          title: question.title,
+          question: question.question,
+          priority: question.priority,
+          orderIndex: run.questions.length + index,
+          completionCriteria: question.completionCriteria,
+          sourceStrategy: question.sourceStrategy,
+        })),
+        skipDuplicates: true,
+      });
+      const questionRows = addedQuestions.length > 0
+        ? await tx.researchQuestion.findMany({ where: { runId: run.id, key: { in: addedQuestions.map((question) => question.key) } }, select: { id: true, key: true, title: true, question: true, priority: true } })
+        : [];
+      await tx.researchTask.createMany({
+        data: questionRows.map((question) => ({
+          runId: run.id,
+          questionId: question.id,
+          kind: "researcher" as const,
+          priority: question.priority,
+          title: `补充研究：${question.title}`,
+          instructions: question.question,
+          idempotencyKey: `${run.id}:${question.key}:research:scope-confirmed`,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    await tx.researchUserDirective.updateMany({
+      where: { id: { in: run.directives.map((directive) => directive.id) } },
+      data: { status: input.approved ? "applied" : "rejected", appliedAt: input.approved ? now : null },
+    });
+    return tx.researchRun.update({
+      where: { id: run.id },
+      data: {
+        status: "queued",
+        budgetSnapshot: input.approved ? JSON.parse(JSON.stringify(getResearchBudget(nextBudget))) : undefined,
+      },
+      include: { activePlanVersion: true },
+    });
+  });
+
+  const resumed = await resumeResearchAgentExecution(input.userId, run.id);
+  return { run: result, resumed, planVersionId: result.planVersionId };
+}
+
+const RESEARCH_EVIDENCE_TYPES = new Set<PrismaResearchEvidenceType>([
+  "direct_quote",
+  "paraphrase",
+  "dataset_measurement",
+  "project_context",
+  "expert_assessment",
+]);
+
+function parseEvidenceType(value: string): PrismaResearchEvidenceType {
+  if (!RESEARCH_EVIDENCE_TYPES.has(value as PrismaResearchEvidenceType)) {
+    throw new ResearchServiceError("INVALID_INPUT", "Evidence type 无效");
+  }
+  return value as PrismaResearchEvidenceType;
+}
+
+const evidenceInclude = {
+  sourceSnapshot: {
+    select: {
+      id: true,
+      retrievedAt: true,
+      excerpt: true,
+      source: { select: { id: true, title: true, canonicalKey: true, canonicalUrl: true, doi: true, arxivId: true, pmid: true } },
+    },
+  },
+} as const;
+
+export async function listResearchEvidence(userId: string, runId: string) {
+  const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, select: { id: true } });
+  if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
+  return prisma.evidence.findMany({
+    where: { runId, status: { in: ["active", "disputed"] } },
+    orderBy: { createdAt: "asc" },
+    include: evidenceInclude,
+  });
+}
+
+export async function createUserEvidence(input: {
+  userId: string;
+  runId: string;
+  sourceSnapshotId: string;
+  questionId?: string | null;
+  statement: string;
+  excerpt: string;
+  locator: Record<string, unknown>;
+  evidenceType: string;
+  tags?: string[];
+}) {
+  const evidenceType = parseEvidenceType(input.evidenceType);
+  try {
+    assertEvidenceRevisionInput({ statement: input.statement, excerpt: input.excerpt, evidenceType });
+  } catch (error) {
+    throw new ResearchServiceError("INVALID_INPUT", error instanceof Error ? error.message : "Evidence 内容无效");
+  }
+  const run = await prisma.researchRun.findFirst({
+    where: { id: input.runId, userId: input.userId },
+    select: { id: true, workspaceId: true },
+  });
+  if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
+  const snapshot = await prisma.researchSourceSnapshot.findFirst({
+    where: { id: input.sourceSnapshotId, runId: run.id, workspaceId: run.workspaceId },
+    select: { id: true },
+  });
+  if (!snapshot) throw new ResearchServiceError("INVALID_INPUT", "Evidence 必须关联本次研究已读取的 Source Snapshot");
+  if (input.questionId) {
+    const question = await prisma.researchQuestion.findFirst({ where: { id: input.questionId, runId: run.id }, select: { id: true } });
+    if (!question) throw new ResearchServiceError("INVALID_INPUT", "Research Question 不属于当前 Run");
+  }
+  return prisma.evidence.create({
+    data: {
+      workspaceId: run.workspaceId,
+      runId: run.id,
+      questionId: input.questionId ?? null,
+      sourceSnapshotId: snapshot.id,
+      statement: input.statement.trim(),
+      locator: JSON.parse(JSON.stringify(input.locator)),
+      excerpt: input.excerpt.trim(),
+      evidenceType,
+      origin: "user",
+      createdByUserId: input.userId,
+      tags: normalizeEvidenceTags(input.tags),
+      provenance: { actor: "user", action: "created" },
+    },
+    include: evidenceInclude,
+  });
+}
+
+export async function reviseResearchEvidence(input: {
+  userId: string;
+  runId: string;
+  evidenceId: string;
+  statement: string;
+  excerpt: string;
+  locator: Record<string, unknown>;
+  evidenceType: string;
+  tags?: string[];
+  sourceSnapshotId?: string;
+  revisionReason?: string;
+}) {
+  const evidenceType = parseEvidenceType(input.evidenceType);
+  try {
+    assertEvidenceRevisionInput({ statement: input.statement, excerpt: input.excerpt, evidenceType });
+  } catch (error) {
+    throw new ResearchServiceError("INVALID_INPUT", error instanceof Error ? error.message : "Evidence 修订内容无效");
+  }
+  const existing = await prisma.evidence.findFirst({
+    where: { id: input.evidenceId, runId: input.runId, workspace: { userId: input.userId } },
+    select: { id: true, workspaceId: true, runId: true, questionId: true, sourceSnapshotId: true, status: true },
+  });
+  if (!existing) throw new ResearchServiceError("NOT_FOUND", "Evidence 不存在或无权访问");
+  if (existing.status === "superseded") throw new ResearchServiceError("INVALID_STATE", "不能继续修订已经被替代的 Evidence");
+  const sourceSnapshotId = input.sourceSnapshotId ?? existing.sourceSnapshotId;
+  const snapshot = await prisma.researchSourceSnapshot.findFirst({ where: { id: sourceSnapshotId, runId: existing.runId, workspaceId: existing.workspaceId }, select: { id: true } });
+  if (!snapshot) throw new ResearchServiceError("INVALID_INPUT", "修订后的 Evidence 必须关联当前 Run 的 Source Snapshot");
+  const revisionReason = input.revisionReason?.trim().slice(0, 500) || null;
+  return prisma.$transaction(async (tx) => {
+    await tx.evidence.update({ where: { id: existing.id }, data: { status: "superseded" } });
+    return tx.evidence.create({
+      data: {
+        workspaceId: existing.workspaceId,
+        runId: existing.runId,
+        questionId: existing.questionId,
+        sourceSnapshotId: snapshot.id,
+        statement: input.statement.trim(),
+        locator: JSON.parse(JSON.stringify(input.locator)),
+        excerpt: input.excerpt.trim(),
+        evidenceType,
+        origin: "user",
+        createdByUserId: input.userId,
+        tags: normalizeEvidenceTags(input.tags),
+        provenance: { actor: "user", action: "revision", sourceEvidenceId: existing.id },
+        supersedesId: existing.id,
+        revisionReason,
+      },
+      include: evidenceInclude,
+    });
+  });
+}
+
+export async function updateResearchEvidenceStatus(input: { userId: string; evidenceId: string; status: string; runId?: string }) {
+  if (!isUserEditableEvidenceStatus(input.status)) {
+    throw new ResearchServiceError("INVALID_INPUT", "Evidence 只能被标记为 disputed 或 invalidated");
+  }
+  const evidence = await prisma.evidence.findFirst({ where: { id: input.evidenceId, ...(input.runId ? { runId: input.runId } : {}), workspace: { userId: input.userId } }, select: { id: true, status: true } });
+  if (!evidence) throw new ResearchServiceError("NOT_FOUND", "Evidence 不存在或无权访问");
+  if (evidence.status === "superseded") throw new ResearchServiceError("INVALID_STATE", "不能修改已经被替代的 Evidence");
+  return prisma.evidence.update({ where: { id: evidence.id }, data: { status: input.status }, include: evidenceInclude });
+}
+
+const CLAIM_RELATIONS = new Set<PrismaClaimEvidenceRelationType>(["supports", "contradicts", "qualifies", "context"]);
+
+export async function listResearchClaims(userId: string, runId: string) {
+  const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, select: { id: true } });
+  if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
+  return prisma.claim.findMany({
+    where: { runId, status: { in: ["active", "disputed"] } },
+    orderBy: { createdAt: "asc" },
+    include: { evidenceRelations: { include: { evidence: { select: { id: true, statement: true, status: true, sourceSnapshotId: true } } } } },
+  });
+}
+
+export async function updateResearchClaim(input: { userId: string; runId: string; claimId: string; statement: string }) {
+  const statement = input.statement.trim();
+  if (statement.length < 3) throw new ResearchServiceError("INVALID_INPUT", "Claim 至少需要 3 个字符");
+  const claim = await prisma.claim.findFirst({ where: { id: input.claimId, runId: input.runId, workspace: { userId: input.userId } }, select: { id: true } });
+  if (!claim) throw new ResearchServiceError("NOT_FOUND", "Claim 不存在或无权访问");
+  return prisma.claim.update({ where: { id: claim.id }, data: { statement, userEdited: true, verificationStatus: "pending", quality: { label: "待重新评估", reason: "用户编辑了 Claim" } }, include: { evidenceRelations: true } });
+}
+
+export async function upsertClaimEvidenceRelation(input: { userId: string; runId: string; claimId: string; evidenceId: string; relation: string; confidence?: number | null; rationale?: string | null }) {
+  if (!CLAIM_RELATIONS.has(input.relation as PrismaClaimEvidenceRelationType)) throw new ResearchServiceError("INVALID_INPUT", "Claim/Evidence relation 无效");
+  const [claim, evidence] = await Promise.all([
+    prisma.claim.findFirst({ where: { id: input.claimId, runId: input.runId, workspace: { userId: input.userId } }, select: { id: true } }),
+    prisma.evidence.findFirst({ where: { id: input.evidenceId, runId: input.runId, workspace: { userId: input.userId } }, select: { id: true } }),
+  ]);
+  if (!claim || !evidence) throw new ResearchServiceError("INVALID_INPUT", "Claim 和 Evidence 必须属于同一个当前 Run");
+  const confidence = input.confidence === null || input.confidence === undefined ? null : Math.max(0, Math.min(1, input.confidence));
+  return prisma.$transaction(async (tx) => {
+    const relation = await tx.claimEvidenceRelation.upsert({ where: { claimId_evidenceId: { claimId: claim.id, evidenceId: evidence.id } }, create: { claimId: claim.id, evidenceId: evidence.id, relation: input.relation as PrismaClaimEvidenceRelationType, confidence, rationale: input.rationale?.trim() || null }, update: { relation: input.relation as PrismaClaimEvidenceRelationType, confidence, rationale: input.rationale?.trim() || null } });
+    await tx.claim.update({ where: { id: claim.id }, data: { verificationStatus: "pending", quality: { label: "待重新评估", reason: "Evidence 关系已更新" } } });
+    return relation;
+  });
 }
 
 export async function cancelResearchRun(userId: string, runId: string) {
@@ -268,6 +598,9 @@ export async function getResearchRun(userId: string, runId: string) {
       questions: { orderBy: { orderIndex: "asc" } },
       tasks: { orderBy: { createdAt: "asc" } },
       directives: { orderBy: { createdAt: "asc" } },
+      agentExecution: { select: { id: true, status: true, scheduledAt: true } },
+      evidence: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 200, include: evidenceInclude },
+      claims: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 100, include: { evidenceRelations: { include: { evidence: { select: { id: true, statement: true, status: true, sourceSnapshotId: true } } } } } },
       reportSnapshot: true,
       _count: { select: { sourceSnapshots: true, evidence: true, claims: true } },
     },

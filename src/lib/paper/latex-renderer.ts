@@ -1,4 +1,15 @@
 import type { AcademicDocument, DocumentBlock, InlineNode } from "./document-schema";
+import type { AcademicTemplateManifest } from "./template-registry";
+
+export interface LatexReference {
+  id: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string | null;
+  doi: string | null;
+  url: string | null;
+}
 
 export interface LatexRenderResult {
   mainTex: string;
@@ -7,17 +18,19 @@ export interface LatexRenderResult {
   nodeMap: Record<string, { line: number; kind: string }>;
 }
 
-export function renderAcademicDocumentToLatex(document: AcademicDocument): LatexRenderResult {
+export function renderAcademicDocumentToLatex(document: AcademicDocument, options: { manifest?: AcademicTemplateManifest; references?: LatexReference[]; assetPaths?: Record<string, string> } = {}): LatexRenderResult {
   const nodeMap: Record<string, { line: number; kind: string }> = {};
+  const manifest = options.manifest;
+  const documentClass = /^[A-Za-z][A-Za-z0-9_-]*$/.test(manifest?.documentClass ?? "") ? manifest!.documentClass! : "ctexart";
   const lines = [
-    "\\documentclass[UTF8]{ctexart}",
+    `\\documentclass[UTF8]{${documentClass}}`,
     "\\usepackage{amsmath,amssymb,graphicx,booktabs,hyperref}",
     "\\begin{document}",
   ];
   const generated: string[] = [];
   for (const block of document.blocks) {
     const startLine = lines.length + generated.length + 1;
-    const blockText = renderBlock(block);
+    const blockText = renderBlock(block, options.assetPaths);
     generated.push(blockText);
     const id = "id" in block && typeof block.id === "string" ? block.id : block.kind;
     nodeMap[id] = { line: startLine, kind: block.kind };
@@ -26,12 +39,29 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument): Latex
   return {
     mainTex: `${lines.join("\n")}\n`,
     generatedContentTex: `${generated.join("\n\n")}\n`,
-    referencesBib: "",
+    referencesBib: (options.references ?? []).map(toBibtex).join("\n\n") + (options.references?.length ? "\n" : ""),
     nodeMap,
   };
 }
 
-function renderBlock(block: DocumentBlock): string {
+function bibtexField(value: string | number | null | undefined): string {
+  return String(value ?? "").replace(/[{}]/g, "").replace(/([\\])/g, "\\$1");
+}
+
+function toBibtex(reference: LatexReference): string {
+  const authors = reference.authors.length > 0 ? reference.authors.map(bibtexField).join(" and ") : "Unknown";
+  const fields = [
+    `  title = {${bibtexField(reference.title)}}`,
+    `  author = {${authors}}`,
+    ...(reference.year ? [`  year = {${reference.year}}`] : []),
+    ...(reference.venue ? [`  journal = {${bibtexField(reference.venue)}}`] : []),
+    ...(reference.doi ? [`  doi = {${bibtexField(reference.doi)}}`] : []),
+    ...(reference.url ? [`  url = {${bibtexField(reference.url)}}`] : []),
+  ];
+  return `@article{${bibtexField(reference.id)},\n${fields.join(",\n")}\n}`;
+}
+
+function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>): string {
   switch (block.kind) {
     case "paper_metadata":
       return `\\title{${escapeLatex(block.title)}}\n\\author{${block.authors.map(escapeLatex).join(" \\and ")}}\n\\maketitle`;
@@ -44,7 +74,7 @@ function renderBlock(block: DocumentBlock): string {
     case "paragraph":
       return renderInline(block.children);
     case "figure":
-      return `\\begin{figure}[${block.placement === "here" ? "h" : block.placement === "top" ? "t" : block.placement === "bottom" ? "b" : "htbp"}]\n\\centering\n\\includegraphics[width=${block.width ?? 0.85}\\textwidth]{assets/${escapeLatex(block.assetId)}}\n\\caption{${escapeLatex(block.caption)}}${block.label ? `\n\\label{${escapeLatex(block.label)}}` : ""}\n\\end{figure}`;
+      return `\\begin{figure}[${block.placement === "here" ? "h" : block.placement === "top" ? "t" : block.placement === "bottom" ? "b" : "htbp"}]\n\\centering\n\\includegraphics[width=${block.width ?? 0.85}\\textwidth]{${assetPaths?.[block.assetId] ?? `assets/${escapeLatex(block.assetId)}`}}\n\\caption{${escapeLatex(block.caption)}}${block.label ? `\n\\label{${escapeLatex(block.label)}}` : ""}\n\\end{figure}`;
     case "table":
       return renderTable(block);
     case "equation":

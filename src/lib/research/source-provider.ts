@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createPrismaToolRunner } from "@/lib/agent/tools/tool-runner";
 import type { ToolRunner } from "@/lib/agent/tools/tool-runner";
+import { createAcademicSourceAdapters, type AcademicSourceAdapter } from "./academic-adapters";
 
 export interface ResearchProviderContext {
   userId: string;
@@ -13,7 +14,7 @@ export interface ResearchProviderContext {
 
 export interface ResearchCandidate {
   provider: string;
-  kind: "web" | "arxiv" | "project_file";
+  kind: "web" | "arxiv" | "project_file" | "academic_paper" | "doi" | "pmid";
   externalId: string;
   title: string;
   url: string | null;
@@ -35,8 +36,9 @@ export interface ResearchSourceProvider {
   read(context: ResearchProviderContext, candidate: ResearchCandidate): Promise<ReadResearchSource | null>;
 }
 
-export function createToolBackedResearchSourceProvider(input: { toolRunner?: ToolRunner } = {}): ResearchSourceProvider {
+export function createToolBackedResearchSourceProvider(input: { toolRunner?: ToolRunner; academicAdapters?: AcademicSourceAdapter[] } = {}): ResearchSourceProvider {
   const toolRunner = input.toolRunner ?? createPrismaToolRunner();
+  const academicAdapters = input.academicAdapters ?? createAcademicSourceAdapters();
 
   async function runTool(context: ResearchProviderContext, toolId: string, args: Record<string, unknown>) {
     const result = await toolRunner.run(
@@ -61,6 +63,13 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
   return {
     async search(context, question) {
       const candidates = new Map<string, ResearchCandidate>();
+      const academicResults = await Promise.all(academicAdapters.map(async (adapter) => {
+        try {
+          return await adapter.search(context, question);
+        } catch {
+          return [];
+        }
+      }));
       const web = await runTool(context, "web.search", { query: question, maxResults: 5 });
       const webSources = Array.isArray(web?.sources) ? web.sources : [];
       for (const item of webSources) {
@@ -107,10 +116,17 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
           });
         }
       }
+      for (const result of academicResults.flat()) {
+        candidates.set(`${result.provider}:${result.externalId}`, result);
+      }
       return [...candidates.values()];
     },
 
     async read(context, candidate) {
+      const academicAdapter = academicAdapters.find((adapter) => adapter.provider === candidate.provider);
+      if (academicAdapter && candidate.kind !== "web" && candidate.kind !== "arxiv" && candidate.kind !== "project_file") {
+        return academicAdapter.read(context, candidate);
+      }
       const toolId = candidate.kind === "web"
         ? "web.fetch"
         : candidate.kind === "arxiv"

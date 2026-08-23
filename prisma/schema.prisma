@@ -58,6 +58,7 @@ model User {
   researchRuns         ResearchRun[]
   researchDirectives   ResearchUserDirective[]
   researchSources      ResearchSource[]
+  evidenceCreated      Evidence[]             @relation("EvidenceCreatedBy")
   paperWorkspaces      PaperWorkspace[]
   paperDocuments       PaperDocument[]
   documentVersions     PaperDocumentVersion[]
@@ -1554,6 +1555,11 @@ enum ResearchEvidenceStatus {
   invalidated
 }
 
+enum ResearchEvidenceOrigin {
+  system
+  user
+}
+
 enum ResearchEvidenceType {
   direct_quote
   paraphrase
@@ -1867,9 +1873,13 @@ model Evidence {
   locator          Json
   excerpt          String
   evidenceType     ResearchEvidenceType
+  origin           ResearchEvidenceOrigin @default(system)
+  createdByUserId  String?
+  tags             String[]               @default([])
   provenance       Json?
   status           ResearchEvidenceStatus @default(active)
   supersedesId     String?
+  revisionReason   String?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
@@ -1877,6 +1887,7 @@ model Evidence {
   run            ResearchRun             @relation(fields: [runId], references: [id], onDelete: Cascade)
   question       ResearchQuestion?       @relation(fields: [questionId], references: [id], onDelete: SetNull)
   sourceSnapshot ResearchSourceSnapshot  @relation(fields: [sourceSnapshotId], references: [id], onDelete: Restrict)
+  createdByUser  User?                   @relation("EvidenceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   supersedes     Evidence?               @relation("EvidenceRevision", fields: [supersedesId], references: [id], onDelete: SetNull)
   revisions      Evidence[]              @relation("EvidenceRevision")
   claimRelations ClaimEvidenceRelation[]
@@ -1886,6 +1897,7 @@ model Evidence {
   @@index([runId, questionId])
   @@index([sourceSnapshotId])
   @@index([supersedesId])
+  @@index([runId, origin, createdAt])
 }
 
 model Claim {

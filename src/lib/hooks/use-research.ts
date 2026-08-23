@@ -24,6 +24,7 @@ export function useResearchRun(id: string | null) {
   return useQuery({
     queryKey: queryKeys.research.run(id ?? "none"),
     enabled: Boolean(id),
+    refetchInterval: 4_000,
     queryFn: async () => (await fetchJson<{ run: unknown }>(`/api/research/runs/${id}`)).run,
   });
 }
@@ -55,6 +56,97 @@ export function useConfirmResearchPlan(runId: string, workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.research.workspaces });
+    },
+  });
+}
+
+export function useReviseResearchPlan(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (directive: string) => (await fetchJson<{ plan: unknown }>(`/api/research/runs/${runId}/plan`, { method: "PATCH", body: JSON.stringify({ directive }) })).plan,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+    },
+  });
+}
+
+export function useAppendResearchDirective(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (text: string) => (await fetchJson<{ directive: unknown }>(`/api/research/runs/${runId}/directives`, { method: "POST", body: JSON.stringify({ text }) })).directive,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspaces });
+    },
+  });
+}
+
+export function useConfirmResearchScope(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { approved: boolean; budgetProfile?: "quick" | "deep" | "comprehensive" }) => (await fetchJson<{ run: unknown }>(`/api/research/runs/${runId}/scope/confirm`, { method: "POST", body: JSON.stringify(input) })).run,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspaces });
+    },
+  });
+}
+
+export function useCreateResearchEvidence(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { sourceSnapshotId: string; questionId?: string | null; statement: string; excerpt: string; locator: Record<string, unknown>; evidenceType: string; tags?: string[] }) => (await fetchJson<{ evidence: unknown }>(`/api/research/runs/${runId}/evidence`, { method: "POST", body: JSON.stringify(input) })).evidence,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+    },
+  });
+}
+
+export function useUpdateResearchEvidence(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { evidenceId: string; status?: "disputed" | "invalidated"; statement?: string; excerpt?: string; locator?: Record<string, unknown>; evidenceType?: string; tags?: string[]; sourceSnapshotId?: string; revisionReason?: string }) => (await fetchJson<{ evidence: unknown }>(`/api/research/runs/${runId}/evidence/${input.evidenceId}`, { method: "PATCH", body: JSON.stringify(input.status ? { status: input.status } : { statement: input.statement, excerpt: input.excerpt, locator: input.locator, evidenceType: input.evidenceType, tags: input.tags, sourceSnapshotId: input.sourceSnapshotId, revisionReason: input.revisionReason }) })).evidence,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+    },
+  });
+}
+
+export function useTransferResearchMaterials(runId: string, paperWorkspaceId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { sourceIds?: string[]; claimIds?: string[]; evidenceIds?: string[] }) => (await fetchJson<{ transfer: unknown }>(`/api/research/runs/${runId}/transfer`, { method: "POST", body: JSON.stringify({ paperWorkspaceId, ...input }) })).transfer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.papers.workspace(paperWorkspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+    },
+  });
+}
+
+export function useUpdateResearchClaim(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { claimId: string; statement: string }) => (await fetchJson<{ claim: unknown }>(`/api/research/runs/${runId}/claims/${input.claimId}`, { method: "PATCH", body: JSON.stringify({ statement: input.statement }) })).claim,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+    },
+  });
+}
+
+export function useUpsertClaimEvidenceRelation(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { claimId: string; evidenceId: string; relation: "supports" | "contradicts" | "qualifies" | "context"; confidence?: number; rationale?: string }) => (await fetchJson<{ relation: unknown }>(`/api/research/runs/${runId}/claims/${input.claimId}/relations`, { method: "POST", body: JSON.stringify(input) })).relation,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
     },
   });
 }

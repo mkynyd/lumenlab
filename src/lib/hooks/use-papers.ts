@@ -34,3 +34,22 @@ export function usePaperTemplates(query = "") {
     queryFn: async () => (await fetchJson<{ templates: unknown[] }>(`/api/papers/templates${query ? `?q=${encodeURIComponent(query)}` : ""}`)).templates,
   });
 }
+
+export function usePaperReferences(id: string | null) {
+  return useQuery({
+    queryKey: queryKeys.papers.references(id ?? "none"),
+    enabled: Boolean(id),
+    queryFn: async () => (await fetchJson<{ references: unknown[] }>(`/api/papers/workspaces/${id}/references`)).references,
+  });
+}
+
+export function useCreatePaperReference(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { action: "manual" | "doi" | "bibtex"; title?: string; authors?: string[]; year?: number | null; venue?: string | null; doi?: string | null; arxivId?: string | null; url?: string | null; bibtex?: string }) => fetchJson(`/api/papers/workspaces/${workspaceId}/references`, { method: "POST", body: JSON.stringify(input) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.papers.references(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.papers.workspace(workspaceId) });
+    },
+  });
+}

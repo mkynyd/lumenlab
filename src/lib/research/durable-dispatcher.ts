@@ -61,3 +61,19 @@ export async function createResearchAgentExecution(userId: string, runId: string
   await prisma.researchRun.update({ where: { id: run.id }, data: { agentExecutionId: result.execution.id } });
   return result.execution.id;
 }
+
+export async function resumeResearchAgentExecution(userId: string, runId: string) {
+  const run = await prisma.researchRun.findFirst({
+    where: { id: runId, userId },
+    select: { agentExecutionId: true },
+  });
+  if (!run?.agentExecutionId) return false;
+
+  const now = new Date();
+  return new PrismaAgentExecutionStore().resumeOwned({
+    executionId: run.agentExecutionId,
+    userId,
+    now,
+    scheduledAt: now,
+  });
+}

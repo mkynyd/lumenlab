@@ -61,6 +61,9 @@ export type ResearchDirectiveImpact = "normal" | "scope_expansion" | "budget_exp
 
 export function classifyResearchDirective(text: string): ResearchDirectiveImpact {
   const normalized = text.trim();
+  if (/(预算|增加调用|增加模型|提高上限|更多时间|更高强度)/i.test(normalized)) {
+    return "budget_expansion";
+  }
   if (/(扩大|增加全部|覆盖所有|不限时间|更多来源|再研究一遍|预算|全面梳理)/i.test(normalized)) {
     return "scope_expansion";
   }

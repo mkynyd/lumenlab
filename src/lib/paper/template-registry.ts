@@ -32,6 +32,56 @@ export type TemplateRuntimeStatus =
   | "Deprecated"
   | "Unverified";
 
+export interface AcademicTemplateManifest {
+  id: string;
+  university: string;
+  degreeType?: string | null;
+  year?: string | null;
+  format: string;
+  engine?: string | null;
+  entryFile?: string | null;
+  documentClass?: string | null;
+  bibliography?: string | null;
+  supportedBlocks: string[];
+  requiredMetadata?: string[];
+  fieldMappings?: Record<string, string>;
+}
+
+export function buildGeneralAcademicTemplateManifest(): AcademicTemplateManifest {
+  return {
+    id: "general-academic-v1",
+    university: "通用学术论文",
+    format: "latex",
+    engine: "xelatex",
+    entryFile: "main.tex",
+    documentClass: "ctexart",
+    bibliography: "bibtex",
+    supportedBlocks: ["paper_metadata", "abstract", "keywords", "heading", "paragraph", "figure", "table", "equation", "list", "quote", "bibliography", "appendix", "acknowledgement", "page_break", "raw_latex"],
+    requiredMetadata: ["title", "authors"],
+    fieldMappings: { title: "\\title", authors: "\\author", abstract: "abstract", bibliography: "references.bib" },
+  };
+}
+
+export function normalizeTemplateManifest(value: unknown): AcademicTemplateManifest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("模板 Manifest 无效");
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== "string" || typeof record.university !== "string" || typeof record.format !== "string") throw new Error("模板 Manifest 缺少必要字段");
+  return {
+    id: record.id,
+    university: record.university,
+    degreeType: typeof record.degreeType === "string" ? record.degreeType : null,
+    year: typeof record.year === "string" ? record.year : null,
+    format: record.format,
+    engine: typeof record.engine === "string" ? record.engine : null,
+    entryFile: typeof record.entryFile === "string" ? record.entryFile : null,
+    documentClass: typeof record.documentClass === "string" ? record.documentClass : null,
+    bibliography: typeof record.bibliography === "string" ? record.bibliography : null,
+    supportedBlocks: Array.isArray(record.supportedBlocks) ? record.supportedBlocks.filter((item): item is string => typeof item === "string") : [],
+    requiredMetadata: Array.isArray(record.requiredMetadata) ? record.requiredMetadata.filter((item): item is string => typeof item === "string") : [],
+    fieldMappings: record.fieldMappings && typeof record.fieldMappings === "object" && !Array.isArray(record.fieldMappings) ? Object.fromEntries(Object.entries(record.fieldMappings).filter((entry): entry is [string, string] => typeof entry[1] === "string")) : {},
+  };
+}
+
 export function mapTemplateRuntimeStatus(record: Pick<TemplateRegistryRecord, "status" | "format" | "repositoryUrl">): TemplateRuntimeStatus {
   const status = (record.status ?? "").toLowerCase();
   if (status === "deprecated" || status === "archived") return "Deprecated";

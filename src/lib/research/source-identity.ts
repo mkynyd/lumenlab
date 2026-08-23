@@ -57,7 +57,7 @@ export function normalizeCanonicalUrl(value: string | null | undefined): string 
 }
 
 export function buildSourceIdentity(input: SourceIdentityInput): SourceIdentity {
-  const doi = normalizeDoi(input.doi);
+  const doi = normalizeDoi(input.doi ?? input.url);
   const arxivId = normalizeArxivId(input.arxivId ?? input.url);
   const pmid = normalizePmid(input.pmid ?? input.url);
   const canonicalUrl = normalizeCanonicalUrl(input.url);

@@ -331,6 +331,12 @@ export interface AgentExecutionStore {
     scheduledAt: Date;
     now: Date;
   }): Promise<boolean>;
+  resumeOwned(input: {
+    executionId: string;
+    userId: string;
+    scheduledAt: Date;
+    now: Date;
+  }): Promise<boolean>;
   markWaitingForApproval(input: {
     executionId: string;
     workerId: string;

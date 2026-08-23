@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { spawn } from "node:child_process";
 import JSZip from "jszip";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { uploadObjectBuffer } from "@/lib/storage/object-storage";
+import { readStoredObject, uploadObjectBuffer, type StorageProvider } from "@/lib/storage/object-storage";
 import { renderAcademicDocumentToLatex } from "./latex-renderer";
 import { parseAcademicDocument } from "./document-schema";
+import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 1_000;
@@ -20,8 +21,8 @@ type CompilationError = {
   nodeMap?: Record<string, { line: number; kind: string }>;
 };
 
-function compilerCommand(): string {
-  const engine = process.env.PAPER_TEX_ENGINE ?? "xelatex";
+function compilerCommand(requested?: string | null): string {
+  const engine = requested ?? process.env.PAPER_TEX_ENGINE ?? "xelatex";
   if (!/^(xelatex|pdflatex|lualatex)$/.test(engine)) {
     throw new Error("PAPER_TEX_ENGINE 只允许 xelatex、pdflatex 或 lualatex");
   }
@@ -112,7 +113,17 @@ async function claimCompilation() {
   return prisma.paperCompilation.findUnique({
     where: { id: candidate.id },
     include: {
-      documentVersion: { include: { document: { select: { userId: true } } } },
+      documentVersion: {
+        include: {
+          document: {
+            select: {
+              userId: true,
+              workspace: { include: { references: true } },
+              bindings: { include: { versions: { orderBy: { version: "desc" }, take: 1 } } },
+            },
+          },
+        },
+      },
     },
   });
 }
@@ -123,13 +134,28 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
   let nodeMap: Record<string, { line: number; kind: string }> = {};
   try {
     const document = parseAcademicDocument(compilation.documentVersion.content);
-    const rendered = renderAcademicDocumentToLatex(document);
-    command = compilerCommand();
+    const bindingVersion = compilation.documentVersion.document.bindings[0]?.versions[0];
+    const manifest = bindingVersion ? normalizeTemplateManifest(bindingVersion.manifestSnapshot) : buildGeneralAcademicTemplateManifest();
+    const figureIds = document.blocks.filter((block): block is Extract<typeof block, { kind: "figure" }> => block.kind === "figure").map((block) => block.assetId);
+    const assets = await prisma.fileAsset.findMany({ where: { id: { in: figureIds }, userId: compilation.documentVersion.document.userId }, select: { id: true, originalName: true, storageProvider: true, storagePath: true } });
+    if (assets.length !== new Set(figureIds).size) throw new Error("FIGURE_ASSET_MISSING：论文图片资源不存在或无权访问");
+    const assetPaths = Object.fromEntries(assets.map((asset) => [asset.id, `assets/${asset.id}${extname(asset.originalName).toLowerCase() || ".bin"}`]));
+    const rendered = renderAcademicDocumentToLatex(document, {
+      manifest,
+      references: compilation.documentVersion.document.workspace.references,
+      assetPaths,
+    });
+    command = compilerCommand(compilation.engine);
     const source = await sourceBundle(rendered);
     nodeMap = rendered.nodeMap;
     await writeFile(join(tempDirectory, "main.tex"), rendered.mainTex, "utf8");
     await writeFile(join(tempDirectory, "generated-content.tex"), rendered.generatedContentTex, "utf8");
     await writeFile(join(tempDirectory, "references.bib"), rendered.referencesBib, "utf8");
+    await mkdir(join(tempDirectory, "assets"), { recursive: true });
+    await Promise.all(assets.map(async (asset) => {
+      const buffer = await readStoredObject({ provider: asset.storageProvider as StorageProvider, key: asset.storagePath });
+      await writeFile(join(tempDirectory, assetPaths[asset.id]), buffer);
+    }));
 
     // Run twice so labels and cross references settle without relying on a
     // user-provided shell command or an unrestricted latexmk invocation.

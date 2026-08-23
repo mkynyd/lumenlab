@@ -11,6 +11,7 @@ describe("research plans", () => {
 
   it("marks broadening directives for confirmation", () => {
     expect(classifyResearchDirective("扩大范围，覆盖全部年份")).toBe("scope_expansion");
+    expect(classifyResearchDirective("增加模型调用预算")).toBe("budget_expansion");
     const plan = buildResearchPlan({ question: "A", profile: "quick" });
     expect(applyResearchDirective(plan, "补充 B 的官方数据").researchQuestions).toHaveLength(2);
   });

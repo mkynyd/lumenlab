@@ -776,6 +776,62 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         type: "run_rescheduled",
         payload: { scheduledAt: input.scheduledAt.toISOString() },
       }),
+      });
+  }
+
+  async resumeOwned(input: {
+    executionId: string;
+    userId: string;
+    scheduledAt: Date;
+    now: Date;
+  }): Promise<boolean> {
+    return this.client.$transaction(async (transaction) => {
+      const execution = await transaction.agentExecution.findFirst({
+        where: {
+          id: input.executionId,
+          userId: input.userId,
+          status: { in: ["queued", "completed"] },
+        },
+        select: { checkpoint: true, lastEventSequence: true },
+      });
+      if (!execution?.checkpoint) return false;
+
+      const checkpoint = parseAgentCheckpoint(execution.checkpoint);
+      if (checkpoint.request?.executionKind !== "research") return false;
+
+      const [updated] = await transaction.agentExecution.updateManyAndReturn({
+        where: {
+          id: input.executionId,
+          userId: input.userId,
+          status: { in: ["queued", "completed"] },
+        },
+        data: {
+          status: "queued",
+          scheduledAt: input.scheduledAt,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          waitingToolExecutionId: null,
+          failure: Prisma.JsonNull,
+          lastEventSequence: { increment: 1 },
+        },
+        select: { lastEventSequence: true },
+      });
+      if (!updated) return false;
+
+      await transaction.agentExecutionEvent.create({
+        data: {
+          executionId: input.executionId,
+          sequence: updated.lastEventSequence,
+          key: `run_resumed:${updated.lastEventSequence}`,
+          type: "run_resumed",
+          payload: {
+            scheduledAt: input.scheduledAt.toISOString(),
+            resumedAt: input.now.toISOString(),
+          },
+          createdAt: input.now,
+        },
+      });
+      return true;
     });
   }
 

@@ -30,11 +30,13 @@ export const queryKeys = {
     workspaces: ["research", "workspaces"] as const,
     workspace: (id: string) => ["research", "workspaces", id] as const,
     run: (id: string) => ["research", "runs", id] as const,
+    transfer: (id: string) => ["research", "runs", id, "transfer"] as const,
   },
   papers: {
     all: ["papers"] as const,
     workspaces: ["papers", "workspaces"] as const,
     workspace: (id: string) => ["papers", "workspaces", id] as const,
+    references: (id: string) => ["papers", "workspaces", id, "references"] as const,
     templates: (query = "") => ["papers", "templates", query] as const,
   },
   learning: {

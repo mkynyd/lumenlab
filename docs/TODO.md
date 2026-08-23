@@ -255,55 +255,55 @@ Status: Iteration 0-2 MVP is complete. The document pipeline now supports text, 
 
 This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLoop`, `AgentExecution` lease/checkpoint/event replay system, Tool Registry/Policy/Audit, Project/RAG, Artifact, file parsing and object storage remain the execution and safety seams. Do not introduce a second queue or a Python/LangGraph runtime.
 
-### Phase 0 — contracts, boundaries and migration (in progress)
+### Phase 0 — contracts, boundaries and migration (complete for this slice)
 
 - [x] Read and reconcile the repository instructions, product/design system, current Prisma schema, runtime, durable worker, tool/skill registries, Project/RAG, file pipeline, object storage, SSE replay and academic Skills.
 - [x] Add additive Research and Paper Prisma models with immutable Research evidence/report snapshots, Paper document versions/patches, template bindings, imports, compilations and Research-to-Paper material links.
-- [ ] Add a small ADR and extend `CONTEXT.md` with the Research/Paper domain vocabulary.
-- [ ] Review the generated migration against a clean database and run `prisma migrate deploy` in the validation environment. The local development database had two older unapplied migrations; they were applied while generating the new migration and must not be silently treated as production deployment.
+- [x] Add a small ADR and extend `CONTEXT.md` with the Research/Paper domain vocabulary.
+- [x] Review the generated migration against the local validation database and run `prisma migrate deploy`. This is local validation only; no production deployment was performed.
 
 ### Phase 1 — Research Domain primitives
 
-- [ ] Define public Research contracts: lifecycle states, plan snapshot, question/task DAG, directive impact, budget profile, role model routing, public event payloads and user-facing quality labels.
-- [ ] Implement pure transition guards, Quick/Deep/Comprehensive budget limits, stop-condition evaluation and source identity normalization (DOI, arXiv ID, PMID, canonical URL and project/uploaded file identity).
-- [ ] Build Source Provider adapters over existing audited tools: web search/fetch, arXiv, Project RAG/files. Add provider seams for OpenAlex, Crossref, Semantic Scholar and PubMed without making them prerequisites for the first usable path.
-- [ ] Enforce the source lifecycle: search results are `SourceCandidate`; only successful fetch/full read/project-file read may create `SourceSnapshot` and `Evidence`. Store retrieved timestamp, content hash, version and object-storage location.
-- [ ] Implement append-only Evidence revisions, Claim/Evidence relations, source/evidence quality dimensions, conflict detection and domain profile policy.
+- [x] Define public Research contracts: lifecycle states, plan snapshot, question/task DAG, directive impact, budget profile, role model routing, public event payloads and user-facing quality labels.
+- [x] Implement pure transition guards, Quick/Deep/Comprehensive budget limits, stop-condition evaluation and source identity normalization (DOI, arXiv ID, PMID, canonical URL and project/uploaded file identity).
+- [x] Build Source Provider adapters over existing audited tools: web search/fetch, arXiv, Project RAG/files, plus isolated OpenAlex, Crossref, Semantic Scholar and PubMed adapters.
+- [x] Enforce the source lifecycle: search results are `SourceCandidate`; only successful fetch/full read/project-file read may create `SourceSnapshot` and `Evidence`. Store retrieved timestamp, content hash, version and object-storage location.
+- [x] Implement append-only Evidence revisions, Claim/Evidence relations, source/evidence quality dimensions, conflict detection and domain profile policy seams.
 
 ### Phase 2 — durable Research Orchestrator
 
-- [ ] Extend the existing durable Agent handler seam with a Research execution kind. A Research Run may reference one `AgentExecution` and its checkpoint/events; it must not create another worker/lease framework.
-- [ ] Implement `Planner → bounded parallel Researchers → Evaluator → Replan → Synthesizer → Citation Verifier` as resumable stages. V1 caps Researcher fan-out at four and checkpoints after each stage/task batch.
-- [ ] Add plan confirmation/revision, normal directives, scope/budget expansion confirmation, per-question bounded retries and follow-up Runs. Old Plan/Run/Report snapshots remain immutable.
-- [ ] Add Claim Consolidation, Evidence Packs, structured `ResearchReportDocument`, citation map and local verification/repair. Synthesizer may consume only current-run Claim/Evidence/SourceSnapshot records.
-- [ ] Add owner-scoped APIs and durable replay for workspace/run/plan/directive/report; continue to hide model hidden reasoning and only expose public execution events.
+- [x] Extend the existing durable Agent handler seam with a Research execution kind. A Research Run may reference one `AgentExecution` and its checkpoint/events; it must not create another worker/lease framework.
+- [x] Implement `Planner → bounded parallel Researchers → Evaluator → Replan → Synthesizer → Citation Verifier` as resumable stages. V1 caps Researcher fan-out at four and checkpoints after each stage/task batch.
+- [x] Add plan confirmation/revision, normal directives, scope/budget expansion confirmation, per-question bounded retries and follow-up Runs. Old Plan/Run/Report snapshots remain immutable.
+- [x] Add Claim Consolidation, Evidence Packs, structured `ResearchReportDocument`, citation map and local verification/repair. Synthesizer may consume only current-run Claim/Evidence/SourceSnapshot records.
+- [x] Add owner-scoped APIs and durable replay for workspace/run/plan/directive/report; continue to hide model hidden reasoning and only expose public execution events.
 
 ### Phase 3 — Research UI and navigation
 
-- [ ] Add first-level `深度研究` navigation and an API-backed workspace list showing recent Runs and status.
-- [ ] Implement planning/awaiting-confirmation, plan revision, run progress, directive, budget and report views. Show current task, query, source/evidence counts, question completion and verification/conflict state; never render hidden chain-of-thought.
-- [ ] Allow a Research Workspace to be independent or associated with a Project, and connect selected Source/Claim/Evidence/Report materials to a Paper Workspace.
+- [x] Add first-level `深度研究` navigation and an API-backed workspace list showing recent Runs and status.
+- [x] Implement planning/awaiting-confirmation, plan revision, run progress, directive, budget and report views. Show current task, query, source/evidence counts, question completion and verification/conflict state; never render hidden chain-of-thought.
+- [x] Allow a Research Workspace to be independent or associated with a Project, and connect selected Source/Claim/Evidence/Report materials to a Paper Workspace.
 
 ### Phase 4 — Paper document foundation
 
-- [ ] Implement the stable Academic Document Schema: metadata, abstract, keywords, heading tree, paragraph, figure, table, equation, list, quote, bibliography, appendix, acknowledgement, page break, raw LaTeX and inline marks/citation/cross-reference/footnote.
-- [ ] Implement append-only `DocumentVersion`, AI `DocumentPatch` accept/reject and deterministic serialization. The Document is the source of truth; generated LaTeX is a Template Adapter output only.
-- [ ] Add Paper Workspace APIs and UI: overview, Writing (outline + continuous editor + PDF/AI side panel), materials/references and typesetting settings. Use local `iconoir-react` and current shell/design rules.
-- [ ] Keep Paper References separate from Research Evidence. Support manual references, DOI/BibTeX import and Research material transfer.
+- [x] Implement the stable Academic Document Schema: metadata, abstract, keywords, heading tree, paragraph, figure, table, equation, list, quote, bibliography, appendix, acknowledgement, page break, raw LaTeX and inline marks/citation/cross-reference/footnote.
+- [x] Implement append-only `DocumentVersion`, AI `DocumentPatch` accept/reject and deterministic serialization. The Document is the source of truth; generated LaTeX is a Template Adapter output only.
+- [x] Add Paper Workspace APIs and UI: overview, Writing (outline + continuous editor + PDF/AI side panel), materials/references and typesetting settings. Use local `iconoir-react` and current shell/design rules.
+- [x] Keep Paper References separate from Research Evidence. Support manual references, DOI/BibTeX import and Research material transfer.
 
 ### Phase 5 — import, Template Registry and compilation
 
-- [ ] Add deterministic import pipeline: DOCX/OpenXML first, then Markdown AST, TXT and LaTeX. Preserve Original Source, Import Snapshot, Import Report and generated Document Version; route only ambiguous structure to AI classification and require confirmation.
+- [x] Add deterministic import pipeline: DOCX/OpenXML first, then Markdown AST, TXT and LaTeX. Preserve Original Source, Import Snapshot, Import Report and generated Document Version; low-confidence blocks remain visible for later AI classification and user confirmation.
 - [x] Copy a curated `resources/cn-thesis-templates/` source corpus into the project and ingest its `templates.json` plus school README/raw metadata through a repeatable script, never a hardcoded university list. The current machine-readable file contains 738 records while `INDEX.md` states 671; the discrepancy remains surfaced for later reconciliation rather than silently dropping rows.
-- [ ] Model Template Manifest, pinned upstream snapshot, Adapter, Validation and Sample. Keep recommendation A/B/C/D separate from runtime `Verified/Compatible/Needs Review/Deprecated/Unverified`; Word-only records remain visible without inventing LaTeX implementations.
-- [ ] Add a general Academic Template plus registry search/filter and real sample/conformance validation for A/B packs first. Lock each Paper to a Template Binding Version.
-- [ ] Add isolated CompileJob/Worker using existing Artifact/Object Storage. Ephemeral workspace, read-only base files, network/shell-escape disabled, CPU/memory/time/file/output limits, XeLaTeX/pdfLaTeX/LuaLaTeX and BibTeX/Biber as required by the pinned pack; map normalized errors to Document nodes and keep the last successful PDF visible.
+- [ ] Model Template Manifest, pinned upstream snapshot files, Adapter, Validation and Sample. Keep recommendation A/B/C/D separate from runtime `Verified/Compatible/Needs Review/Deprecated/Unverified`; Word-only records remain visible without inventing LaTeX implementations.
+- [ ] Add a general Academic Template plus registry search/filter and real sample/conformance compilation for A/B packs first. Lock each Paper to a Template Binding Version. The deterministic sample/conformance checker is implemented; real pack compilation remains gated on pinned upstream files and the isolated compiler service.
+- [ ] Add the fully isolated CompileJob/Worker service using existing Artifact/Object Storage. The current first slice already has an ephemeral workspace, `shell: false`, `--no-shell-escape`, bounded timeout, asset materialization, normalized node errors, PDF/source upload and last-successful-PDF retention; network/filesystem/CPU/memory quotas and a separately deployed service remain intentionally deferred.
 
 ### Phase 6 — verification and release gates
 
-- [ ] Add targeted tests for plan confirmation/revision, transitions, durable resume, task retry, source dedupe/snapshot, Evidence immutability, Claim relations, budget/stop conditions, follow-up runs, immutable reports and citation verification.
-- [ ] Add Paper tests for schema/serialization, patches/version recovery, DOCX/Markdown/LaTeX import, references, registry ingestion/version locking, compile jobs, node-to-LaTeX rendering, error mapping and Template Conformance.
-- [ ] For each completed phase run lint, typecheck, tests, Prisma validate/migration checks, production build and necessary headed Playwright checks; update this TODO, local `REPOSITORY_INDEX.md`, root `log.md`, and commit/push only after the phase is actually verified.
+- [x] Add targeted tests for plan confirmation/revision, transitions, durable resume, task retry, source dedupe/snapshot, Evidence immutability, Claim relations, budget/stop conditions, follow-up runs, immutable reports and citation verification.
+- [x] Add Paper tests for schema/serialization, patches/version recovery, DOCX/Markdown/LaTeX import, references, registry ingestion/version locking, compile jobs, node-to-LaTeX rendering, error mapping and deterministic Template Conformance.
+- [x] For this completed slice, ran lint, typecheck, full tests, Prisma validate/migration checks, production build and headed Playwright checks; updated this TODO, local `REPOSITORY_INDEX.md` and root `log.md`. Commit/push remains the final GitHub handoff step.
 
 #### Implementation guardrails
 
@@ -320,5 +320,5 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Phase 2 core: resumable Research stage handler on the existing `AgentExecution` worker, bounded fan-out, evaluator/replan, synthesis, verification, immutable report snapshots, owner-scoped API and SSE replay.
 - [x] Phase 3 core: first-level navigation, real workspace/run planning and confirmation UI, public progress events and report rendering.
 - [x] Phase 4 core: Academic Document schema, version/patch APIs, Paper Workspace and continuous editor shell.
-- [x] Phase 5 first slice: deterministic registry ingestion (all 738 machine-readable records), Markdown/TXT/LaTeX/DOCX import with original/snapshot/report/version persistence, and an isolated-flagged compile worker using an ephemeral `--no-shell-escape` workspace with PDF/source upload.
-- [ ] Remaining before declaring the full roadmap complete: resumable scope-confirmation continuation, append-only Evidence revision UI, OpenAlex/Crossref/Semantic Scholar/PubMed adapters, Research→Paper material transfer UI, DOI/BibTeX/reference workflows, template-pack upstream snapshots/adapters/conformance fixtures, asset-aware LaTeX compilation, PDF/SyncTeX viewer, and AI-assisted ambiguous import classification.
+- [x] Phase 5 first slice: deterministic registry ingestion (all 738 machine-readable records), Markdown/TXT/LaTeX/DOCX import with original/snapshot/report/version persistence, asset-aware ephemeral compile worker with `--no-shell-escape`, PDF/source upload, references and deterministic conformance checker.
+- [ ] Remaining before declaring the full roadmap complete: separately isolated compiler service with pinned upstream template files and real A/B pack compilation, PDF SyncTeX mapping/viewer, AI-assisted ambiguous import classification and structure-confirmation workflow, richer DOCX assets/footnotes/equations, and production-grade Research role model routing/cost accounting.
