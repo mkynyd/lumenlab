@@ -9,7 +9,7 @@ import {
 
 const root = process.env.TEMPLATE_REGISTRY_ROOT
   ? path.resolve(process.env.TEMPLATE_REGISTRY_ROOT)
-  : path.resolve(process.cwd(), "../cn-thesis-templates");
+  : path.resolve(process.cwd(), "resources/cn-thesis-templates");
 
 async function main() {
   const raw = JSON.parse(await fs.readFile(path.join(root, "templates.json"), "utf8")) as unknown;
