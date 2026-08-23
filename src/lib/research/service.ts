@@ -112,14 +112,14 @@ export async function createResearchRun(input: {
   const plan = buildResearchPlan({ question: input.question, profile, domainProfileKey: workspace.domainProfileKey });
   const budget = getResearchBudget(profile);
 
-  return prisma.$transaction(async (tx) => {
+  const created = await prisma.$transaction(async (tx) => {
     const run = await tx.researchRun.create({
       data: {
         workspaceId: workspace.id,
         userId: input.userId,
         followUpOfId: input.followUpOfId ?? null,
         question: plan.researchGoal,
-        status: "awaiting_confirmation",
+        status: "planning",
         budgetSnapshot: JSON.parse(JSON.stringify(budget)),
         modelConfiguration: JSON.parse(JSON.stringify(researchModelConfiguration())),
       },
@@ -150,6 +150,16 @@ export async function createResearchRun(input: {
       include: { activePlanVersion: true, questions: { orderBy: { orderIndex: "asc" } } },
     });
   });
+  try {
+    await createResearchAgentExecution(input.userId, created.id, { stage: "planning" });
+    return prisma.researchRun.findUniqueOrThrow({
+      where: { id: created.id },
+      include: { activePlanVersion: true, questions: { orderBy: { orderIndex: "asc" } } },
+    });
+  } catch (error) {
+    await prisma.researchRun.update({ where: { id: created.id }, data: { status: "failed", completedAt: new Date(), metrics: { planningDispatchError: error instanceof Error ? error.message : "planning dispatch failed" } } });
+    throw error;
+  }
 }
 
 export async function reviseResearchPlan(input: {
@@ -221,6 +231,7 @@ export async function confirmResearchRunPlan(userId: string, runId: string) {
   });
   try {
     const agentExecutionId = await createResearchAgentExecution(userId, runId);
+    await resumeResearchAgentExecution(userId, runId);
     return { ...queued, agentExecutionId };
   } catch (error) {
     await prisma.researchRun.update({ where: { id: runId }, data: { status: "failed", completedAt: new Date(), metrics: { dispatchError: error instanceof Error ? error.message : "dispatch failed" } } });

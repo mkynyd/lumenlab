@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { runAgentRuntime } from "@/lib/agent/runtime";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
-import type { ResearchRole } from "./contracts";
+import type { ResearchPriority, ResearchRole } from "./contracts";
 import { selectResearchModel } from "./model-routing";
 
 export interface ResearchModelStageInput {
@@ -77,6 +77,58 @@ export function parseStructuredJson<T>(content: string): T | null {
 export interface ResearchWorkerDecision {
   queries: string[];
   rationale?: string;
+}
+
+export interface ResearchPlannerDecision {
+  scope?: string;
+  timeRange?: string | null;
+  sourceStrategy?: string[];
+  completionCriteria?: string[];
+  expectedOutputs?: string[];
+  questions?: Array<{
+    key: string;
+    title?: string;
+    question?: string;
+    priority?: ResearchPriority;
+    completionCriteria?: string[];
+    sourceStrategy?: string[];
+  }>;
+}
+
+function boundedStrings(value: unknown, maximum: number, itemMaximum: number): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result = value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim().slice(0, itemMaximum))
+    .slice(0, maximum);
+  return result.length > 0 ? result : undefined;
+}
+
+export function normalizeResearchPlannerDecision(value: unknown): ResearchPlannerDecision {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const questions = Array.isArray(record.questions)
+    ? record.questions.flatMap((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+        const question = item as Record<string, unknown>;
+        if (typeof question.key !== "string" || !/^q[1-8]$/.test(question.key)) return [];
+        return [{
+          key: question.key,
+          title: typeof question.title === "string" ? question.title.trim().slice(0, 120) : undefined,
+          question: typeof question.question === "string" ? question.question.trim().slice(0, 2_000) : undefined,
+          priority: question.priority === "critical" || question.priority === "important" || question.priority === "supporting" ? question.priority as ResearchPriority : undefined,
+          completionCriteria: boundedStrings(question.completionCriteria, 6, 240),
+          sourceStrategy: boundedStrings(question.sourceStrategy, 6, 240),
+        }];
+      }).slice(0, 8)
+    : undefined;
+  return {
+    scope: typeof record.scope === "string" ? record.scope.trim().slice(0, 2_000) : undefined,
+    timeRange: record.timeRange === null ? null : typeof record.timeRange === "string" ? record.timeRange.trim().slice(0, 240) : undefined,
+    sourceStrategy: boundedStrings(record.sourceStrategy, 8, 240),
+    completionCriteria: boundedStrings(record.completionCriteria, 8, 240),
+    expectedOutputs: boundedStrings(record.expectedOutputs, 8, 240),
+    questions,
+  };
 }
 
 export function normalizeResearchWorkerDecision(value: unknown, fallback: string): ResearchWorkerDecision {

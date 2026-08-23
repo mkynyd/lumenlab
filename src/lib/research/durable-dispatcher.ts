@@ -5,7 +5,7 @@ import { parseAgentCheckpoint, type AgentCheckpoint } from "@/lib/agent/executio
 import { prisma } from "@/lib/db";
 import { selectResearchModel, type ResearchModelSelection } from "./model-routing";
 
-function researchCheckpoint(input: { runId: string; question: string; selection: ResearchModelSelection }): AgentCheckpoint {
+function researchCheckpoint(input: { runId: string; question: string; selection: ResearchModelSelection; stage: "planning" | "researching" }): AgentCheckpoint {
   return parseAgentCheckpoint({
     version: 1,
     messages: [{ role: "user", content: input.question }],
@@ -26,7 +26,7 @@ function researchCheckpoint(input: { runId: string; question: string; selection:
       researchRunId: input.runId,
     },
     researchState: {
-      stage: "researching",
+      stage: input.stage,
       modelCalls: 0,
       searchCalls: 0,
       fetchCalls: 0,
@@ -37,14 +37,14 @@ function researchCheckpoint(input: { runId: string; question: string; selection:
   });
 }
 
-export async function createResearchAgentExecution(userId: string, runId: string) {
+export async function createResearchAgentExecution(userId: string, runId: string, options?: { stage?: "planning" | "researching" }) {
   const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, include: { workspace: true } });
   if (!run) throw new Error("Research Run 不存在或无权访问");
   if (run.agentExecutionId) return run.agentExecutionId;
 
   const selection = selectResearchModel("research.worker");
   const model: AgentModel = selection.model;
-  const checkpoint = researchCheckpoint({ runId: run.id, question: run.question, selection });
+  const checkpoint = researchCheckpoint({ runId: run.id, question: run.question, selection, stage: options?.stage ?? "researching" });
   const clientRunKey = `research:${run.id}:v1`;
   const requestHash = createHash("sha256").update(JSON.stringify({ runId: run.id, question: run.question, planVersionId: run.planVersionId })).digest("hex");
   const result = await new PrismaAgentExecutionStore().createOrGetByClientRunKey({

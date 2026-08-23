@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { normalizeResearchEvaluatorDecision, normalizeResearchVerifierDecision, normalizeResearchWorkerDecision, parseStructuredJson } from "./model-stage";
+import { normalizeResearchEvaluatorDecision, normalizeResearchPlannerDecision, normalizeResearchVerifierDecision, normalizeResearchWorkerDecision, parseStructuredJson } from "./model-stage";
+import { applyResearchPlannerDecision, buildResearchPlan } from "./plan";
 
 describe("research model stage contracts", () => {
   it("extracts bounded JSON from a fenced model response", () => {
@@ -22,5 +23,18 @@ describe("research model stage contracts", () => {
   it("drops verifier claims with unknown statuses", () => {
     expect(normalizeResearchVerifierDecision({ claims: { a: { status: "verified", reasonCode: "direct" }, b: { status: "unknown" } } }))
       .toEqual({ claims: { a: { status: "verified", reasonCode: "direct" } } });
+  });
+
+  it("bounds planner output and applies only known question keys", () => {
+    const decision = normalizeResearchPlannerDecision({
+      scope: "  更具体的范围 ",
+      timeRange: null,
+      sourceStrategy: ["官方资料", "原始研究"],
+      questions: [{ key: "q1", priority: "critical", question: "修订后的问题" }, { key: "q99", question: "不得写入" }],
+    });
+    const plan = applyResearchPlannerDecision(buildResearchPlan({ question: "原问题", profile: "deep" }), decision);
+    expect(plan.scope).toBe("更具体的范围");
+    expect(plan.researchQuestions[0].question).toBe("修订后的问题");
+    expect(plan.researchQuestions.some((item) => item.question === "不得写入")).toBe(false);
   });
 });

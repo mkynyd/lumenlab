@@ -9,15 +9,18 @@ import { buildSourceIdentity } from "./source-identity";
 import { createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext } from "./source-provider";
 import { computeSourceDiversity } from "./quality";
 import { assertResearchRunTransition } from "./state-machine";
-import type { ResearchRunStatus } from "./contracts";
+import type { ResearchPlanSnapshot, ResearchRunStatus } from "./contracts";
 import { nextResearchTaskRetryStatus } from "./task-retry";
 import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
+import { applyResearchPlannerDecision } from "./plan";
 import {
   normalizeResearchEvaluatorDecision,
+  normalizeResearchPlannerDecision,
   normalizeResearchVerifierDecision,
   normalizeResearchWorkerDecision,
   runResearchModelStage,
   type ResearchEvaluatorDecision,
+  type ResearchPlannerDecision,
   type ResearchVerifierDecision,
   type ResearchWorkerDecision,
 } from "./model-stage";
@@ -219,9 +222,13 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     if (!checkpoint || request?.executionKind !== "research" || !request.researchRunId) {
       return { kind: "failed", code: "invalid_research_checkpoint", message: "Research checkpoint is missing its run identity", retryable: false };
     }
-    const run = await prisma.researchRun.findFirst({ where: { id: request.researchRunId, userId: context.execution.userId }, include: { workspace: true } });
+    const run = await prisma.researchRun.findFirst({ where: { id: request.researchRunId, userId: context.execution.userId }, include: { workspace: true, activePlanVersion: true } });
     if (!run) return { kind: "failed", code: "research_run_not_found", message: "Research Run 不存在", retryable: false };
     if (run.status === "cancelled") return { kind: "cancelled", message: "Research Run 已取消", checkpoint };
+    if (run.status === "awaiting_confirmation") {
+      await context.saveCheckpoint(checkpoint);
+      return { kind: "rescheduled", checkpoint, scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1_000) };
+    }
     if (run.status === "awaiting_scope_confirmation") {
       await appendPublicEvent(context, {
         key: `research:scope:waiting:${run.id}:${context.execution.attempt}`,
@@ -260,6 +267,61 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
       projectId: run.workspace.projectId,
       signal: context.signal,
     };
+
+    if (state.stage === "planning") {
+      const activePlanVersion = run.activePlanVersion;
+      const currentPlan = activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined;
+      if (!activePlanVersion || !currentPlan) return { kind: "failed", code: "research_plan_missing", message: "Research Plan 不存在", retryable: false };
+      const plannerResult = await runResearchModelStage<ResearchPlannerDecision>({
+        role: "research.planner",
+        userId: context.execution.userId,
+        conversationId: context.execution.conversationId,
+        projectId: run.workspace.projectId,
+        signal: context.signal,
+        prompt: [
+          "你是 LumenLab Research Planner。只返回 JSON，不要 Markdown，不要隐藏推理，不要联网。",
+          "你只能在已有计划上做有限、可解释的规划修订，不能虚构来源或直接生成研究结论。",
+          "格式：{\"scope\":\"范围\",\"timeRange\":\"时间范围或 null\",\"sourceStrategy\":[\"来源策略\"],\"completionCriteria\":[\"完成标准\"],\"expectedOutputs\":[\"预期产出\"],\"questions\":[{\"key\":\"q1\",\"title\":\"标题\",\"question\":\"问题\",\"priority\":\"critical|important|supporting\",\"completionCriteria\":[\"标准\"],\"sourceStrategy\":[\"策略\"]}]}。",
+          `用户研究问题：${run.question}`,
+          `预算配置：${run.workspace.budgetProfile}`,
+          `当前计划：${JSON.stringify(currentPlan)}`,
+          "只保留最多八个研究问题；优先 critical，再 important，最后 supporting。",
+        ].join("\n"),
+      });
+      recordResearchModelStage(state, plannerResult);
+      const revisedPlan = applyResearchPlannerDecision(currentPlan, normalizeResearchPlannerDecision(plannerResult.value));
+      const changed = JSON.stringify(revisedPlan) !== JSON.stringify(currentPlan);
+      let planVersionId = activePlanVersion.id;
+      if (changed) {
+        const result = await prisma.$transaction(async (tx) => {
+          const maxVersion = await tx.researchPlanVersion.aggregate({ where: { workspaceId: run.workspaceId }, _max: { version: true } });
+          const nextVersion = await tx.researchPlanVersion.create({
+            data: {
+              workspaceId: run.workspaceId,
+              runId: run.id,
+              version: (maxVersion._max.version ?? 0) + 1,
+              plan: json(revisedPlan),
+              reason: "Planner 初始结构化规划",
+            },
+          });
+          for (const [index, question] of revisedPlan.researchQuestions.entries()) {
+            await tx.researchQuestion.upsert({
+              where: { runId_key: { runId: run.id, key: question.key } },
+              create: { runId: run.id, key: question.key, title: question.title, question: question.question, priority: question.priority, orderIndex: index, completionCriteria: question.completionCriteria, sourceStrategy: question.sourceStrategy },
+              update: { title: question.title, question: question.question, priority: question.priority, orderIndex: index, completionCriteria: question.completionCriteria, sourceStrategy: question.sourceStrategy },
+            });
+          }
+          await tx.researchRun.update({ where: { id: run.id }, data: { question: revisedPlan.researchGoal, planVersionId: nextVersion.id } });
+          return nextVersion;
+        });
+        planVersionId = result.id;
+      }
+      state.stage = "researching";
+      await transitionRun(run.id, "awaiting_confirmation");
+      await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+      await appendPublicEvent(context, { key: `research:plan:created:${run.id}:${planVersionId}`, kind: "plan_created", runId: run.id, message: "Planner 已生成结构化研究计划，等待确认", publicData: { planVersionId, questionCount: revisedPlan.researchQuestions.length, modelAttempted: plannerResult.attempted } });
+      return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state), scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1_000) };
+    }
 
     if (state.stage === "researching") {
       await transitionRun(run.id, "researching");

@@ -3,6 +3,7 @@ import type {
   ResearchPlanSnapshot,
   ResearchPriority,
 } from "./contracts";
+import type { ResearchPlannerDecision } from "./model-stage";
 
 const QUESTION_SPLITTER = /[？?；;。\n]+/;
 
@@ -54,6 +55,45 @@ export function buildResearchPlan(input: {
     expectedOutputs: ["结构化研究报告", "Claim/Evidence/Source 索引", "引用核验与不确定性摘要"],
     researchIntensity: input.profile,
     domainProfileKey: input.domainProfileKey ?? "general",
+  };
+}
+
+export function applyResearchPlannerDecision(
+  plan: ResearchPlanSnapshot,
+  decision: ResearchPlannerDecision,
+): ResearchPlanSnapshot {
+  const knownKeys = new Set(plan.researchQuestions.map((question) => question.key));
+  const questions = plan.researchQuestions.map((question) => {
+    const update = decision.questions?.find((candidate) => candidate.key === question.key);
+    if (!update) return question;
+    return {
+      ...question,
+      ...(update.title ? { title: update.title } : {}),
+      ...(update.question ? { question: update.question } : {}),
+      ...(update.priority ? { priority: update.priority } : {}),
+      ...(update.completionCriteria?.length ? { completionCriteria: update.completionCriteria } : {}),
+      ...(update.sourceStrategy?.length ? { sourceStrategy: update.sourceStrategy } : {}),
+    };
+  });
+  const extraQuestions = (decision.questions ?? [])
+    .filter((question) => !knownKeys.has(question.key) && question.question)
+    .slice(0, Math.max(0, 8 - questions.length))
+    .map((question, index) => ({
+      key: question.key,
+      title: question.title || question.question!.slice(0, 48),
+      question: question.question!,
+      priority: question.priority ?? priorityFor(questions.length + index),
+      completionCriteria: question.completionCriteria?.length ? question.completionCriteria : ["至少一个直接证据"],
+      sourceStrategy: question.sourceStrategy?.length ? question.sourceStrategy : ["优先官方、原始研究或项目资料"],
+    }));
+  return {
+    ...plan,
+    ...(decision.scope ? { scope: decision.scope } : {}),
+    ...(decision.timeRange !== undefined ? { timeRange: decision.timeRange } : {}),
+    ...(decision.sourceStrategy?.length ? { sourceStrategy: decision.sourceStrategy } : {}),
+    ...(decision.completionCriteria?.length ? { completionCriteria: decision.completionCriteria } : {}),
+    ...(decision.expectedOutputs?.length ? { expectedOutputs: decision.expectedOutputs } : {}),
+    researchQuestions: [...questions, ...extraQuestions],
   };
 }
 

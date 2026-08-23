@@ -143,7 +143,7 @@ export const agentCheckpointSchema = z
     request: durableRequestSchema.optional(),
     researchState: z
       .object({
-        stage: z.enum(["researching", "evaluating", "synthesizing", "verifying"]),
+        stage: z.enum(["planning", "researching", "evaluating", "synthesizing", "verifying"]),
         modelCalls: z.number().int().nonnegative(),
         searchCalls: z.number().int().nonnegative(),
         fetchCalls: z.number().int().nonnegative(),
