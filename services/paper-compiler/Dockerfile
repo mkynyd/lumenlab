@@ -4,6 +4,7 @@ WORKDIR /app
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
+    bubblewrap \
     fonts-noto-cjk \
     texlive-full \
   && rm -rf /var/lib/apt/lists/* \
@@ -19,12 +20,16 @@ COPY src ./src
 COPY services/paper-compiler ./services/paper-compiler
 
 RUN npx prisma generate \
-  && mkdir -p /app/uploads /app/tmp \
+  && mkdir -p /app/tmp /tmp/compiler-home \
   && chown -R compiler:compiler /app
 
 USER compiler
 ENV NODE_ENV=production
 ENV PAPER_COMPILE_SERVICE_MODE=true
 ENV PAPER_COMPILE_WORKER_ENABLED=false
+ENV PAPER_COMPILE_LINUX_SANDBOX=true
+ENV PAPER_COMPILE_SANDBOX_COMMAND=bwrap
+ENV HOME=/tmp/compiler-home
+ENV TMPDIR=/tmp
 
 CMD ["npm", "run", "paper:compiler"]

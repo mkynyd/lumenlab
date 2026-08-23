@@ -85,25 +85,90 @@ function normalizeOutput(output: string): string {
     .slice(-compileResourceLimits().maxLogBytes);
 }
 
+export function compileLinuxSandboxEnabled(environment: Partial<NodeJS.ProcessEnv> = process.env): boolean {
+  return environment.PAPER_COMPILE_LINUX_SANDBOX === "true";
+}
+
+function compileEnvironment(cwd: string, sandboxed: boolean, environment: Partial<NodeJS.ProcessEnv>): Record<string, string> {
+  const workspace = sandboxed ? "/compile-workspace" : cwd;
+  return {
+    NODE_ENV: "production",
+    PATH: environment.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    LANG: "C.UTF-8",
+    LC_ALL: "C.UTF-8",
+    HOME: `${workspace}/.home`,
+    TMPDIR: `${workspace}/.tmp`,
+    TEXMFOUTPUT: `${workspace}/.texmf-output`,
+    TEXINPUTS: `${workspace}//:`,
+    BIBINPUTS: `${workspace}//:`,
+    BSTINPUTS: `${workspace}//:`,
+    SOURCE_DATE_EPOCH: "0",
+  };
+}
+
+export function buildCompileInvocation(input: {
+  cwd: string;
+  command: CompileCommand;
+  environment?: Partial<NodeJS.ProcessEnv>;
+}): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
+  const environment = input.environment ?? process.env;
+  const sandboxed = compileLinuxSandboxEnabled(environment);
+  const childEnvironment = compileEnvironment(input.cwd, sandboxed, environment);
+  if (!sandboxed) {
+    return {
+      command: input.command.command,
+      args: input.command.args,
+      env: childEnvironment as NodeJS.ProcessEnv,
+    };
+  }
+
+  // The service still needs its control-plane network for PostgreSQL and
+  // object storage. Only the TeX toolchain enters this namespace, where the
+  // host filesystem is read-only and the compile workspace is the writable
+  // bind mount.
+  return {
+    command: environment.PAPER_COMPILE_SANDBOX_COMMAND ?? "bwrap",
+    args: [
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-user-try",
+      "--unshare-net",
+      "--ro-bind",
+      "/",
+      "/",
+      "--bind",
+      input.cwd,
+      "/compile-workspace",
+      "--tmpfs",
+      "/tmp",
+      "--proc",
+      "/proc",
+      "--dev",
+      "/dev",
+      "--chdir",
+      "/compile-workspace",
+      "--clearenv",
+      ...Object.entries(childEnvironment).flatMap(([key, value]) => ["--setenv", key, value]),
+      "--",
+      input.command.command,
+      ...input.command.args,
+    ],
+    env: {
+      NODE_ENV: "production",
+      PATH: environment.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    },
+  };
+}
+
 export async function runCompileCommand(input: { cwd: string; command: CompileCommand }): Promise<string> {
   const output: string[] = [];
+  const invocation = buildCompileInvocation(input);
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(input.command.command, input.command.args, {
+    const child = spawn(invocation.command, invocation.args, {
       cwd: input.cwd,
       shell: false,
-      env: {
-        NODE_ENV: "production",
-        PATH: process.env.PATH ?? "/Library/TeX/texbin:/usr/bin:/bin:/opt/homebrew/bin",
-        LANG: "C.UTF-8",
-        LC_ALL: "C.UTF-8",
-        HOME: join(input.cwd, ".home"),
-        TMPDIR: join(input.cwd, ".tmp"),
-        TEXMFOUTPUT: join(input.cwd, ".texmf-output"),
-        TEXINPUTS: `${input.cwd}//:`,
-        BIBINPUTS: `${input.cwd}//:`,
-        BSTINPUTS: `${input.cwd}//:`,
-        SOURCE_DATE_EPOCH: "0",
-      },
+      env: invocation.env,
+      stdio: ["ignore", "pipe", "pipe"],
     });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");

@@ -1,0 +1,58 @@
+services:
+  paper-compiler:
+    build:
+      context: .
+      dockerfile: services/paper-compiler/Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${PAPER_COMPILE_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/ai_workspace?schema=public}
+      PAPER_COMPILE_SERVICE_MODE: "true"
+      PAPER_COMPILE_WORKER_ENABLED: "false"
+      PAPER_COMPILE_LINUX_SANDBOX: "true"
+      PAPER_COMPILE_SANDBOX_COMMAND: bwrap
+      PAPER_TEX_ENGINE: ${PAPER_TEX_ENGINE:-xelatex}
+      PAPER_COMPILE_TIMEOUT_MS: ${PAPER_COMPILE_TIMEOUT_MS:-120000}
+      PAPER_COMPILE_MAX_FILES: ${PAPER_COMPILE_MAX_FILES:-500}
+      PAPER_COMPILE_MAX_SOURCE_BYTES: ${PAPER_COMPILE_MAX_SOURCE_BYTES:-41943040}
+      PAPER_COMPILE_MAX_ARTIFACT_BYTES: ${PAPER_COMPILE_MAX_ARTIFACT_BYTES:-83886080}
+      PAPER_COMPILE_MAX_LOG_BYTES: ${PAPER_COMPILE_MAX_LOG_BYTES:-12000}
+      QINIU_ACCESS_KEY: ${QINIU_ACCESS_KEY:-}
+      QINIU_SECRET_KEY: ${QINIU_SECRET_KEY:-}
+      QINIU_BUCKET: ${QINIU_BUCKET:-}
+      QINIU_REGION: ${QINIU_REGION:-z2}
+      QINIU_UPLOAD_HOST: ${QINIU_UPLOAD_HOST:-https://up-z2.qiniup.com}
+      QINIU_PRIVATE_DOMAIN: ${QINIU_PRIVATE_DOMAIN:-}
+      QINIU_RS_HOST: ${QINIU_RS_HOST:-https://rs.qiniuapi.com}
+    read_only: true
+    user: "1001:1001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: 2.0
+    mem_limit: 4g
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
+      nproc:
+        soft: 256
+        hard: 256
+      fsize:
+        soft: 83886080
+        hard: 83886080
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777
+      - /app/tmp:rw,noexec,nosuid,nodev,size=1g,uid=1001,gid=1001
+      - /tmp/compiler-home:rw,nosuid,nodev,size=64m,uid=1001,gid=1001
+
+# The worker must retain this control-plane network to claim CompileJobs and
+# read/write the configured object store. TeX child processes run inside the
+# bwrap network namespace with --unshare-net, so template code cannot access
+# the database or object storage. No compiler port is published.

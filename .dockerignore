@@ -18,6 +18,11 @@ uploads/
 dev.db
 *.db
 
+# Template archives and generated validation output are fetched from object
+# storage by the compiler; never send local snapshots into the build context.
+resources/cn-thesis-templates/
+output/
+
 # Testing & coverage
 /coverage
 /output/playwright/
