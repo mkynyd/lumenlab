@@ -24,6 +24,21 @@ describe("academic latex renderer", () => {
     expect(result.generatedContentTex).toContain("\\printbibliography");
   });
 
+  it("uses the HIT setup, cover and abstract adapters for generated hithesis classes", () => {
+    const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
+      manifest: { id: "hit", university: "哈尔滨工业大学", format: "latex", supportedBlocks: [], degreeType: "硕士", documentClass: "hithesisbook", bibliography: "bibtex" } as AcademicTemplateManifest,
+      templateFiles: [{ path: "hithesis.dtx", buffer: Buffer.from("\\ProvidesClass{hithesisbook}") }],
+    });
+    expect(result.mainTex).toContain("\\documentclass[fontset=fandol,type=master,campus=harbin]{hithesisbook}");
+    expect(result.mainTex).toContain("\\hitsetup{");
+    expect(result.generatedContentTex).toContain("\\makecover");
+    expect(result.generatedContentTex).toContain("\\begin{cabstract}");
+    expect(result.generatedContentTex).toContain("\\begin{eabstract}");
+    expect(result.generatedContentTex).toContain("\\chapter{第一章 绪论}");
+    expect(result.generatedContentTex).toContain("\\begin{appendix}");
+    expect(result.generatedContentTex).not.toContain("\\title{");
+  });
+
   it("adapts a generic class from a pinned source entry", () => {
     const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
       manifest: { id: "jnu", university: "暨南大学", format: "latex", entryFile: "main.tex", documentClass: "book", supportedBlocks: [] } as AcademicTemplateManifest,

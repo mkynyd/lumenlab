@@ -38,14 +38,14 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument, option
     "\\usepackage{amsmath,graphicx,booktabs,hyperref}",
     ...(usesBiber && !sourceUsesBiblatex && (!isBiblatexTemplateClass(documentClass) || templateFiles.length === 0) ? [`\\usepackage[backend=biber,style=${biblatexStyle(documentClass)}]{biblatex}`] : []),
     ...(usesTemplateBiblatex && !isBiblatexTemplateClass(documentClass) ? ["\\addbibresource{references.bib}"] : []),
-    ...(metadata ? renderTemplateMetadataSetup(metadata, documentClass, usesTemplateBiblatex, templateFiles) : []),
+    ...(metadata ? renderTemplateMetadataSetup(metadata, documentClass, usesTemplateBiblatex, templateFiles, document.blocks.filter((block): block is Extract<DocumentBlock, { kind: "keywords" }> => block.kind === "keywords")) : []),
     "\\begin{document}",
   ];
   const generated: string[] = [];
   for (const block of document.blocks) {
     const generatedLine = generated.length === 0 ? 1 : generated.join("\n\n").split("\n").length + 1;
     const startLine = lines.length + generatedLine;
-    const blockText = renderBlock(block, options.assetPaths, manifest, usesTemplateBiblatex, templateFiles);
+    const blockText = `${renderBlock(block, options.assetPaths, manifest, usesTemplateBiblatex, templateFiles)}${isHitThesisClass(manifest?.documentClass) && block.kind === "abstract" && block.language === "en" ? "\n\\makecover" : ""}`;
     generated.push(blockText);
     const id = "id" in block && typeof block.id === "string" ? block.id : block.kind;
     nodeMap[id] = { line: startLine, generatedLine, kind: block.kind };
@@ -96,6 +96,7 @@ function toBibtex(reference: LatexReference): string {
 function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, manifest?: AcademicTemplateManifest, usesTemplateBiblatex = false, templateFiles: TemplateSourceFile[] = []): string {
   switch (block.kind) {
     case "paper_metadata":
+      if (isHitThesisClass(manifest?.documentClass)) return "";
       if ((manifest?.documentClass ?? "").toLowerCase() === "hhuthesis") return "";
       return hasCustomMetadataAdapter(templateFiles)
         ? "\\maketitle"
@@ -107,9 +108,9 @@ function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, 
     case "abstract":
       return renderAbstractBlock(block, manifest?.documentClass, templateFiles);
     case "keywords":
-      return renderKeywordsBlock(block, templateFiles);
+      return renderKeywordsBlock(block, manifest?.documentClass, templateFiles);
     case "heading":
-      return `\\${sectionCommand(block.level)}{${renderInline(block.children)}}\\label{${escapeLatex(block.id)}}`;
+      return `\\${sectionCommand(block.level, manifest?.documentClass)}{${renderInline(block.children)}}\\label{${escapeLatex(block.id)}}`;
     case "paragraph":
       return renderInline(block.children);
     case "figure":
@@ -127,7 +128,9 @@ function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, 
         ? "\\printbibliography"
         : `\\bibliography{references}${hasTemplateBibliographyStyle(templateFiles) ? "" : "\n\\bibliographystyle{plain}"}`;
     case "appendix":
-      return `\\appendix\n\\section{${escapeLatex(block.title)}}`;
+      return isHitThesisClass(manifest?.documentClass)
+        ? `\\begin{appendix}\n\\section{${escapeLatex(block.title)}}\n\\end{appendix}`
+        : `\\appendix\n\\section{${escapeLatex(block.title)}}`;
     case "acknowledgement":
       return `\\section*{致谢}\n${renderInline(block.children)}`;
     case "page_break":
@@ -141,6 +144,10 @@ function isBiblatexTemplateClass(documentClass: string | null | undefined): bool
   return ["ccnuthesis", "thuthesis", "shtthesis"].includes((documentClass ?? "").toLowerCase());
 }
 
+function isHitThesisClass(documentClass: string | null | undefined): boolean {
+  return /^hithesis(?:book|art|artplus)?$/i.test(documentClass ?? "");
+}
+
 function isSpecialMetadataClass(documentClass: string | null | undefined): boolean {
   return ["ccnuthesis", "seuthesiy", "thuthesis", "shtthesis"].includes((documentClass ?? "").toLowerCase());
 }
@@ -149,13 +156,25 @@ function biblatexStyle(documentClass: string): string {
   return documentClass.toLowerCase() === "thuthesis" ? "thuthesis-numeric" : "numeric";
 }
 
-function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "paper_metadata" }>, documentClass: string, usesBiblatex: boolean, templateFiles: TemplateSourceFile[]): string[] {
+function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "paper_metadata" }>, documentClass: string, usesBiblatex: boolean, templateFiles: TemplateSourceFile[], keywordBlocks: Array<Extract<DocumentBlock, { kind: "keywords" }>> = []): string[] {
   const title = escapeLatex(metadata.title);
   const templateAuthor = metadata.authors.map(escapeLatex).join("、");
   const degree = escapeLatex(metadata.degreeType ?? "硕士");
   const englishDegree = degree.includes("博士") ? "Doctor" : degree.includes("本科") || degree.includes("学士") ? "Bachelor" : "Master";
   const institution = escapeLatex(metadata.institution ?? "");
+  const keywordSetup = keywordBlocks.map((block) => `${block.language === "en" ? "ekeywords" : "ckeywords"} = {${block.keywords.map(escapeLatex).join(block.language === "en" ? ", " : "；")}}`);
   switch (documentClass.toLowerCase()) {
+    case "hithesis":
+    case "hithesisbook":
+    case "hithesisart":
+    case "hithesisartplus":
+      return [`\\hitsetup{${[
+        `ctitle = {${title}}`,
+        `cauthor = {${templateAuthor}}`,
+        ...(institution ? [`caffil = {${institution}}`] : []),
+        ...(metadata.date ? [`cdate = {${escapeLatex(metadata.date)}}`] : []),
+        ...keywordSetup,
+      ].join(",\n")}}`];
     case "thuthesis":
       return [`\\thusetup{title = {${title}}, author = {${templateAuthor}}}`];
     case "shtthesis":
@@ -218,6 +237,7 @@ function needsChapterAbstract(documentClass: string | null | undefined, template
 function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>, documentClass: string | null | undefined, templateFiles: TemplateSourceFile[]): string {
   const content = renderInline(block.children);
   const normalized = (documentClass ?? "").toLowerCase();
+  if (isHitThesisClass(documentClass)) return `\\begin{${block.language === "en" ? "eabstract" : "cabstract"}}\n${content}\n\\end{${block.language === "en" ? "eabstract" : "cabstract"}}`;
   if (normalized === "seuthesiy") {
     const environment = block.language === "en" ? "englishabstract" : "abstract";
     const keywords = block.language === "en" ? "Keywords" : "关键词";
@@ -232,8 +252,9 @@ function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>
     : `\\begin{${environment ?? "abstract"}}\n${content}\n\\end{${environment ?? "abstract"}}`;
 }
 
-function renderKeywordsBlock(block: Extract<DocumentBlock, { kind: "keywords" }>, templateFiles: TemplateSourceFile[]): string {
+function renderKeywordsBlock(block: Extract<DocumentBlock, { kind: "keywords" }>, documentClass: string | null | undefined, templateFiles: TemplateSourceFile[]): string {
   const keywords = block.keywords.map(escapeLatex).join("；");
+  if (isHitThesisClass(documentClass)) return "";
   if (hasTemplateCommand(templateFiles, "keywords")) return `\\keywords{${keywords}}`;
   if (hasTemplateCommand(templateFiles, "thesiskeywords")) return `\\thesiskeywords{${keywords}}`;
   return `\\textbf{关键词：}${keywords}`;
@@ -305,7 +326,8 @@ function renderTemplatePreamble(files: TemplateSourceFile[], manifest?: Academic
   return lines;
 }
 
-function sectionCommand(level: number): string {
+function sectionCommand(level: number, documentClass?: string | null): string {
+  if (isHitThesisClass(documentClass) && documentClass?.toLowerCase() === "hithesisbook") return ["chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph"][level - 1] ?? "chapter";
   return ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"][level - 1] ?? "section";
 }
 

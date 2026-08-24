@@ -11,7 +11,7 @@ import { compileResourceLimits, safeCompilePath } from "@/lib/paper/compile-poli
 import { runCompileCommand, runCompilePipeline } from "@/lib/paper/compile-worker";
 import { normalizeTemplateManifest, readTemplateSamplePdf, templateSampleObjectKey } from "@/lib/paper/template-registry";
 import { renderAcademicDocumentToLatex } from "@/lib/paper/latex-renderer";
-import { buildDtxBootstrapPlan, isLatexTemplateFormat, isSystemDocumentClass, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "@/lib/paper/template-snapshot";
+import { buildDtxBootstrapPlan, findTemplateInstaller, isLatexTemplateFormat, isSystemDocumentClass, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "@/lib/paper/template-snapshot";
 
 const ONE_PIXEL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 const GENERATED_TEMPLATE_PATHS = new Set(["main.tex", "generated-content.tex", "references.bib"]);
@@ -123,7 +123,7 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
     await mkdir(join(directory, ".texmf-output"), { recursive: true });
     await writeFile(join(directory, "assets/sample-figure.png"), ONE_PIXEL_PNG);
     if (!isSystemDocumentClass(documentClass) && !upstreamFiles.some((file) => file.path === `${documentClass}.cls` || file.path.endsWith(`/${documentClass}.cls`))) {
-      const installer = upstreamFiles.find((file) => file.path === `${documentClass}.ins` || file.path.endsWith(`/${documentClass}.ins`));
+      const installer = findTemplateInstaller(documentClass, upstreamFiles);
       if (installer) {
         const installerDirectory = dirname(installer.path) === "." ? "" : dirname(installer.path);
         const installerStem = basename(installer.path, ".ins");

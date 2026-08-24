@@ -11,7 +11,7 @@ import { assertCompileArtifactSize, assertCompileBundleLimits, CompilePolicyErro
 import { renderAcademicDocumentToLatex } from "./latex-renderer";
 import { parseAcademicDocument } from "./document-schema";
 import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
-import { buildDtxBootstrapPlan, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "./template-snapshot";
+import { buildDtxBootstrapPlan, findTemplateInstaller, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "./template-snapshot";
 import { mapCompileErrorToNode } from "./compile-errors";
 
 const POLL_INTERVAL_MS = 1_000;
@@ -243,7 +243,7 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
   }
   const documentClass = resolveTemplateDocumentClass(input.manifest, files);
   if (documentClass && !files.some((file) => file.path === `${documentClass}.cls` || file.path.endsWith(`/${documentClass}.cls`))) {
-    const installer = files.find((file) => file.path === `${documentClass}.ins` || file.path.endsWith(`/${documentClass}.ins`));
+    const installer = findTemplateInstaller(documentClass, files);
     if (installer) {
       const installerDirectory = dirname(installer.path) === "." ? "" : dirname(installer.path);
       const installerStem = basename(installer.path, ".ins");

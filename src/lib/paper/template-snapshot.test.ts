@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import type { AcademicTemplateManifest } from "./template-registry";
-import { buildDtxBootstrapPlan, githubRepositorySlug, normalizeTemplateRuntimeBuffer, normalizeTemplateTarGz, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
+import { buildDtxBootstrapPlan, findTemplateInstaller, githubRepositorySlug, normalizeTemplateRuntimeBuffer, normalizeTemplateTarGz, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
 
 describe("template upstream snapshots", () => {
   it("accepts only GitHub owner/repository identities", () => {
@@ -77,6 +77,13 @@ describe("template upstream snapshots", () => {
         { path: "xtuthesis.tex", buffer: Buffer.from("\\documentclass{ctexbook}") },
       ],
     )).toBe("ctexbook");
+    expect(resolveTemplateDocumentClass(
+      { id: "hit", university: "哈尔滨工业大学", repositoryUrl: "https://github.com/example/hithesis", documentClass: "hithesis" },
+      [
+        { path: "hithesis.ins", buffer: Buffer.from("\\file{\\jobname book.cls}{\\from{\\jobname.dtx}{bookcls}}\\file{\\jobname art.cls}{\\from{\\jobname.dtx}{artcls}}") },
+        { path: "hithesis.dtx", buffer: Buffer.from("% generated class source") },
+      ],
+    )).toBe("hithesisbook");
   });
 
   it("uses documented degree option shapes for common thesis classes", () => {
@@ -95,6 +102,12 @@ describe("template upstream snapshots", () => {
     const plan = buildDtxBootstrapPlan("hustthesis", "hustthesis.dtx", "\\file{\\jobname.cls}{\\from{\\jobname.dtx}{class}}\\file{\\jobname-m.def}{\\from{\\jobname.dtx}{def-m}}\\file{\\jobname.cbx}{\\from{\\jobname.dtx}{cbx}}");
     expect(plan.outputFiles).toEqual(["hustthesis.cls", "hustthesis-m.def", "hustthesis.cbx"]);
     expect(plan.installerSource).toContain("\\file{hustthesis-m.def}{\\from{hustthesis.dtx}{def-m}}");
+  });
+
+  it("finds an installer whose jobname-derived output matches the selected class", () => {
+    expect(findTemplateInstaller("hithesisbook", [
+      { path: "hithesis.ins", buffer: Buffer.from("\\file{\\jobname book.cls}{\\from{\\jobname.dtx}{bookcls}}") },
+    ])?.path).toBe("hithesis.ins");
   });
 
   it("prefers the pinned class bibliography implementation over stale registry metadata", () => {

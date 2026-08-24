@@ -28,6 +28,24 @@ export interface TemplateSourceFile {
   buffer?: Buffer;
 }
 
+/** Find an installer that can generate the selected class, including installers
+ * whose output name is derived from `\\jobname` (for example hithesis.ins). */
+export function findTemplateInstaller(documentClass: string, files: TemplateSourceFile[]): TemplateSourceFile | null {
+  const target = `${documentClass}.cls`.toLowerCase();
+  const exact = files.find((file) => basename(file.path).toLowerCase() === `${documentClass}.ins`.toLowerCase());
+  if (exact) return exact;
+  for (const file of files) {
+    if (!file.buffer || !/\.ins$/i.test(file.path)) continue;
+    const stem = basename(file.path).replace(/\.ins$/i, "");
+    const source = stripLatexComments(file.buffer.toString("utf8"));
+    const outputs = [...source.matchAll(/\\file\s*\{([^}]+)\}/gi)]
+      .map((match) => (match[1] ?? "").replace(/\\jobname/g, stem).replace(/\s+/g, ""))
+      .map((path) => path.split("/").at(-1)?.toLowerCase() ?? "");
+    if (outputs.includes(target)) return file;
+  }
+  return null;
+}
+
 export interface DtxBootstrapPlan {
   installerSource: string;
   outputFiles: string[];
@@ -152,9 +170,9 @@ export function resolveTemplateDocumentClass(
   files: TemplateSourceFile[],
 ): string | null {
   const explicit = manifest.documentClass ? validDocumentClass(manifest.documentClass) : null;
-  const explicitFilename = explicit ? files.map((file) => validDocumentClass(basename(file.path))).find((name) => name?.toLowerCase() === explicit.toLowerCase()) : null;
+  const explicitFilename = explicit ? files.filter((file) => /\.cls$/i.test(file.path)).map((file) => validDocumentClass(basename(file.path))).find((name) => name?.toLowerCase() === explicit.toLowerCase()) : null;
   const explicitDeclared = Boolean(explicit && files.some((file) => {
-    const filenameClass = validDocumentClass(basename(file.path));
+    const filenameClass = /\.cls$/i.test(file.path) ? validDocumentClass(basename(file.path)) : null;
     if (filenameClass?.toLowerCase() === explicit.toLowerCase()) return true;
     if (!file.buffer) return false;
     return new RegExp(`\\\\Provides(?:Expl)?Class\\s*\\{${explicit}\\}`, "i").test(stripLatexComments(file.buffer.toString("utf8")));
@@ -167,10 +185,19 @@ export function resolveTemplateDocumentClass(
   if (explicitFilename) return explicitFilename;
   if (explicit && (isSystemDocumentClass(explicit) || explicitDeclared)) return explicit;
 
+  const generatedClasses = files.flatMap((file) => {
+    if (!file.buffer || !/\.ins$/i.test(file.path)) return [];
+    const source = stripLatexComments(file.buffer.toString("utf8"));
+    return [...source.matchAll(/\\file\s*\{([^}]+\.cls)\}/gi)]
+      .map((match) => {
+        const output = (match[1] ?? "").replace(/\\jobname/g, explicit ?? "").replace(/\s+/g, "");
+        return { path: file.path, name: validDocumentClass(output), generated: true };
+      });
+  }).filter((candidate): candidate is { path: string; name: string; generated: true } => Boolean(candidate.name));
   const candidates = files
-    .filter((file) => /\.(?:cls|ins|dtx)$/i.test(file.path))
-    .map((file) => ({ path: file.path, name: validDocumentClass(basename(file.path)) }))
-    .filter((file): file is { path: string; name: string } => Boolean(file.name))
+    .filter((file) => /\.(?:cls|dtx)$/i.test(file.path))
+    .map((file) => ({ path: file.path, name: validDocumentClass(basename(file.path)), generated: false }))
+    .filter((file): file is { path: string; name: string; generated: false } => Boolean(file.name))
     .filter((file) => !GENERIC_DOCUMENT_CLASSES.has(file.name));
   const declared = files.flatMap((file) => {
     if (!file.buffer) return [];
@@ -181,7 +208,7 @@ export function resolveTemplateDocumentClass(
     ].map((match) => validDocumentClass(match[1] ?? "")).filter((name): name is string => Boolean(name));
     return names.map((name) => ({ path: file.path, name }));
   });
-  const unique = [...new Map([...declared, ...candidates].map((candidate) => [candidate.name, candidate])).values()];
+  const unique = [...new Map([...declared.map((candidate) => ({ ...candidate, generated: false })), ...candidates, ...generatedClasses].map((candidate) => [candidate.name, candidate])).values()];
   if (unique.length === 0) return null;
   const declaredEntryClass = declared.find((candidate) => !candidate.path.includes("/") && GENERIC_DOCUMENT_CLASSES.has(candidate.name));
   if (declaredEntryClass) return declaredEntryClass.name;
@@ -191,6 +218,8 @@ export function resolveTemplateDocumentClass(
     const normalizedName = candidate.name.toLowerCase();
     const normalizedPath = candidate.path.toLowerCase();
     let score = 0;
+    if (candidate.generated) score += 10;
+    if (candidate.generated && /book$/i.test(normalizedName)) score += 3;
     if (!candidate.path.includes("/")) score += 8;
     if (normalizedName.includes("thesis") || normalizedName.includes("dissert")) score += 6;
     if (normalizedPath.includes("dependency") || normalizedPath.includes("/base/") || normalizedPath.includes("/ctex/") || normalizedPath.includes("/reference/") || normalizedPath.includes("/vendor/")) score -= 20;
@@ -227,6 +256,7 @@ export function resolveTemplateClassOptions(
   const degree = degreeToken(manifest.degreeType);
   if (!degree || !documentClass) return [];
   const normalized = documentClass.toLowerCase();
+  if (["hithesis", "hithesisbook", "hithesisart", "hithesisartplus"].includes(normalized)) return ["fontset=fandol", `type=${degree}`, "campus=harbin"];
   if (["thuthesis", "xjtuthesis", "hithesis", "shtthesis", "bnuthesis"].includes(normalized)) return [degree];
   if (normalized === "seuthesiy") return [degree === "doctor" ? "phd" : degree === "bachelor" ? "engineering" : "masters"];
   if (normalized === "hhuthesis") return [degree === "doctor" ? "doctor" : degree === "bachelor" ? "bachelor" : "academicmaster"];
