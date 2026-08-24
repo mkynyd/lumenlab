@@ -17,7 +17,24 @@ interface BlockRecord {
   id?: string;
   children?: Array<{ kind?: string; text?: string }>;
   title?: string;
+  authors?: string[];
+  institution?: string;
+  degreeType?: string;
+  date?: string;
+  language?: string;
+  keywords?: string[];
   level?: number;
+  assetId?: string;
+  caption?: string;
+  label?: string;
+  width?: number;
+  alignment?: string;
+  placement?: string;
+  columns?: string[];
+  rows?: string[][];
+  latex?: string;
+  ordered?: boolean;
+  items?: Array<Array<{ kind?: string; text?: string }>>;
 }
 
 interface AcademicDocumentRecord {
@@ -55,6 +72,45 @@ function BlockCommandMenu({ onSelect }: { onSelect: (kind: InsertableBlockKind) 
     { kind: "list", label: "列表" },
   ];
   return <div className="mt-2 flex flex-wrap items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-2 py-2 text-xs shadow-sm ring-1 ring-[var(--color-border-light)]"><span className="mr-1 text-[var(--color-text-tertiary)]">插入块</span>{commands.map((command) => <button type="button" key={command.kind} onClick={() => onSelect(command.kind)} className="rounded-[var(--radius-sm)] px-2 py-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]">{command.label}</button>)}</div>;
+}
+
+function PaperBlockEditor({ block, index, onTextChange, onUpdate }: { block: BlockRecord; index: number; onTextChange: (index: number, value: string) => void; onUpdate: (index: number, updater: (block: BlockRecord) => BlockRecord) => void }) {
+  const text = blockText(block);
+  const update = (updater: (current: BlockRecord) => BlockRecord) => onUpdate(index, updater);
+  const fieldClass = "w-full rounded-[var(--radius-sm)] bg-[var(--color-bg)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] outline-none ring-1 ring-transparent focus:ring-[var(--color-accent)]";
+
+  if (block.kind === "paper_metadata") {
+    return <div className="grid gap-2 rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3 sm:grid-cols-2"><label className="text-[11px] text-[var(--color-text-tertiary)] sm:col-span-2">论文标题<input value={block.title ?? ""} onChange={(event) => update((current) => ({ ...current, title: event.target.value.trim() || "未命名论文" }))} className={`${fieldClass} mt-1 text-sm`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)] sm:col-span-2">作者（逗号分隔）<input value={(block.authors ?? []).join(", ")} onChange={(event) => update((current) => ({ ...current, authors: event.target.value.split(",").map((item) => item.trim()).filter(Boolean).length > 0 ? event.target.value.split(",").map((item) => item.trim()).filter(Boolean) : ["作者"] }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">机构<input value={block.institution ?? ""} onChange={(event) => update((current) => ({ ...current, institution: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">学位<input value={block.degreeType ?? ""} onChange={(event) => update((current) => ({ ...current, degreeType: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">日期<input value={block.date ?? ""} onChange={(event) => update((current) => ({ ...current, date: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label></div>;
+  }
+
+  if (block.kind === "keywords") {
+    return <label className="block rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3 text-[11px] text-[var(--color-text-tertiary)]">关键词（逗号分隔）<input value={(block.keywords ?? []).join(", ")} onChange={(event) => update((current) => ({ ...current, keywords: event.target.value.split(",").map((item) => item.trim()).filter(Boolean).length > 0 ? event.target.value.split(",").map((item) => item.trim()).filter(Boolean) : ["关键词"] }))} className={`${fieldClass} mt-1`} /></label>;
+  }
+
+  if (block.kind === "heading" || block.kind === "paragraph" || block.kind === "abstract" || block.kind === "acknowledgement" || block.kind === "quote") {
+    return <textarea value={text} onChange={(event) => onTextChange(index, event.target.value)} rows={block.kind === "heading" ? 1 : Math.max(2, Math.min(8, Math.ceil(text.length / 40)))} aria-label={`编辑第 ${index + 1} 个${block.kind === "heading" ? "标题" : "正文块"}`} className={`w-full resize-y bg-transparent text-[15px] leading-8 text-[var(--color-text-primary)] outline-none ${block.kind === "heading" ? `font-semibold ${block.level === 1 ? "text-xl" : "text-lg"}` : ""}`} />;
+  }
+
+  if (block.kind === "equation") {
+    return <div className="space-y-2 rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3"><label className="block text-[11px] text-[var(--color-text-tertiary)]">LaTeX 公式<textarea value={block.latex ?? ""} onChange={(event) => update((current) => ({ ...current, latex: event.target.value }))} rows={2} className={`${fieldClass} mt-1 font-mono`} /></label><label className="block text-[11px] text-[var(--color-text-tertiary)]">标签<input value={block.label ?? ""} onChange={(event) => update((current) => ({ ...current, label: event.target.value || undefined }))} className={`${fieldClass} mt-1`} placeholder="eq:method" /></label></div>;
+  }
+
+  if (block.kind === "figure") {
+    return <div className="grid gap-2 rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3 sm:grid-cols-2"><label className="text-[11px] text-[var(--color-text-tertiary)] sm:col-span-2">Object Storage Asset ID<input value={block.assetId ?? ""} onChange={(event) => update((current) => ({ ...current, assetId: event.target.value }))} className={`${fieldClass} mt-1 font-mono`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)] sm:col-span-2">图注<input value={block.caption ?? ""} onChange={(event) => update((current) => ({ ...current, caption: event.target.value }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">标签<input value={block.label ?? ""} onChange={(event) => update((current) => ({ ...current, label: event.target.value || undefined }))} className={`${fieldClass} mt-1`} placeholder="fig:overview" /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">宽度（0–1）<input type="number" min="0.01" max="1" step="0.01" value={block.width ?? ""} onChange={(event) => update((current) => ({ ...current, width: event.target.value ? Math.min(1, Math.max(0.01, Number(event.target.value))) : undefined }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">对齐<select value={block.alignment ?? "center"} onChange={(event) => update((current) => ({ ...current, alignment: event.target.value }))} className={`${fieldClass} mt-1`}><option value="left">左</option><option value="center">居中</option><option value="right">右</option></select></label><label className="text-[11px] text-[var(--color-text-tertiary)]">位置<select value={block.placement ?? "float"} onChange={(event) => update((current) => ({ ...current, placement: event.target.value }))} className={`${fieldClass} mt-1`}><option value="here">当前位置</option><option value="top">页顶</option><option value="bottom">页底</option><option value="float">浮动</option></select></label></div>;
+  }
+
+  if (block.kind === "table") {
+    const columns = block.columns ?? [];
+    const rows = block.rows ?? [];
+    return <div className="space-y-2 rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3"><div className="overflow-x-auto"><table className="w-full min-w-[32rem] border-collapse text-xs"><thead><tr>{columns.map((column, columnIndex) => <th key={`column-${columnIndex}`} className="border border-[var(--color-separator)] p-1"><input aria-label={`表格第 ${columnIndex + 1} 列`} value={column} onChange={(event) => update((current) => ({ ...current, columns: (current.columns ?? []).map((item, index) => index === columnIndex ? event.target.value : item) }))} className={fieldClass} /></th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={`row-${rowIndex}`}>{columns.map((_, columnIndex) => <td key={`cell-${rowIndex}-${columnIndex}`} className="border border-[var(--color-separator)] p-1"><input aria-label={`表格第 ${rowIndex + 1} 行第 ${columnIndex + 1} 列`} value={row[columnIndex] ?? ""} onChange={(event) => update((current) => ({ ...current, rows: (current.rows ?? []).map((item, index) => { if (index !== rowIndex) return item; const next = [...item]; while (next.length < (current.columns ?? []).length) next.push(""); next[columnIndex] = event.target.value; return next; }) }))} className={fieldClass} /></td>)}</tr>)}</tbody></table></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => update((current) => ({ ...current, rows: [...(current.rows ?? []), (current.columns ?? []).map(() => "")] }))} className="rounded-[var(--radius-sm)] px-2 py-1 text-[11px] text-[var(--color-accent)] hover:bg-[var(--color-surface-hover)]">+ 添加表格行</button><label className="flex min-w-48 flex-1 items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">图注<input value={block.caption ?? ""} onChange={(event) => update((current) => ({ ...current, caption: event.target.value || undefined }))} className={fieldClass} /></label><label className="flex min-w-48 flex-1 items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">标签<input value={block.label ?? ""} onChange={(event) => update((current) => ({ ...current, label: event.target.value || undefined }))} className={fieldClass} /></label></div></div>;
+  }
+
+  if (block.kind === "list") {
+    return <div className="space-y-2 rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3"><div className="text-[11px] text-[var(--color-text-tertiary)]">{block.ordered ? "有序列表" : "无序列表"}</div>{(block.items ?? []).map((item, itemIndex) => <input key={`item-${itemIndex}`} value={item.map((child) => child.text ?? "").join("")} onChange={(event) => update((current) => ({ ...current, items: (current.items ?? []).map((candidate, index) => index === itemIndex ? [{ kind: "text", text: event.target.value }] : candidate) }))} className={fieldClass} aria-label={`列表第 ${itemIndex + 1} 项`} />)}</div>;
+  }
+
+  if (block.kind === "raw_latex") return <textarea value={block.latex ?? ""} onChange={(event) => update((current) => ({ ...current, latex: event.target.value }))} rows={5} aria-label={`编辑第 ${index + 1} 个 Raw LaTeX 块`} className="w-full resize-y rounded-[var(--radius-sm)] bg-[var(--color-bg)] px-3 py-2 font-mono text-xs leading-5 text-[var(--color-text-secondary)] outline-none ring-1 ring-transparent focus:ring-[var(--color-accent)]" />;
+  return <div className="text-sm text-[var(--color-text-tertiary)]">[{block.kind}]</div>;
 }
 
 export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
@@ -102,11 +158,35 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     return () => { active = false; window.clearInterval(timer); };
   }, [workspace?.document?.id]);
 
+  useEffect(() => {
+    const documentId = workspace?.document?.id;
+    if (!documentId || !draftDocument || pendingImport) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        setSaveMessage("正在自动保存…");
+        await fetchJson(`/api/papers/workspaces/${workspaceId}/document`, { method: "PUT", body: JSON.stringify({ content: draftDocument }) });
+        const result = await fetchJson<{ compilation: { status: string } }>(`/api/papers/documents/${documentId}/compile`, { method: "POST" });
+        if (!active) return;
+        setDraftDocument(null);
+        setSaveMessage("已自动保存为新的 Document Version");
+        setCompileMessage(`已自动排队编译 PDF：${result.compilation.status}`);
+      } catch (error) {
+        if (active) setSaveMessage(error instanceof Error ? error.message : "自动保存失败");
+      }
+    }, 1_200);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [draftDocument, pendingImport, workspace?.document?.id, workspaceId]);
+
   function updateBlock(index: number, value: string) {
     setDraftDocument((current) => {
       if (!current) return current;
       return updateDocumentBlockText(current as unknown as AcademicDocument, index, value) as unknown as AcademicDocumentRecord;
     });
+  }
+
+  function updateBlockRecord(index: number, updater: (block: BlockRecord) => BlockRecord) {
+    setDraftDocument((current) => current ? { ...current, blocks: current.blocks.map((block, blockIndex) => blockIndex === index ? updater(block) : block) } : current);
   }
 
   function insertBlock(index: number, kind: InsertableBlockKind) {
@@ -135,11 +215,13 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
   async function saveDocument() {
     if (!workspace?.document || !document) return;
     await fetchJson(`/api/papers/workspaces/${workspaceId}/document`, { method: "PUT", body: JSON.stringify({ content: document }) });
+    setDraftDocument(null);
     setSaveMessage("已保存为新的 Document Version");
   }
 
   async function compile() {
     if (!workspace?.document) return;
+    if (draftDocument) await saveDocument();
     const result = await fetchJson<{ compilation: { status: string }; preview: { nodeMap: Record<string, unknown> } }>(`/api/papers/documents/${workspace.document.id}/compile`, { method: "POST" });
     setCompileMessage(`编译任务已排队：${result.compilation.status}，已生成节点映射`);
   }
@@ -163,6 +245,8 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     if (!pendingImport || !draftDocument) return;
     await fetchJson(`/api/papers/imports/${pendingImport.id}`, { method: "PATCH", body: JSON.stringify({ content: draftDocument }) });
     setPendingImport(null);
+    setDraftDocument(null);
+    await workspaceQuery.refetch();
     setImportMessage("结构已确认，当前 Document Version 可以继续排版和编译");
   }
 
@@ -239,7 +323,7 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
               const isSlashCommand = block.kind === "paragraph" && text.trim() === "/";
               return <div key={block.id ?? `${block.kind}-${index}`} className="group relative">
                 <div className="relative">
-                  {block.kind === "heading" ? <textarea value={text} onChange={(event) => updateBlock(index, event.target.value)} rows={1} aria-label={`编辑第 ${index + 1} 个标题`} className={`w-full resize-none bg-transparent font-semibold text-[var(--color-text-primary)] outline-none ${block.level === 1 ? "text-xl" : "text-lg"}`} /> : block.kind === "paragraph" || block.kind === "abstract" || block.kind === "acknowledgement" ? <textarea value={text} onChange={(event) => updateBlock(index, event.target.value)} rows={Math.max(2, Math.min(8, Math.ceil(text.length / 40)))} aria-label={`编辑第 ${index + 1} 个正文块`} className="w-full resize-y bg-transparent text-[15px] leading-8 text-[var(--color-text-primary)] outline-none" /> : block.kind === "raw_latex" ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--color-text-tertiary)]">{text}</pre> : <div className="text-sm text-[var(--color-text-tertiary)]">[{block.kind}]</div>}
+                  <PaperBlockEditor block={block} index={index} onTextChange={updateBlock} onUpdate={updateBlockRecord} />
                   <div className="absolute -left-10 top-0 flex flex-col gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                     <button type="button" onClick={() => setCommandIndex(index + 1)} aria-label={`在第 ${index + 1} 个块后插入`} className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><Plus width={13} height={13} /></button>
                     {block.kind === "heading" ? <><button type="button" onClick={() => moveHeading(index, "up")} aria-label="整节上移" className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><NavArrowUp width={13} height={13} /></button><button type="button" onClick={() => moveHeading(index, "down")} aria-label="整节下移" className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><NavArrowDown width={13} height={13} /></button></> : null}
