@@ -516,8 +516,8 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     <main className="h-full overflow-y-auto bg-[var(--color-bg)]"><div className="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 sm:py-8">
       <Link href="/papers" className="inline-flex items-center gap-1 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"><ArrowLeft width={14} height={14} />我的论文</Link>
       <div className="mt-5 flex items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">{workspace.name}</h1><p className="mt-1 text-sm text-[var(--color-text-secondary)]">第 {paperDocument.currentVersion?.version ?? 1} 版</p></div><BookStack className="text-[var(--color-accent)]" width={26} height={26} strokeWidth={1.5} /></div>
-      <nav aria-label="论文工作区" className="mt-5 flex flex-wrap gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] p-1 text-xs">
-        {[{ id: "writing", label: "写作" }, { id: "overview", label: "概览" }, { id: "materials", label: "资料与引用" }, { id: "typesetting", label: "排版设置" }].map((item) => <a key={item.id} href={`#${item.id}`} className="rounded-[var(--radius-sm)] px-3 py-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)] hover:text-[var(--color-text-primary)]">{item.label}</a>)}
+      <nav aria-label="论文工作区" className="mt-5 flex flex-wrap gap-2 text-xs">
+        {[{ id: "writing", label: "写作" }, { id: "overview", label: "概览" }, { id: "materials", label: "资料与引用" }, { id: "typesetting", label: "排版设置" }].map((item) => <a key={item.id} href={`#${item.id}`} className="rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]">{item.label}</a>)}
       </nav>
       <div className="mt-5 flex flex-wrap items-center gap-2"><Button type="button" variant="primary" size="sm" onClick={saveDocument}><Check width={16} height={16} />保存版本</Button><Button type="button" variant="secondary" size="sm" onClick={compile}><Play width={16} height={16} />编译 PDF</Button><label className="inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"><CloudUpload width={16} height={16} />导入论文<input type="file" accept=".docx,.md,.markdown,.txt,.tex" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); event.currentTarget.value = ""; }} /></label>{saveMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{saveMessage}</span> : null}{compileMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{compileMessage}</span> : null}{importMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{importMessage}</span> : null}</div>
       <div className="mt-6 flex flex-col">
@@ -539,7 +539,7 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
             {document.blocks.filter((block) => block.kind === "heading").map((block) => <button type="button" key={block.id} onClick={() => setSelectedNodeId(block.id ?? null)} className={`block w-full truncate rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-sm hover:bg-[var(--color-bg)] ${selectedNodeId === block.id ? "bg-[var(--color-bg)] text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]"}`}>{blockText(block)}</button>)}
           </div>
         </aside>
-        <section className="min-w-0 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-4 py-5 sm:px-8 sm:py-8">
+        <section className="min-w-0 rounded-[var(--radius-md)] bg-[var(--color-surface)] px-4 py-4 sm:px-8 sm:py-4">
           <div className="mx-auto max-w-[74ch] space-y-5">
             {document.blocks.map((block, index) => {
               const text = blockText(block);
