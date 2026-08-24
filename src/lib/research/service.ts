@@ -13,6 +13,7 @@ import type { ResearchBudgetProfile, ResearchPlanSnapshot, ResearchRunStatus } f
 import { applyConfirmedScopeDirectives, assertBudgetExpansion } from "./scope-confirmation";
 import { assertEvidenceRevisionInput, normalizeEvidenceTags, isUserEditableEvidenceStatus } from "./evidence";
 import { researchModelConfiguration } from "./model-routing";
+import { resolveResearchDomainProfile } from "./domain-profile";
 
 export class ResearchServiceError extends Error {
   constructor(public readonly code: "NOT_FOUND" | "INVALID_STATE" | "INVALID_INPUT", message: string) {
@@ -86,13 +87,14 @@ export async function createResearchWorkspace(input: {
     const project = await prisma.project.findFirst({ where: { id: input.projectId, userId: input.userId }, select: { id: true } });
     if (!project) throw new ResearchServiceError("NOT_FOUND", "项目不存在或无权访问");
   }
+  const domainProfile = resolveResearchDomainProfile(input.domainProfileKey);
   return prisma.researchWorkspace.create({
     data: {
       userId: input.userId,
       name: input.name.trim(),
       description: input.description?.trim() || null,
       projectId: input.projectId || null,
-      domainProfileKey: input.domainProfileKey?.trim() || "general",
+      domainProfileKey: domainProfile.key,
       budgetProfile: input.budgetProfile as PrismaResearchBudgetProfile | undefined,
     },
     include: { project: { select: { id: true, name: true } } },
@@ -598,16 +600,30 @@ export async function createFollowUpResearchRun(userId: string, runId: string, q
 export async function getResearchRun(userId: string, runId: string) {
   const run = await prisma.researchRun.findFirst({
     where: { id: runId, userId },
-    include: {
+    select: {
+      id: true,
+      workspaceId: true,
+      userId: true,
+      followUpOfId: true,
+      agentExecutionId: true,
+      planVersionId: true,
+      question: true,
+      status: true,
+      budgetSnapshot: true,
+      metrics: true,
+      startedAt: true,
+      completedAt: true,
+      createdAt: true,
+      updatedAt: true,
       workspace: { select: { id: true, name: true, projectId: true } },
       activePlanVersion: true,
-      questions: { orderBy: { orderIndex: "asc" } },
-      tasks: { orderBy: { createdAt: "asc" } },
-      directives: { orderBy: { createdAt: "asc" } },
+      questions: { orderBy: { orderIndex: "asc" }, select: { id: true, key: true, title: true, question: true, priority: true, status: true, completionCriteria: true, sourceStrategy: true, qualitySummary: true, researchAttempts: true, evaluateAttempts: true, replanAttempts: true } },
+      tasks: { orderBy: { createdAt: "asc" }, select: { id: true, questionId: true, kind: true, status: true, priority: true, title: true, instructions: true, attempt: true, maxAttempts: true, startedAt: true, completedAt: true, createdAt: true, updatedAt: true } },
+      directives: { orderBy: { createdAt: "asc" }, select: { id: true, text: true, impact: true, status: true, appliedAt: true, createdAt: true } },
       agentExecution: { select: { id: true, status: true, scheduledAt: true } },
-      evidence: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 200, include: evidenceInclude },
-      claims: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 100, include: { evidenceRelations: { include: { evidence: { select: { id: true, statement: true, status: true, sourceSnapshotId: true } } } } } },
-      reportSnapshot: true,
+      evidence: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, questionId: true, sourceSnapshotId: true, statement: true, excerpt: true, locator: true, evidenceType: true, origin: true, status: true, tags: true, createdAt: true, sourceSnapshot: { select: { id: true, retrievedAt: true, excerpt: true, source: { select: { id: true, title: true, canonicalKey: true, canonicalUrl: true, doi: true, arxivId: true, pmid: true } } } } } },
+      claims: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 100, select: { id: true, questionId: true, statement: true, status: true, userEdited: true, verificationStatus: true, quality: true, createdAt: true, updatedAt: true, evidenceRelations: { select: { evidenceId: true, relation: true, confidence: true, rationale: true, evidence: { select: { id: true, statement: true, status: true, sourceSnapshotId: true } } } } } },
+      reportSnapshot: { select: { id: true, reportDocument: true, claimSnapshots: true, evidenceIds: true, sourceSnapshotIds: true, citationMap: true, coverageSummary: true, verificationSummary: true, modelConfiguration: true, generatedAt: true } },
       _count: { select: { sourceSnapshots: true, evidence: true, claims: true } },
     },
   });

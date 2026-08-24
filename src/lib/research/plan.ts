@@ -4,6 +4,7 @@ import type {
   ResearchPriority,
 } from "./contracts";
 import type { ResearchPlannerDecision } from "./model-stage";
+import { resolveResearchDomainProfile } from "./domain-profile";
 
 const QUESTION_SPLITTER = /[？?；;。\n]+/;
 
@@ -27,13 +28,14 @@ export function buildResearchPlan(input: {
   domainProfileKey?: string;
 }): ResearchPlanSnapshot {
   const researchGoal = normalizeQuestion(input.question);
+  const domainProfile = resolveResearchDomainProfile(input.domainProfileKey);
   const questions = splitResearchQuestions(researchGoal).map((item, index) => ({
     key: `q${index + 1}`,
     title: item.length > 48 ? `${item.slice(0, 48)}…` : item,
     question: item,
     priority: priorityFor(index),
-    completionCriteria: ["至少一个直接证据", "至少一个独立来源或明确记录无法独立验证"],
-    sourceStrategy: ["优先官方、原始研究或项目资料", "记录来源版本、时间与定位"],
+    completionCriteria: ["至少一个直接证据", "至少一个独立来源或明确记录无法独立验证", ...domainProfile.evidenceStandards],
+    sourceStrategy: [...domainProfile.sourcePriorities, "记录来源版本、时间与定位"],
   }));
 
   return {
@@ -44,17 +46,26 @@ export function buildResearchPlan(input: {
     researchQuestions: questions,
     sourceStrategy: [
       "先检索候选来源，再成功读取后形成 Source Snapshot",
-      "学术问题优先使用原始论文、官方文档、项目资料和可追溯数据",
+      ...domainProfile.sourcePriorities,
       "对重要结论记录独立交叉验证与冲突证据",
     ],
     completionCriteria: [
       "关键研究问题有直接证据或明确标注证据缺口",
       "重要事实的范围、日期和因果措辞与证据匹配",
       "报告中的事实性断言均可打开对应来源与 Evidence",
+      ...domainProfile.citationRules,
     ],
-    expectedOutputs: ["结构化研究报告", "Claim/Evidence/Source 索引", "引用核验与不确定性摘要"],
+    expectedOutputs: ["结构化研究报告", "Claim/Evidence/Source 索引", "引用核验与不确定性摘要", ...domainProfile.outputStructure],
     researchIntensity: input.profile,
-    domainProfileKey: input.domainProfileKey ?? "general",
+    domainProfileKey: domainProfile.key,
+    domainProfile: {
+      name: domainProfile.name,
+      sourcePriorities: domainProfile.sourcePriorities,
+      evidenceStandards: domainProfile.evidenceStandards,
+      citationRules: domainProfile.citationRules,
+      outputStructure: domainProfile.outputStructure,
+      preferredProviders: domainProfile.preferredProviders,
+    },
   };
 }
 

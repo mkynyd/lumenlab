@@ -269,6 +269,7 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Build Source Provider adapters over existing audited tools: web search/fetch, arXiv, Project RAG/files, plus isolated OpenAlex, Crossref, Semantic Scholar and PubMed adapters.
 - [x] Enforce the source lifecycle: search results are `SourceCandidate`; only successful fetch/full read/project-file read may create `SourceSnapshot` and `Evidence`. Store retrieved timestamp, content hash, version and object-storage location.
 - [x] Implement append-only Evidence revisions, Claim/Evidence relations, source/evidence quality dimensions, conflict detection and domain profile policy seams.
+- [x] Add the first executable Domain Profile catalog (`general`, `computer_science`, `medicine`, `law`) and thread source priorities, evidence/citation rules, output structure and provider preference through plan generation, stage prompts, candidate ranking and the Research UI.
 
 ### Phase 2 — durable Research Orchestrator
 
@@ -277,6 +278,7 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Run the initial Planner through the existing Runtime as a durable `planning` checkpoint, persist a new immutable Plan Version when its bounded structured revision changes the deterministic draft, then pause in `awaiting_confirmation` until the user confirms.
 - [x] Add plan confirmation/revision, normal directives, scope/budget expansion confirmation, per-question bounded retries and follow-up Runs. Old Plan/Run/Report snapshots remain immutable.
 - [x] Add Claim Consolidation, Evidence Packs, structured `ResearchReportDocument`, citation map and local verification/repair. Synthesizer may consume only current-run Claim/Evidence/SourceSnapshot records.
+- [x] Close the verification repair loop: failed/controversial Claims are deduplicated by Question into bounded follow-up Research Tasks, Worker instructions are preserved, and the existing model stage can perform a local qualification repair before the immutable Report Snapshot is frozen.
 - [x] Add owner-scoped APIs and durable replay for workspace/run/plan/directive/report; continue to hide model hidden reasoning and only expose public execution events.
 
 ### Phase 3 — Research UI and navigation
@@ -285,11 +287,13 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Implement planning/awaiting-confirmation, plan revision, run progress, directive, budget and report views. Show current task, query, source/evidence counts, question completion and verification/conflict state; never render hidden chain-of-thought.
 - [x] Allow a Research Workspace to be independent or associated with a Project, and connect selected Source/Claim/Evidence/Report materials to a Paper Workspace.
 - [x] Make immutable report citations actionable: Synthesizer evidence markers are persisted with a deterministic `evidenceRefs` order, known markers open the current Run's right-side Source/Evidence panel, and the panel exposes source identity, excerpt, locator, status and Claim relation without exposing hidden reasoning.
+- [x] Show persisted/live budget counters and keep the public Research Run DTO explicit: checkpoint, raw provenance and internal task error payloads are not returned by the user-facing Run endpoint.
 
 ### Phase 4 — Paper document foundation
 
 - [x] Implement the stable Academic Document Schema: metadata, abstract, keywords, heading tree, paragraph, figure, table, equation, list, quote, bibliography, appendix, acknowledgement, page break, raw LaTeX and inline marks/citation/cross-reference/footnote.
 - [x] Implement append-only `DocumentVersion`, AI `DocumentPatch` accept/reject and deterministic serialization. The Document is the source of truth; generated LaTeX is a Template Adapter output only.
+- [x] Add a real Paper Document Assistant through the existing Agent Runtime. It creates a strict, pending `DocumentPatch`, never applies AI output directly, and reuses the same shared schema validation as the user Patch API; the right rail keeps PDF as the default mode with an explicit AI Assistant toggle.
 - [x] Add deterministic structured block operations for the Document editor: insert paragraph/heading/quote/equation/list, delete non-metadata blocks, `/` command selection and whole-heading-subtree movement; all operations preserve the existing Academic Document schema before save.
 - [x] Add Paper Workspace APIs and UI: overview, Writing (outline + continuous editor + PDF/AI side panel), materials/references and typesetting settings. Use local `iconoir-react` and current shell/design rules.
 - [x] Make `/papers/typesetting` a real no-AI entry point: create a blank Paper Workspace with an optional Project binding, continue existing papers, browse the live Template Library and clearly expose the compile/export path.
@@ -319,7 +323,7 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 
 - [x] Add targeted tests for plan confirmation/revision, transitions, durable resume, task retry, source dedupe/snapshot, Evidence immutability, Claim relations, budget/stop conditions, follow-up runs, immutable reports and citation verification.
 - [x] Add Paper tests for schema/serialization, patches/version recovery, DOCX/Markdown/LaTeX import, references, registry ingestion/version locking, compile jobs, node-to-LaTeX rendering, error mapping and deterministic Template Conformance.
-- [x] For this completed slice, ran lint, typecheck, full tests, Prisma validate/migration checks, production build and headed Playwright checks; updated this TODO, local `REPOSITORY_INDEX.md` and root `log.md`. The credential-gated Provider integration test is present and intentionally skipped locally because no E2E user/credentialed environment was supplied; isolated Linux template validation has a local Docker daemon and Compose security config but remains blocked by the host disk capacity required for the `texlive-full` image, as recorded above. The source-adapter regression set now covers 19 targeted tests, and the full release gate is rerun after the adapter changes.
+- [x] For this completed slice, ran lint, typecheck, full tests, Prisma validate/migration checks, production build and local in-app Browser smoke checks; updated this TODO, local `REPOSITORY_INDEX.md` and root `log.md`. The latest full gate is 293 test files / 1570 tests passed. The credential-gated Provider integration test is present and intentionally skipped locally because no E2E user/credentialed environment was supplied; unauthenticated Research/Paper entry pages rendered without framework overlays or console warnings, while a signed-in Paper Workspace PDF/AI interaction remains a fixture/credential-dependent check. Isolated Linux template validation remains blocked by the host disk capacity required for the `texlive-full` image, as recorded above.
 
 #### Implementation guardrails
 
@@ -337,5 +341,5 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Phase 3 core: first-level navigation, real workspace/run planning and confirmation UI, public progress events and report rendering.
 - [x] Phase 4 core: Academic Document schema, version/patch APIs, Paper Workspace and continuous editor shell.
 - [x] Phase 5 first slice: deterministic registry ingestion (all 738 machine-readable records), Markdown/TXT/LaTeX/DOCX import with original/snapshot/report/version persistence, asset-aware ephemeral compile worker with `--no-shell-escape`, PDF/source upload, references and deterministic conformance checker.
-- [ ] Remaining before declaring the full roadmap complete: retry the 25 inaccessible A/B GitHub sources and improve the 106 reviewed template packs, validate the materialized A/B packs inside the isolated Linux compiler image, and execute/record credentialed real-provider end-to-end validation/repair coverage for all model-backed Research stages.
+- [ ] Remaining before declaring the full roadmap complete: retry the remaining 14 unmaterialized A/B records and continue improving reviewed template packs, validate the materialized A/B packs inside the isolated Linux compiler image, and execute/record credentialed real-provider end-to-end validation/repair coverage for all model-backed Research stages.
 - [x] Research role model routing and token/credit accounting now use the existing provider catalog, durable checkpoint, `calculateCredits` weights and public budget events. Planner, Worker, Evaluator, Synthesizer and Verifier now call the existing Runtime through structured-output seams with deterministic fallback; real-provider end-to-end validation remains a release-gate item.

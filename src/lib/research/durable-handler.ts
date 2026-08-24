@@ -13,6 +13,8 @@ import type { ResearchPlanSnapshot, ResearchRunStatus } from "./contracts";
 import { nextResearchTaskRetryStatus } from "./task-retry";
 import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
 import { applyResearchPlannerDecision } from "./plan";
+import { appendVerificationQualification, selectVerificationRepairTargets, verificationRepairInstruction, type VerificationRepairTarget } from "./verification-repair";
+import { buildResearchReportStructure } from "./report-document";
 import {
   normalizeResearchEvaluatorDecision,
   normalizeResearchPlannerDecision,
@@ -69,6 +71,12 @@ async function transitionRun(runId: string, next: ResearchRunStatus) {
 
 function sourceKind(candidate: ResearchCandidate) {
   return candidate.kind === "project_file" ? "project_file" : candidate.kind;
+}
+
+function prioritizeResearchCandidates(candidates: ResearchCandidate[], preferredProviders: string[] | undefined) {
+  if (!preferredProviders?.length) return candidates;
+  const rank = new Map(preferredProviders.map((provider, index) => [provider, index]));
+  return [...candidates].sort((left, right) => (rank.get(left.provider) ?? preferredProviders.length) - (rank.get(right.provider) ?? preferredProviders.length));
 }
 
 async function persistCandidate(input: {
@@ -183,6 +191,7 @@ async function synthesizeWithExistingRuntime(input: {
   projectId: string | null;
   signal: AbortSignal;
   question: string;
+  domainProfile?: ResearchPlanSnapshot["domainProfile"];
   evidence: Array<{ id: string; statement: string; excerpt: string; source: string }>;
   useModel: boolean;
 }) {
@@ -191,6 +200,7 @@ async function synthesizeWithExistingRuntime(input: {
     "你是 LumenLab 的研究报告 Synthesizer。只使用下面已经读取并保存的 Evidence，不联网，不补写未提供的事实。",
     "输出一份简洁的 Markdown 研究报告，明确结论、证据不足、冲突与范围限制；不要展示隐藏推理。",
     "每个重要事实性断言末尾尽量添加对应的证据标记，例如 [E1] 或 [E2]；只能使用下面列出的 E 编号，不能编造编号，也不要把 Evidence ID 直接写入正文。",
+    `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
     `研究问题：${input.question}`,
     "\n已保存 Evidence：\n",
     evidenceText || "（没有可用 Evidence）",
@@ -210,6 +220,49 @@ async function synthesizeWithExistingRuntime(input: {
       ? `## 研究结论\n\n本次研究围绕“${input.question}”收集了以下可核验证据：\n\n${input.evidence.map((item, index) => `- ${item.statement}（来源：${item.source}）[E${index + 1}]`).join("\n")}\n\n## 限制\n\n以上内容只代表当前 Run 已成功读取的来源，不替代未完成的独立验证。`
       : `## 研究结论\n\n当前 Run 没有成功读取可核验来源，不能对“${input.question}”形成可靠结论。`,
     usage: null,
+    model: stage.model,
+    attempted: stage.attempted,
+  };
+}
+
+async function repairReportWithExistingRuntime(input: {
+  userId: string;
+  conversationId: string;
+  projectId: string | null;
+  signal: AbortSignal;
+  question: string;
+  domainProfile?: ResearchPlanSnapshot["domainProfile"];
+  draft: string;
+  evidence: Array<{ id: string; statement: string; excerpt: string; source: string }>;
+  targets: VerificationRepairTarget[];
+  unsupportedClaims: number;
+  conflictedClaims: number;
+  qualifiedClaims: number;
+  useModel: boolean;
+}) {
+  const evidenceText = input.evidence.map((item, index) => `E${index + 1}（${item.id}）. ${item.statement}\n来源：${item.source}\n摘录：${item.excerpt}`).join("\n\n").slice(0, 60_000);
+  const prompt = [
+    "你是 LumenLab 的 Citation Repair Synthesizer。只使用当前 Run 已读取并保存的 Evidence，不联网，不展示隐藏推理。",
+    "局部修订下面的 Markdown 报告：删除或改写没有直接支持的断言，明确表达冲突证据，并为范围、日期、因果等强措辞加限定。保留可验证的内容和原有结构。",
+    "重要事实性断言末尾使用 [E1] 等标记；只能使用下面列出的 E 编号，不能编造编号或 Evidence ID。",
+    `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
+    `研究问题：${input.question}`,
+    `核验缺口：${input.targets.map(verificationRepairInstruction).join("\n") || "当前报告存在需要限定的引用"}`,
+    `当前报告草稿：\n${input.draft}`,
+    `已保存 Evidence：\n${evidenceText || "（没有可用 Evidence）"}`,
+  ].join("\n\n");
+  const stage = input.useModel ? await runResearchModelStage<string>({
+    role: "research.synthesizer",
+    userId: input.userId,
+    conversationId: input.conversationId,
+    projectId: input.projectId,
+    signal: input.signal,
+    prompt,
+    parse: (content) => content.trim() || null,
+  }) : { value: null, usage: null, model: "deepseek-v4-pro" as const, attempted: false };
+  return {
+    content: stage.value ?? appendVerificationQualification({ draft: input.draft, unsupportedClaims: input.unsupportedClaims, conflictedClaims: input.conflictedClaims, qualifiedClaims: input.qualifiedClaims }),
+    usage: stage.usage,
     model: stage.model,
     attempted: stage.attempted,
   };
@@ -260,6 +313,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
       verificationRepairs: 0,
     };
     const limits = getResearchBudget(run.workspace.budgetProfile);
+    const domainProfile = (run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined)?.domainProfile;
     const providerContext: ResearchProviderContext = {
       userId: context.execution.userId,
       conversationId: context.execution.conversationId,
@@ -285,6 +339,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
           "格式：{\"scope\":\"范围\",\"timeRange\":\"时间范围或 null\",\"sourceStrategy\":[\"来源策略\"],\"completionCriteria\":[\"完成标准\"],\"expectedOutputs\":[\"预期产出\"],\"questions\":[{\"key\":\"q1\",\"title\":\"标题\",\"question\":\"问题\",\"priority\":\"critical|important|supporting\",\"completionCriteria\":[\"标准\"],\"sourceStrategy\":[\"策略\"]}]}。",
           `用户研究问题：${run.question}`,
           `预算配置：${run.workspace.budgetProfile}`,
+          `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
           `当前计划：${JSON.stringify(currentPlan)}`,
           "只保留最多八个研究问题；优先 critical，再 important，最后 supporting。",
         ].join("\n"),
@@ -361,6 +416,8 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
               "JSON 格式：{\"queries\":[\"最多三个短而互补的检索词\"],\"rationale\":\"一句话\"}。",
               `全局研究问题：${run.question}`,
               `当前 Research Question：${task.question.question}`,
+              `当前 Task 说明：${task.instructions ?? "沿用 Research Question，优先补充独立来源。"}`,
+              `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
               `约束：${directiveContext || "优先学术、官方和项目资料；不要扩大研究范围。"}`,
             ].join("\n"),
           });
@@ -371,7 +428,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
             if (state.searchCalls >= limits.searchCalls || context.signal.aborted) break;
             const candidates = await provider.search(providerContext, query);
             state.searchCalls += 1;
-            for (const candidate of candidates.slice(0, Math.max(0, limits.maxSources - state.sourceCount))) {
+            for (const candidate of prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders).slice(0, Math.max(0, limits.maxSources - state.sourceCount))) {
               const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate });
               await appendPublicEvent(context, { key: `research:candidate:${savedCandidate.id}`, kind: "source_candidate_discovered", runId: run.id, message: `发现来源候选：${candidate.title}`, publicData: { candidateId: savedCandidate.id, provider: candidate.provider, url: candidate.url, query } });
               if (state.fetchCalls >= limits.fetchCalls || context.signal.aborted) continue;
@@ -426,6 +483,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
               "格式：{\"status\":\"resolved|partially_resolved|unresolved|controversial\",\"coverage\":0到1,\"directness\":0到1,\"gap\":\"缺口\",\"followUpQueries\":[\"可选检索词\"]}。",
               `研究问题：${question.question}`,
               `完成标准：${JSON.stringify(question.completionCriteria)}`,
+              `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
               `已有 Evidence：${JSON.stringify(question.evidence.map((item) => ({ statement: item.statement, sourceKind: item.sourceSnapshot.source.kind })))}`,
               "只根据这些 Evidence 判断；没有证据不能判定 resolved。",
             ].join("\n"),
@@ -470,7 +528,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
 
     if (state.stage === "synthesizing") {
       const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
-      const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, evidence: evidence.map((item) => ({ id: item.id, statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
+      const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, domainProfile, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, evidence: evidence.map((item) => ({ id: item.id, statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
       state.draftReport = synthesis.content;
       recordResearchModelStage(state, synthesis);
       state.stage = "verifying";
@@ -482,7 +540,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
 
     const existingReport = await prisma.researchReportSnapshot.findUnique({ where: { runId: run.id } });
     if (existingReport) return { kind: "completed", checkpoint };
-    const claims = await prisma.claim.findMany({ where: { runId: run.id, status: "active" }, include: { evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } }, orderBy: { createdAt: "asc" } });
+    const claims = await prisma.claim.findMany({ where: { runId: run.id, status: "active" }, include: { question: { select: { id: true, title: true, question: true, priority: true } }, evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } }, orderBy: { createdAt: "asc" } });
     const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
     const sourceSnapshots = [...new Set(evidence.map((item) => item.sourceSnapshotId))];
     let verifierDecision: ResearchVerifierDecision = { claims: {} };
@@ -497,6 +555,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
           "你是 LumenLab Citation Verifier。只返回 JSON，不要 Markdown，不要隐藏推理，也不要联网。",
           "格式：{\"claims\":{\"claimId\":{\"status\":\"verified|needs_qualification|unsupported|conflicted\",\"reasonCode\":\"机器可处理原因\"}}}。",
           "逐条检查来源是否属于当前 Run、Evidence 是否直接支持 Claim、范围/日期/因果是否夸大，以及是否存在反驳或需要限定的措辞。",
+          `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
           `Claims 与 Evidence：${JSON.stringify(claims.map((claim) => ({ id: claim.id, statement: claim.statement, relations: claim.evidenceRelations.map((relation) => ({ relation: relation.relation, statement: relation.evidence.statement, excerpt: relation.evidence.excerpt, sourceSnapshotId: relation.evidence.sourceSnapshotId })) })))}`,
         ].join("\n"),
       });
@@ -515,12 +574,73 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     const conflictedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "conflicted");
     const qualifiedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "needs_qualification");
     const citationMap = Object.fromEntries(claims.map((claim) => [claim.id, claim.evidenceRelations.map((relation) => ({ evidenceId: relation.evidenceId, sourceSnapshotId: relation.evidence.sourceSnapshotId, relation: relation.relation }))]));
-    const verificationSummary = { citationExistence: claims.length > 0 && unsupportedClaims.length === 0 ? "verified" : "needs_qualification", citationSupport: unsupportedClaims.length === 0 ? "verified" : "unsupported", citationAdequacy: conflictedClaims.length > 0 ? "conflicted" : sourceSnapshots.length > 0 ? "verified" : "unsupported", unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length, needsQualification: qualifiedClaims.length, verifierReasons: claimStatuses };
     for (const claim of claims) await prisma.claim.update({ where: { id: claim.id }, data: { verificationStatus: claimStatuses[claim.id]?.status } });
-    const reportDocument = { schemaVersion: "1", citationFormat: "evidence-marker-v1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots, evidenceRefs: evidence.map((item) => item.id) };
+    const repairTargets = selectVerificationRepairTargets({
+      claims: claims.map((claim) => ({ id: claim.id, questionId: claim.questionId, question: claim.question ? { id: claim.question.id, title: claim.question.title, question: claim.question.question, priority: claim.question.priority } : null })),
+      statuses: claimStatuses,
+      maximum: limits.researcherConcurrency,
+    });
+    const canScheduleVerificationResearch = repairTargets.length > 0
+      && state.verificationRepairs < limits.maxVerificationRepairs
+      && Date.now() - (run.startedAt ?? run.createdAt).getTime() < limits.wallTimeMs
+      && state.searchCalls < limits.searchCalls
+      && state.fetchCalls < limits.fetchCalls
+      && state.sourceCount < limits.maxSources;
+    if (canScheduleVerificationResearch) {
+      const repairIteration = state.verificationRepairs + 1;
+      state.verificationRepairs = repairIteration;
+      await prisma.researchTask.createMany({
+        data: repairTargets.map((target) => ({
+          runId: run.id,
+          questionId: target.questionId,
+          kind: "replanner" as const,
+          priority: target.priority,
+          title: `引用核验补充研究：${target.title}`,
+          instructions: verificationRepairInstruction(target),
+          payload: json({ repairIteration, claimIds: target.claimIds, verificationStatuses: target.statuses }),
+          idempotencyKey: `${run.id}:${target.questionId}:verification-repair:${repairIteration}`,
+        })),
+        skipDuplicates: true,
+      });
+      state.stage = "researching";
+      await transitionRun(run.id, "researching");
+      await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+      await appendPublicEvent(context, { key: `research:verification:repair:${run.id}:${repairIteration}`, kind: "verification_updated", runId: run.id, message: "引用核验发现核心证据缺口，已创建有限补充研究任务", publicData: { repairIteration, taskCount: repairTargets.length, claimIds: repairTargets.flatMap((target) => target.claimIds), questionIds: repairTargets.map((target) => target.questionId), verificationRepairsRemaining: Math.max(0, limits.maxVerificationRepairs - repairIteration) } });
+      return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
+    }
+    const hasVerificationIssues = unsupportedClaims.length > 0 || conflictedClaims.length > 0 || qualifiedClaims.length > 0;
+    if (hasVerificationIssues) {
+      const shouldUseRepairModel = state.verificationRepairs < limits.maxVerificationRepairs
+        && state.modelCalls < limits.modelCalls
+        && (state.totalTokens ?? 0) < limits.maxTokens
+        && (state.costCredits ?? 0) < limits.maxCostCredits;
+      if (shouldUseRepairModel) state.verificationRepairs += 1;
+      const repair = await repairReportWithExistingRuntime({
+        userId: context.execution.userId,
+        conversationId: context.execution.conversationId,
+        projectId: run.workspace.projectId,
+        signal: context.signal,
+        question: run.question,
+        domainProfile,
+        draft: state.draftReport ?? "",
+        evidence: evidence.map((item) => ({ id: item.id, statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })),
+        targets: repairTargets,
+        unsupportedClaims: unsupportedClaims.length,
+        conflictedClaims: conflictedClaims.length,
+        qualifiedClaims: qualifiedClaims.length,
+        useModel: shouldUseRepairModel,
+      });
+      state.draftReport = repair.content;
+      recordResearchModelStage(state, repair);
+      await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+      await appendPublicEvent(context, { key: `research:verification:qualified:${run.id}:${state.verificationRepairs}`, kind: "verification_updated", runId: run.id, message: "引用核验已完成局部修订并保留证据边界", publicData: { verificationRepairs: state.verificationRepairs, modelAttempted: repair.attempted, unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length, needsQualification: qualifiedClaims.length } });
+    }
+    const verificationSummary = { citationExistence: claims.length > 0 && unsupportedClaims.length === 0 ? "verified" : "needs_qualification", citationSupport: unsupportedClaims.length === 0 ? "verified" : "unsupported", citationAdequacy: conflictedClaims.length > 0 ? "conflicted" : sourceSnapshots.length > 0 ? "verified" : "unsupported", unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length, needsQualification: qualifiedClaims.length, verificationRepairs: state.verificationRepairs, verifierReasons: claimStatuses };
+    const reportStructure = buildResearchReportStructure(claims.map((claim) => ({ id: claim.id, statement: claim.statement, questionId: claim.questionId, questionTitle: claim.question?.title ?? null, evidenceRelations: claim.evidenceRelations.map((relation) => ({ evidenceId: relation.evidenceId, sourceSnapshotId: relation.evidence.sourceSnapshotId, relation: relation.relation })) })));
+    const reportDocument = { schemaVersion: "1", citationFormat: "evidence-marker-v1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots, evidenceRefs: evidence.map((item) => item.id), ...reportStructure };
     const contentHash = createHash("sha256").update(JSON.stringify({ reportDocument, citationMap, verificationSummary })).digest("hex");
     const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
-    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, verificationSummary }) } });
+    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, verificationRepairs: state.verificationRepairs, verificationSummary }) } });
     await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: "研究报告已完成并冻结为不可修改快照", publicData: { reportId: report.id, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, verificationSummary } });
     return { kind: "completed", checkpoint };
   };

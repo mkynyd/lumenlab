@@ -1,5 +1,6 @@
 import type { AcademicDocument, DocumentBlock } from "./document-schema";
-import { parseAcademicDocument } from "./document-schema";
+import { documentBlockSchema, parseAcademicDocument } from "./document-schema";
+import { z } from "zod";
 
 export type DocumentPatchOperation =
   | { kind: "replace_block"; blockId: string; block: DocumentBlock }
@@ -13,6 +14,20 @@ export interface DocumentPatch {
   summary: string;
   operations: DocumentPatchOperation[];
 }
+
+const documentPatchOperationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("replace_block"), blockId: z.string().trim().min(1), block: documentBlockSchema }).strict(),
+  z.object({ kind: z.literal("insert_block"), index: z.number().int().nonnegative(), block: documentBlockSchema }).strict(),
+  z.object({ kind: z.literal("delete_block"), blockId: z.string().trim().min(1) }).strict(),
+  z.object({ kind: z.literal("move_block"), blockId: z.string().trim().min(1), index: z.number().int().nonnegative() }).strict(),
+]);
+
+export const documentPatchSchema = z.object({
+  schemaVersion: z.literal("1"),
+  baseVersion: z.number().int().positive(),
+  summary: z.string().trim().min(1).max(1_000),
+  operations: z.array(documentPatchOperationSchema).max(40),
+}).strict();
 
 function blockId(block: DocumentBlock): string | null {
   return "id" in block && typeof block.id === "string" ? block.id : null;
@@ -32,7 +47,11 @@ export function applyDocumentPatch(
     }
     const index = blocks.findIndex((block) => blockId(block) === operation.blockId);
     if (index < 0) throw new Error(`找不到 Document block: ${operation.blockId}`);
-    if (operation.kind === "replace_block") blocks[index] = operation.block;
+    if (blocks[index].kind === "paper_metadata" && operation.kind !== "replace_block") throw new Error("不能删除或移动论文元数据块");
+    if (operation.kind === "replace_block") {
+      if (blocks[index].kind === "paper_metadata" && operation.block.kind !== "paper_metadata") throw new Error("不能用其他块替换论文元数据块");
+      blocks[index] = operation.block;
+    }
     if (operation.kind === "delete_block") blocks.splice(index, 1);
     if (operation.kind === "move_block") {
       if (operation.index < 0 || operation.index >= blocks.length) throw new Error("移动位置无效");

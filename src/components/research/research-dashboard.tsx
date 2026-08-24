@@ -5,17 +5,20 @@ import Link from "next/link";
 import { BrainResearch, Plus } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 import { useCreateResearchWorkspace, useResearchWorkspaces } from "@/lib/hooks/use-research";
+import { listResearchDomainProfiles } from "@/lib/research/domain-profile";
 
 export function ResearchDashboard() {
   const workspacesQuery = useResearchWorkspaces();
   const createMutation = useCreateResearchWorkspace();
   const [name, setName] = useState("");
+  const [domainProfileKey, setDomainProfileKey] = useState("general");
   const workspaces = workspacesQuery.data ?? [];
+  const domainProfiles = listResearchDomainProfiles();
 
   async function createWorkspace(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    const workspace = await createMutation.mutateAsync({ name: name.trim(), budgetProfile: "deep" });
+    const workspace = await createMutation.mutateAsync({ name: name.trim(), domainProfileKey, budgetProfile: "deep" });
     setName("");
     window.location.assign(`/research/${workspace.id}`);
   }
@@ -31,8 +34,9 @@ export function ResearchDashboard() {
           <BrainResearch className="mt-1 shrink-0 text-[var(--color-accent)]" width={28} height={28} strokeWidth={1.5} />
         </div>
 
-        <form onSubmit={createWorkspace} className="mb-8 flex max-w-2xl gap-2">
+        <form onSubmit={createWorkspace} className="mb-8 flex max-w-3xl flex-wrap gap-2">
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="新研究工作区名称" aria-label="新研究工作区名称" className="min-h-10 min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" />
+          <select value={domainProfileKey} onChange={(event) => setDomainProfileKey(event.target.value)} aria-label="研究领域 Profile" className="min-h-10 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-secondary)] outline-none ring-1 ring-transparent focus:ring-[var(--color-accent)]">{domainProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.name}</option>)}</select>
           <Button type="submit" variant="primary" size="sm" disabled={createMutation.isPending}>
             <Plus width={16} height={16} strokeWidth={2} />
             创建工作区
@@ -48,7 +52,7 @@ export function ResearchDashboard() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workspace.name}</h2>
-                    <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-secondary)]">{workspace.project?.name ? `项目：${workspace.project.name}` : "独立研究工作区"}</p>
+                    <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-secondary)]">{workspace.project?.name ? `项目：${workspace.project.name}` : "独立研究工作区"} · {domainProfiles.find((profile) => profile.key === workspace.domainProfileKey)?.name ?? workspace.domainProfileKey}</p>
                   </div>
                   <span className="shrink-0 text-xs text-[var(--color-text-tertiary)]">{workspace.budgetProfile}</span>
                 </div>

@@ -72,6 +72,14 @@ export interface ResearchPlanSnapshot {
   expectedOutputs: string[];
   researchIntensity: ResearchBudgetProfile;
   domainProfileKey: string;
+  domainProfile?: {
+    name: string;
+    sourcePriorities: string[];
+    evidenceStandards: string[];
+    citationRules: string[];
+    outputStructure: string[];
+    preferredProviders: string[];
+  };
 }
 
 export interface ResearchStopInput {

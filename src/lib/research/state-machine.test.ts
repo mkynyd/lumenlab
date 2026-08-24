@@ -5,6 +5,7 @@ describe("research run state machine", () => {
   it("allows confirmation and durable execution stages", () => {
     expect(canTransitionResearchRun("planning", "awaiting_confirmation")).toBe(true);
     expect(canTransitionResearchRun("researching", "evaluating")).toBe(true);
+    expect(canTransitionResearchRun("verifying", "researching")).toBe(true);
     expect(canTransitionResearchRun("verifying", "completed")).toBe(true);
   });
 

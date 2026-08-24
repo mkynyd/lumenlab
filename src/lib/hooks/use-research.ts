@@ -32,7 +32,7 @@ export function useResearchRun(id: string | null) {
 export function useCreateResearchWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { name: string; description?: string; projectId?: string; budgetProfile?: "quick" | "deep" | "comprehensive" }) => (await fetchJson<{ workspace: ResearchWorkspaceSummary }>("/api/research/workspaces", { method: "POST", body: JSON.stringify(input) })).workspace,
+    mutationFn: async (input: { name: string; description?: string; projectId?: string; domainProfileKey?: string; budgetProfile?: "quick" | "deep" | "comprehensive" }) => (await fetchJson<{ workspace: ResearchWorkspaceSummary }>("/api/research/workspaces", { method: "POST", body: JSON.stringify(input) })).workspace,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.research.workspaces }),
   });
 }

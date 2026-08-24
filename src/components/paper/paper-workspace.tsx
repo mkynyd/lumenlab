@@ -77,6 +77,11 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
   const [compilation, setCompilation] = useState<CompilationRecord | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [commandIndex, setCommandIndex] = useState<number | null>(null);
+  const [railMode, setRailMode] = useState<"pdf" | "assistant">("pdf");
+  const [assistantInstruction, setAssistantInstruction] = useState("");
+  const [assistantMessage, setAssistantMessage] = useState("");
+  const [assistantPatch, setAssistantPatch] = useState<{ id: string; summary: string; status: string } | null>(null);
+  const [assistantPending, setAssistantPending] = useState(false);
 
   const document = draftDocument ?? workspace?.document?.currentVersion?.content ?? null;
 
@@ -161,6 +166,44 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     setImportMessage("结构已确认，当前 Document Version 可以继续排版和编译");
   }
 
+  async function requestAssistantPatch() {
+    if (!workspace?.document || !assistantInstruction.trim()) return;
+    if (draftDocument) {
+      setAssistantMessage("请先保存当前 Document Version，再生成 AI 修改建议。");
+      return;
+    }
+    setAssistantPending(true);
+    setAssistantMessage("");
+    try {
+      const result = await fetchJson<{ patch: { id: string; summary: string; status: string } }>(`/api/papers/documents/${workspace.document.id}/assistant`, { method: "POST", body: JSON.stringify({ instruction: assistantInstruction.trim() }) });
+      setAssistantPatch(result.patch);
+      setAssistantInstruction("");
+      setAssistantMessage("已生成待审核 Document Patch，正文尚未改变。");
+    } catch (error) {
+      setAssistantMessage(error instanceof Error ? error.message : "AI 修改建议生成失败");
+    } finally {
+      setAssistantPending(false);
+    }
+  }
+
+  async function decideAssistantPatch(decision: "accept" | "reject") {
+    if (!workspace?.document || !assistantPatch) return;
+    setAssistantPending(true);
+    try {
+      await fetchJson(`/api/papers/documents/${workspace.document.id}/patches/${assistantPatch.id}`, { method: "POST", body: JSON.stringify({ decision }) });
+      setAssistantPatch(null);
+      setAssistantMessage(decision === "accept" ? "已接受 Patch，并创建新的 Document Version。" : "已拒绝 Patch，正文未改变。");
+      if (decision === "accept") {
+        setDraftDocument(null);
+        await workspaceQuery.refetch();
+      }
+    } catch (error) {
+      setAssistantMessage(error instanceof Error ? error.message : "Document Patch 处理失败");
+    } finally {
+      setAssistantPending(false);
+    }
+  }
+
   if (workspaceQuery.isPending || !workspace) return <main className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">正在加载论文工作区…</main>;
   if (!workspace.document || !document) return <main className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">论文文档版本尚未准备好。</main>;
   const paperDocument = workspace.document;
@@ -211,13 +254,14 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
           </div>
         </section>
         <aside className="bg-[var(--color-panel)] px-4 py-4">
-          <div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-[var(--color-text-tertiary)]">PDF / AI</p>{compilation ? <span className="text-[11px] text-[var(--color-text-tertiary)]">{compilation.status}</span> : null}</div>
-          {compilation?.pdfUrl ? <PaperPdfViewer key={compilation.pdfCompilationId ?? compilation.id} pdfUrl={compilation.pdfUrl} mapUrl={compilation.syncTex && compilation.pdfCompilationId ? `/api/papers/compilations/${compilation.pdfCompilationId}/synctex/map` : undefined} selectedNodeId={selectedNodeId} /> : <div className="mt-4 min-h-64 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">编译成功后，上一版 PDF 会在这里保持可见。<br />AI 修改会先进入 Document Patch。</div>}
-          {compilation?.pdfUrl && compilation.status !== "succeeded" ? <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">当前编译{compilation.status === "failed" ? "失败" : "进行中"}，继续显示上一版成功 PDF。</p> : null}
-          {compilation?.syncTex && compilation.pdfCompilationId ? <a href={`/api/papers/compilations/${compilation.pdfCompilationId}/synctex`} className="mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 SyncTeX 映射</a> : null}
-          {compilation?.pdfUrl ? <a href={compilation.pdfUrl} download="paper.pdf" className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 PDF</a> : null}
-          {compilation?.sourceUrl ? <a href={compilation.sourceUrl} className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载完整 LaTeX Project</a> : null}
-          {compilation?.status === "failed" && compilation.errorLog?.message ? <p className="mt-3 text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p> : null}
+          <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-1" role="tablist" aria-label="右侧面板"><button type="button" role="tab" aria-selected={railMode === "pdf"} onClick={() => setRailMode("pdf")} className={`rounded-[var(--radius-sm)] px-2 py-1 text-xs ${railMode === "pdf" ? "bg-[var(--color-interaction-selected)] text-[var(--color-text-primary)]" : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)]"}`}>PDF</button><button type="button" role="tab" aria-selected={railMode === "assistant"} onClick={() => setRailMode("assistant")} className={`rounded-[var(--radius-sm)] px-2 py-1 text-xs ${railMode === "assistant" ? "bg-[var(--color-interaction-selected)] text-[var(--color-text-primary)]" : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)]"}`}>AI Assistant</button></div>{compilation ? <span className="text-[11px] text-[var(--color-text-tertiary)]">{compilation.status}</span> : null}</div>
+          {railMode === "pdf" ? <>{compilation?.pdfUrl ? <PaperPdfViewer key={compilation.pdfCompilationId ?? compilation.id} pdfUrl={compilation.pdfUrl} mapUrl={compilation.syncTex && compilation.pdfCompilationId ? `/api/papers/compilations/${compilation.pdfCompilationId}/synctex/map` : undefined} selectedNodeId={selectedNodeId} /> : <div className="mt-4 min-h-64 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">编译成功后，上一版 PDF 会在这里保持可见。<br />AI 修改会先进入 Document Patch。</div>}
+            {compilation?.pdfUrl && compilation.status !== "succeeded" ? <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">当前编译{compilation.status === "failed" ? "失败" : "进行中"}，继续显示上一版成功 PDF。</p> : null}
+            {compilation?.syncTex && compilation.pdfCompilationId ? <a href={`/api/papers/compilations/${compilation.pdfCompilationId}/synctex`} className="mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 SyncTeX 映射</a> : null}
+            {compilation?.pdfUrl ? <a href={compilation.pdfUrl} download="paper.pdf" className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 PDF</a> : null}
+            {compilation?.sourceUrl ? <a href={compilation.sourceUrl} className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载完整 LaTeX Project</a> : null}
+            {compilation?.status === "failed" && compilation.errorLog?.message ? <p className="mt-3 text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p> : null}
+          </> : <div className="mt-4 space-y-4"><div><h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Document Assistant</h3><p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">AI 只生成待审核 Patch，不会直接覆盖正文，也不会生成 LaTeX 作为真源。</p></div><textarea value={assistantInstruction} onChange={(event) => setAssistantInstruction(event.target.value)} rows={5} placeholder="例如：把当前摘要压缩到 250 字，并保留原有事实与引用" className="w-full resize-y rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-2 text-xs leading-5 text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" /><Button type="button" variant="secondary" size="sm" onClick={() => void requestAssistantPatch()} disabled={assistantPending || !assistantInstruction.trim()}>生成 Document Patch</Button>{assistantPatch ? <div className="rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-3"><p className="text-xs font-medium text-[var(--color-text-primary)]">{assistantPatch.summary}</p><p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">待审核 · 正文尚未改变</p><div className="mt-3 flex gap-2"><Button type="button" variant="primary" size="sm" onClick={() => void decideAssistantPatch("accept")} disabled={assistantPending}>接受</Button><Button type="button" variant="ghost" size="sm" onClick={() => void decideAssistantPatch("reject")} disabled={assistantPending}>拒绝</Button></div></div> : null}{assistantMessage ? <p className="text-xs leading-5 text-[var(--color-text-secondary)]">{assistantMessage}</p> : null}</div>}
         </aside>
       </div>
       </section>
