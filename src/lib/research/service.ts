@@ -681,6 +681,41 @@ export async function updateResearchClaim(input: { userId: string; runId: string
   return prisma.claim.update({ where: { id: claim.id }, data: { statement, userEdited: true, verificationStatus: "pending", quality: { label: "待重新评估", reason: "用户编辑了 Claim" } }, include: { evidenceRelations: true } });
 }
 
+/**
+ * A completed Report Snapshot cannot be rewritten. Reassessing a user-edited
+ * Claim therefore resumes the current durable execution when possible, or
+ * starts a plan-confirmation Follow-up Run with inherited Evidence when the
+ * source Run is already terminal.
+ */
+export async function reassessResearchClaim(input: { userId: string; runId: string; claimId: string }) {
+  const claim = await prisma.claim.findFirst({
+    where: { id: input.claimId, runId: input.runId, workspace: { userId: input.userId } },
+    select: { id: true, statement: true, run: { select: { id: true, status: true } } },
+  });
+  if (!claim) throw new ResearchServiceError("NOT_FOUND", "Claim 不存在或无权访问");
+
+  if (claim.run.status === "completed" || claim.run.status === "failed") {
+    const question = `重新评估 Claim：${claim.statement}`;
+    const existingFollowUp = await prisma.researchRun.findFirst({
+      where: { followUpOfId: claim.run.id, userId: input.userId, question, status: { notIn: ["completed", "failed", "cancelled"] } },
+      select: { id: true, status: true, followUpOfId: true, agentExecutionId: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (existingFollowUp) {
+      return { sourceRunId: claim.run.id, followUpRun: existingFollowUp, resumed: false };
+    }
+    const followUp = await createFollowUpResearchRun(input.userId, claim.run.id, question);
+    return {
+      sourceRunId: claim.run.id,
+      followUpRun: { id: followUp.id, status: followUp.status, followUpOfId: followUp.followUpOfId, agentExecutionId: followUp.agentExecutionId },
+      resumed: false,
+    };
+  }
+
+  const resumed = await resumeResearchAgentExecution(input.userId, claim.run.id);
+  return { sourceRunId: claim.run.id, followUpRun: null, resumed };
+}
+
 export async function upsertClaimEvidenceRelation(input: { userId: string; runId: string; claimId: string; evidenceId: string; relation: string; confidence?: number | null; rationale?: string | null }) {
   if (!CLAIM_RELATIONS.has(input.relation as PrismaClaimEvidenceRelationType)) throw new ResearchServiceError("INVALID_INPUT", "Claim/Evidence relation 无效");
   const [claim, evidence] = await Promise.all([

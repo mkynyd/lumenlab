@@ -219,6 +219,11 @@ _Avoid_: Background prompt, mutable report, one-off web search
 When a Follow-up Run continues a completed or failed Run, active Source Snapshots, Evidence and Claims are copied into new Run-owned records with provenance pointing to their origin. The old records and report remain immutable; the copied assets begin the new Run as context and are re-evaluated there.
 _Avoid_: Cross-Run mutable evidence, silently rewriting the old report, treating a prior Claim as already verified in the new Run
 
+## Claim Reassessment
+
+Editing a Claim marks it `user_edited` and `pending`. Reassessment reuses the current durable execution while a Run is active; after a terminal Run it creates one deduplicated Follow-up Run with inherited assets, keeps the old Report Snapshot immutable, and still passes through plan confirmation before new research runs.
+_Avoid_: Rewriting a completed report, silently starting duplicate Follow-up Runs, treating edited text as verified without a new evaluator/verifier pass
+
 ## Source Candidate and Source Snapshot
 
 A Source Candidate is a search/provider result that has not yet been read. A Source Snapshot is the successfully fetched or project-read, content-hashed version of a canonical Research Source at a particular retrieval time; only a Snapshot can produce formal Evidence.

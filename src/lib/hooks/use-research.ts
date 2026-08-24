@@ -140,6 +140,17 @@ export function useUpdateResearchClaim(runId: string, workspaceId: string) {
   });
 }
 
+export function useReassessResearchClaim(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (claimId: string) => fetchJson<{ sourceRunId: string; followUpRun: { id: string; status: string; followUpOfId: string | null } | null; resumed: boolean }>(`/api/research/runs/${runId}/claims/${claimId}/reassess`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+    },
+  });
+}
+
 export function useUpsertClaimEvidenceRelation(runId: string, workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({

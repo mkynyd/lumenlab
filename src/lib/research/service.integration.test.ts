@@ -4,7 +4,7 @@ import "dotenv/config";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@/generated/prisma/client";
-import { createResearchRun, createResearchWorkspace, createFollowUpResearchRun } from "./service";
+import { createResearchRun, createResearchWorkspace, createFollowUpResearchRun, reassessResearchClaim, updateResearchClaim } from "./service";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
@@ -50,6 +50,15 @@ describe("Research follow-up asset inheritance", () => {
       expect(inheritedClaims[0]).toMatchObject({ statement: claim.statement, verificationStatus: "pending", questionId: expect.any(String), quality: { inheritedFromRunId: original.id } });
       expect(inheritedClaims[0].evidenceRelations).toEqual([expect.objectContaining({ evidenceId: inheritedEvidence[0].id, relation: "supports" })]);
       expect(currentOriginal).toMatchObject({ status: "active", statement: evidence.statement, sourceSnapshotId: snapshot.id });
+
+      const edited = await updateResearchClaim({ userId: user.id, runId: original.id, claimId: claim.id, statement: "用户修订后的 Claim" });
+      expect(edited).toMatchObject({ statement: "用户修订后的 Claim", userEdited: true, verificationStatus: "pending" });
+      const reassessment = await reassessResearchClaim({ userId: user.id, runId: original.id, claimId: claim.id });
+      expect(reassessment).toMatchObject({ sourceRunId: original.id, resumed: false, followUpRun: { status: "planning", followUpOfId: original.id } });
+      const reassessmentClaim = await prisma.claim.findFirstOrThrow({ where: { runId: reassessment.followUpRun?.id, statement: "用户修订后的 Claim" } });
+      expect(reassessmentClaim.verificationStatus).toBe("pending");
+      const duplicateReassessment = await reassessResearchClaim({ userId: user.id, runId: original.id, claimId: claim.id });
+      expect(duplicateReassessment.followUpRun?.id).toBe(reassessment.followUpRun?.id);
     } finally {
       await prisma.user.delete({ where: { id: user.id } });
     }
