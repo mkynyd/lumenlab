@@ -33,6 +33,120 @@ function planFromJson(value: unknown): ResearchPlanSnapshot {
   return value as ResearchPlanSnapshot;
 }
 
+function cloneJson(value: unknown) {
+  return value === null || value === undefined ? value : JSON.parse(JSON.stringify(value));
+}
+
+function inheritedClaimQuality(value: unknown, fromRunId: string) {
+  const base = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return { ...base, inheritedFromRunId: fromRunId };
+}
+
+/**
+ * Follow-up Runs get new run-owned Snapshot/Evidence/Claim rows. The original
+ * Run remains immutable, while the copied rows make the prior research usable
+ * by the new Run's evaluator and synthesizer without cross-Run joins.
+ */
+async function inheritFollowUpResearchAssets(input: { userId: string; workspaceId: string; fromRunId: string; toRunId: string }) {
+  const [sourceRun, questions] = await Promise.all([
+    prisma.researchRun.findFirst({
+      where: { id: input.fromRunId, userId: input.userId, workspaceId: input.workspaceId },
+      select: {
+        id: true,
+        sourceSnapshots: { where: { status: "fetched" }, orderBy: { createdAt: "asc" }, select: { id: true, sourceId: true, retrievedAt: true, contentHash: true, sourceVersion: true, rawContentLocation: true, excerpt: true, metadata: true } },
+        evidence: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, select: { id: true, questionId: true, sourceSnapshotId: true, statement: true, locator: true, excerpt: true, evidenceType: true, origin: true, createdByUserId: true, tags: true, provenance: true, status: true } },
+        claims: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, select: { id: true, questionId: true, statement: true, status: true, userEdited: true, quality: true, evidenceRelations: { select: { evidenceId: true, relation: true, confidence: true, rationale: true } } } },
+      },
+    }),
+    prisma.researchQuestion.findMany({ where: { runId: input.toRunId }, orderBy: { orderIndex: "asc" }, select: { id: true, priority: true } }),
+  ]);
+  if (!sourceRun) throw new ResearchServiceError("NOT_FOUND", "继承来源的 Research Run 不存在或无权访问");
+  const contextQuestionId = questions.find((question) => question.priority === "critical")?.id ?? questions[0]?.id ?? null;
+
+  return prisma.$transaction(async (tx) => {
+    const snapshotIds = new Map<string, string>();
+    for (const snapshot of sourceRun.sourceSnapshots) {
+      const copied = await tx.researchSourceSnapshot.upsert({
+        where: { runId_sourceId_contentHash: { runId: input.toRunId, sourceId: snapshot.sourceId, contentHash: snapshot.contentHash } },
+        create: {
+          workspaceId: input.workspaceId,
+          runId: input.toRunId,
+          sourceId: snapshot.sourceId,
+          retrievedAt: snapshot.retrievedAt,
+          contentHash: snapshot.contentHash,
+          sourceVersion: snapshot.sourceVersion,
+          rawContentLocation: cloneJson(snapshot.rawContentLocation),
+          excerpt: snapshot.excerpt,
+          metadata: cloneJson(snapshot.metadata),
+          status: "fetched",
+        },
+        update: {},
+        select: { id: true },
+      });
+      snapshotIds.set(snapshot.id, copied.id);
+    }
+
+    const evidenceIds = new Map<string, string>();
+    for (const evidence of sourceRun.evidence) {
+      const sourceSnapshotId = snapshotIds.get(evidence.sourceSnapshotId);
+      if (!sourceSnapshotId) continue;
+      const copied = await tx.evidence.create({
+        data: {
+          workspaceId: input.workspaceId,
+          runId: input.toRunId,
+          questionId: contextQuestionId,
+          sourceSnapshotId,
+          statement: evidence.statement,
+          locator: cloneJson(evidence.locator),
+          excerpt: evidence.excerpt,
+          evidenceType: evidence.evidenceType,
+          origin: evidence.origin,
+          createdByUserId: evidence.createdByUserId,
+          tags: evidence.tags,
+          provenance: {
+            actor: "follow_up_inheritance",
+            inheritedFromRunId: sourceRun.id,
+            inheritedFromEvidenceId: evidence.id,
+            originalProvenance: cloneJson(evidence.provenance) ?? null,
+          },
+          status: evidence.status,
+        },
+        select: { id: true },
+      });
+      evidenceIds.set(evidence.id, copied.id);
+    }
+
+    let copiedClaimCount = 0;
+    for (const claim of sourceRun.claims) {
+      const copiedClaim = await tx.claim.create({
+        data: {
+          workspaceId: input.workspaceId,
+          runId: input.toRunId,
+          questionId: contextQuestionId,
+          statement: claim.statement,
+          status: claim.status,
+          userEdited: claim.userEdited,
+          verificationStatus: "pending",
+          quality: inheritedClaimQuality(claim.quality, sourceRun.id),
+        },
+        select: { id: true },
+      });
+      const relations = claim.evidenceRelations.flatMap((relation) => {
+        const evidenceId = evidenceIds.get(relation.evidenceId);
+        return evidenceId ? [{ claimId: copiedClaim.id, evidenceId, relation: relation.relation, confidence: relation.confidence, rationale: relation.rationale }] : [];
+      });
+      if (relations.length > 0) await tx.claimEvidenceRelation.createMany({ data: relations, skipDuplicates: true });
+      copiedClaimCount += 1;
+    }
+
+    await tx.researchRun.update({
+      where: { id: input.toRunId },
+      data: { metrics: { inheritedFromRunId: sourceRun.id, inheritedSourceSnapshotCount: snapshotIds.size, inheritedEvidenceCount: evidenceIds.size, inheritedClaimCount: copiedClaimCount } },
+    });
+    return { sourceSnapshotCount: snapshotIds.size, evidenceCount: evidenceIds.size, claimCount: copiedClaimCount };
+  });
+}
+
 export async function listResearchWorkspaces(userId: string) {
   return prisma.researchWorkspace.findMany({
     where: { userId, status: "active" },
@@ -126,11 +240,12 @@ export async function createResearchRun(input: {
         modelConfiguration: JSON.parse(JSON.stringify(researchModelConfiguration())),
       },
     });
+    const maxPlanVersion = await tx.researchPlanVersion.aggregate({ where: { workspaceId: workspace.id }, _max: { version: true } });
     const planVersion = await tx.researchPlanVersion.create({
       data: {
         workspaceId: workspace.id,
         runId: run.id,
-        version: 1,
+        version: (maxPlanVersion._max.version ?? 0) + 1,
         plan: JSON.parse(JSON.stringify(plan)),
       },
     });
@@ -589,12 +704,14 @@ export async function cancelResearchRun(userId: string, runId: string) {
 }
 
 export async function createFollowUpResearchRun(userId: string, runId: string, question: string) {
-  const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, select: { workspaceId: true, status: true } });
+  const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, select: { id: true, workspaceId: true, status: true } });
   if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
   if (run.status !== "completed" && run.status !== "failed") {
     throw new ResearchServiceError("INVALID_STATE", "只有已完成或失败的运行可以创建 Follow-up Run");
   }
-  return createResearchRun({ userId, workspaceId: run.workspaceId, question, followUpOfId: runId });
+  const followUp = await createResearchRun({ userId, workspaceId: run.workspaceId, question, followUpOfId: run.id });
+  await inheritFollowUpResearchAssets({ userId, workspaceId: run.workspaceId, fromRunId: run.id, toRunId: followUp.id });
+  return followUp;
 }
 
 export async function getResearchRun(userId: string, runId: string) {

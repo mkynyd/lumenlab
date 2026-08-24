@@ -58,6 +58,37 @@ export function canStartResearcher(
   return activeResearchers < limits.researcherConcurrency;
 }
 
+export type ResearchBudgetCounter = "modelCalls" | "searchCalls" | "fetchCalls" | "sourceCount";
+
+export type ResearchBudgetCounters = Pick<
+  ResearchStopInput,
+  "modelCalls" | "searchCalls" | "fetchCalls" | "sourceCount"
+>;
+
+function limitForCounter(limits: ResearchBudgetLimits, counter: ResearchBudgetCounter) {
+  return counter === "sourceCount" ? limits.maxSources : limits[counter];
+}
+
+/**
+ * Reserve one bounded operation synchronously before an async provider/model
+ * call. Because the reservation mutates the shared checkpoint state before
+ * the first await, concurrent Researchers cannot oversubscribe a hard limit.
+ */
+export function tryReserveResearchBudgetCounter(
+  counters: ResearchBudgetCounters,
+  limits: ResearchBudgetLimits,
+  counter: ResearchBudgetCounter,
+) {
+  if (counters[counter] >= limitForCounter(limits, counter)) return false;
+  counters[counter] += 1;
+  return true;
+}
+
+/** Release a reservation when an operation did not produce the counted item. */
+export function releaseResearchBudgetCounter(counters: ResearchBudgetCounters, counter: ResearchBudgetCounter) {
+  counters[counter] = Math.max(0, counters[counter] - 1);
+}
+
 export function evaluateResearchStop(input: ResearchStopInput): ResearchStopDecision {
   const hardBudgetExceeded =
     input.elapsedMs >= input.limits.wallTimeMs ||

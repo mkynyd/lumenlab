@@ -214,6 +214,11 @@ _Avoid_: Research Run, Project replacement, chat history
 An immutable-history execution of one confirmed research question set. A Run has a Plan Version, Question/Task DAG, budget and public execution events; follow-up or correction work creates a new Run rather than rewriting the old report.
 _Avoid_: Background prompt, mutable report, one-off web search
 
+## Inherited Research Assets
+
+When a Follow-up Run continues a completed or failed Run, active Source Snapshots, Evidence and Claims are copied into new Run-owned records with provenance pointing to their origin. The old records and report remain immutable; the copied assets begin the new Run as context and are re-evaluated there.
+_Avoid_: Cross-Run mutable evidence, silently rewriting the old report, treating a prior Claim as already verified in the new Run
+
 ## Source Candidate and Source Snapshot
 
 A Source Candidate is a search/provider result that has not yet been read. A Source Snapshot is the successfully fetched or project-read, content-hashed version of a canonical Research Source at a particular retrieval time; only a Snapshot can produce formal Evidence.

@@ -4,7 +4,7 @@ import { uploadObjectBuffer } from "@/lib/storage/object-storage";
 import type { AgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { AgentExecutionHandler, AgentExecutionHandlerContext, AgentExecutionHandlerResult } from "@/lib/agent/executions/agent-execution-runner";
-import { evaluateResearchStop, getResearchBudget } from "./budget";
+import { evaluateResearchStop, getResearchBudget, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
 import { buildSourceIdentity } from "./source-identity";
 import { createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext } from "./source-provider";
 import { computeSourceDiversity } from "./quality";
@@ -37,8 +37,8 @@ function checkpointWithResearch(checkpoint: AgentCheckpoint, researchState: Rese
   return { ...checkpoint, researchState };
 }
 
-function recordResearchModelStage(state: ResearchState, result: { attempted: boolean; usage: AgentUsage | null; model: AgentModel }) {
-  if (result.attempted) state.modelCalls += 1;
+function recordResearchModelStage(state: ResearchState, result: { attempted: boolean; usage: AgentUsage | null; model: AgentModel }, options?: { modelCallReserved?: boolean }) {
+  if (result.attempted && !options?.modelCallReserved) state.modelCalls += 1;
   if (!result.usage) return;
   const usage = addResearchUsage({ promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 }, result.usage, result.model);
   state.promptTokens = usage.promptTokens;
@@ -405,6 +405,10 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
         await prisma.researchQuestion.update({ where: { id: task.question.id }, data: { status: "researching", researchAttempts: { increment: 1 } } });
         await appendPublicEvent(context, { key: `research:task:start:${task.id}`, kind: "task_started", runId: run.id, message: `开始研究：${task.question.title}`, publicData: { questionId: task.question.id, priority: task.question.priority } });
         try {
+          if (!tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+            await prisma.researchTask.update({ where: { id: task.id }, data: { status: "retrying", lastError: json({ code: "research_model_budget_reserved" }) } });
+            return;
+          }
           const workerResult = await runResearchModelStage<ResearchWorkerDecision>({
             role: "research.worker",
             userId: context.execution.userId,
@@ -421,23 +425,39 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
               `约束：${directiveContext || "优先学术、官方和项目资料；不要扩大研究范围。"}`,
             ].join("\n"),
           });
-          recordResearchModelStage(state, workerResult);
+          recordResearchModelStage(state, workerResult, { modelCallReserved: true });
           const workerDecision = normalizeResearchWorkerDecision(workerResult.value, task.question.question);
           await appendPublicEvent(context, { key: `research:query:${task.id}:${attempt}`, kind: "task_started", runId: run.id, message: `已生成检索策略：${task.question.title}`, publicData: { questionId: task.question.id, queries: workerDecision.queries } });
           for (const query of workerDecision.queries) {
-            if (state.searchCalls >= limits.searchCalls || context.signal.aborted) break;
+            if (context.signal.aborted || !tryReserveResearchBudgetCounter(state, limits, "searchCalls")) break;
             const candidates = await provider.search(providerContext, query);
-            state.searchCalls += 1;
-            for (const candidate of prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders).slice(0, Math.max(0, limits.maxSources - state.sourceCount))) {
+            for (const candidate of prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders)) {
+              if (context.signal.aborted || state.sourceCount >= limits.maxSources) break;
               const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate });
               await appendPublicEvent(context, { key: `research:candidate:${savedCandidate.id}`, kind: "source_candidate_discovered", runId: run.id, message: `发现来源候选：${candidate.title}`, publicData: { candidateId: savedCandidate.id, provider: candidate.provider, url: candidate.url, query } });
-              if (state.fetchCalls >= limits.fetchCalls || context.signal.aborted) continue;
-              const read = await provider.read(providerContext, candidate);
-              state.fetchCalls += 1;
-              if (!read) continue;
-              const saved = await persistReadSource({ userId: context.execution.userId, workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, read });
-              if (!saved) continue;
-              state.sourceCount += 1;
+              if (!tryReserveResearchBudgetCounter(state, limits, "sourceCount")) break;
+              if (!tryReserveResearchBudgetCounter(state, limits, "fetchCalls")) {
+                releaseResearchBudgetCounter(state, "sourceCount");
+                continue;
+              }
+              let read: Awaited<ReturnType<ReturnType<typeof createToolBackedResearchSourceProvider>["read"]>> | null = null;
+              let saved: Awaited<ReturnType<typeof persistReadSource>> = null;
+              try {
+                read = await provider.read(providerContext, candidate);
+                if (!read) {
+                  releaseResearchBudgetCounter(state, "sourceCount");
+                  continue;
+                }
+                saved = await persistReadSource({ userId: context.execution.userId, workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, read });
+                if (!saved) {
+                  releaseResearchBudgetCounter(state, "sourceCount");
+                  continue;
+                }
+              } catch (error) {
+                releaseResearchBudgetCounter(state, "sourceCount");
+                throw error;
+              }
+              if (!read || !saved) continue;
               await prisma.researchSourceCandidate.update({ where: { id: savedCandidate.id }, data: { status: "fetched" } });
               await appendPublicEvent(context, { key: `research:snapshot:${saved.snapshot.id}`, kind: "source_snapshot_created", runId: run.id, message: `已读取并保存来源：${read.title}`, publicData: { sourceId: saved.source.id, snapshotId: saved.snapshot.id, evidenceId: saved.evidence.id, evidenceCount: state.sourceCount, query } });
             }
