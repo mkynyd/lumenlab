@@ -3,6 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BrainResearch, Check, Refresh } from "iconoir-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -108,6 +118,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const [publicEvents, setPublicEvents] = useState<ResearchPublicEvent[]>([]);
   const [publicEventsRunId, setPublicEventsRunId] = useState<string | null>(null);
   const [selectedReportEvidenceId, setSelectedReportEvidenceId] = useState<string | null>(null);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!run?.agentExecutionId) return;
@@ -172,7 +183,30 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
           <aside><p className="mb-2 px-1 text-xs text-[var(--color-text-tertiary)]">研究运行</p><div className="space-y-1">{workspace.runs.map((item) => <button key={item.id} type="button" onClick={() => setSelectedRunId(item.id)} className={`block w-full rounded-[var(--radius-md)] px-3 py-3 text-left ${activeRunId === item.id ? "bg-[var(--color-interaction-selected)] text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"}`}><span className="block truncate text-xs font-medium">{item.question}</span><span className="mt-1 block text-[11px] text-[var(--color-text-tertiary)]">{item.status}</span></button>)}</div></aside>
           <section className="min-w-0">
             {!run ? <div className="py-20 text-center text-sm text-[var(--color-text-tertiary)]">选择一次运行，查看计划与公开进度。</div> : <>
-              <div className="flex flex-wrap items-center gap-3"><span className="rounded-full bg-[var(--color-interaction-selected)] px-3 py-1 text-xs text-[var(--color-accent)]">{run.status}</span>{liveMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{liveMessage}</span> : null}<span className="ml-auto text-xs text-[var(--color-text-tertiary)]">{run._count.sourceSnapshots} 来源 · {run._count.evidence} Evidence · {run._count.claims} Claim</span>{!['completed', 'failed', 'cancelled'].includes(run.status) ? <Button type="button" variant="ghost" size="sm" onClick={() => { if (window.confirm("确定取消这次 Research Run 吗？已保存的研究资产不会删除。")) cancelRun.mutate(); }} disabled={cancelRun.isPending}>取消运行</Button> : null}</div>
+              <div className="flex flex-wrap items-center gap-3"><span className="rounded-full bg-[var(--color-interaction-selected)] px-3 py-1 text-xs text-[var(--color-accent)]">{run.status}</span>{liveMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{liveMessage}</span> : null}<span className="ml-auto text-xs text-[var(--color-text-tertiary)]">{run._count.sourceSnapshots} 来源 · {run._count.evidence} Evidence · {run._count.claims} Claim</span>{!['completed', 'failed', 'cancelled'].includes(run.status) ? <Button type="button" variant="ghost" size="sm" onClick={() => setCancelDialogOpen(true)} disabled={cancelRun.isPending}>取消运行</Button> : null}</div>
+              <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>取消 Research Run</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      确定取消这次 Research Run 吗？已保存的研究资产不会删除。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>继续研究</AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      disabled={cancelRun.isPending}
+                      onClick={() => {
+                        cancelRun.mutate();
+                        setCancelDialogOpen(false);
+                      }}
+                    >
+                      取消运行
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
               {run.budgetSnapshot ? <div className="mt-5 bg-[var(--color-panel)] px-5 py-4"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">预算状态</h2><span className="text-xs text-[var(--color-text-tertiary)]">{run.budgetSnapshot.profile}</span></div>{(() => { const counters = liveBudget?.runId === run.id ? liveBudget.counters : run.metrics ?? {}; return <div className="mt-3 grid gap-3 text-xs text-[var(--color-text-secondary)] sm:grid-cols-3"><span>模型调用 {counters.modelCalls ?? 0}/{run.budgetSnapshot.modelCalls}</span><span>检索 {counters.searchCalls ?? 0}/{run.budgetSnapshot.searchCalls}</span><span>读取 {counters.fetchCalls ?? 0}/{run.budgetSnapshot.fetchCalls}</span><span>来源 {counters.sourceCount ?? run._count.sourceSnapshots}/{run.budgetSnapshot.maxSources}</span><span>Token {counters.totalTokens ?? 0}/{run.budgetSnapshot.maxTokens}</span><span>Repair {counters.verificationRepairs ?? 0}/{run.budgetSnapshot.maxVerificationRepairs}</span></div>; })()}</div> : null}
               {plan ? <div className="mt-5 space-y-5"><div className="bg-[var(--color-panel)] px-5 py-5"><h2 className="text-base font-semibold text-[var(--color-text-primary)]">研究计划</h2><p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.scope}</p><div className="mt-5 grid gap-4 sm:grid-cols-3"><div><p className="text-xs text-[var(--color-text-tertiary)]">研究目标</p><p className="mt-1 text-sm text-[var(--color-text-primary)]">{plan.researchGoal}</p></div><div><p className="text-xs text-[var(--color-text-tertiary)]">研究强度</p><p className="mt-1 text-sm text-[var(--color-text-primary)]">{plan.researchIntensity}</p></div><div><p className="text-xs text-[var(--color-text-tertiary)]">时间范围</p><p className="mt-1 text-sm text-[var(--color-text-primary)]">{plan.timeRange ?? "未限定"}</p></div><div><p className="text-xs text-[var(--color-text-tertiary)]">领域 Profile</p><p className="mt-1 text-sm text-[var(--color-text-primary)]">{plan.domainProfile?.name ?? "通用研究"}</p></div></div><div className="mt-5 grid gap-5 sm:grid-cols-2"><div><p className="text-xs text-[var(--color-text-tertiary)]">来源策略</p><ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.sourceStrategy.map((item) => <li key={item}>· {item}</li>)}</ul></div><div><p className="text-xs text-[var(--color-text-tertiary)]">预期产出</p><ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.expectedOutputs.map((item) => <li key={item}>· {item}</li>)}</ul></div></div><div className="mt-5"><p className="text-xs text-[var(--color-text-tertiary)]">完成标准</p><ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.completionCriteria.map((item) => <li key={item}>· {item}</li>)}</ul></div><div className="mt-5"><p className="text-xs text-[var(--color-text-tertiary)]">Research Questions</p><div className="mt-2 space-y-2">{run.questions.map((item) => <div key={item.id} className="flex items-start gap-2 text-sm text-[var(--color-text-primary)]"><span className="mt-1 text-[var(--color-accent)]">{item.status === "resolved" ? <Check width={14} height={14} /> : <Refresh width={14} height={14} />}</span><span>{item.title}<span className="ml-2 text-xs text-[var(--color-text-tertiary)]">{item.priority} · {item.status}</span><span className="mt-1 block text-xs leading-5 text-[var(--color-text-tertiary)]">完成标准：{Array.isArray(item.completionCriteria) && item.completionCriteria.length > 0 ? item.completionCriteria.join("；") : "按研究计划判断"}</span></span></div>)}</div></div>{run.status === "awaiting_confirmation" ? <><form className="mt-6 flex gap-2" onSubmit={(event) => { event.preventDefault(); if (!planDirective.trim()) return; revisePlan.mutate(planDirective.trim(), { onSuccess: () => setPlanDirective("") }); }}><input value={planDirective} onChange={(event) => setPlanDirective(event.target.value)} placeholder="用自然语言调整计划，例如：增加一个医学安全性问题" className="min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" /><Button type="submit" variant="secondary" size="sm" disabled={revisePlan.isPending}>调整计划</Button></form><Button type="button" variant="primary" size="sm" className="mt-3" onClick={() => confirmPlan.mutate()} disabled={confirmPlan.isPending}><Check width={16} height={16} />确认计划并开始</Button></> : null}</div></div> : null}
               <div className="mt-5 bg-[var(--color-panel)] px-5 py-5"><h2 className="text-base font-semibold text-[var(--color-text-primary)]">追加研究方向</h2><p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">普通调整会在后续评估中吸收；明显扩大范围或预算会暂停并等待确认。</p><form className="mt-3 flex gap-2" onSubmit={(event) => { event.preventDefault(); if (!directive.trim()) return; appendDirective.mutate(directive.trim(), { onSuccess: () => setDirective("") }); }}><input value={directive} onChange={(event) => setDirective(event.target.value)} placeholder="例如：补充近三年的官方数据" className="min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" /><Button type="submit" variant="secondary" size="sm" disabled={appendDirective.isPending}>追加</Button></form></div>

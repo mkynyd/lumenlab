@@ -8,6 +8,11 @@ import type {
 } from "@/lib/agent/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 interface ApprovalCardProps {
   preview: ToolCallPreview;
@@ -117,14 +122,18 @@ export function ApprovalCard({
       </div>
 
       {preview.samplePreview && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] inline-flex items-center gap-1">
-            <RotateCcw size={10} /> 查看数据样本
-          </summary>
-          <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-[var(--color-surface)] p-2 whitespace-pre-wrap break-words text-[var(--color-text-secondary)]">
-            {preview.samplePreview}
-          </pre>
-        </details>
+        <Collapsible className="text-xs">
+          <CollapsibleTrigger asChild>
+            <button type="button" className="inline-flex cursor-pointer items-center gap-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+              <RotateCcw size={10} /> 查看数据样本
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-[var(--color-surface)] p-2 whitespace-pre-wrap break-words text-[var(--color-text-secondary)]">
+              {preview.samplePreview}
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
       <div className="flex items-center gap-2 pt-1">

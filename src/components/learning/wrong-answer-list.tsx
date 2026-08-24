@@ -6,6 +6,11 @@ import type {
 } from "@/lib/hooks/use-learning-api";
 import { EmptyState } from "@/components/learning/empty-state";
 import { getEvaluationReasonLabel } from "@/components/learning/evaluation-copy";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 export interface WrongAnswerListProps {
   items: WrongAnswerItemDto[];
@@ -65,11 +70,14 @@ function latestEvaluation(attempt: WrongAnswerItemDto["attempts"][number]) {
 
 function AttemptHistory({ item }: { item: WrongAnswerItemDto }) {
   return (
-    <details className="mt-1">
-      <summary className="cursor-pointer rounded-[var(--radius-sm)] text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
-        作答历史
-      </summary>
-      <ul className="mt-1 flex flex-col gap-1">
+    <Collapsible className="mt-1">
+      <CollapsibleTrigger asChild>
+        <button type="button" className="w-full cursor-pointer rounded-[var(--radius-sm)] text-left text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
+          作答历史
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ul className="mt-1 flex flex-col gap-1">
         {item.attempts.map((attempt) => {
           const evaluation = latestEvaluation(attempt);
           return (
@@ -87,8 +95,9 @@ function AttemptHistory({ item }: { item: WrongAnswerItemDto }) {
             </li>
           );
         })}
-      </ul>
-    </details>
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -135,14 +144,18 @@ function WrongAnswerItem({ item }: { item: WrongAnswerItemDto }) {
         </p>
       )}
       {item.feedback.explanation && (
-        <details className="mt-1">
-          <summary className="cursor-pointer rounded-[var(--radius-sm)] text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
-            解析
-          </summary>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-            {item.feedback.explanation}
-          </p>
-        </details>
+        <Collapsible className="mt-1">
+          <CollapsibleTrigger asChild>
+            <button type="button" className="w-full cursor-pointer rounded-[var(--radius-sm)] text-left text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
+              解析
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+              {item.feedback.explanation}
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
       )}
       {item.attempts.length > 0 && <AttemptHistory item={item} />}
     </li>
@@ -151,7 +164,7 @@ function WrongAnswerItem({ item }: { item: WrongAnswerItemDto }) {
 
 /**
  * Wrong-answer list: unresolved items are expanded in place; resolved ones
- * collapse into a keyboard-reachable native details section.
+ * collapse into a keyboard-reachable collapsible section.
  */
 export function WrongAnswerList({ items, className }: WrongAnswerListProps) {
   if (items.length === 0) {
@@ -171,16 +184,20 @@ export function WrongAnswerList({ items, className }: WrongAnswerListProps) {
         </ul>
       )}
       {resolved.length > 0 && (
-        <details>
-          <summary className="cursor-pointer rounded-[var(--radius-sm)] text-sm font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
-            已解决 {resolved.length}
-          </summary>
-          <ul className="mt-1 flex flex-col divide-y divide-[var(--color-border-light)]">
-            {resolved.map((item) => (
-              <WrongAnswerItem key={item.itemLineageId} item={item} />
-            ))}
-          </ul>
-        </details>
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <button type="button" className="w-full cursor-pointer rounded-[var(--radius-sm)] text-left text-sm font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
+              已解决 {resolved.length}
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <ul className="mt-1 flex flex-col divide-y divide-[var(--color-border-light)]">
+              {resolved.map((item) => (
+                <WrongAnswerItem key={item.itemLineageId} item={item} />
+              ))}
+            </ul>
+          </CollapsibleContent>
+        </Collapsible>
       )}
     </div>
   );

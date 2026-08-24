@@ -4,6 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { BookStack, Search } from "iconoir-react";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -180,9 +185,14 @@ export default function PaperTemplatesPage() {
                   <div><p className="text-[var(--color-text-tertiary)]">验证说明</p><p className="mt-1 truncate text-[var(--color-text-secondary)]" title={summary?.errorCode ?? undefined}>{summary?.errorCode ?? (summary?.runtimeStatus === "Verified" ? "PDF 产物已校验" : "等待验证")}</p></div>
                 </div>
 
-                <details className="mt-3 border-t border-[var(--color-separator)] pt-3 text-xs text-[var(--color-text-secondary)]">
-                  <summary className="cursor-pointer text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]">高级信息{(template.variants?.length ?? 0) > 1 ? ` · ${template.variants?.length} 个 Variant` : ""}</summary>
-                  <div className="mt-3 grid gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+                <Collapsible className="mt-3 border-t border-[var(--color-separator)] pt-3 text-xs text-[var(--color-text-secondary)]">
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="cursor-pointer text-left text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]">
+                      高级信息{(template.variants?.length ?? 0) > 1 ? ` · ${template.variants?.length} 个 Variant` : ""}
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-3 grid gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
                     <p>Engine：{template.engine ?? "-"}</p>
                     <p>Bibliography：{template.bibliography ?? "-"}</p>
                     <p>Entry：{template.entryFile ?? "-"}</p>
@@ -190,9 +200,10 @@ export default function PaperTemplatesPage() {
                     <p>版本/Commit：{template.sourceVersion ?? "-"}</p>
                     <p>License：{template.license ?? "-"}</p>
                     <p className="sm:col-span-2">Repository：<SourceLink href={template.repositoryUrl} label={template.repositoryUrl ?? "未记录"} /></p>
-                  </div>
-                  {summary?.runtimeStatus === "Needs Review" && summary.errorCode ? <p className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-warning-muted)] px-3 py-2 text-[var(--color-warning)]">当前验证未通过：{summary.errorCode}。模板仍保留在 Registry 中，可在验证环境恢复后重试。</p> : null}
-                </details>
+                    </div>
+                    {summary?.runtimeStatus === "Needs Review" && summary.errorCode ? <p className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-warning-muted)] px-3 py-2 text-[var(--color-warning)]">当前验证未通过：{summary.errorCode}。模板仍保留在 Registry 中，可在验证环境恢复后重试。</p> : null}
+                  </CollapsibleContent>
+                </Collapsible>
               </article>
             );
           })}
