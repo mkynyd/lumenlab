@@ -28,7 +28,7 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument, option
   const metadata = document.blocks.find((block): block is Extract<DocumentBlock, { kind: "paper_metadata" }> => block.kind === "paper_metadata");
   const usesBiber = /biber|biblatex/i.test(manifest?.bibliography ?? "");
   const sourceUsesBiblatex = templateFiles
-    .filter((file) => /\.(?:cls|sty)$/i.test(file.path) || isLikelyTemplateEntrySource(file, manifest))
+    .filter((file) => /\.cls$/i.test(file.path) || isLikelyTemplateEntrySource(file, manifest))
     .some((file) => /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(stripLatexComments(file.buffer?.toString("utf8") ?? "")));
   const usesTemplateBiblatex = usesBiber || (sourceUsesBiblatex && !/bibtex/i.test(manifest?.bibliography ?? "")) || isBiblatexTemplateClass(documentClass);
   const lines = [
@@ -36,6 +36,7 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument, option
     `\\documentclass${classOptions.length > 0 ? `[${classOptions.join(",")}]` : ""}{${documentClass}}`,
     ...renderTemplatePreamble(templateFiles, manifest),
     "\\usepackage{amsmath,graphicx,booktabs,hyperref}",
+    ...(documentClass.toLowerCase() === "hfutthesis" ? ["\\usepackage{array}"] : []),
     ...(usesBiber && !sourceUsesBiblatex && (!isBiblatexTemplateClass(documentClass) || templateFiles.length === 0) ? [`\\usepackage[backend=biber,style=${biblatexStyle(documentClass)}]{biblatex}`] : []),
     ...(usesTemplateBiblatex && !isBiblatexTemplateClass(documentClass) ? ["\\addbibresource{references.bib}"] : []),
     ...(metadata ? renderTemplateMetadataSetup(metadata, documentClass, usesTemplateBiblatex, templateFiles, document.blocks.filter((block): block is Extract<DocumentBlock, { kind: "keywords" }> => block.kind === "keywords")) : []),
@@ -98,6 +99,7 @@ function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, 
     case "paper_metadata":
       if (isHitThesisClass(manifest?.documentClass)) return "";
       if ((manifest?.documentClass ?? "").toLowerCase() === "hhuthesis") return "";
+      if ((manifest?.documentClass ?? "").toLowerCase() === "jnuthesis") return "\\titlepage";
       return hasCustomMetadataAdapter(templateFiles)
         ? "\\maketitle"
         : (manifest?.documentClass ?? "").toLowerCase() === "ccnuthesis"
@@ -175,6 +177,25 @@ function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "p
         ...(metadata.date ? [`cdate = {${escapeLatex(metadata.date)}}`] : []),
         ...keywordSetup,
       ].join(",\n")}}`];
+    case "jnuthesis":
+      return [
+        `\\renewcommand{\\title}{${title}}`,
+        `\\renewcommand{\\biaoti}{${title}}`,
+        ...(institution ? [`\\renewcommand{\\xueyuan}{${institution}}`] : []),
+        `\\renewcommand{\\zhuanye}{Computer Science}`,
+        `\\renewcommand{\\xingming}{${templateAuthor}}`,
+        `\\renewcommand{\\daoshi}{Research Supervisor}`,
+      ];
+    case "hfutthesis":
+      return [`\\hfutsetup{${[
+        `title = {${title}}`,
+        `title* = {${title}}`,
+        `author = {${templateAuthor}}`,
+        `speciality = {Computer Science}`,
+        `supervisor = {Research Supervisor}`,
+        `department = {Computer Science Department}`,
+        `ugtype = {论文}`,
+      ].join(",\n")}}`];
     case "thuthesis":
       return [`\\thusetup{title = {${title}}, author = {${templateAuthor}}}`];
     case "shtthesis":
@@ -228,7 +249,7 @@ function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "p
 
 function needsChapterAbstract(documentClass: string | null | undefined, templateFiles: TemplateSourceFile[]): boolean {
   const normalized = (documentClass ?? "").toLowerCase();
-  if (["book", "ctexbook", "ctexrep", "cquthesis", "buctthesis", "ctexreport", "report", "scrbook", "scrreprt", "ucasthesis", "tongjithesis"].includes(normalized)) return true;
+  if (["book", "ctexbook", "ctexrep", "cquthesis", "buctthesis", "ctexreport", "report", "scrbook", "scrreprt", "ucasthesis", "tongjithesis", "jnuthesis"].includes(normalized)) return true;
   return templateFiles
     .filter((file) => /\.cls$/i.test(file.path) && isPrimaryTemplateDefinitionFile(file))
     .some((file) => /\\LoadClass(?:WithOptions)?\s*(?:\[[^\]]*\])?\s*\{\s*(?:book|report|ctexbook|ctexrep|scrbook|scrreprt)\s*\}/i.test(stripLatexComments(file.buffer?.toString("utf8") ?? "")));
@@ -244,6 +265,10 @@ function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>
     return `\\begin{${environment}}{${keywords}}\n${content}\n\\end{${environment}}`;
   }
   if (normalized === "shuthesis") return `\\begin{${block.language === "en" ? "eabstract" : "cabstract"}}\n${content}\n\\end{${block.language === "en" ? "eabstract" : "cabstract"}}`;
+  if (normalized === "jnuthesis") {
+    const environment = block.language === "en" ? "enabstract" : "zhabstract";
+    return `\\begin{${environment}}\n${content}\n\\end{${environment}}`;
+  }
   const environment = block.language === "en"
     ? hasTemplateEnvironment(templateFiles, "abstractEn") ? "abstractEn" : hasTemplateEnvironment(templateFiles, "enabstract") ? "enabstract" : null
     : hasTemplateEnvironment(templateFiles, "abstract") ? "abstract" : null;
@@ -255,6 +280,7 @@ function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>
 function renderKeywordsBlock(block: Extract<DocumentBlock, { kind: "keywords" }>, documentClass: string | null | undefined, templateFiles: TemplateSourceFile[]): string {
   const keywords = block.keywords.map(escapeLatex).join("；");
   if (isHitThesisClass(documentClass)) return "";
+  if ((documentClass ?? "").toLowerCase() === "jnuthesis") return `${block.language === "en" ? "\\keywords" : "\\guanjianci"}\n${keywords}`;
   if (hasTemplateCommand(templateFiles, "keywords")) return `\\keywords{${keywords}}`;
   if (hasTemplateCommand(templateFiles, "thesiskeywords")) return `\\thesiskeywords{${keywords}}`;
   return `\\textbf{关键词：}${keywords}`;
@@ -289,7 +315,7 @@ function isPrimaryTemplateDefinitionFile(file: TemplateSourceFile): boolean {
 }
 
 function hasCustomMetadataAdapter(files: TemplateSourceFile[]): boolean {
-  return ["cumtsetup", "nuaaset", "Title", "Author", "thesisTitle", "zhtitle", "chinesetitle", "englishtitle"].some((command) => hasTemplateCommand(files, command));
+  return ["cumtsetup", "nuaaset", "hfutsetup", "Title", "Author", "thesisTitle", "zhtitle", "chinesetitle", "englishtitle"].some((command) => hasTemplateCommand(files, command));
 }
 
 function renderTemplatePreamble(files: TemplateSourceFile[], manifest?: AcademicTemplateManifest): string[] {
@@ -328,6 +354,7 @@ function renderTemplatePreamble(files: TemplateSourceFile[], manifest?: Academic
 
 function sectionCommand(level: number, documentClass?: string | null): string {
   if (isHitThesisClass(documentClass) && documentClass?.toLowerCase() === "hithesisbook") return ["chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph"][level - 1] ?? "chapter";
+  if ((documentClass ?? "").toLowerCase() === "jnuthesis") return ["chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph"][level - 1] ?? "chapter";
   return ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"][level - 1] ?? "section";
 }
 

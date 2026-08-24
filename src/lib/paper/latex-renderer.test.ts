@@ -39,6 +39,27 @@ describe("academic latex renderer", () => {
     expect(result.generatedContentTex).not.toContain("\\title{");
   });
 
+  it("uses JNU's title page and abstract/keyword conventions", () => {
+    const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
+      manifest: { id: "jnu", university: "暨南大学", format: "latex", supportedBlocks: [], degreeType: "本科", documentClass: "jnuthesis", bibliography: null } as AcademicTemplateManifest,
+      templateFiles: [
+        { path: "Template/jnuthesis.cls", buffer: Buffer.from("\\newcommand{\\biaoti}{}\\newenvironment{zhabstract}{}{}\\newcommand{\\guanjianci}{}") },
+      ],
+    });
+    expect(result.mainTex).toContain("\\renewcommand{\\title}{中文论文标题 / Sample Academic Document}");
+    expect(result.generatedContentTex).toContain("\\titlepage");
+    expect(result.generatedContentTex).toContain("\\begin{zhabstract}");
+    expect(result.generatedContentTex).toContain("\\guanjianci\n深度研究；论文排版；证据");
+    expect(result.generatedContentTex).toContain("\\chapter{第一章 绪论}");
+  });
+
+  it("maps Shu thesis degree profiles to the class's supported type options", () => {
+    const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
+      manifest: { id: "shu", university: "上海大学", format: "latex", supportedBlocks: [], degreeType: "本科", documentClass: "shuthesis", bibliography: null } as AcademicTemplateManifest,
+    });
+    expect(result.mainTex).toContain("\\documentclass[type=master]{shuthesis}");
+  });
+
   it("adapts a generic class from a pinned source entry", () => {
     const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
       manifest: { id: "jnu", university: "暨南大学", format: "latex", entryFile: "main.tex", documentClass: "book", supportedBlocks: [] } as AcademicTemplateManifest,
@@ -57,6 +78,28 @@ describe("academic latex renderer", () => {
     expect(result.mainTex).toContain("\\cumtsetup{");
     expect(result.generatedContentTex).toContain("\\begin{abstract}");
     expect(result.generatedContentTex).toContain("\\keywords{");
+  });
+
+  it("does not emit addbibresource when a style only conditionally supports biblatex", () => {
+    const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
+      manifest: { id: "suda", university: "苏州大学", format: "latex", entryFile: "Thesis.tex", documentClass: "sudathesis", bibliography: null, supportedBlocks: [] } as AcademicTemplateManifest,
+      templateFiles: [
+        { path: "Thesis.tex", buffer: Buffer.from("\\documentclass{style/sudathesis}\\usepackage[super,list,xlink]{style/artratex}") },
+        { path: "Style/artratex.sty", buffer: Buffer.from("\\ifartx@biber\\RequirePackage[backend=biber]{biblatex}\\fi") },
+      ],
+    });
+    expect(result.mainTex).not.toContain("\\addbibresource{references.bib}");
+  });
+
+  it("uses HFUT's key-value metadata adapter and degree option", () => {
+    const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
+      manifest: { id: "hfut", university: "合肥工业大学", format: "latex", degreeType: "博士", documentClass: "hfutthesis", bibliography: "bibtex", supportedBlocks: [] } as AcademicTemplateManifest,
+      templateFiles: [{ path: "hfutthesis.cls", buffer: Buffer.from("\\newcommand\\hfutsetup[1]{}") }],
+    });
+    expect(result.mainTex).toContain("\\documentclass[degree=doctor]{hfutthesis}");
+    expect(result.mainTex).toContain("\\usepackage{array}");
+    expect(result.mainTex).toContain("\\hfutsetup{");
+    expect(result.generatedContentTex).toContain("\\maketitle");
   });
 
   it("keeps the standard abstract environment for article-like classes", () => {

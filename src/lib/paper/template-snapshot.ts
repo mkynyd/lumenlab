@@ -257,6 +257,8 @@ export function resolveTemplateClassOptions(
   if (!degree || !documentClass) return [];
   const normalized = documentClass.toLowerCase();
   if (["hithesis", "hithesisbook", "hithesisart", "hithesisartplus"].includes(normalized)) return ["fontset=fandol", `type=${degree}`, "campus=harbin"];
+  if (normalized === "shuthesis") return [`type=${degree === "doctor" ? "doctor" : "master"}`];
+  if (normalized === "hfutthesis") return [`degree=${degree}`];
   if (["thuthesis", "xjtuthesis", "hithesis", "shtthesis", "bnuthesis"].includes(normalized)) return [degree];
   if (normalized === "seuthesiy") return [degree === "doctor" ? "phd" : degree === "bachelor" ? "engineering" : "masters"];
   if (normalized === "hhuthesis") return [degree === "doctor" ? "doctor" : degree === "bachelor" ? "bachelor" : "academicmaster"];
@@ -280,17 +282,26 @@ export function resolveTemplateBibliography(
 ): AcademicTemplateManifest {
   const classSources = files
     .filter((file) => (
+      /\.cls$/i.test(file.path) || isLikelyTemplateEntrySource(file, manifest)
+    ) && file.buffer)
+    .map((file) => stripLatexComments(file.buffer!.toString("utf8")))
+    .join("\n");
+  const packageSources = files
+    .filter((file) => (
       /\.(?:cls|sty|dtx)$/i.test(file.path) || isLikelyTemplateEntrySource(file, manifest)
     ) && file.buffer)
     .map((file) => stripLatexComments(file.buffer!.toString("utf8")))
     .join("\n");
+  if (!manifest.bibliography && manifest.documentClass?.toLowerCase() === "hfutthesis") {
+    return { ...manifest, bibliography: "bibtex" };
+  }
   const classUsesBiblatex = /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(classSources);
   const sourceRequestsBibtex = /\\(?:RequirePackage|usepackage)\s*\[[^\]]*\bbibtex\b[^\]]*\]\s*\{[^}]+\}/i.test(classSources);
   if (sourceRequestsBibtex) return { ...manifest, bibliography: "bibtex" };
   if (classUsesBiblatex && !/biber|biblatex/i.test(manifest.bibliography ?? "")) return { ...manifest, bibliography: "biblatex" };
   if (!/biber|biblatex/i.test(manifest.bibliography ?? "")) return manifest;
   if (classUsesBiblatex) return manifest;
-  if (/\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*natbib\s*\}/i.test(classSources)) {
+  if (/\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*natbib\s*\}/i.test(packageSources)) {
     return { ...manifest, bibliography: "bibtex" };
   }
   return manifest;

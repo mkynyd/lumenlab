@@ -117,4 +117,14 @@ describe("template upstream snapshots", () => {
     expect(resolveTemplateBibliography({ ...manifest, bibliography: null }, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{biblatex}") }]).bibliography).toBe("biblatex");
     expect(resolveTemplateBibliography({ ...manifest, id: "neu", documentClass: "neuthesis", entryFile: "Thesis.tex" }, [{ path: "Thesis.tex", buffer: Buffer.from("\\usepackage[bibtex,myhdr]{Style/artratex}") }]).bibliography).toBe("bibtex");
   });
+
+  it("does not infer biblatex from a conditional implementation-only style branch", () => {
+    expect(resolveTemplateBibliography(
+      { id: "suda", university: "苏州大学", format: "latex", documentClass: "sudathesis", entryFile: "Thesis.tex", bibliography: null, supportedBlocks: [] } as AcademicTemplateManifest,
+      [
+        { path: "Thesis.tex", buffer: Buffer.from("\\documentclass{style/sudathesis}\\usepackage[super,list,xlink]{style/artratex}") },
+        { path: "Style/artratex.sty", buffer: Buffer.from("\\ifartx@biber\\RequirePackage[backend=biber]{biblatex}\\fi") },
+      ],
+    ).bibliography).toBeNull();
+  });
 });
