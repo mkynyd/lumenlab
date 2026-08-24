@@ -72,3 +72,16 @@ export function moveHeadingSubtree(document: AcademicDocument, index: number, di
   const nextEnd = headingSubtreeEnd(document.blocks, nextStart);
   return { ...document, blocks: [...document.blocks.slice(0, index), ...document.blocks.slice(nextStart, nextEnd), ...document.blocks.slice(index, end), ...document.blocks.slice(nextEnd)] };
 }
+
+/** Move a complete heading subtree before another block, preserving all child blocks. */
+export function moveHeadingSubtreeTo(document: AcademicDocument, sourceIndex: number, targetIndex: number): AcademicDocument {
+  const source = document.blocks[sourceIndex];
+  const target = document.blocks[targetIndex];
+  if (!source || source.kind !== "heading" || !target || sourceIndex === targetIndex) return document;
+  const sourceEnd = headingSubtreeEnd(document.blocks, sourceIndex);
+  if (targetIndex >= sourceIndex && targetIndex < sourceEnd) return document;
+  const subtree = document.blocks.slice(sourceIndex, sourceEnd);
+  const remaining = [...document.blocks.slice(0, sourceIndex), ...document.blocks.slice(sourceEnd)];
+  const adjustedTarget = targetIndex > sourceIndex ? targetIndex - subtree.length : targetIndex;
+  return { ...document, blocks: [...remaining.slice(0, adjustedTarget), ...subtree, ...remaining.slice(adjustedTarget)] };
+}

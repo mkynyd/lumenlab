@@ -219,6 +219,23 @@ export async function createDocumentVersion(input: { userId: string; documentId:
   return created;
 }
 
+export async function listDocumentVersions(userId: string, documentId: string) {
+  await findOwnedDocument(userId, documentId);
+  return prisma.paperDocumentVersion.findMany({
+    where: { documentId },
+    orderBy: { version: "desc" },
+    select: { id: true, version: true, status: true, createdBy: true, createdAt: true, sourceHash: true },
+  });
+}
+
+/** Restore by appending the selected immutable content as a new current version. */
+export async function restoreDocumentVersion(input: { userId: string; documentId: string; version: number }) {
+  await findOwnedDocument(input.userId, input.documentId);
+  const target = await prisma.paperDocumentVersion.findFirst({ where: { documentId: input.documentId, version: input.version }, select: { content: true } });
+  if (!target) throw new PaperServiceError("NOT_FOUND", "目标 Document Version 不存在");
+  return createDocumentVersion({ userId: input.userId, documentId: input.documentId, content: target.content, createdBy: input.userId });
+}
+
 export async function createDocumentPatch(input: { userId: string; documentId: string; patch: DocumentPatch; summary?: string }) {
   const document = await findOwnedDocument(input.userId, input.documentId);
   assertPatchBaseVersion(document.currentVersion.version, input.patch);

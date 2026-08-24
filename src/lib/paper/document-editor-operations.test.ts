@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildEmptyAcademicDocument, type AcademicDocument } from "./document-schema";
-import { createInsertableBlock, insertDocumentBlock, moveHeadingSubtree, removeDocumentBlock, updateDocumentBlockText } from "./document-editor-operations";
+import { createInsertableBlock, insertDocumentBlock, moveHeadingSubtree, moveHeadingSubtreeTo, removeDocumentBlock, updateDocumentBlockText } from "./document-editor-operations";
 
 describe("document editor operations", () => {
   it("inserts and removes structured blocks without mutating the source", () => {
@@ -44,5 +44,23 @@ describe("document editor operations", () => {
     const moved = moveHeadingSubtree(document, 1, "down");
     expect(moved.blocks.map((block) => "id" in block ? block.id : block.kind)).toEqual(["paper_metadata", "h3", "p3", "h1", "p1", "h2", "p2"]);
     expect(moveHeadingSubtree(document, 1, "up")).toBe(document);
+  });
+
+  it("moves a dragged heading subtree before a target heading", () => {
+    const source = buildEmptyAcademicDocument("论文");
+    const document: AcademicDocument = {
+      ...source,
+      blocks: [
+        source.blocks[0],
+        { kind: "heading", id: "h1", level: 1, children: [{ kind: "text", text: "一" }] },
+        { kind: "paragraph", id: "p1", children: [{ kind: "text", text: "一的正文" }] },
+        { kind: "heading", id: "h2", level: 1, children: [{ kind: "text", text: "二" }] },
+        { kind: "paragraph", id: "p2", children: [{ kind: "text", text: "二的正文" }] },
+        { kind: "heading", id: "h3", level: 1, children: [{ kind: "text", text: "三" }] },
+      ],
+    };
+    const moved = moveHeadingSubtreeTo(document, 1, 5);
+    expect(moved.blocks.map((block) => "id" in block ? block.id : block.kind)).toEqual(["paper_metadata", "h2", "p2", "h1", "p1", "h3"]);
+    expect(moveHeadingSubtreeTo(document, 1, 2)).toBe(document);
   });
 });
