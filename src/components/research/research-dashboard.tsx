@@ -4,6 +4,15 @@ import { useState } from "react";
 import Link from "next/link";
 import { BrainResearch, Plus } from "iconoir-react";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useCreateResearchWorkspace, useResearchWorkspaces } from "@/lib/hooks/use-research";
 import { useProjects } from "@/lib/hooks/use-projects";
 import { listResearchDomainProfiles } from "@/lib/research/domain-profile";
@@ -40,9 +49,50 @@ export function ResearchDashboard() {
 
         <form onSubmit={createWorkspace} className="mb-8 flex max-w-3xl flex-wrap gap-2">
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="新研究工作区名称" aria-label="新研究工作区名称" className="min-h-10 min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" />
-          <select value={domainProfileKey} onChange={(event) => setDomainProfileKey(event.target.value)} aria-label="研究领域 Profile" className="min-h-10 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-secondary)] outline-none ring-1 ring-transparent focus:ring-[var(--color-accent)]">{domainProfiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.name}</option>)}</select>
-          <select value={budgetProfile} onChange={(event) => setBudgetProfile(event.target.value as "quick" | "deep" | "comprehensive")} aria-label="研究预算配置" className="min-h-10 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-secondary)] outline-none ring-1 ring-transparent focus:ring-[var(--color-accent)]"><option value="quick">Quick · 快速</option><option value="deep">Deep · 深入</option><option value="comprehensive">Comprehensive · 全面</option></select>
-          <select value={projectId} onChange={(event) => setProjectId(event.target.value)} aria-label="研究上下文 Project" className="min-h-10 max-w-56 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-secondary)] outline-none ring-1 ring-transparent focus:ring-[var(--color-accent)]"><option value="">独立研究工作区</option>{(projectsQuery.data ?? []).map((project) => <option key={project.id} value={project.id}>Project · {project.name}</option>)}</select>
+          <Select value={domainProfileKey} onValueChange={setDomainProfileKey}>
+            <SelectTrigger aria-label="研究领域 Profile" className="min-h-10 min-w-40 bg-[var(--color-panel)] text-sm text-[var(--color-text-secondary)]">
+              <SelectValue placeholder="选择研究领域" />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectGroup>
+                <SelectLabel>研究领域</SelectLabel>
+                {domainProfiles.map((profile) => (
+                  <SelectItem key={profile.key} value={profile.key}>
+                    {profile.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select value={budgetProfile} onValueChange={(value) => setBudgetProfile(value as "quick" | "deep" | "comprehensive")}>
+            <SelectTrigger aria-label="研究预算配置" className="min-h-10 min-w-40 bg-[var(--color-panel)] text-sm text-[var(--color-text-secondary)]">
+              <SelectValue placeholder="选择研究强度" />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectGroup>
+                <SelectLabel>研究强度</SelectLabel>
+                <SelectItem value="quick">Quick · 快速</SelectItem>
+                <SelectItem value="deep">Deep · 深入</SelectItem>
+                <SelectItem value="comprehensive">Comprehensive · 全面</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select value={projectId || "independent"} onValueChange={(value) => setProjectId(value === "independent" ? "" : value)}>
+            <SelectTrigger aria-label="研究上下文 Project" className="min-h-10 max-w-56 min-w-44 bg-[var(--color-panel)] text-sm text-[var(--color-text-secondary)]">
+              <SelectValue placeholder="选择研究上下文" />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectGroup>
+                <SelectLabel>研究上下文</SelectLabel>
+                <SelectItem value="independent">独立研究工作区</SelectItem>
+                {(projectsQuery.data ?? []).map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    Project · {project.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <Button type="submit" variant="primary" size="sm" disabled={createMutation.isPending}>
             <Plus width={16} height={16} strokeWidth={2} />
             创建工作区
