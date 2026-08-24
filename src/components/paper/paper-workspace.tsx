@@ -62,7 +62,11 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
   const workspace = workspaceQuery.data as {
     id: string;
     name: string;
+    description?: string | null;
+    project?: { id: string; name: string } | null;
     document?: { id: string; currentVersion?: { content: AcademicDocumentRecord; version: number } | null; bindings?: Array<{ templateVariantId: string; lockedVersion: string; templateVariant?: { variantKey?: string; registryEntry?: { university?: string; degreeType?: string | null; year?: string | null } } | null }> } | null;
+    materials?: unknown[];
+    _count?: { materials: number; references: number; researchLinks: number };
     references: unknown[];
   } | undefined;
   const [draftDocument, setDraftDocument] = useState<AcademicDocumentRecord | null>(null);
@@ -165,9 +169,18 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     <main className="h-full overflow-y-auto bg-[var(--color-bg)]"><div className="mx-auto max-w-7xl px-5 py-6 sm:px-8 sm:py-8">
       <Link href="/papers" className="inline-flex items-center gap-1 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"><ArrowLeft width={14} height={14} />我的论文</Link>
       <div className="mt-5 flex items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">{workspace.name}</h1><p className="mt-1 text-sm text-[var(--color-text-secondary)]">Writing · Document Version {paperDocument.currentVersion?.version ?? 1}</p></div><BookStack className="text-[var(--color-accent)]" width={26} height={26} strokeWidth={1.5} /></div>
+      <nav aria-label="论文工作区" className="mt-6 flex flex-wrap gap-1 border-b border-[var(--color-separator)] pb-2 text-xs">
+        {[{ id: "overview", label: "概览" }, { id: "writing", label: "写作" }, { id: "materials", label: "资料与引用" }, { id: "typesetting", label: "排版设置" }].map((item) => <a key={item.id} href={`#${item.id}`} className="rounded-[var(--radius-sm)] px-3 py-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]">{item.label}</a>)}
+      </nav>
       <div className="mt-6 flex flex-wrap items-center gap-2"><Button type="button" variant="primary" size="sm" onClick={saveDocument}><Check width={16} height={16} />保存版本</Button><Button type="button" variant="secondary" size="sm" onClick={compile}><Play width={16} height={16} />排队编译 PDF</Button><label className="inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 py-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"><CloudUpload width={16} height={16} />导入论文<input type="file" accept=".docx,.md,.markdown,.txt,.tex" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); event.currentTarget.value = ""; }} /></label>{saveMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{saveMessage}</span> : null}{compileMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{compileMessage}</span> : null}{importMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{importMessage}</span> : null}</div>
-      <PaperTemplateBindingPanel workspaceId={workspaceId} documentId={paperDocument.id} currentBinding={paperDocument.bindings?.[0]} />
-      <PaperReferencesPanel workspaceId={workspaceId} />
+      <section id="overview" className="mt-6 grid gap-3 sm:grid-cols-3">
+        <div className="bg-[var(--color-panel)] px-4 py-4"><p className="text-[11px] text-[var(--color-text-tertiary)]">工作区</p><p className="mt-2 text-sm text-[var(--color-text-primary)]">{workspace.project?.name ?? "独立论文"}</p><p className="mt-1 text-xs text-[var(--color-text-secondary)]">{workspace.description || "长期保存 Document、引用、研究材料和模板绑定。"}</p></div>
+        <div className="bg-[var(--color-panel)] px-4 py-4"><p className="text-[11px] text-[var(--color-text-tertiary)]">资料与引用</p><p className="mt-2 text-sm text-[var(--color-text-primary)]">{workspace._count?.materials ?? workspace.materials?.length ?? 0} 条研究资料</p><p className="mt-1 text-xs text-[var(--color-text-secondary)]">{workspace._count?.references ?? 0} 条 Paper Reference</p></div>
+        <div className="bg-[var(--color-panel)] px-4 py-4"><p className="text-[11px] text-[var(--color-text-tertiary)]">当前版本</p><p className="mt-2 text-sm text-[var(--color-text-primary)]">Document Version {paperDocument.currentVersion?.version ?? 1}</p><p className="mt-1 text-xs text-[var(--color-text-secondary)]">正文真源为结构化 Document，LaTeX 由模板适配器生成。</p></div>
+      </section>
+      <section id="typesetting" className="scroll-mt-4"><PaperTemplateBindingPanel workspaceId={workspaceId} documentId={paperDocument.id} currentBinding={paperDocument.bindings?.[0]} /></section>
+      <section id="materials" className="scroll-mt-4"><PaperReferencesPanel workspaceId={workspaceId} /><div className="mt-4 bg-[var(--color-panel)] px-5 py-4"><div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Research 材料链接</h2><p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">从 Research Run 发送的 Source、Claim、Evidence 会保留独立身份，并在此工作区长期可追溯。</p></div><Link href="/research" className="text-xs text-[var(--color-accent)] hover:underline">打开深度研究</Link></div><p className="mt-3 text-xs text-[var(--color-text-tertiary)]">当前已关联 {workspace._count?.materials ?? workspace.materials?.length ?? 0} 条研究资料；选择与发送材料请在对应 Research Run 完成。</p></div></section>
+      <section id="writing" className="scroll-mt-4">
       {pendingImport ? <section className="mt-5 bg-[var(--color-info-muted)] px-5 py-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">确认导入结构</h2><p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">以下块由确定性解析器标为低置信度，请在正文中调整后确认。原始文件、Import Snapshot 和 Draft Version 会继续保留。</p><ul className="mt-2 space-y-1 text-xs text-[var(--color-text-secondary)]">{pendingImport.lowConfidenceBlocks.map((item) => <li key={`${item.index}-${item.reason}`}>第 {item.index + 1} 块：{item.reason}</li>)}</ul></div><Button type="button" variant="primary" size="sm" onClick={() => void confirmImport()}>确认结构</Button></div></section> : null}
       <div className="mt-6 grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)_20rem]">
         <aside className="bg-[var(--color-panel)] px-4 py-4">
@@ -207,6 +220,7 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
           {compilation?.status === "failed" && compilation.errorLog?.message ? <p className="mt-3 text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p> : null}
         </aside>
       </div>
+      </section>
     </div></main>
   );
 }
