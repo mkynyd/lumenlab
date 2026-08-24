@@ -4,15 +4,18 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { prisma } from "@/lib/db";
 import { activeStorageProvider, readStoredObject, uploadObjectBuffer, type StoredObjectRef } from "@/lib/storage/object-storage";
 import { normalizeTemplateManifest, parseTemplateRegistry, type TemplateRegistryRecord } from "@/lib/paper/template-registry";
-import { githubRepositorySlug, normalizeTemplateTarGz, normalizeTemplateZip } from "@/lib/paper/template-snapshot";
+import { githubRepositorySlug, normalizeTemplateEntries, normalizeTemplateTarGz, normalizeTemplateZip } from "@/lib/paper/template-snapshot";
+import JSZip from "jszip";
 
 const root = process.env.TEMPLATE_REGISTRY_ROOT
   ? path.resolve(process.env.TEMPLATE_REGISTRY_ROOT)
   : path.resolve(process.cwd(), "resources/cn-thesis-templates");
 const NORMALIZATION_VERSION = "normalized-v2";
+const SUBMODULE_NORMALIZATION_VERSION = "normalized-v3-submodules";
 const execFileAsync = promisify(execFile);
 
 function requestedRepositories(): Set<string> | null {
@@ -88,10 +91,60 @@ async function downloadSnapshot(slug: string, commit: string) {
   return normalizeTemplateZip(archive);
 }
 
+async function gitCommand(args: string[], cwd?: string) {
+  return execFileAsync("git", args, { cwd, timeout: 180_000, maxBuffer: 2 * 1024 * 1024 });
+}
+
+async function collectGitFiles(rootDirectory: string, currentDirectory = ""): Promise<Array<{ path: string; bytes: Buffer }>> {
+  const absoluteDirectory = path.join(rootDirectory, currentDirectory);
+  const entries = await fs.readdir(absoluteDirectory, { withFileTypes: true });
+  const files: Array<{ path: string; bytes: Buffer }> = [];
+  for (const entry of entries) {
+    if (entry.name === ".git") continue;
+    const relativePath = currentDirectory ? path.join(currentDirectory, entry.name) : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...await collectGitFiles(rootDirectory, relativePath));
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    files.push({ path: relativePath.split(path.sep).join("/"), bytes: await fs.readFile(path.join(rootDirectory, relativePath)) });
+  }
+  return files;
+}
+
+/**
+ * GitHub archive downloads omit submodule contents. For a pinned repository
+ * that declares submodules, use a temporary shallow checkout so the exact
+ * gitlink commit is resolved by Git itself, then discard the checkout and
+ * persist only the normalized object-storage snapshot.
+ */
+async function downloadSnapshotWithSubmodules(slug: string, commit: string) {
+  const archiveSnapshot = await downloadSnapshot(slug, commit);
+  const archive = await JSZip.loadAsync(archiveSnapshot.buffer);
+  const hasGitmodules = Object.keys(archive.files).some((filePath) => filePath === ".gitmodules");
+  if (!hasGitmodules) return { ...archiveSnapshot, normalizationVersion: NORMALIZATION_VERSION };
+
+  const temporaryRoot = await fs.mkdtemp(path.join(tmpdir(), "lumenlab-template-git-"));
+  const checkout = path.join(temporaryRoot, "repo");
+  try {
+    await gitCommand(["clone", "--no-checkout", "--filter=blob:none", "--no-tags", `https://github.com/${slug}.git`, checkout]);
+    try {
+      await gitCommand(["checkout", "--detach", commit], checkout);
+    } catch {
+      await gitCommand(["fetch", "--depth=1", "origin", commit], checkout);
+      await gitCommand(["checkout", "--detach", commit], checkout);
+    }
+    await gitCommand(["submodule", "update", "--init", "--recursive"], checkout);
+    return { ...(await normalizeTemplateEntries(await collectGitFiles(checkout))), normalizationVersion: SUBMODULE_NORMALIZATION_VERSION };
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
 async function downloadTypstSnapshot(url: string) {
   const response = await fetchWithTimeout(url, { headers: { Accept: "application/gzip" } });
   if (!response.ok) throw new Error(`Typst 包下载失败：${url} (${response.status})`);
-  return normalizeTemplateTarGz(Buffer.from(await response.arrayBuffer()));
+  return { ...(await normalizeTemplateTarGz(Buffer.from(await response.arrayBuffer()))), normalizationVersion: NORMALIZATION_VERSION };
 }
 
 async function uploadOrReuseSnapshot(key: string, buffer: Buffer): Promise<StoredObjectRef> {
@@ -151,9 +204,9 @@ function matchingRecords(records: TemplateRegistryRecord[], source: TemplateRegi
   return records.filter((record) => githubRepositorySlug(record.repositoryUrl ?? "") === slug || record.repositoryUrl === source.repositoryUrl);
 }
 
-async function updateVariants(records: TemplateRegistryRecord[], source: TemplateRegistryRecord, slug: string, commit: string, snapshot: Awaited<ReturnType<typeof downloadSnapshot>> | Awaited<ReturnType<typeof downloadTypstSnapshot>>) {
+async function updateVariants(records: TemplateRegistryRecord[], source: TemplateRegistryRecord, slug: string, commit: string, snapshot: Awaited<ReturnType<typeof downloadSnapshotWithSubmodules>> | Awaited<ReturnType<typeof downloadTypstSnapshot>>) {
   const matching = matchingRecords(records, source, slug);
-  const sourceArchive = await uploadOrReuseSnapshot(`template-snapshots/${slug.replace(/[^A-Za-z0-9_.-]+/g, "__")}/${commit}.${NORMALIZATION_VERSION}.zip`, snapshot.buffer);
+  const sourceArchive = await uploadOrReuseSnapshot(`template-snapshots/${slug.replace(/[^A-Za-z0-9_.-]+/g, "__")}/${commit}.${snapshot.normalizationVersion ?? NORMALIZATION_VERSION}.zip`, snapshot.buffer);
   let updated = 0;
   for (const record of matching) {
     const variantKey = `${record.id}:default`;
@@ -216,7 +269,7 @@ async function main() {
       if (!githubSlug && !typstPackage) throw new Error(`来源页面未发现可固定的 GitHub 仓库或版本化 Typst 包：${sourceUrl}`);
       const slug = githubSlug ?? `typst-${typstPackage!.packageName}`;
       const commit = githubSlug ? await resolveCommit(githubSlug, record.version ?? null) : typstPackage!.version;
-      const snapshot = githubSlug ? await downloadSnapshot(githubSlug, commit) : await downloadTypstSnapshot(typstPackage!.archiveUrl);
+      const snapshot = githubSlug ? await downloadSnapshotWithSubmodules(githubSlug, commit) : await downloadTypstSnapshot(typstPackage!.archiveUrl);
       const updated = await updateVariants(records, record, slug, commit, snapshot);
       const result = { source: sourceUrl, slug, commit, ...(typstPackage ? { archiveUrl: typstPackage.archiveUrl } : {}), files: snapshot.files.length, bytes: snapshot.bytes, variants: updated };
       results.push(result);

@@ -196,6 +196,36 @@ function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "p
         `department = {Computer Science Department}`,
         `ugtype = {论文}`,
       ].join(",\n")}}`];
+    case "scuthesis2020":
+      return [
+        `\\unitid{10610}`,
+        `\\STUnumber{000000}`,
+        `\\securityClassification{公开}`,
+        `\\securityYear{}`,
+        `\\CoverTitle{${title}}`,
+        `\\CoverSubTitle{}`,
+        `\\title{${title}}`,
+        `\\author{${templateAuthor}}`,
+        `\\ENGtitle{${title}}`,
+        `\\ENGauthor{${templateAuthor}}`,
+        `\\school{${institution || "LumenLab University"}}`,
+        `\\ENGschool{${institution || "LumenLab University"}}`,
+        `\\supervisor{Research Supervisor}`,
+        `\\ENGsupervisor{Research Supervisor}`,
+        `\\degreeclass{${degree}学位论文}`,
+        `\\ENGdegreeclass{${englishDegree} Degree Thesis}`,
+        `\\major{Computer Science}`,
+        `\\ENGmajor{Computer Science}`,
+        `\\hasmajor{1}`,
+        `\\direction{Deep Research}`,
+        `\\ENGdirection{Deep Research}`,
+        `\\accomplishdate{${escapeLatex(metadata.date ?? "2026")}}`,
+        `\\defensedate{${escapeLatex(metadata.date ?? "2026")}}`,
+        `\\grantdate{${escapeLatex(metadata.date ?? "2026")}}`,
+        `\\statementdate{${escapeLatex(metadata.date ?? "2026")}}`,
+        `\\keywords{${keywordBlocks.filter((block) => block.language !== "en").flatMap((block) => block.keywords.map(escapeLatex)).join("；")}}`,
+        `\\ENGkeywords{${keywordBlocks.filter((block) => block.language === "en").flatMap((block) => block.keywords.map(escapeLatex)).join(", ")}}`,
+      ];
     case "thuthesis":
       return [`\\thusetup{title = {${title}}, author = {${templateAuthor}}}`];
     case "shtthesis":
@@ -265,6 +295,7 @@ function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>
     return `\\begin{${environment}}{${keywords}}\n${content}\n\\end{${environment}}`;
   }
   if (normalized === "shuthesis") return `\\begin{${block.language === "en" ? "eabstract" : "cabstract"}}\n${content}\n\\end{${block.language === "en" ? "eabstract" : "cabstract"}}`;
+  if (normalized === "scuthesis2020") return `\\begin{${block.language === "en" ? "ENGabstract" : "CHSabstract"}}\n${content}\n\\end{${block.language === "en" ? "ENGabstract" : "CHSabstract"}}`;
   if (normalized === "jnuthesis") {
     const environment = block.language === "en" ? "enabstract" : "zhabstract";
     return `\\begin{${environment}}\n${content}\n\\end{${environment}}`;
@@ -281,6 +312,7 @@ function renderKeywordsBlock(block: Extract<DocumentBlock, { kind: "keywords" }>
   const keywords = block.keywords.map(escapeLatex).join("；");
   if (isHitThesisClass(documentClass)) return "";
   if ((documentClass ?? "").toLowerCase() === "jnuthesis") return `${block.language === "en" ? "\\keywords" : "\\guanjianci"}\n${keywords}`;
+  if ((documentClass ?? "").toLowerCase() === "scuthesis2020") return "";
   if (hasTemplateCommand(templateFiles, "keywords")) return `\\keywords{${keywords}}`;
   if (hasTemplateCommand(templateFiles, "thesiskeywords")) return `\\thesiskeywords{${keywords}}`;
   return `\\textbf{关键词：}${keywords}`;
@@ -315,7 +347,7 @@ function isPrimaryTemplateDefinitionFile(file: TemplateSourceFile): boolean {
 }
 
 function hasCustomMetadataAdapter(files: TemplateSourceFile[]): boolean {
-  return ["cumtsetup", "nuaaset", "hfutsetup", "Title", "Author", "thesisTitle", "zhtitle", "chinesetitle", "englishtitle"].some((command) => hasTemplateCommand(files, command));
+  return ["cumtsetup", "nuaaset", "hfutsetup", "CoverTitle", "Title", "Author", "thesisTitle", "zhtitle", "chinesetitle", "englishtitle"].some((command) => hasTemplateCommand(files, command));
 }
 
 function renderTemplatePreamble(files: TemplateSourceFile[], manifest?: AcademicTemplateManifest): string[] {
@@ -355,6 +387,7 @@ function renderTemplatePreamble(files: TemplateSourceFile[], manifest?: Academic
 function sectionCommand(level: number, documentClass?: string | null): string {
   if (isHitThesisClass(documentClass) && documentClass?.toLowerCase() === "hithesisbook") return ["chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph"][level - 1] ?? "chapter";
   if ((documentClass ?? "").toLowerCase() === "jnuthesis") return ["chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph"][level - 1] ?? "chapter";
+  if ((documentClass ?? "").toLowerCase() === "scuthesis2020") return ["chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph"][level - 1] ?? "chapter";
   return ["section", "subsection", "subsubsection", "paragraph", "subparagraph", "subparagraph"][level - 1] ?? "section";
 }
 

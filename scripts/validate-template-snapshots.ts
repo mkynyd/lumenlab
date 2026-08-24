@@ -115,6 +115,11 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
     if (!documentClass) throw new Error("Manifest 没有声明 documentClass，不能进行真实 Template Pack 编译");
     const effectiveManifest = documentClass !== manifest.documentClass ? { ...manifest, documentClass } : manifest;
     const compileManifest = resolveTemplateBibliography(effectiveManifest, upstreamFiles);
+    const nestedClass = upstreamFiles.find((file) => file.path.endsWith(`/${documentClass}.cls`));
+    if (nestedClass && !upstreamFiles.some((file) => file.path === `${documentClass}.cls`)) {
+      await writeFile(join(directory, `${documentClass}.cls`), nestedClass.buffer);
+      upstreamFiles.push({ path: `${documentClass}.cls`, buffer: nestedClass.buffer });
+    }
     const document = buildSampleAcademicDocument();
     const rendered = renderAcademicDocumentToLatex(document, { manifest: compileManifest, references: [{ id: "ref-sample", title: "Sample Reference", authors: ["Author"], year: 2026, venue: "Journal", doi: null, url: null }], assetPaths: { "sample-figure": "assets/sample-figure.png" }, templateFiles: upstreamFiles });
     await mkdir(join(directory, "assets"), { recursive: true });

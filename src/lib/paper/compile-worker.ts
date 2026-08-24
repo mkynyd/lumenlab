@@ -242,6 +242,12 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
     files.push({ path, buffer });
   }
   const documentClass = resolveTemplateDocumentClass(input.manifest, files);
+  const nestedClass = documentClass ? files.find((file) => file.path.endsWith(`/${documentClass}.cls`)) : undefined;
+  if (documentClass && nestedClass && !files.some((file) => file.path === `${documentClass}.cls`)) {
+    const rootClassPath = `${documentClass}.cls`;
+    await writeFile(join(input.cwd, rootClassPath), nestedClass.buffer);
+    files.push({ path: rootClassPath, buffer: nestedClass.buffer });
+  }
   if (documentClass && !files.some((file) => file.path === `${documentClass}.cls` || file.path.endsWith(`/${documentClass}.cls`))) {
     const installer = findTemplateInstaller(documentClass, files);
     if (installer) {

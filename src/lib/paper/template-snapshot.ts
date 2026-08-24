@@ -72,7 +72,7 @@ export function buildDtxBootstrapPlan(documentClass: string, dtxName: string, dt
   };
 }
 
-async function normalizeTemplateEntries(entries: Array<{ path: string; bytes: Buffer }>): Promise<{ buffer: Buffer; files: string[]; sha256: string; bytes: number }> {
+export async function normalizeTemplateEntries(entries: Array<{ path: string; bytes: Buffer }>): Promise<{ buffer: Buffer; files: string[]; sha256: string; bytes: number }> {
   let totalBytes = 0;
   if (entries.length > MAX_TEMPLATE_FILES) throw new Error("模板上游快照超过文件数量或大小限制");
   for (const entry of entries) {
@@ -262,6 +262,7 @@ export function resolveTemplateClassOptions(
   if (["thuthesis", "xjtuthesis", "hithesis", "shtthesis", "bnuthesis"].includes(normalized)) return [degree];
   if (normalized === "seuthesiy") return [degree === "doctor" ? "phd" : degree === "bachelor" ? "engineering" : "masters"];
   if (normalized === "hhuthesis") return [degree === "doctor" ? "doctor" : degree === "bachelor" ? "bachelor" : "academicmaster"];
+  if (normalized === "scuthesis2020") return [`${degree === "doctor" ? "doctor" : "master"}`, "academic"];
   if (normalized === "scuthesis") return [degree];
   if (normalized === "jnuthesis") return [degree === "doctor" ? "phd" : degree];
   if (normalized === "nuaathesis") return [`degree=${degree}`, "fontset=fandol"];

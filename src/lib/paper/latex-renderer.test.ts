@@ -102,6 +102,20 @@ describe("academic latex renderer", () => {
     expect(result.generatedContentTex).toContain("\\maketitle");
   });
 
+  it("uses SCU's submodule-backed cover and bilingual abstract conventions", () => {
+    const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
+      manifest: { id: "scu", university: "四川大学", format: "latex", supportedBlocks: [], degreeType: "硕士", documentClass: "scuthesis2020", bibliography: "bibtex" } as AcademicTemplateManifest,
+      templateFiles: [
+        { path: "scuthesis2020.cls", buffer: Buffer.from("\\DeclareOption{master}{}\\newcommand{\\CoverTitle}[1]{}\\newenvironment{CHSabstract}{}{}") },
+      ],
+    });
+    expect(result.mainTex).toContain("\\documentclass[master,academic]{scuthesis2020}");
+    expect(result.mainTex).toContain("\\CoverTitle{");
+    expect(result.generatedContentTex).toContain("\\begin{CHSabstract}");
+    expect(result.generatedContentTex).toContain("\\begin{ENGabstract}");
+    expect(result.generatedContentTex).toContain("\\chapter{第一章 绪论}");
+  });
+
   it("keeps the standard abstract environment for article-like classes", () => {
     const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
       manifest: { id: "gxu", university: "广西大学", format: "latex", documentClass: "ctexart", supportedBlocks: [] } as AcademicTemplateManifest,
