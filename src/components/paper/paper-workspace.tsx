@@ -35,6 +35,8 @@ interface BlockRecord {
   latex?: string;
   ordered?: boolean;
   items?: Array<Array<{ kind?: string; text?: string }>>;
+  referenceIds?: string[];
+  blocks?: BlockRecord[];
 }
 
 interface AcademicDocumentRecord {
@@ -70,6 +72,10 @@ function BlockCommandMenu({ onSelect }: { onSelect: (kind: InsertableBlockKind) 
     { kind: "quote", label: "引用" },
     { kind: "equation", label: "公式" },
     { kind: "list", label: "列表" },
+    { kind: "table", label: "表格" },
+    { kind: "bibliography", label: "参考文献" },
+    { kind: "appendix", label: "附录" },
+    { kind: "page_break", label: "分页" },
   ];
   return <div className="mt-2 flex flex-wrap items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-2 py-2 text-xs shadow-sm ring-1 ring-[var(--color-border-light)]"><span className="mr-1 text-[var(--color-text-tertiary)]">插入块</span>{commands.map((command) => <button type="button" key={command.kind} onClick={() => onSelect(command.kind)} className="rounded-[var(--radius-sm)] px-2 py-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]">{command.label}</button>)}</div>;
 }
@@ -108,6 +114,16 @@ function PaperBlockEditor({ block, index, onTextChange, onUpdate }: { block: Blo
   if (block.kind === "list") {
     return <div className="space-y-2 rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3"><div className="text-[11px] text-[var(--color-text-tertiary)]">{block.ordered ? "有序列表" : "无序列表"}</div>{(block.items ?? []).map((item, itemIndex) => <input key={`item-${itemIndex}`} value={item.map((child) => child.text ?? "").join("")} onChange={(event) => update((current) => ({ ...current, items: (current.items ?? []).map((candidate, index) => index === itemIndex ? [{ kind: "text", text: event.target.value }] : candidate) }))} className={fieldClass} aria-label={`列表第 ${itemIndex + 1} 项`} />)}</div>;
   }
+
+  if (block.kind === "bibliography") {
+    return <label className="block rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3 text-[11px] text-[var(--color-text-tertiary)]">Reference ID（逗号分隔；Reference 元数据在右侧面板维护）<input value={(block.referenceIds ?? []).join(", ")} onChange={(event) => update((current) => ({ ...current, referenceIds: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} className={`${fieldClass} mt-1 font-mono`} placeholder="留空表示使用当前 Paper References" /></label>;
+  }
+
+  if (block.kind === "appendix") {
+    return <div className="space-y-2 rounded-[var(--radius-sm)] bg-[var(--color-bg)] p-3"><label className="block text-[11px] text-[var(--color-text-tertiary)]">附录标题<input value={block.title ?? "附录"} onChange={(event) => update((current) => ({ ...current, title: event.target.value || "附录" }))} className={`${fieldClass} mt-1`} /></label><p className="text-[11px] leading-5 text-[var(--color-text-tertiary)]">附录内部块沿用同一 Document 顺序；可在此块后插入标题、正文、公式或表格。</p></div>;
+  }
+
+  if (block.kind === "page_break") return <div className="flex items-center gap-3 py-3 text-[11px] text-[var(--color-text-tertiary)]"><span className="h-px flex-1 bg-[var(--color-separator)]" /><span>分页提示</span><span className="h-px flex-1 bg-[var(--color-separator)]" /></div>;
 
   if (block.kind === "raw_latex") return <textarea value={block.latex ?? ""} onChange={(event) => update((current) => ({ ...current, latex: event.target.value }))} rows={5} aria-label={`编辑第 ${index + 1} 个 Raw LaTeX 块`} className="w-full resize-y rounded-[var(--radius-sm)] bg-[var(--color-bg)] px-3 py-2 font-mono text-xs leading-5 text-[var(--color-text-secondary)] outline-none ring-1 ring-transparent focus:ring-[var(--color-accent)]" />;
   return <div className="text-sm text-[var(--color-text-tertiary)]">[{block.kind}]</div>;

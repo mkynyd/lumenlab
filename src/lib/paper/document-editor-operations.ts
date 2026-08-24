@@ -1,6 +1,6 @@
 import type { AcademicDocument, DocumentBlock } from "./document-schema";
 
-export type InsertableBlockKind = "paragraph" | "heading" | "quote" | "equation" | "list";
+export type InsertableBlockKind = "paragraph" | "heading" | "quote" | "equation" | "list" | "table" | "bibliography" | "appendix" | "page_break";
 export type HeadingMoveDirection = "up" | "down";
 
 function textChildren(text: string) {
@@ -17,6 +17,14 @@ export function createInsertableBlock(kind: InsertableBlockKind, id: string): Do
       return { kind, id, latex: "x = 0" };
     case "list":
       return { kind, id, ordered: false, items: [textChildren("")] };
+    case "table":
+      return { kind, id, columns: ["列一", "列二"], rows: [["", ""]] };
+    case "bibliography":
+      return { kind, referenceIds: [] };
+    case "appendix":
+      return { kind, id, title: "附录", blocks: [] };
+    case "page_break":
+      return { kind, id };
     default:
       return { kind, id, children: textChildren("") };
   }

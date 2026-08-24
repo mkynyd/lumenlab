@@ -19,6 +19,14 @@ describe("document editor operations", () => {
     expect(updateDocumentBlockText(source, 0, "ignored")).toBe(source);
   });
 
+  it("creates schema-valid non-prose blocks for the editor command menu", () => {
+    const source = buildEmptyAcademicDocument("论文");
+    expect(insertDocumentBlock(source, 2, createInsertableBlock("table", "table-1")).blocks[2]).toMatchObject({ kind: "table", columns: ["列一", "列二"], rows: [["", ""]] });
+    expect(createInsertableBlock("bibliography", "bibliography-1")).toEqual({ kind: "bibliography", referenceIds: [] });
+    expect(createInsertableBlock("appendix", "appendix-1")).toMatchObject({ kind: "appendix", title: "附录", blocks: [] });
+    expect(createInsertableBlock("page_break", "page-break-1")).toEqual({ kind: "page_break", id: "page-break-1" });
+  });
+
   it("moves a whole heading subtree, not only the heading node", () => {
     const source = buildEmptyAcademicDocument("论文");
     const document: AcademicDocument = {
