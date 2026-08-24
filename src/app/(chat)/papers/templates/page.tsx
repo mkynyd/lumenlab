@@ -3,6 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { BookStack, Search } from "iconoir-react";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { usePaperTemplates } from "@/lib/hooks/use-papers";
 import { summarizeTemplateVariant, type TemplateRuntimeStatus } from "@/lib/paper/template-registry";
 
@@ -37,6 +46,7 @@ interface TemplateRecord {
 }
 
 const runtimeStatusOrder: TemplateRuntimeStatus[] = ["Verified", "Compatible", "Needs Review", "Unverified", "Deprecated"];
+const ALL_FILTERS = "__all__";
 
 function formatDate(value: string | null) {
   if (!value) return "尚未验证";
@@ -88,31 +98,52 @@ export default function PaperTemplatesPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" width={16} height={16} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索学校或学位层级" aria-label="搜索学校或学位层级" className="min-h-10 w-full rounded-[var(--radius-md)] bg-[var(--color-panel)] pl-9 pr-3 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" />
           </label>
-          <label className="sr-only" htmlFor="template-format">格式</label>
-          <select id="template-format" value={format} onChange={(event) => setFormat(event.target.value)} aria-label="按格式筛选" className="min-h-10 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-secondary)] outline-none focus:ring-1 focus:ring-[var(--color-accent)]">
-            <option value="">全部格式</option>
-            <option value="latex">LaTeX</option>
-            <option value="overleaf">Overleaf</option>
-            <option value="typst">Typst</option>
-            <option value="word">Word</option>
-            <option value="markdown">Markdown</option>
-          </select>
-          <label className="sr-only" htmlFor="template-maintenance-status">维护状态</label>
-          <select id="template-maintenance-status" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="按维护状态筛选" className="min-h-10 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-secondary)] outline-none focus:ring-1 focus:ring-[var(--color-accent)]">
-            <option value="">全部维护状态</option>
-            <option value="active">Active</option>
-            <option value="stale">Stale</option>
-            <option value="deprecated">Deprecated</option>
-            <option value="unknown">Unknown</option>
-          </select>
-          <label className="sr-only" htmlFor="template-recommendation">推荐等级</label>
-          <select id="template-recommendation" value={recommendationLevel} onChange={(event) => setRecommendationLevel(event.target.value)} aria-label="按推荐等级筛选" className="min-h-10 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 text-sm text-[var(--color-text-secondary)] outline-none focus:ring-1 focus:ring-[var(--color-accent)]">
-            <option value="">A-D 全部</option>
-            <option value="A">A · 优先</option>
-            <option value="B">B · 可用</option>
-            <option value="C">C · 待评估</option>
-            <option value="D">D · 资料</option>
-          </select>
+          <Select value={format || ALL_FILTERS} onValueChange={(value) => setFormat(value === ALL_FILTERS ? "" : value)}>
+            <SelectTrigger aria-label="按格式筛选" className="min-h-10 w-full bg-[var(--color-panel)] text-sm text-[var(--color-text-secondary)]">
+              <SelectValue placeholder="全部格式" />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectGroup>
+                <SelectLabel>格式</SelectLabel>
+                <SelectItem value={ALL_FILTERS}>全部格式</SelectItem>
+                <SelectItem value="latex">LaTeX</SelectItem>
+                <SelectItem value="overleaf">Overleaf</SelectItem>
+                <SelectItem value="typst">Typst</SelectItem>
+                <SelectItem value="word">Word</SelectItem>
+                <SelectItem value="markdown">Markdown</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select value={status || ALL_FILTERS} onValueChange={(value) => setStatus(value === ALL_FILTERS ? "" : value)}>
+            <SelectTrigger aria-label="按维护状态筛选" className="min-h-10 w-full bg-[var(--color-panel)] text-sm text-[var(--color-text-secondary)]">
+              <SelectValue placeholder="全部维护状态" />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectGroup>
+                <SelectLabel>维护状态</SelectLabel>
+                <SelectItem value={ALL_FILTERS}>全部维护状态</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="stale">Stale</SelectItem>
+                <SelectItem value="deprecated">Deprecated</SelectItem>
+                <SelectItem value="unknown">Unknown</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select value={recommendationLevel || ALL_FILTERS} onValueChange={(value) => setRecommendationLevel(value === ALL_FILTERS ? "" : value)}>
+            <SelectTrigger aria-label="按推荐等级筛选" className="min-h-10 w-full bg-[var(--color-panel)] text-sm text-[var(--color-text-secondary)]">
+              <SelectValue placeholder="A-D 全部" />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectGroup>
+                <SelectLabel>推荐等级</SelectLabel>
+                <SelectItem value={ALL_FILTERS}>A-D 全部</SelectItem>
+                <SelectItem value="A">A · 优先</SelectItem>
+                <SelectItem value="B">B · 可用</SelectItem>
+                <SelectItem value="C">C · 待评估</SelectItem>
+                <SelectItem value="D">D · 资料</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="mt-5 flex items-center justify-between gap-3 text-xs text-[var(--color-text-tertiary)]">

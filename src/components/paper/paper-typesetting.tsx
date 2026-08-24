@@ -4,8 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookStack, CheckCircle, LayoutLeft, NavArrowRight, Plus } from "iconoir-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreatePaperWorkspace, usePaperWorkspaces } from "@/lib/hooks/use-papers";
 import { useProjects } from "@/lib/hooks/use-projects";
+
+const INDEPENDENT_PROJECT = "__independent_project__";
 
 export function PaperTypesetting() {
   const papersQuery = usePaperWorkspaces();
@@ -46,7 +49,7 @@ export function PaperTypesetting() {
             <div className="flex items-start gap-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)]"><Plus width={17} height={17} /></span><div><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">创建空白论文</h2><p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">创建后直接进入三栏工作区，可插入标题、正文、图、表、公式、引用并保存 Document Version。</p></div></div>
             <form onSubmit={createPaper} className="mt-6 space-y-3">
               <label className="block"><span className="mb-1.5 block text-xs font-medium text-[var(--color-text-secondary)]">论文标题</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：面向课程资料的检索增强研究" aria-label="论文标题" className="min-h-10 w-full rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" /></label>
-              <label className="block"><span className="mb-1.5 block text-xs font-medium text-[var(--color-text-secondary)]">关联 Project（可选）</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)} aria-label="关联 Project" className="min-h-10 w-full rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] focus:ring-[var(--color-accent)]"><option value="">独立论文工作区</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+              <div><span className="mb-1.5 block text-xs font-medium text-[var(--color-text-secondary)]">关联 Project（可选）</span><Select value={projectId || INDEPENDENT_PROJECT} onValueChange={(value) => setProjectId(value === INDEPENDENT_PROJECT ? "" : value)}><SelectTrigger aria-label="关联 Project" className="min-h-10 w-full bg-[var(--color-bg)] text-sm text-[var(--color-text-primary)]"><SelectValue /></SelectTrigger><SelectContent position="popper" align="start"><SelectGroup><SelectLabel>论文上下文</SelectLabel><SelectItem value={INDEPENDENT_PROJECT}>独立论文工作区</SelectItem>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectGroup></SelectContent></Select></div>
               {errorMessage ? <p className="text-xs text-[var(--color-danger)]">{errorMessage}</p> : null}
               <Button type="submit" variant="primary" size="sm" disabled={createMutation.isPending}><Plus width={16} height={16} />{createMutation.isPending ? "正在创建…" : "创建并开始排版"}</Button>
             </form>
