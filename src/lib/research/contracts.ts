@@ -50,6 +50,9 @@ export interface ResearchBudgetLimits {
   researcherConcurrency: number;
   maxReplans: number;
   maxVerificationRepairs: number;
+  maxQuestionResearchAttempts: number;
+  maxQuestionEvaluateAttempts: number;
+  maxQuestionReplans: number;
 }
 
 export interface ResearchQuestionPlan {

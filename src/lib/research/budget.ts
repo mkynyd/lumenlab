@@ -18,6 +18,9 @@ export const RESEARCH_BUDGETS: Record<ResearchBudgetProfile, ResearchBudgetLimit
     researcherConcurrency: 2,
     maxReplans: 1,
     maxVerificationRepairs: 1,
+    maxQuestionResearchAttempts: 2,
+    maxQuestionEvaluateAttempts: 2,
+    maxQuestionReplans: 1,
   },
   deep: {
     profile: "deep",
@@ -31,6 +34,9 @@ export const RESEARCH_BUDGETS: Record<ResearchBudgetProfile, ResearchBudgetLimit
     researcherConcurrency: 4,
     maxReplans: 3,
     maxVerificationRepairs: 2,
+    maxQuestionResearchAttempts: 3,
+    maxQuestionEvaluateAttempts: 3,
+    maxQuestionReplans: 2,
   },
   comprehensive: {
     profile: "comprehensive",
@@ -44,6 +50,9 @@ export const RESEARCH_BUDGETS: Record<ResearchBudgetProfile, ResearchBudgetLimit
     researcherConcurrency: 4,
     maxReplans: 6,
     maxVerificationRepairs: 4,
+    maxQuestionResearchAttempts: 4,
+    maxQuestionEvaluateAttempts: 4,
+    maxQuestionReplans: 3,
   },
 };
 

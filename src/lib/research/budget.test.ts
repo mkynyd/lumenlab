@@ -4,6 +4,7 @@ import { evaluateResearchStop, getResearchBudget } from "./budget";
 describe("research budget", () => {
   it("keeps comprehensive concurrency bounded at four", () => {
     expect(getResearchBudget("comprehensive").researcherConcurrency).toBe(4);
+    expect(getResearchBudget("comprehensive").maxQuestionReplans).toBe(3);
   });
 
   it("does not stop while critical work is pending", () => {

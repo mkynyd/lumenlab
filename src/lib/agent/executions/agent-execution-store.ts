@@ -155,6 +155,7 @@ export const agentCheckpointSchema = z
         totalTokens: z.number().int().nonnegative().optional(),
         costCredits: z.number().int().nonnegative().optional(),
         draftReport: z.string().max(200_000).optional(),
+        lastEvidenceCount: z.number().int().nonnegative().optional(),
       })
       .strict()
       .optional(),

@@ -33,6 +33,7 @@ function researchCheckpoint(input: { runId: string; question: string; selection:
       sourceCount: 0,
       replanCount: 0,
       verificationRepairs: 0,
+      lastEvidenceCount: 0,
     },
   });
 }

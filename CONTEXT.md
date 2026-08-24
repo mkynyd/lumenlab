@@ -224,6 +224,14 @@ _Avoid_: Cross-Run mutable evidence, silently rewriting the old report, treating
 Editing a Claim marks it `user_edited` and `pending`. Reassessment reuses the current durable execution while a Run is active; after a terminal Run it creates one deduplicated Follow-up Run with inherited assets, keeps the old Report Snapshot immutable, and still passes through plan confirmation before new research runs.
 _Avoid_: Rewriting a completed report, silently starting duplicate Follow-up Runs, treating edited text as verified without a new evaluator/verifier pass
 
+## Question Attempt Budget
+
+Every Research Question has profile-derived research, evaluation and replan attempt ceilings in addition to the Run-wide budget. Once a question reaches a ceiling, remaining tasks terminate with a public budget reason instead of retrying indefinitely.
+_Avoid_: Treating a global replan count as per-question control, hot-looping retryable tasks after a question is exhausted
+
+Evaluator quality dimensions are persisted per Question: source quality, evidence directness, independent corroboration by unique Source identity, source diversity, conflict review, coverage and recency. Stop-condition information gain is computed from new Evidence since the previous evaluation checkpoint.
+_Avoid_: Counting duplicate snapshots as independent corroboration, using stale Question statuses, treating any non-empty Evidence set as ongoing information gain
+
 ## Source Candidate and Source Snapshot
 
 A Source Candidate is a search/provider result that has not yet been read. A Source Snapshot is the successfully fetched or project-read, content-hashed version of a canonical Research Source at a particular retrieval time; only a Snapshot can produce formal Evidence.
