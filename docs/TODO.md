@@ -284,6 +284,7 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Add first-level `深度研究` navigation and an API-backed workspace list showing recent Runs and status.
 - [x] Implement planning/awaiting-confirmation, plan revision, run progress, directive, budget and report views. Show current task, query, source/evidence counts, question completion and verification/conflict state; never render hidden chain-of-thought.
 - [x] Allow a Research Workspace to be independent or associated with a Project, and connect selected Source/Claim/Evidence/Report materials to a Paper Workspace.
+- [x] Make immutable report citations actionable: Synthesizer evidence markers are persisted with a deterministic `evidenceRefs` order, known markers open the current Run's right-side Source/Evidence panel, and the panel exposes source identity, excerpt, locator, status and Claim relation without exposing hidden reasoning.
 
 ### Phase 4 — Paper document foundation
 

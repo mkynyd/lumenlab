@@ -8,7 +8,9 @@ import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { ResearchEvidencePanel } from "@/components/research/research-evidence-panel";
 import { ResearchClaimsPanel } from "@/components/research/research-claims-panel";
 import { ResearchPaperTransferPanel } from "@/components/research/research-paper-transfer-panel";
+import { ResearchReportEvidencePanel } from "@/components/research/research-report-evidence-panel";
 import { useAppendResearchDirective, useConfirmResearchPlan, useConfirmResearchScope, useCreateResearchRun, useResearchRun, useResearchWorkspace, useReviseResearchPlan } from "@/lib/hooks/use-research";
+import { linkifyResearchEvidenceMarkers, researchEvidenceIdFromAnchor } from "@/lib/research/report-citations";
 
 interface ResearchRunDetail {
   id: string;
@@ -22,7 +24,7 @@ interface ResearchRunDetail {
   evidence: Array<{ id: string; sourceSnapshotId: string; statement: string; excerpt: string; locator: Record<string, unknown>; evidenceType: string; status: string; tags: string[]; sourceSnapshot?: { id: string; retrievedAt: string; source?: { title?: string | null; canonicalKey: string; canonicalUrl?: string | null } } | null }>;
   claims: Array<{ id: string; statement: string; userEdited: boolean; verificationStatus: string; quality?: { label?: string; reason?: string } | null; evidenceRelations: Array<{ relation: string; evidence: { id: string; statement: string; status: string; sourceSnapshotId: string } }> }>;
   _count: { sourceSnapshots: number; evidence: number; claims: number };
-  reportSnapshot?: { reportDocument: { body?: string; title?: string }; verificationSummary?: unknown; generatedAt: string } | null;
+  reportSnapshot?: { reportDocument: { body?: string; title?: string; evidenceRefs?: string[] }; citationMap?: Record<string, Array<{ evidenceId: string; sourceSnapshotId: string; relation: string }>>; verificationSummary?: unknown; generatedAt: string } | null;
 }
 
 interface ResearchPlan {
@@ -52,6 +54,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const [scopeBudget, setScopeBudget] = useState<"deep" | "comprehensive">("deep");
   const [planDirective, setPlanDirective] = useState("");
   const [liveMessage, setLiveMessage] = useState("");
+  const [selectedReportEvidenceId, setSelectedReportEvidenceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!run?.agentExecutionId) return;
@@ -66,6 +69,17 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   }, [run?.agentExecutionId, run?.id]);
 
   const plan = useMemo(() => run?.activePlanVersion?.plan, [run?.activePlanVersion?.plan]);
+  const reportBody = run?.reportSnapshot
+    ? linkifyResearchEvidenceMarkers(run.reportSnapshot.reportDocument.body ?? "", run.reportSnapshot.reportDocument.evidenceRefs ?? [])
+    : "";
+
+  function handleReportCitationClick(event: React.MouseEvent<HTMLDivElement>) {
+    const anchor = (event.target as HTMLElement).closest("a");
+    const evidenceId = anchor ? researchEvidenceIdFromAnchor(anchor.getAttribute("href") ?? "") : null;
+    if (!evidenceId) return;
+    event.preventDefault();
+    setSelectedReportEvidenceId(evidenceId);
+  }
 
   async function createRun(event: React.FormEvent) {
     event.preventDefault();
@@ -97,7 +111,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
               <ResearchEvidencePanel runId={run.id} workspaceId={workspaceId} evidence={run.evidence} />
               <ResearchClaimsPanel runId={run.id} workspaceId={workspaceId} claims={run.claims} evidence={run.evidence} />
               <ResearchPaperTransferPanel runId={run.id} workspaceId={workspaceId} />
-              {run.reportSnapshot ? <div className="mt-5 bg-[var(--color-panel)] px-5 py-5"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[var(--color-text-primary)]">不可修改的研究报告快照</h2><span className="text-xs text-[var(--color-text-tertiary)]">已完成引用核验</span></div><div className="mt-5"><MarkdownContent content={run.reportSnapshot.reportDocument.body ?? ""} /></div></div> : null}
+              {run.reportSnapshot ? <div className="mt-5 bg-[var(--color-panel)] px-5 py-5"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[var(--color-text-primary)]">不可修改的研究报告快照</h2><span className="text-xs text-[var(--color-text-tertiary)]">已完成引用核验</span></div><div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"><div onClick={handleReportCitationClick}><MarkdownContent content={reportBody} /></div><ResearchReportEvidencePanel claims={run.claims} evidence={run.evidence} citationMap={run.reportSnapshot.citationMap} evidenceRefs={run.reportSnapshot.reportDocument.evidenceRefs ?? []} selectedEvidenceId={selectedReportEvidenceId} onSelectEvidence={setSelectedReportEvidenceId} /></div></div> : null}
             </>}
           </section>
         </div>

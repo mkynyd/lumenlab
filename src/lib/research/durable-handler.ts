@@ -183,13 +183,14 @@ async function synthesizeWithExistingRuntime(input: {
   projectId: string | null;
   signal: AbortSignal;
   question: string;
-  evidence: Array<{ statement: string; excerpt: string; source: string }>;
+  evidence: Array<{ id: string; statement: string; excerpt: string; source: string }>;
   useModel: boolean;
 }) {
-  const evidenceText = input.evidence.map((item, index) => `${index + 1}. ${item.statement}\n来源：${item.source}\n摘录：${item.excerpt}`).join("\n\n").slice(0, 60_000);
+  const evidenceText = input.evidence.map((item, index) => `E${index + 1}（${item.id}）. ${item.statement}\n来源：${item.source}\n摘录：${item.excerpt}`).join("\n\n").slice(0, 60_000);
   const prompt = [
     "你是 LumenLab 的研究报告 Synthesizer。只使用下面已经读取并保存的 Evidence，不联网，不补写未提供的事实。",
     "输出一份简洁的 Markdown 研究报告，明确结论、证据不足、冲突与范围限制；不要展示隐藏推理。",
+    "每个重要事实性断言末尾尽量添加对应的证据标记，例如 [E1] 或 [E2]；只能使用下面列出的 E 编号，不能编造编号，也不要把 Evidence ID 直接写入正文。",
     `研究问题：${input.question}`,
     "\n已保存 Evidence：\n",
     evidenceText || "（没有可用 Evidence）",
@@ -206,7 +207,7 @@ async function synthesizeWithExistingRuntime(input: {
   if (stage.value) return { content: stage.value, usage: stage.usage, model: stage.model, attempted: stage.attempted };
   return {
     content: evidenceText
-      ? `## 研究结论\n\n本次研究围绕“${input.question}”收集了以下可核验证据：\n\n${input.evidence.map((item) => `- ${item.statement}（来源：${item.source}）`).join("\n")}\n\n## 限制\n\n以上内容只代表当前 Run 已成功读取的来源，不替代未完成的独立验证。`
+      ? `## 研究结论\n\n本次研究围绕“${input.question}”收集了以下可核验证据：\n\n${input.evidence.map((item, index) => `- ${item.statement}（来源：${item.source}）[E${index + 1}]`).join("\n")}\n\n## 限制\n\n以上内容只代表当前 Run 已成功读取的来源，不替代未完成的独立验证。`
       : `## 研究结论\n\n当前 Run 没有成功读取可核验来源，不能对“${input.question}”形成可靠结论。`,
     usage: null,
     model: stage.model,
@@ -469,7 +470,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
 
     if (state.stage === "synthesizing") {
       const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
-      const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, evidence: evidence.map((item) => ({ statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
+      const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, evidence: evidence.map((item) => ({ id: item.id, statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
       state.draftReport = synthesis.content;
       recordResearchModelStage(state, synthesis);
       state.stage = "verifying";
@@ -481,8 +482,8 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
 
     const existingReport = await prisma.researchReportSnapshot.findUnique({ where: { runId: run.id } });
     if (existingReport) return { kind: "completed", checkpoint };
-    const claims = await prisma.claim.findMany({ where: { runId: run.id, status: "active" }, include: { evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } } });
-    const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } } });
+    const claims = await prisma.claim.findMany({ where: { runId: run.id, status: "active" }, include: { evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } }, orderBy: { createdAt: "asc" } });
+    const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
     const sourceSnapshots = [...new Set(evidence.map((item) => item.sourceSnapshotId))];
     let verifierDecision: ResearchVerifierDecision = { claims: {} };
     if (state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits) {
@@ -516,7 +517,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     const citationMap = Object.fromEntries(claims.map((claim) => [claim.id, claim.evidenceRelations.map((relation) => ({ evidenceId: relation.evidenceId, sourceSnapshotId: relation.evidence.sourceSnapshotId, relation: relation.relation }))]));
     const verificationSummary = { citationExistence: claims.length > 0 && unsupportedClaims.length === 0 ? "verified" : "needs_qualification", citationSupport: unsupportedClaims.length === 0 ? "verified" : "unsupported", citationAdequacy: conflictedClaims.length > 0 ? "conflicted" : sourceSnapshots.length > 0 ? "verified" : "unsupported", unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length, needsQualification: qualifiedClaims.length, verifierReasons: claimStatuses };
     for (const claim of claims) await prisma.claim.update({ where: { id: claim.id }, data: { verificationStatus: claimStatuses[claim.id]?.status } });
-    const reportDocument = { schemaVersion: "1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots };
+    const reportDocument = { schemaVersion: "1", citationFormat: "evidence-marker-v1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots, evidenceRefs: evidence.map((item) => item.id) };
     const contentHash = createHash("sha256").update(JSON.stringify({ reportDocument, citationMap, verificationSummary })).digest("hex");
     const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
     await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, verificationSummary }) } });
