@@ -1,10 +1,11 @@
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import type { Root } from "mdast";
 
 export function parseMarkdown(content: string): Root {
-  return unified().use(remarkParse).use(remarkGfm).parse(content) as Root;
+  return unified().use(remarkParse).use(remarkGfm).use(remarkMath).parse(content) as Root;
 }
 
 export function markdownNodeText(node: unknown): string {

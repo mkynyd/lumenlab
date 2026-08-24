@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
+import type { Content, PhrasingContent, Root } from "mdast";
 import { buildEmptyAcademicDocument, type AcademicDocument, type DocumentBlock, type InlineNode } from "./document-schema";
+import { markdownNodeText, parseMarkdown } from "@/lib/export/markdown-ast";
 import { parseLatexSource, type ParsedLatexReference } from "./latex-import";
 
 export type PaperImportSourceType = "docx" | "markdown" | "txt" | "latex";
@@ -49,7 +51,7 @@ function normalizeTitle(filename: string, firstHeading?: string): string {
   return firstHeading?.trim() || filename.replace(/\.(docx|md|markdown|txt|tex)$/i, "").trim() || "未命名论文";
 }
 
-function fromMarkdown(input: { content: string; filename: string }): PaperImportResult {
+function fromPlainText(input: { content: string; filename: string }): PaperImportResult {
   const lines = input.content.replace(/\r\n?/g, "\n").split("\n");
   const blocks: DocumentBlock[] = [];
   const warnings: string[] = [];
@@ -134,6 +136,112 @@ function fromMarkdown(input: { content: string; filename: string }): PaperImport
     assets: [],
     references: [],
     report: { parserVersion: PARSER_VERSION, sourceType: input.filename.toLowerCase().endsWith(".txt") ? "txt" : "markdown", warnings, lowConfidenceBlocks, blockCount: blocks.length },
+  };
+}
+
+function markdownInline(nodes: PhrasingContent[]): InlineNode[] {
+  return nodes.flatMap((node): InlineNode[] => {
+    if (node.type === "text") return [{ kind: "text", text: node.value }];
+    if (node.type === "strong") return [{ kind: "bold", children: markdownInline(node.children) } as InlineNode];
+    if (node.type === "emphasis") return [{ kind: "italic", children: markdownInline(node.children) } as InlineNode];
+    if (node.type === "inlineCode") return [{ kind: "text", text: node.value }];
+    if (node.type === "inlineMath") return [{ kind: "inline_math", latex: node.value }];
+    if (node.type === "break") return [{ kind: "text", text: "\n" }];
+    if (node.type === "image") return [{ kind: "text", text: node.alt || `[图片：${node.url}]` }];
+    if ("children" in node) return markdownInline(node.children as PhrasingContent[]);
+    return [{ kind: "text", text: markdownNodeText(node) }];
+  });
+}
+
+function markdownTableBlock(node: Content, index: number): Extract<DocumentBlock, { kind: "table" }> | null {
+  if (node.type !== "table") return null;
+  const rows = node.children.map((row) => row.children.map((cell) => markdownNodeText(cell).trim()));
+  if (!rows.length || !rows[0].length) return null;
+  const columns = rows[0].map((cell, column) => cell || `列 ${column + 1}`);
+  return { kind: "table", id: idFor("table", JSON.stringify(rows), index), columns, rows: rows.slice(1).length ? rows.slice(1) : [columns.map(() => "")] };
+}
+
+function fromMarkdown(input: { content: string; filename: string }): PaperImportResult {
+  const root = parseMarkdown(input.content) as Root;
+  const blocks: DocumentBlock[] = [];
+  const warnings: string[] = [];
+  const lowConfidenceBlocks: Array<{ index: number; reason: string }> = [];
+  let firstHeading: string | undefined;
+  const addRaw = (value: string, reason: string) => {
+    if (!value.trim()) return;
+    blocks.push({ kind: "raw_latex", id: idFor("raw", value, blocks.length), latex: value });
+    lowConfidenceBlocks.push({ index: blocks.length - 1, reason });
+    warnings.push(reason);
+  };
+  for (let index = 0; index < root.children.length; index += 1) {
+    const node = root.children[index];
+    if (node.type === "heading") {
+      const value = markdownNodeText(node).trim();
+      firstHeading ??= node.depth === 1 ? value : undefined;
+      if (/^(摘要|abstract)$/i.test(value)) {
+        const next = root.children[index + 1];
+        if (next?.type === "paragraph") {
+          blocks.push({ kind: "abstract", language: /abstract/i.test(value) ? "en" : "zh", children: markdownInline(next.children) });
+          index += 1;
+        } else blocks.push({ kind: "abstract", language: /abstract/i.test(value) ? "en" : "zh", children: [] });
+      } else if (/^(关键词|keywords?)$/i.test(value)) {
+        const next = root.children[index + 1];
+        const keywords = next?.type === "paragraph" ? markdownNodeText(next).split(/[,，;；]/).map((item) => item.trim()).filter(Boolean) : [];
+        if (keywords.length) {
+          blocks.push({ kind: "keywords", language: /keywords?/i.test(value) ? "en" : "zh", keywords });
+          index += 1;
+        } else addRaw(value, "关键词标题后没有可解析的关键词，已原样保留");
+      } else blocks.push({ kind: "heading", id: idFor("heading", value, blocks.length), level: node.depth, children: markdownInline(node.children) });
+      continue;
+    }
+    if (node.type === "paragraph") {
+      const children = markdownInline(node.children);
+      if (children.length) {
+        blocks.push({ kind: "paragraph", id: idFor("paragraph", markdownNodeText(node), blocks.length), children });
+        if (node.children.some((child) => child.type === "image")) lowConfidenceBlocks.push({ index: blocks.length - 1, reason: "Markdown 图片缺少可直接绑定的 Object Storage Asset，需要在结构确认中补充资源" });
+      }
+      continue;
+    }
+    if (node.type === "list") {
+      const items = node.children.flatMap((item) => {
+        const paragraph = item.children.find((child) => child.type === "paragraph");
+        return paragraph?.type === "paragraph" ? [markdownInline(paragraph.children)] : [];
+      });
+      if (items.length) blocks.push({ kind: "list", id: idFor("list", markdownNodeText(node), blocks.length), ordered: node.ordered === true, items });
+      if (items.length !== node.children.length) addRaw(markdownNodeText(node), "Markdown 列表包含嵌套或非段落块，已保留为低置信度 RawLaTeXBlock");
+      continue;
+    }
+    if (node.type === "blockquote") {
+      const children = markdownInline(node.children.flatMap((child) => child.type === "paragraph" ? child.children : []));
+      if (children.length) blocks.push({ kind: "quote", id: idFor("quote", markdownNodeText(node), blocks.length), children });
+      continue;
+    }
+    if (node.type === "table") {
+      const table = markdownTableBlock(node, blocks.length);
+      if (table) blocks.push(table);
+      else addRaw(markdownNodeText(node), "Markdown 表格结构无法确定性转换，已原样保留");
+      continue;
+    }
+    if (node.type === "math") {
+      if (node.value.trim()) blocks.push({ kind: "equation", id: idFor("equation", node.value, blocks.length), latex: node.value.trim() });
+      continue;
+    }
+    if (node.type === "code") {
+      addRaw(node.value, "Markdown 代码块无法确定为论文正文、公式或原始 LaTeX");
+      continue;
+    }
+    if (node.type === "thematicBreak") {
+      blocks.push({ kind: "page_break", id: idFor("page-break", "thematic-break", blocks.length) });
+      continue;
+    }
+    if (node.type === "html") addRaw(node.value, "Markdown HTML 块未自动解释，已原样保留");
+  }
+  const title = normalizeTitle(input.filename, firstHeading);
+  return {
+    document: { ...buildEmptyAcademicDocument(title), blocks: [metadata(title), ...blocks] },
+    assets: [],
+    references: [],
+    report: { parserVersion: PARSER_VERSION + "+markdown-ast-v1", sourceType: "markdown", warnings: [...new Set(warnings)], lowConfidenceBlocks, blockCount: blocks.length },
   };
 }
 
@@ -284,6 +392,7 @@ export function parsePaperImport(input: { filename: string; buffer: Buffer }): P
   if (lower.endsWith(".docx")) return fromDocx(input);
   const content = input.buffer.toString("utf8");
   if (lower.endsWith(".tex")) return fromLatex({ content, filename: input.filename });
-  if (lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".txt")) return fromMarkdown({ content, filename: input.filename });
+  if (lower.endsWith(".txt")) return fromPlainText({ content, filename: input.filename });
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return fromMarkdown({ content, filename: input.filename });
   throw new Error("仅支持 DOCX、Markdown、TXT 和 LaTeX 导入");
 }

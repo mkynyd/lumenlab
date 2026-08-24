@@ -11,6 +11,30 @@ describe("paper deterministic importers", () => {
     expect(result.document.title).toBe("研究标题");
   });
 
+  it("uses the Markdown AST for abstract, keywords, quotes and tables", () => {
+    const result = parsePaperImport({ filename: "rich.md", buffer: Buffer.from(`# 研究标题
+
+## 摘要
+
+这是 **摘要**。
+
+## 关键词
+
+检索, 证据, 论文
+
+公式 $x^2$。
+
+> 一条可追溯的引文。
+
+| 方法 | 结果 |
+| --- | --- |
+| A | 通过 |`) });
+    expect(result.document.blocks.map((block) => block.kind)).toEqual(["paper_metadata", "heading", "abstract", "keywords", "paragraph", "quote", "table"]);
+    expect(result.document.blocks.find((block) => block.kind === "keywords")).toMatchObject({ keywords: ["检索", "证据", "论文"] });
+    expect(result.document.blocks.find((block) => block.kind === "paragraph")).toMatchObject({ children: [{ kind: "text", text: "公式 " }, { kind: "inline_math", latex: "x^2" }, { kind: "text", text: "。" }] });
+    expect(result.document.blocks.find((block) => block.kind === "table")).toMatchObject({ columns: ["方法", "结果"], rows: [["A", "通过"]] });
+  });
+
   it("preserves unknown LaTeX as a low-confidence raw block", () => {
     const result = parsePaperImport({ filename: "demo.tex", buffer: Buffer.from("\\customenvironment{a}") });
     expect(result.document.blocks.at(-1)?.kind).toBe("raw_latex");
