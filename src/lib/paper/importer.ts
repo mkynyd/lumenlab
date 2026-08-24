@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
 import { buildEmptyAcademicDocument, type AcademicDocument, type DocumentBlock, type InlineNode } from "./document-schema";
-import { parseLatexSource } from "./latex-import";
+import { parseLatexSource, type ParsedLatexReference } from "./latex-import";
 
 export type PaperImportSourceType = "docx" | "markdown" | "txt" | "latex";
 
 export interface PaperImportResult {
   document: AcademicDocument;
   assets: PaperImportAsset[];
+  references: ParsedLatexReference[];
   report: {
     parserVersion: string;
     sourceType: PaperImportSourceType;
@@ -131,6 +132,7 @@ function fromMarkdown(input: { content: string; filename: string }): PaperImport
   return {
     document: { ...buildEmptyAcademicDocument(normalizeTitle(input.filename, firstHeading)), blocks: [metadata(normalizeTitle(input.filename, firstHeading)), ...blocks] },
     assets: [],
+    references: [],
     report: { parserVersion: PARSER_VERSION, sourceType: input.filename.toLowerCase().endsWith(".txt") ? "txt" : "markdown", warnings, lowConfidenceBlocks, blockCount: blocks.length },
   };
 }
@@ -141,6 +143,7 @@ function fromLatex(input: { content: string; filename: string }): PaperImportRes
   return {
     document: { ...buildEmptyAcademicDocument(title), blocks: [metadata(title, parsed.authors, parsed.date), ...parsed.blocks] },
     assets: [],
+    references: parsed.references,
     report: {
       parserVersion: PARSER_VERSION + "+latex-structure-v1",
       sourceType: "latex",
@@ -273,7 +276,7 @@ function fromDocx(input: { buffer: Buffer; filename: string }): PaperImportResul
     lowConfidenceBlocks.push({ index: 0, reason: "DOCX 中未找到可识别的结构块" });
   }
   const title = normalizeTitle(input.filename, firstHeading);
-  return { document: { ...buildEmptyAcademicDocument(title), blocks: [metadata(title), ...blocks] }, assets, report: { parserVersion: `${PARSER_VERSION}+docx-structure-v2`, sourceType: "docx", warnings, lowConfidenceBlocks, blockCount: blocks.length } };
+  return { document: { ...buildEmptyAcademicDocument(title), blocks: [metadata(title), ...blocks] }, assets, references: [], report: { parserVersion: `${PARSER_VERSION}+docx-structure-v2`, sourceType: "docx", warnings, lowConfidenceBlocks, blockCount: blocks.length } };
 }
 
 export function parsePaperImport(input: { filename: string; buffer: Buffer }): PaperImportResult {

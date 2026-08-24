@@ -40,15 +40,17 @@ describe("paper deterministic importers", () => {
         \end{tabular}
       \end{table}
       \begin{itemize}\item 第一项\item 第二项\end{itemize}
+      \begin{thebibliography}{9}\bibitem{ref-a} Alice. A paper. 2024.\end{thebibliography}
       \begin{figure}[htbp]\includegraphics{figures/result.png}\caption{结果图}\end{figure}
       \end{document}`) });
     expect(result.document.blocks[0]).toMatchObject({ kind: "paper_metadata", title: "结构化论文", authors: ["Alice", "Bob"], date: "2026" });
-    expect(result.document.blocks.map((block) => block.kind)).toEqual(expect.arrayContaining(["abstract", "keywords", "heading", "paragraph", "equation", "table", "list", "raw_latex"]));
+    expect(result.document.blocks.map((block) => block.kind)).toEqual(expect.arrayContaining(["abstract", "keywords", "heading", "paragraph", "equation", "table", "list", "bibliography", "raw_latex"]));
     const paragraph = result.document.blocks.find((block) => block.kind === "paragraph");
     expect(paragraph?.kind).toBe("paragraph");
     if (paragraph?.kind === "paragraph") expect(paragraph.children.map((child) => child.kind)).toEqual(expect.arrayContaining(["cross_reference", "footnote"]));
     expect(result.document.blocks.find((block) => block.kind === "equation")).toMatchObject({ label: "eq:one", latex: expect.stringContaining("x^2") });
     expect(result.document.blocks.find((block) => block.kind === "table")).toMatchObject({ caption: "实验结果", label: "tab:result", columns: ["方法", "结果"], rows: [["A", "1"]] });
+    expect(result.references).toMatchObject([{ key: "ref-a", title: "Alice. A paper. 2024.", year: 2024 }]);
     expect(result.report.lowConfidenceBlocks.some((item) => item.reason.includes("图片二进制资源"))).toBe(true);
   });
 

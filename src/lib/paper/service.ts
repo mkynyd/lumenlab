@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { uploadObjectBuffer } from "@/lib/storage/object-storage";
 import { applyDocumentPatch, assertPatchBaseVersion, type DocumentPatch } from "./document-patches";
-import { buildEmptyAcademicDocument, parseAcademicDocument, type AcademicDocument } from "./document-schema";
+import { buildEmptyAcademicDocument, parseAcademicDocument, type AcademicDocument, type DocumentBlock, type InlineNode } from "./document-schema";
 import { renderAcademicDocumentToLatex } from "./latex-renderer";
 import { selectCompilationPreview } from "./compilation-preview";
 import { parsePaperImport, type PaperImportSourceType } from "./importer";
+import type { ParsedLatexReference } from "./latex-import";
 import { parseBibTeX } from "./reference-import";
 import { normalizeDoi } from "@/lib/research/source-identity";
 import { buildGeneralAcademicTemplateManifest, isTemplateSnapshotLockValid, normalizeTemplateManifest } from "./template-registry";
@@ -62,6 +63,58 @@ function replaceImportedAssetPlaceholders(document: AcademicDocument, replacemen
   return {
     ...document,
     blocks: document.blocks.map((block) => block.kind === "figure" && replacements.has(block.assetId) ? { ...block, assetId: replacements.get(block.assetId)! } : block),
+  };
+}
+
+async function persistImportedReferences(input: { userId: string; paperWorkspaceId: string; references: ParsedLatexReference[] }) {
+  if (input.references.length === 0) return new Map<string, string>();
+  const existing = await prisma.reference.findMany({ where: { userId: input.userId, paperWorkspaceId: input.paperWorkspaceId }, select: { id: true, title: true, rawMeta: true } });
+  const replacements = new Map<string, string>();
+  for (const reference of input.references) {
+    const existingReference = existing.find((item) => {
+      const rawMeta = item.rawMeta && typeof item.rawMeta === "object" && !Array.isArray(item.rawMeta) ? item.rawMeta as Record<string, unknown> : null;
+      return rawMeta?.latexKey === reference.key || item.title === reference.title;
+    });
+    if (existingReference) {
+      replacements.set(reference.key, existingReference.id);
+      continue;
+    }
+    const created = await prisma.reference.create({
+      data: {
+        userId: input.userId,
+        paperWorkspaceId: input.paperWorkspaceId,
+        title: reference.title.slice(0, 500),
+        authors: reference.authors,
+        year: reference.year ?? null,
+        rawMeta: JSON.parse(JSON.stringify(reference.rawMeta)),
+      },
+      select: { id: true },
+    });
+    existing.push({ id: created.id, title: reference.title.slice(0, 500), rawMeta: JSON.parse(JSON.stringify(reference.rawMeta)) });
+    replacements.set(reference.key, created.id);
+  }
+  return replacements;
+}
+
+function rewriteImportedInlineReferences(nodes: unknown[], replacements: Map<string, string>): unknown[] {
+  return nodes.map((node) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return node;
+    const value = node as Record<string, unknown>;
+    if (value.kind === "citation" && typeof value.referenceId === "string" && replacements.has(value.referenceId)) return { ...value, referenceId: replacements.get(value.referenceId) };
+    if (Array.isArray(value.children)) return { ...value, children: rewriteImportedInlineReferences(value.children, replacements) };
+    return value;
+  });
+}
+
+function rewriteImportedReferenceIds(document: AcademicDocument, replacements: Map<string, string>): AcademicDocument {
+  return {
+    ...document,
+    blocks: document.blocks.map((block) => {
+      if (block.kind === "abstract" || block.kind === "heading" || block.kind === "paragraph" || block.kind === "quote" || block.kind === "acknowledgement") return { ...block, children: rewriteImportedInlineReferences(block.children, replacements) } as DocumentBlock;
+      if (block.kind === "list") return { ...block, items: block.items.map((item) => rewriteImportedInlineReferences(item, replacements) as InlineNode[]) };
+      if (block.kind === "bibliography") return { ...block, referenceIds: block.referenceIds.map((id) => replacements.get(id) ?? id) };
+      return block;
+    }),
   };
 }
 
@@ -474,7 +527,8 @@ export async function importPaperDocument(input: {
     });
     const parsed = parsePaperImport({ filename: input.filename, buffer: input.buffer });
     const assetReplacements = await persistImportedAssets({ userId: input.userId, documentId: document.id, projectId: document.workspace.projectId, importId: importRow.id, assets: parsed.assets });
-    const importedDocument = replaceImportedAssetPlaceholders(parsed.document, assetReplacements);
+    const referenceReplacements = await persistImportedReferences({ userId: input.userId, paperWorkspaceId: document.workspace.id, references: parsed.references });
+    const importedDocument = rewriteImportedReferenceIds(replaceImportedAssetPlaceholders(parsed.document, assetReplacements), referenceReplacements);
     const aiClassification = parsed.report.lowConfidenceBlocks.length > 0
       ? await classifyAmbiguousPaperImport({ userId: input.userId, sourceType, document: importedDocument, lowConfidenceBlocks: parsed.report.lowConfidenceBlocks })
       : null;
@@ -495,7 +549,7 @@ export async function importPaperDocument(input: {
         originalProvider: original.provider,
         originalObjectKey: original.key,
         generatedVersionId: version.id,
-        importReport: JSON.parse(JSON.stringify({ ...parsed.report, assetCount: parsed.assets.length, aiClassification })),
+        importReport: JSON.parse(JSON.stringify({ ...parsed.report, assetCount: parsed.assets.length, referenceCount: parsed.references.length, aiClassification })),
       },
     });
     return { import: await prisma.paperImport.findUniqueOrThrow({ where: { id: importRow.id }, include: { snapshots: true, generatedVersion: true } }), version, snapshot };

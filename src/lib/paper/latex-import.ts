@@ -5,9 +5,18 @@ export interface ParsedLatexSource {
   title?: string;
   authors: string[];
   date?: string;
+  references: ParsedLatexReference[];
   blocks: DocumentBlock[];
   warnings: string[];
   lowConfidenceBlocks: Array<{ index: number; reason: string }>;
+}
+
+export interface ParsedLatexReference {
+  key: string;
+  title: string;
+  authors: string[];
+  year?: number;
+  rawMeta: Record<string, unknown>;
 }
 
 function idFor(prefix: string, value: string, index: number) {
@@ -271,7 +280,21 @@ function tableBlockFromLatex(inner: string, index: number) {
   };
 }
 
-function environmentBlock(name: string, inner: string, index: number): { block: DocumentBlock | null; reason?: string } {
+function parseTheBibliography(inner: string): ParsedLatexReference[] {
+  const matches = [...inner.matchAll(/\\bibitem(?:\s*\[[^\]]*\])?\s*\{([^{}]+)\}/gi)];
+  return matches.flatMap((match, index) => {
+    const key = match[1].trim();
+    const start = (match.index ?? 0) + match[0].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index ?? inner.length : inner.length;
+    const rawEntry = inner.slice(start, end).trim();
+    const title = plainText(rawEntry).slice(0, 500);
+    if (!key || !title) return [];
+    const yearMatch = /\b(19|20)\d{2}\b/.exec(title);
+    return [{ key, title, authors: [], ...(yearMatch ? { year: Number(yearMatch[0]) } : {}), rawMeta: { source: "thebibliography", latexKey: key, rawEntry } }];
+  });
+}
+
+function environmentBlock(name: string, inner: string, index: number): { block: DocumentBlock | null; reason?: string; references?: ParsedLatexReference[] } {
   const normalized = name.toLowerCase();
   if (normalized === "abstract") {
     const children = parseInlineLatex(inner.trim(), "abstract-" + index);
@@ -309,7 +332,12 @@ function environmentBlock(name: string, inner: string, index: number): { block: 
   }
   if (normalized === "acknowledgement" || normalized === "acknowledgements") return { block: { kind: "acknowledgement", children: parseInlineLatex(inner.trim(), "acknowledgement-" + index) } };
   if (normalized === "figure" || normalized === "figure*") return { block: null, reason: "单独 LaTeX 文件没有随附图片二进制资源，Figure 环境已原样保留" };
-  if (normalized === "thebibliography") return { block: null, reason: "参考文献条目尚未绑定到 Paper Reference，bibliography 环境已原样保留" };
+  if (normalized === "thebibliography") {
+    const references = parseTheBibliography(inner);
+    return references.length
+      ? { block: { kind: "bibliography", referenceIds: references.map((reference) => reference.key) }, references }
+      : { block: null, reason: "thebibliography 中没有可确定性解析的 bibitem，已原样保留" };
+  }
   return { block: null, reason: "无法可靠转换自定义环境：" + name };
 }
 
@@ -337,6 +365,7 @@ export function parseLatexSource(source: string): ParsedLatexSource {
   const documentEnd = /\\end\s*\{document\}/i.exec(content);
   const body = documentStart ? content.slice(documentStart.index + documentStart[0].length, documentEnd?.index ?? content.length) : content;
   const blocks: DocumentBlock[] = [];
+  const references: ParsedLatexReference[] = [];
   const warnings: string[] = [];
   const lowConfidenceBlocks: Array<{ index: number; reason: string }> = [];
   const addRaw = (raw: string, reason: string) => {
@@ -376,6 +405,7 @@ export function parseLatexSource(source: string): ParsedLatexSource {
       const result = environmentBlock(token[1], extracted.inner, blocks.length);
       if (result.block) blocks.push(result.block);
       else addRaw(body.slice(token.index, extracted.end), result.reason ?? ("环境 " + token[1] + " 无法转换"));
+      if (result.references) references.push(...result.references);
       cursor = extracted.end;
       structural.lastIndex = cursor;
       continue;
@@ -454,5 +484,5 @@ export function parseLatexSource(source: string): ParsedLatexSource {
     structural.lastIndex = cursor;
   }
   addParagraphs(body.slice(cursor));
-  return { title, authors, date, blocks, warnings: [...new Set(warnings)], lowConfidenceBlocks };
+  return { title, authors, date, references, blocks, warnings: [...new Set(warnings)], lowConfidenceBlocks };
 }
