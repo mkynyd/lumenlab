@@ -72,15 +72,14 @@ export function PaperTemplateBindingPanel({ workspaceId, documentId, currentBind
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">排版模板</h2>
-          <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">只绑定已经固定版本的可执行 LaTeX/Overleaf 模板。绑定会创建新的 Template Binding Version，不改变正文 Document。</p>
         </div>
         <Link href="/papers/templates" className="text-xs text-[var(--color-accent)] hover:underline">浏览完整模板库</Link>
       </div>
-      {currentBinding ? <p className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-accent-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">当前锁定：{currentBinding.templateVariant?.registryEntry?.university ?? "模板"} · {currentBinding.templateVariant?.variantKey ?? currentBinding.templateVariantId} · {currentBinding.lockedVersion}</p> : <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">当前使用通用学术模板，选择并锁定学校模板后再编译。</p>}
+      {currentBinding ? <p className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-accent-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">已锁定：{currentBinding.templateVariant?.registryEntry?.university ?? "模板"} · {currentBinding.templateVariant?.variantKey ?? currentBinding.templateVariantId}</p> : <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">当前：通用学术模板</p>}
       <form className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]" onSubmit={submit}>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索学校" aria-label="搜索模板学校" className="min-h-9 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 text-xs text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索学校" aria-label="搜索模板学校" className="min-h-9 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 text-xs text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] placeholder:text-[var(--color-text-tertiary)] focus:bg-[var(--color-bg)] focus:ring-[var(--color-accent)]" />
         <Select value={selectedId || NO_TEMPLATE} onValueChange={(value) => setSelectedId(value === NO_TEMPLATE ? "" : value)}>
-          <SelectTrigger aria-label="选择可执行论文模板" className="min-h-9 min-w-0 bg-[var(--color-bg)] text-xs text-[var(--color-text-secondary)]">
+          <SelectTrigger aria-label="选择可执行论文模板" className="min-h-9 min-w-0 bg-[var(--color-panel-muted)] text-xs text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
             <SelectValue placeholder={query.trim().length < 2 ? "先输入至少两个字符搜索学校" : templatesQuery.isPending ? "正在读取模板…" : options.length > 0 ? "选择学校模板" : "没有已固定的可执行模板"} />
           </SelectTrigger>
           <SelectContent position="popper" align="start">
