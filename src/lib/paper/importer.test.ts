@@ -17,6 +17,41 @@ describe("paper deterministic importers", () => {
     expect(result.report.lowConfidenceBlocks).toHaveLength(1);
   });
 
+  it("converts standard LaTeX blocks and inline citation structures deterministically", () => {
+    const result = parsePaperImport({ filename: "structured.tex", buffer: Buffer.from(String.raw`\documentclass{article}
+      \title{结构化论文}
+      \author{Alice \and Bob}
+      \date{2026}
+      \begin{document}
+      \maketitle
+      \begin{abstract}摘要含有 \cite{ref-a}。\end{abstract}
+      \keywords{研究, 论文}
+      \section{引言}\label{sec:intro}
+      这是 \textbf{重要} 内容，见 \ref{eq:one}，并有 \footnote{脚注}。
+      \begin{equation}
+        x^2 + y^2 = 1
+        \label{eq:one}
+      \end{equation}
+      \begin{table}[htbp]
+        \caption{实验结果}\label{tab:result}
+        \begin{tabular}{ll}
+          方法 & 结果 \\
+          A & 1 \\
+        \end{tabular}
+      \end{table}
+      \begin{itemize}\item 第一项\item 第二项\end{itemize}
+      \begin{figure}[htbp]\includegraphics{figures/result.png}\caption{结果图}\end{figure}
+      \end{document}`) });
+    expect(result.document.blocks[0]).toMatchObject({ kind: "paper_metadata", title: "结构化论文", authors: ["Alice", "Bob"], date: "2026" });
+    expect(result.document.blocks.map((block) => block.kind)).toEqual(expect.arrayContaining(["abstract", "keywords", "heading", "paragraph", "equation", "table", "list", "raw_latex"]));
+    const paragraph = result.document.blocks.find((block) => block.kind === "paragraph");
+    expect(paragraph?.kind).toBe("paragraph");
+    if (paragraph?.kind === "paragraph") expect(paragraph.children.map((child) => child.kind)).toEqual(expect.arrayContaining(["cross_reference", "footnote"]));
+    expect(result.document.blocks.find((block) => block.kind === "equation")).toMatchObject({ label: "eq:one", latex: expect.stringContaining("x^2") });
+    expect(result.document.blocks.find((block) => block.kind === "table")).toMatchObject({ caption: "实验结果", label: "tab:result", columns: ["方法", "结果"], rows: [["A", "1"]] });
+    expect(result.report.lowConfidenceBlocks.some((item) => item.reason.includes("图片二进制资源"))).toBe(true);
+  });
+
   it("routes DOCX images into structure confirmation instead of silently completing", () => {
     const archive = new AdmZip();
     archive.addFile("word/document.xml", Buffer.from("<w:document><w:body><w:p><w:r><w:t>正文</w:t><w:drawing><wp:inline /></w:drawing></w:r></w:p></w:body></w:document>"));

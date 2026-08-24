@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
 import { buildEmptyAcademicDocument, type AcademicDocument, type DocumentBlock, type InlineNode } from "./document-schema";
+import { parseLatexSource } from "./latex-import";
 
 export type PaperImportSourceType = "docx" | "markdown" | "txt" | "latex";
 
@@ -23,7 +24,7 @@ export interface PaperImportAsset {
   buffer: Buffer;
 }
 
-const PARSER_VERSION = "paper-import-v1";
+const PARSER_VERSION = "paper-import-v2";
 
 function text(value: string): InlineNode[] {
   return [{ kind: "text", text: value }];
@@ -34,8 +35,13 @@ function idFor(prefix: string, value: string, index: number): string {
   return `${prefix}-${hash}`;
 }
 
-function metadata(title: string): DocumentBlock {
-  return { kind: "paper_metadata", title: title || "未命名论文", authors: ["作者"] };
+function metadata(title: string, authors?: string[], date?: string): DocumentBlock {
+  return {
+    kind: "paper_metadata",
+    title: title || "未命名论文",
+    authors: authors?.length ? authors : ["作者"],
+    ...(date ? { date } : {}),
+  };
 }
 
 function normalizeTitle(filename: string, firstHeading?: string): string {
@@ -130,31 +136,18 @@ function fromMarkdown(input: { content: string; filename: string }): PaperImport
 }
 
 function fromLatex(input: { content: string; filename: string }): PaperImportResult {
-  const content = input.content.replace(/\r\n?/g, "\n");
-  const blocks: DocumentBlock[] = [];
-  const warnings: string[] = [];
-  const lowConfidenceBlocks: Array<{ index: number; reason: string }> = [];
-  const title = /\\title\s*\{([^}]*)\}/.exec(content)?.[1]?.trim() || normalizeTitle(input.filename);
-  const abstract = /\\begin\{abstract\}([\s\S]*?)\\end\{abstract\}/i.exec(content)?.[1]?.trim();
-  if (abstract) blocks.push({ kind: "abstract", language: "en", children: text(abstract) });
-  const sectionRe = /\\(section|subsection|subsubsection|paragraph)\s*\{([^}]*)\}([\s\S]*?)(?=\\(?:section|subsection|subsubsection|paragraph)\s*\{|\\end\{document\}|$)/g;
-  let match: RegExpExecArray | null;
-  while ((match = sectionRe.exec(content)) !== null) {
-    const level = match[1] === "section" ? 1 : match[1] === "subsection" ? 2 : match[1] === "subsubsection" ? 3 : 4;
-    const heading = match[2].trim();
-    blocks.push({ kind: "heading", id: idFor("heading", heading, blocks.length), level, children: text(heading) });
-    const body = match[3].replace(/\\label\s*\{[^}]*\}/g, "").trim();
-    if (body) blocks.push({ kind: "paragraph", id: idFor("paragraph", body, blocks.length), children: text(body.replace(/\\[a-zA-Z]+\s*/g, "").replace(/[{}]/g, "")) });
-  }
-  if (!blocks.length && content.trim()) {
-    blocks.push({ kind: "raw_latex", id: idFor("raw", content, 0), latex: content });
-    lowConfidenceBlocks.push({ index: 0, reason: "未识别的 LaTeX 宏或环境，原样保留" });
-    warnings.push("未识别的 LaTeX 结构已保存在 RawLaTeXBlock 中");
-  }
+  const parsed = parseLatexSource(input.content);
+  const title = parsed.title || normalizeTitle(input.filename);
   return {
-    document: { ...buildEmptyAcademicDocument(title), blocks: [metadata(title), ...blocks] },
+    document: { ...buildEmptyAcademicDocument(title), blocks: [metadata(title, parsed.authors, parsed.date), ...parsed.blocks] },
     assets: [],
-    report: { parserVersion: PARSER_VERSION, sourceType: "latex", warnings, lowConfidenceBlocks, blockCount: blocks.length },
+    report: {
+      parserVersion: PARSER_VERSION + "+latex-structure-v1",
+      sourceType: "latex",
+      warnings: parsed.warnings,
+      lowConfidenceBlocks: parsed.lowConfidenceBlocks,
+      blockCount: parsed.blocks.length,
+    },
   };
 }
 
