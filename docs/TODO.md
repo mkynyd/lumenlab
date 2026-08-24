@@ -291,6 +291,7 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Implement append-only `DocumentVersion`, AI `DocumentPatch` accept/reject and deterministic serialization. The Document is the source of truth; generated LaTeX is a Template Adapter output only.
 - [x] Add deterministic structured block operations for the Document editor: insert paragraph/heading/quote/equation/list, delete non-metadata blocks, `/` command selection and whole-heading-subtree movement; all operations preserve the existing Academic Document schema before save.
 - [x] Add Paper Workspace APIs and UI: overview, Writing (outline + continuous editor + PDF/AI side panel), materials/references and typesetting settings. Use local `iconoir-react` and current shell/design rules.
+- [x] Make `/papers/typesetting` a real no-AI entry point: create a blank Paper Workspace with an optional Project binding, continue existing papers, browse the live Template Library and clearly expose the compile/export path.
 - [x] Add a real Paper Workspace Template Binding panel. Users can search the live Registry, select only materialized executable LaTeX/Overleaf Variants, lock the audited snapshot id/commit and create a new Binding Version without changing the structured Document; the service rejects Word/Markdown/Typst or unmaterialized bindings.
 - [x] Keep Paper References separate from Research Evidence. Support manual references, DOI/BibTeX import and Research material transfer.
 
