@@ -50,7 +50,7 @@ interface CompilationRecord {
   status: string;
   pdfUrl?: string | null;
   sourceUrl?: string | null;
-  errorLog?: { message?: string; code?: string; nodeMap?: Record<string, unknown> } | null;
+  errorLog?: { message?: string; code?: string; nodeId?: string; nodeMap?: Record<string, unknown> } | null;
   syncTex?: { provider?: string; key?: string; format?: string } | null;
   pdfCompilationId?: string | null;
 }
@@ -374,7 +374,7 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
             {compilation?.syncTex && compilation.pdfCompilationId ? <a href={`/api/papers/compilations/${compilation.pdfCompilationId}/synctex`} className="mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 SyncTeX 映射</a> : null}
             {compilation?.pdfUrl ? <a href={compilation.pdfUrl} download="paper.pdf" className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 PDF</a> : null}
             {compilation?.sourceUrl ? <a href={compilation.sourceUrl} className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载完整 LaTeX Project</a> : null}
-            {compilation?.status === "failed" && compilation.errorLog?.message ? <p className="mt-3 text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p> : null}
+            {compilation?.status === "failed" && compilation.errorLog?.message ? <div className="mt-3 space-y-2"><p className="text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p>{compilation.errorLog.nodeId ? <button type="button" onClick={() => setSelectedNodeId(compilation.errorLog?.nodeId ?? null)} className="text-xs text-[var(--color-accent)] hover:underline">定位到 Document 块</button> : null}</div> : null}
           </> : <div className="mt-4 space-y-4"><div><h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Document Assistant</h3><p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">AI 只生成待审核 Patch，不会直接覆盖正文，也不会生成 LaTeX 作为真源。</p></div><textarea value={assistantInstruction} onChange={(event) => setAssistantInstruction(event.target.value)} rows={5} placeholder="例如：把当前摘要压缩到 250 字，并保留原有事实与引用" className="w-full resize-y rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-2 text-xs leading-5 text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" /><Button type="button" variant="secondary" size="sm" onClick={() => void requestAssistantPatch()} disabled={assistantPending || !assistantInstruction.trim()}>生成 Document Patch</Button>{assistantPatch ? <div className="rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-3"><p className="text-xs font-medium text-[var(--color-text-primary)]">{assistantPatch.summary}</p><p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">待审核 · 正文尚未改变</p><div className="mt-3 flex gap-2"><Button type="button" variant="primary" size="sm" onClick={() => void decideAssistantPatch("accept")} disabled={assistantPending}>接受</Button><Button type="button" variant="ghost" size="sm" onClick={() => void decideAssistantPatch("reject")} disabled={assistantPending}>拒绝</Button></div></div> : null}{assistantMessage ? <p className="text-xs leading-5 text-[var(--color-text-secondary)]">{assistantMessage}</p> : null}</div>}
         </aside>
       </div>

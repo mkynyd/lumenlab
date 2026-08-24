@@ -16,11 +16,11 @@ export interface LatexRenderResult {
   mainTex: string;
   generatedContentTex: string;
   referencesBib: string;
-  nodeMap: Record<string, { line: number; kind: string }>;
+  nodeMap: Record<string, { line: number; generatedLine: number; kind: string }>;
 }
 
 export function renderAcademicDocumentToLatex(document: AcademicDocument, options: { manifest?: AcademicTemplateManifest; references?: LatexReference[]; assetPaths?: Record<string, string>; templateFiles?: TemplateSourceFile[] } = {}): LatexRenderResult {
-  const nodeMap: Record<string, { line: number; kind: string }> = {};
+  const nodeMap: Record<string, { line: number; generatedLine: number; kind: string }> = {};
   const manifest = options.manifest;
   const templateFiles = options.templateFiles ?? [];
   const documentClass = /^[A-Za-z][A-Za-z0-9_-]*$/.test(manifest?.documentClass ?? "") ? manifest!.documentClass! : "ctexart";
@@ -43,11 +43,12 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument, option
   ];
   const generated: string[] = [];
   for (const block of document.blocks) {
-    const startLine = lines.length + generated.length + 1;
+    const generatedLine = generated.length === 0 ? 1 : generated.join("\n\n").split("\n").length + 1;
+    const startLine = lines.length + generatedLine;
     const blockText = renderBlock(block, options.assetPaths, manifest, usesTemplateBiblatex, templateFiles);
     generated.push(blockText);
     const id = "id" in block && typeof block.id === "string" ? block.id : block.kind;
-    nodeMap[id] = { line: startLine, kind: block.kind };
+    nodeMap[id] = { line: startLine, generatedLine, kind: block.kind };
   }
   lines.push("\\input{generated-content.tex}", "\\end{document}");
   return {

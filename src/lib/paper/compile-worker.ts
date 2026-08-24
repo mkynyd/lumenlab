@@ -12,6 +12,7 @@ import { renderAcademicDocumentToLatex } from "./latex-renderer";
 import { parseAcademicDocument } from "./document-schema";
 import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
 import { buildDtxBootstrapPlan, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "./template-snapshot";
+import { mapCompileErrorToNode } from "./compile-errors";
 
 const POLL_INTERVAL_MS = 1_000;
 const GENERATED_TEMPLATE_PATHS = new Set(["main.tex", "generated-content.tex", "references.bib"]);
@@ -21,6 +22,7 @@ type CompilationError = {
   message: string;
   output?: string;
   nodeMap?: Record<string, { line: number; kind: string }>;
+  nodeId?: string;
 };
 
 export type CompileCommand = {
@@ -432,6 +434,8 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
       output: error instanceof Error ? (error as CompileProcessError).output : undefined,
       nodeMap,
     };
+    const mappedNode = mapCompileErrorToNode({ output: detail.output, nodeMap });
+    if (mappedNode) detail.nodeId = mappedNode.nodeId;
     await prisma.paperCompilation.update({
       where: { id: compilation.id },
       data: { status: "failed", engine, errorLog: detail, completedAt: new Date() },
