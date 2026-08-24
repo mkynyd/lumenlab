@@ -351,15 +351,16 @@ export async function transferResearchMaterials(input: {
   });
 }
 
-export async function listTemplateRegistry(input: { query?: string; format?: string; status?: string; limit?: number }) {
+export async function listTemplateRegistry(input: { query?: string; format?: string; status?: string; recommendationLevel?: string; limit?: number }) {
   return prisma.templateRegistryEntry.findMany({
     where: {
       ...(input.format ? { format: input.format } : {}),
       ...(input.status ? { status: input.status } : {}),
+      ...(input.recommendationLevel ? { recommendationLevel: input.recommendationLevel } : {}),
       ...(input.query ? { OR: [{ university: { contains: input.query, mode: "insensitive" } }, { degreeType: { contains: input.query, mode: "insensitive" } }] } : {}),
     },
     orderBy: [{ recommendationLevel: "asc" }, { university: "asc" }],
-    take: Math.min(input.limit ?? 100, 500),
+    take: Math.min(input.limit ?? 1_000, 1_000),
     include: { variants: { select: { id: true, variantKey: true, status: true, adapterId: true, validation: true, sample: true } } },
   });
 }

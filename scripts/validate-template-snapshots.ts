@@ -5,16 +5,30 @@ import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import JSZip from "jszip";
 import { prisma } from "@/lib/db";
-import { readStoredObject } from "@/lib/storage/object-storage";
+import { activeStorageProvider, readStoredObject, uploadObjectBuffer, type StoredObjectRef } from "@/lib/storage/object-storage";
 import { buildSampleAcademicDocument } from "@/lib/paper/template-conformance";
 import { compileResourceLimits, safeCompilePath } from "@/lib/paper/compile-policy";
 import { runCompileCommand, runCompilePipeline } from "@/lib/paper/compile-worker";
-import { normalizeTemplateManifest } from "@/lib/paper/template-registry";
+import { normalizeTemplateManifest, readTemplateSamplePdf, templateSampleObjectKey } from "@/lib/paper/template-registry";
 import { renderAcademicDocumentToLatex } from "@/lib/paper/latex-renderer";
 import { buildDtxBootstrapPlan, isLatexTemplateFormat, isSystemDocumentClass, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "@/lib/paper/template-snapshot";
 
 const ONE_PIXEL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 const GENERATED_TEMPLATE_PATHS = new Set(["main.tex", "generated-content.tex", "references.bib"]);
+
+async function uploadOrReuseSamplePdf(variantKey: string, pdf: Buffer, sha256: string): Promise<StoredObjectRef> {
+  const key = templateSampleObjectKey(variantKey, sha256);
+  try {
+    return await uploadObjectBuffer({ key, mimeType: "application/pdf", buffer: pdf });
+  } catch (error) {
+    if (!/614/.test(error instanceof Error ? error.message : String(error))) throw error;
+    const existing = { provider: activeStorageProvider(), key } satisfies StoredObjectRef;
+    const stored = await readStoredObject(existing);
+    const actualHash = createHash("sha256").update(stored).digest("hex");
+    if (actualHash !== sha256) throw new Error(`模板 Sample PDF 已存在但校验和不匹配：${key}`);
+    return existing;
+  }
+}
 
 function requestedVariants(): Set<string> | null {
   const value = process.env.TEMPLATE_VALIDATE_VARIANTS?.trim();
@@ -152,22 +166,25 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
     const cleanValidation = { ...validation };
     delete cleanValidation.sampleCompileError;
     delete cleanValidation.sampleCompileErrorCode;
+    const samplePdfSha256 = createHash("sha256").update(pdf).digest("hex");
+    const samplePdf = await uploadOrReuseSamplePdf(row.variantKey, pdf, samplePdfSha256);
     await prisma.templateVariant.update({
       where: { id: row.id },
       data: {
-        validation: JSON.parse(JSON.stringify({ ...cleanValidation, status: "Verified", sampleCompileAt: new Date().toISOString(), samplePdfSha256: createHash("sha256").update(pdf).digest("hex"), sourceFiles: upstreamFiles.length, resolvedDocumentClass: documentClass, compileEngine: compileEngine(manifest.engine), lastPhase: result.lastPhase })),
-        sample: JSON.parse(JSON.stringify({ fixtureId: "sample-academic-v1", status: "verified" })),
+        validation: JSON.parse(JSON.stringify({ ...cleanValidation, status: "Verified", sampleCompileAt: new Date().toISOString(), samplePdfSha256, sourceFiles: upstreamFiles.length, resolvedDocumentClass: documentClass, compileEngine: compileEngine(manifest.engine), lastPhase: result.lastPhase })),
+        sample: JSON.parse(JSON.stringify({ fixtureId: "sample-academic-v1", status: "verified", pdf: { provider: samplePdf.provider, key: samplePdf.key, sha256: samplePdfSha256, bytes: pdf.byteLength, mimeType: "application/pdf" } })),
       },
     });
     return { variantKey: row.variantKey, status: "Verified", files: upstreamFiles.length, pdfBytes: pdf.byteLength };
   } catch (error) {
     const validation = row.validation && typeof row.validation === "object" && !Array.isArray(row.validation) ? row.validation as Record<string, unknown> : {};
     const failure = normalizeValidationFailure(error);
+    const previousSamplePdf = readTemplateSamplePdf(row.sample);
     await prisma.templateVariant.update({
       where: { id: row.id },
       data: {
         validation: JSON.parse(JSON.stringify({ ...validation, status: "Needs Review", sampleCompileAt: new Date().toISOString(), sampleCompileErrorCode: failure.code, sampleCompileError: failure.message })),
-        sample: JSON.parse(JSON.stringify({ fixtureId: "sample-academic-v1", status: "needs_review" })),
+        sample: JSON.parse(JSON.stringify({ fixtureId: "sample-academic-v1", status: "needs_review", ...(previousSamplePdf ? { pdf: previousSamplePdf } : {}) })),
       },
     });
     return { variantKey: row.variantKey, status: "Needs Review", code: failure.code, error: failure.message };

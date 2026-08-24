@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   if (!session?.user?.id) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   const url = new URL(request.url);
   try {
-    return NextResponse.json({ templates: await listTemplateRegistry({ query: url.searchParams.get("q") ?? undefined, format: url.searchParams.get("format") ?? undefined, status: url.searchParams.get("status") ?? undefined, limit: Number(url.searchParams.get("limit") ?? 100) }) });
+    return NextResponse.json({ templates: await listTemplateRegistry({ query: url.searchParams.get("q") ?? undefined, format: url.searchParams.get("format") ?? undefined, status: url.searchParams.get("status") ?? undefined, recommendationLevel: url.searchParams.get("recommendation") ?? undefined, limit: Number(url.searchParams.get("limit") ?? 1_000) }) });
   } catch (error) {
     return researchErrorResponse(error);
   }

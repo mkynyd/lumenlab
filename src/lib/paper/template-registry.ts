@@ -32,6 +32,65 @@ export type TemplateRuntimeStatus =
   | "Deprecated"
   | "Unverified";
 
+export interface TemplateSamplePdfRef {
+  provider: "local" | "qiniu";
+  key: string;
+  sha256?: string;
+  bytes?: number;
+  mimeType: "application/pdf";
+}
+
+export interface TemplateVariantSummary {
+  runtimeStatus: TemplateRuntimeStatus;
+  lastVerifiedAt: string | null;
+  errorCode: string | null;
+  samplePdf: TemplateSamplePdfRef | null;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function validRuntimeStatus(value: unknown): TemplateRuntimeStatus | null {
+  return value === "Verified" || value === "Compatible" || value === "Needs Review" || value === "Deprecated" || value === "Unverified"
+    ? value
+    : null;
+}
+
+export function readTemplateSamplePdf(value: unknown): TemplateSamplePdfRef | null {
+  const sample = recordValue(value);
+  const candidate = recordValue(sample?.pdf) ?? recordValue(sample?.samplePdf);
+  const key = typeof candidate?.key === "string" ? candidate.key.trim().replace(/\\/g, "/") : "";
+  if (!candidate || (candidate.provider !== "local" && candidate.provider !== "qiniu") || !key || key.startsWith("/") || key.split("/").some((segment) => !segment || segment === "." || segment === "..")) return null;
+  return {
+    provider: candidate.provider,
+    key,
+    ...(typeof candidate.sha256 === "string" ? { sha256: candidate.sha256 } : {}),
+    ...(typeof candidate.bytes === "number" && Number.isSafeInteger(candidate.bytes) ? { bytes: candidate.bytes } : {}),
+    mimeType: "application/pdf",
+  };
+}
+
+export function summarizeTemplateVariant(input: { status?: unknown; validation?: unknown; sample?: unknown }): TemplateVariantSummary {
+  const validation = recordValue(input.validation);
+  const sample = recordValue(input.sample);
+  const runtimeStatus = validRuntimeStatus(validation?.status) ?? validRuntimeStatus(input.status) ?? (sample?.status === "verified" ? "Verified" : "Unverified");
+  const lastVerifiedAt = [validation?.sampleCompileAt, validation?.lastValidatedAt, sample?.lastValidatedAt].find((value): value is string => typeof value === "string" && value.length > 0) ?? null;
+  return {
+    runtimeStatus,
+    lastVerifiedAt,
+    errorCode: typeof validation?.sampleCompileErrorCode === "string" ? validation.sampleCompileErrorCode : null,
+    samplePdf: readTemplateSamplePdf(sample) ?? readTemplateSamplePdf(validation?.samplePdf),
+  };
+}
+
+export function templateSampleObjectKey(variantKey: string, sha256: string): string {
+  const safeVariantKey = variantKey.replace(/[^A-Za-z0-9_.-]+/g, "__");
+  const safeHash = sha256.replace(/[^A-Za-z0-9]+/g, "").slice(0, 128);
+  if (!safeVariantKey || !safeHash) throw new Error("模板 Sample PDF 对象键无效");
+  return `template-samples/${safeVariantKey}/${safeHash}.pdf`;
+}
+
 export interface TemplateUpstreamSnapshot {
   snapshotId: string;
   repositoryUrl: string | null;
