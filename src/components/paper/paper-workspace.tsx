@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookStack, Check, CloudUpload, Play } from "iconoir-react";
+import { ArrowLeft, BookStack, Check, CloudUpload, NavArrowDown, NavArrowUp, Play, Plus, Trash } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 import { fetchJson } from "@/lib/api/client";
 import { usePaperWorkspace } from "@/lib/hooks/use-papers";
+import { createInsertableBlock, insertDocumentBlock, moveHeadingSubtree, removeDocumentBlock, updateDocumentBlockText, type InsertableBlockKind } from "@/lib/paper/document-editor-operations";
+import type { AcademicDocument } from "@/lib/paper/document-schema";
 import { PaperReferencesPanel } from "@/components/paper/paper-references-panel";
 import { PaperPdfViewer } from "@/components/paper/paper-pdf-viewer";
 import { PaperTemplateBindingPanel } from "@/components/paper/paper-template-binding-panel";
@@ -38,6 +40,22 @@ function blockText(block: BlockRecord) {
   return block.children?.map((child) => child.text ?? "").join("") ?? (block.title ?? block.kind);
 }
 
+function newBlockId(kind: InsertableBlockKind) {
+  const suffix = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${kind}-${suffix}`;
+}
+
+function BlockCommandMenu({ onSelect }: { onSelect: (kind: InsertableBlockKind) => void }) {
+  const commands: Array<{ kind: InsertableBlockKind; label: string }> = [
+    { kind: "paragraph", label: "正文" },
+    { kind: "heading", label: "标题" },
+    { kind: "quote", label: "引用" },
+    { kind: "equation", label: "公式" },
+    { kind: "list", label: "列表" },
+  ];
+  return <div className="mt-2 flex flex-wrap items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-2 py-2 text-xs shadow-sm ring-1 ring-[var(--color-border-light)]"><span className="mr-1 text-[var(--color-text-tertiary)]">插入块</span>{commands.map((command) => <button type="button" key={command.kind} onClick={() => onSelect(command.kind)} className="rounded-[var(--radius-sm)] px-2 py-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]">{command.label}</button>)}</div>;
+}
+
 export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
   const workspaceQuery = usePaperWorkspace(workspaceId);
   const workspace = workspaceQuery.data as {
@@ -53,6 +71,7 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
   const [pendingImport, setPendingImport] = useState<{ id: string; lowConfidenceBlocks: Array<{ index: number; reason: string }> } | null>(null);
   const [compilation, setCompilation] = useState<CompilationRecord | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [commandIndex, setCommandIndex] = useState<number | null>(null);
 
   const document = draftDocument ?? workspace?.document?.currentVersion?.content ?? null;
 
@@ -76,8 +95,31 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
   function updateBlock(index: number, value: string) {
     setDraftDocument((current) => {
       if (!current) return current;
-      return { ...current, blocks: current.blocks.map((block, blockIndex) => blockIndex === index ? { ...block, children: [{ kind: "text", text: value }] } : block) };
+      return updateDocumentBlockText(current as unknown as AcademicDocument, index, value) as unknown as AcademicDocumentRecord;
     });
+  }
+
+  function insertBlock(index: number, kind: InsertableBlockKind) {
+    setDraftDocument((current) => current ? insertDocumentBlock(current as unknown as AcademicDocument, index, createInsertableBlock(kind, newBlockId(kind))) as unknown as AcademicDocumentRecord : current);
+    setCommandIndex(null);
+  }
+
+  function replaceBlock(index: number, kind: InsertableBlockKind) {
+    setDraftDocument((current) => {
+      if (!current) return current;
+      const document = current as unknown as AcademicDocument;
+      const without = removeDocumentBlock(document, index);
+      return insertDocumentBlock(without, index, createInsertableBlock(kind, newBlockId(kind))) as unknown as AcademicDocumentRecord;
+    });
+    setCommandIndex(null);
+  }
+
+  function removeBlock(index: number) {
+    setDraftDocument((current) => current ? removeDocumentBlock(current as unknown as AcademicDocument, index) as unknown as AcademicDocumentRecord : current);
+  }
+
+  function moveHeading(index: number, direction: "up" | "down") {
+    setDraftDocument((current) => current ? moveHeadingSubtree(current as unknown as AcademicDocument, index, direction) as unknown as AcademicDocumentRecord : current);
   }
 
   async function saveDocument() {
@@ -135,7 +177,23 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
         </aside>
         <section className="min-w-0 bg-[var(--color-panel)] px-6 py-8 sm:px-10">
           <div className="mx-auto max-w-[74ch] space-y-5">
-            {document.blocks.map((block, index) => <div key={block.id ?? `${block.kind}-${index}`} className="group">{block.kind === "heading" ? <textarea value={blockText(block)} onChange={(event) => updateBlock(index, event.target.value)} rows={1} aria-label={`编辑第 ${index + 1} 个标题`} className={`w-full resize-none bg-transparent font-semibold text-[var(--color-text-primary)] outline-none ${block.level === 1 ? "text-xl" : "text-lg"}`} /> : block.kind === "paragraph" || block.kind === "abstract" || block.kind === "acknowledgement" ? <textarea value={blockText(block)} onChange={(event) => updateBlock(index, event.target.value)} rows={Math.max(2, Math.min(8, Math.ceil(blockText(block).length / 40)))} aria-label={`编辑第 ${index + 1} 个正文块`} className="w-full resize-y bg-transparent text-[15px] leading-8 text-[var(--color-text-primary)] outline-none" /> : block.kind === "raw_latex" ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--color-text-tertiary)]">{blockText(block)}</pre> : <div className="text-sm text-[var(--color-text-tertiary)]">[{block.kind}]</div>}</div>)}
+            {document.blocks.map((block, index) => {
+              const text = blockText(block);
+              const isSlashCommand = block.kind === "paragraph" && text.trim() === "/";
+              return <div key={block.id ?? `${block.kind}-${index}`} className="group relative">
+                <div className="relative">
+                  {block.kind === "heading" ? <textarea value={text} onChange={(event) => updateBlock(index, event.target.value)} rows={1} aria-label={`编辑第 ${index + 1} 个标题`} className={`w-full resize-none bg-transparent font-semibold text-[var(--color-text-primary)] outline-none ${block.level === 1 ? "text-xl" : "text-lg"}`} /> : block.kind === "paragraph" || block.kind === "abstract" || block.kind === "acknowledgement" ? <textarea value={text} onChange={(event) => updateBlock(index, event.target.value)} rows={Math.max(2, Math.min(8, Math.ceil(text.length / 40)))} aria-label={`编辑第 ${index + 1} 个正文块`} className="w-full resize-y bg-transparent text-[15px] leading-8 text-[var(--color-text-primary)] outline-none" /> : block.kind === "raw_latex" ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--color-text-tertiary)]">{text}</pre> : <div className="text-sm text-[var(--color-text-tertiary)]">[{block.kind}]</div>}
+                  <div className="absolute -left-10 top-0 flex flex-col gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    <button type="button" onClick={() => setCommandIndex(index + 1)} aria-label={`在第 ${index + 1} 个块后插入`} className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><Plus width={13} height={13} /></button>
+                    {block.kind === "heading" ? <><button type="button" onClick={() => moveHeading(index, "up")} aria-label="整节上移" className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><NavArrowUp width={13} height={13} /></button><button type="button" onClick={() => moveHeading(index, "down")} aria-label="整节下移" className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><NavArrowDown width={13} height={13} /></button></> : null}
+                    {block.kind !== "paper_metadata" ? <button type="button" onClick={() => removeBlock(index)} aria-label={`删除第 ${index + 1} 个块`} className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-danger-muted)] hover:text-[var(--color-danger)]"><Trash width={13} height={13} /></button> : null}
+                  </div>
+                </div>
+                {commandIndex === index + 1 ? <BlockCommandMenu onSelect={(kind) => insertBlock(index + 1, kind)} /> : null}
+                {isSlashCommand ? <BlockCommandMenu onSelect={(kind) => replaceBlock(index, kind)} /> : null}
+              </div>;
+            })}
+            <div className="pt-1"><button type="button" onClick={() => setCommandIndex(document.blocks.length)} className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><Plus width={13} height={13} />添加块</button>{commandIndex === document.blocks.length ? <BlockCommandMenu onSelect={(kind) => insertBlock(document.blocks.length, kind)} /> : null}</div>
           </div>
         </section>
         <aside className="bg-[var(--color-panel)] px-4 py-4">
