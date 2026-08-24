@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { PrismaAgentExecutionStore } from "@/lib/agent/executions/prisma-agent-execution-store";
 import {
   ResearchBudgetProfile as PrismaResearchBudgetProfile,
   ResearchEvidenceType as PrismaResearchEvidenceType,
@@ -732,10 +733,15 @@ export async function upsertClaimEvidenceRelation(input: { userId: string; runId
 }
 
 export async function cancelResearchRun(userId: string, runId: string) {
-  const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, select: { status: true } });
+  const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, select: { status: true, agentExecutionId: true } });
   if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
   assertResearchRunTransition(run.status as ResearchRunStatus, "cancelled");
-  return prisma.researchRun.update({ where: { id: runId }, data: { status: "cancelled", completedAt: new Date() } });
+  const now = new Date();
+  const updated = await prisma.researchRun.update({ where: { id: runId }, data: { status: "cancelled", completedAt: now } });
+  if (run.agentExecutionId) {
+    await new PrismaAgentExecutionStore().cancelOwned({ executionId: run.agentExecutionId, userId, now });
+  }
+  return updated;
 }
 
 export async function createFollowUpResearchRun(userId: string, runId: string, question: string) {

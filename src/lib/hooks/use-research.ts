@@ -48,6 +48,31 @@ export function useCreateResearchRun(workspaceId: string) {
   });
 }
 
+export function useCancelResearchRun(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await fetchJson<{ run: unknown }>(`/api/research/runs/${runId}`, { method: "DELETE" })).run,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspaces });
+    },
+  });
+}
+
+export function useCreateResearchFollowUp(runId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (question: string) => (await fetchJson<{ run: { id: string; status: string } }>(`/api/research/runs/${runId}`, { method: "POST", body: JSON.stringify({ question }) })).run,
+    onSuccess: (run) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.run(run.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspaces });
+    },
+  });
+}
+
 export function useConfirmResearchPlan(runId: string, workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({

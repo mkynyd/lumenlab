@@ -197,8 +197,17 @@ async function findOwnedDocument(userId: string, documentId: string) {
   return { ...document, currentVersion: document.currentVersion };
 }
 
-export async function createDocumentVersion(input: { userId: string; documentId: string; content: unknown; createdBy?: string }) {
+async function assertDocumentImportConfirmed(userId: string, documentId: string) {
+  const pendingImport = await prisma.paperImport.findFirst({
+    where: { paperDocumentId: documentId, userId, status: "awaiting_confirmation" },
+    select: { id: true },
+  });
+  if (pendingImport) throw new PaperServiceError("INVALID_STATE", "请先确认导入结构后再修改或编译");
+}
+
+export async function createDocumentVersion(input: { userId: string; documentId: string; content: unknown; createdBy?: string; allowPendingImport?: boolean }) {
   const document = await findOwnedDocument(input.userId, input.documentId);
+  if (!input.allowPendingImport) await assertDocumentImportConfirmed(input.userId, input.documentId);
   const content = parseAcademicDocument(input.content);
   const version = await prisma.paperDocumentVersion.aggregate({ where: { documentId: document.id }, _max: { version: true } });
   const nextVersion = (version._max.version ?? 0) + 1;
@@ -473,6 +482,7 @@ export async function bindTemplate(input: { userId: string; documentId: string; 
 
 export async function queuePaperCompilation(userId: string, documentId: string) {
   const document = await findOwnedDocument(userId, documentId);
+  await assertDocumentImportConfirmed(userId, documentId);
   const binding = await prisma.templateBinding.findUnique({ where: { paperDocumentId: documentId }, include: { versions: { orderBy: { version: "desc" }, take: 1 } } });
   const references = await prisma.reference.findMany({ where: { paperWorkspaceId: document.workspace.id, userId }, orderBy: { createdAt: "asc" }, select: { id: true, title: true, authors: true, year: true, venue: true, doi: true, url: true } });
   const manifest = binding?.versions[0]?.manifestSnapshot ? normalizeTemplateManifest(binding.versions[0].manifestSnapshot) : buildGeneralAcademicTemplateManifest();
@@ -596,7 +606,7 @@ export async function confirmPaperImport(input: { userId: string; importId: stri
     const content = parseAcademicDocument(input.content);
     const currentContent = importRow.generatedVersion?.content;
     if (JSON.stringify(content) !== JSON.stringify(currentContent)) {
-      const version = await createDocumentVersion({ userId: input.userId, documentId: importRow.paperDocumentId, content });
+      const version = await createDocumentVersion({ userId: input.userId, documentId: importRow.paperDocumentId, content, allowPendingImport: true });
       generatedVersionId = version.id;
     }
   }
