@@ -308,6 +308,7 @@ This is an additive extension of LumenLab. The existing `AgentRuntime`, `AgentLo
 - [x] Add production-oriented Compile Service container orchestration: non-root/read-only/tmpfs/capability/PID/CPU/memory/file limits, no published compiler port, and a fail-closed bubblewrap child namespace with `--unshare-net`; the Worker keeps only the control-plane network required by PostgreSQL/object storage.
 - [ ] Validate the materialized A/B packs end to end in the isolated Linux compiler image.
 - [x] Add an owner-scoped SyncTeX JSON mapping endpoint and a PDF.js right-panel viewer with continuous pages, page navigation and Outline-to-PDF node jumping; keep the raw `.synctex.gz` download for debugging/export.
+- [x] Expose authenticated downloads for the successful PDF and the complete generated LaTeX Project ZIP, while retaining the last successful artifacts during queued, running or failed recompilation.
 - [x] Extend DOCX import beyond plain paragraphs: preserve embedded images as Paper-owned FileAsset resources, create Figure/Table/Equation blocks, retain footnote inline nodes, and send uncertain structure through the existing Runtime-backed classifier as advisory suggestions before user confirmation.
 - [x] Add an explicit, credential-gated real-provider Research integration test that exercises the existing Runtime/model-stage seam and cleans up its hidden system conversation; ordinary unit tests never call external models.
 

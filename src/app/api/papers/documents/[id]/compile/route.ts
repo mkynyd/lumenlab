@@ -27,6 +27,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       pdfCompilationId: preview.pdfCompilationId,
       previewSyncTex: preview.syncTex,
       pdfUrl: preview.pdfCompilationId ? `/api/papers/compilations/${preview.pdfCompilationId}/pdf` : null,
+      sourceUrl: preview.pdfCompilationId ? `/api/papers/compilations/${preview.pdfCompilationId}/source` : null,
     });
   } catch (error) {
     return researchErrorResponse(error);

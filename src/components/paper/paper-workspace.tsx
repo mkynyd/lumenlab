@@ -30,6 +30,7 @@ interface CompilationRecord {
   id: string;
   status: string;
   pdfUrl?: string | null;
+  sourceUrl?: string | null;
   errorLog?: { message?: string; code?: string; nodeMap?: Record<string, unknown> } | null;
   syncTex?: { provider?: string; key?: string; format?: string } | null;
   pdfCompilationId?: string | null;
@@ -81,8 +82,8 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     let active = true;
     async function loadCompilation() {
       try {
-        const result = await fetchJson<{ compilation: CompilationRecord | null; pdfUrl: string | null; pdfCompilationId: string | null; previewSyncTex: CompilationRecord["syncTex"] }>(`/api/papers/documents/${documentId}/compile`);
-        if (active) setCompilation(result.compilation ? { ...result.compilation, pdfUrl: result.pdfUrl, pdfCompilationId: result.pdfCompilationId, syncTex: result.previewSyncTex } : null);
+        const result = await fetchJson<{ compilation: CompilationRecord | null; pdfUrl: string | null; sourceUrl: string | null; pdfCompilationId: string | null; previewSyncTex: CompilationRecord["syncTex"] }>(`/api/papers/documents/${documentId}/compile`);
+        if (active) setCompilation(result.compilation ? { ...result.compilation, pdfUrl: result.pdfUrl, sourceUrl: result.sourceUrl, pdfCompilationId: result.pdfCompilationId, syncTex: result.previewSyncTex } : null);
       } catch {
         // The editor remains usable when the optional status poll is unavailable.
       }
@@ -201,6 +202,8 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
           {compilation?.pdfUrl ? <PaperPdfViewer key={compilation.pdfCompilationId ?? compilation.id} pdfUrl={compilation.pdfUrl} mapUrl={compilation.syncTex && compilation.pdfCompilationId ? `/api/papers/compilations/${compilation.pdfCompilationId}/synctex/map` : undefined} selectedNodeId={selectedNodeId} /> : <div className="mt-4 min-h-64 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">编译成功后，上一版 PDF 会在这里保持可见。<br />AI 修改会先进入 Document Patch。</div>}
           {compilation?.pdfUrl && compilation.status !== "succeeded" ? <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">当前编译{compilation.status === "failed" ? "失败" : "进行中"}，继续显示上一版成功 PDF。</p> : null}
           {compilation?.syncTex && compilation.pdfCompilationId ? <a href={`/api/papers/compilations/${compilation.pdfCompilationId}/synctex`} className="mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 SyncTeX 映射</a> : null}
+          {compilation?.pdfUrl ? <a href={compilation.pdfUrl} download="paper.pdf" className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 PDF</a> : null}
+          {compilation?.sourceUrl ? <a href={compilation.sourceUrl} className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载完整 LaTeX Project</a> : null}
           {compilation?.status === "failed" && compilation.errorLog?.message ? <p className="mt-3 text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p> : null}
         </aside>
       </div>
