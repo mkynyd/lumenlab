@@ -28,7 +28,8 @@ interface CompilationRecord {
   status: string;
   pdfUrl?: string | null;
   errorLog?: { message?: string; code?: string; nodeMap?: Record<string, unknown> } | null;
-  syncTex?: { format?: string } | null;
+  syncTex?: { provider?: string; key?: string; format?: string } | null;
+  pdfCompilationId?: string | null;
 }
 
 function blockText(block: BlockRecord) {
@@ -60,8 +61,8 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     let active = true;
     async function loadCompilation() {
       try {
-        const result = await fetchJson<{ compilation: CompilationRecord | null; pdfUrl: string | null }>(`/api/papers/documents/${documentId}/compile`);
-        if (active) setCompilation(result.compilation ? { ...result.compilation, pdfUrl: result.pdfUrl } : null);
+        const result = await fetchJson<{ compilation: CompilationRecord | null; pdfUrl: string | null; pdfCompilationId: string | null; previewSyncTex: CompilationRecord["syncTex"] }>(`/api/papers/documents/${documentId}/compile`);
+        if (active) setCompilation(result.compilation ? { ...result.compilation, pdfUrl: result.pdfUrl, pdfCompilationId: result.pdfCompilationId, syncTex: result.previewSyncTex } : null);
       } catch {
         // The editor remains usable when the optional status poll is unavailable.
       }
@@ -137,8 +138,9 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
         </section>
         <aside className="bg-[var(--color-panel)] px-4 py-4">
           <div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-[var(--color-text-tertiary)]">PDF / AI</p>{compilation ? <span className="text-[11px] text-[var(--color-text-tertiary)]">{compilation.status}</span> : null}</div>
-          {compilation?.pdfUrl ? <PaperPdfViewer key={compilation.id} pdfUrl={compilation.pdfUrl} mapUrl={compilation.syncTex ? `/api/papers/compilations/${compilation.id}/synctex/map` : undefined} selectedNodeId={selectedNodeId} /> : <div className="mt-4 min-h-64 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">编译成功后，上一版 PDF 会在这里保持可见。<br />AI 修改会先进入 Document Patch。</div>}
-          {compilation?.syncTex ? <a href={`/api/papers/compilations/${compilation.id}/synctex`} className="mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 SyncTeX 映射</a> : null}
+          {compilation?.pdfUrl ? <PaperPdfViewer key={compilation.pdfCompilationId ?? compilation.id} pdfUrl={compilation.pdfUrl} mapUrl={compilation.syncTex && compilation.pdfCompilationId ? `/api/papers/compilations/${compilation.pdfCompilationId}/synctex/map` : undefined} selectedNodeId={selectedNodeId} /> : <div className="mt-4 min-h-64 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">编译成功后，上一版 PDF 会在这里保持可见。<br />AI 修改会先进入 Document Patch。</div>}
+          {compilation?.pdfUrl && compilation.status !== "succeeded" ? <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">当前编译{compilation.status === "failed" ? "失败" : "进行中"}，继续显示上一版成功 PDF。</p> : null}
+          {compilation?.syncTex && compilation.pdfCompilationId ? <a href={`/api/papers/compilations/${compilation.pdfCompilationId}/synctex`} className="mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 SyncTeX 映射</a> : null}
           {compilation?.status === "failed" && compilation.errorLog?.message ? <p className="mt-3 text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p> : null}
         </aside>
       </div>

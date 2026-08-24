@@ -4,6 +4,7 @@ import { uploadObjectBuffer } from "@/lib/storage/object-storage";
 import { applyDocumentPatch, assertPatchBaseVersion, type DocumentPatch } from "./document-patches";
 import { buildEmptyAcademicDocument, parseAcademicDocument, type AcademicDocument } from "./document-schema";
 import { renderAcademicDocumentToLatex } from "./latex-renderer";
+import { selectCompilationPreview } from "./compilation-preview";
 import { parsePaperImport, type PaperImportSourceType } from "./importer";
 import { parseBibTeX } from "./reference-import";
 import { normalizeDoi } from "@/lib/research/source-identity";
@@ -417,11 +418,17 @@ export async function queuePaperCompilation(userId: string, documentId: string) 
 
 export async function getLatestPaperCompilation(userId: string, documentId: string) {
   await findOwnedDocument(userId, documentId);
-  return prisma.paperCompilation.findFirst({
-    where: { documentVersion: { documentId, document: { userId } } },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, status: true, engine: true, pdfStorageProvider: true, pdfObjectKey: true, sourceStorageProvider: true, sourceObjectKey: true, errorLog: true, syncTex: true, startedAt: true, completedAt: true, createdAt: true, documentVersionId: true },
-  });
+  const select = { id: true, status: true, engine: true, pdfStorageProvider: true, pdfObjectKey: true, sourceStorageProvider: true, sourceObjectKey: true, errorLog: true, syncTex: true, startedAt: true, completedAt: true, createdAt: true, documentVersionId: true } as const;
+  const scope = { documentVersion: { documentId, document: { userId } } };
+  const [compilation, lastSuccessful] = await prisma.$transaction([
+    prisma.paperCompilation.findFirst({ where: scope, orderBy: { createdAt: "desc" }, select }),
+    prisma.paperCompilation.findFirst({
+      where: { ...scope, status: "succeeded", pdfStorageProvider: { not: null }, pdfObjectKey: { not: null } },
+      orderBy: { completedAt: "desc" },
+      select,
+    }),
+  ]);
+  return { compilation, lastSuccessful, preview: selectCompilationPreview(compilation, lastSuccessful) };
 }
 
 function importSourceType(filename: string): PaperImportSourceType {
