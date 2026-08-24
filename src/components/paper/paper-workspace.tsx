@@ -60,7 +60,7 @@ function blockText(block: BlockRecord) {
   return block.children?.map((child) => child.text ?? "").join("") ?? (block.title ?? block.kind);
 }
 
-function newBlockId(kind: InsertableBlockKind) {
+function newBlockId(kind: string) {
   const suffix = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${kind}-${suffix}`;
 }
@@ -257,6 +257,20 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     setImportMessage(result.import.importReport?.warnings?.[0] ?? "已导入为新的 Document Draft，请检查低置信度结构后再编译");
   }
 
+  async function insertImage(file: File) {
+    if (!workspace) return;
+    const formData = new FormData();
+    formData.set("file", file);
+    try {
+      setSaveMessage("正在上传图片…");
+      const result = await fetchJson<{ asset: { id: string; originalName: string } }>(`/api/papers/workspaces/${workspaceId}/assets`, { method: "POST", body: formData });
+      setDraftDocument((current) => current ? { ...current, blocks: [...current.blocks, { kind: "figure", id: newBlockId("figure"), assetId: result.asset.id, caption: result.asset.originalName, alignment: "center", placement: "float" }] } : current);
+      setSaveMessage("图片已加入 Document，停顿后自动保存并编译");
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "图片上传失败");
+    }
+  }
+
   async function confirmImport() {
     if (!pendingImport || !draftDocument) return;
     await fetchJson(`/api/papers/imports/${pendingImport.id}`, { method: "PATCH", body: JSON.stringify({ content: draftDocument }) });
@@ -350,7 +364,7 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
                 {isSlashCommand ? <BlockCommandMenu onSelect={(kind) => replaceBlock(index, kind)} /> : null}
               </div>;
             })}
-            <div className="pt-1"><button type="button" onClick={() => setCommandIndex(document.blocks.length)} className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><Plus width={13} height={13} />添加块</button>{commandIndex === document.blocks.length ? <BlockCommandMenu onSelect={(kind) => insertBlock(document.blocks.length, kind)} /> : null}</div>
+            <div className="flex flex-wrap items-center gap-2 pt-1"><button type="button" onClick={() => setCommandIndex(document.blocks.length)} className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><Plus width={13} height={13} />添加块</button><label className="inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><CloudUpload width={13} height={13} />插入图片<input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void insertImage(file); event.currentTarget.value = ""; }} /></label>{commandIndex === document.blocks.length ? <BlockCommandMenu onSelect={(kind) => insertBlock(document.blocks.length, kind)} /> : null}</div>
           </div>
         </section>
         <aside className="bg-[var(--color-panel)] px-4 py-4">
