@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGeneralAcademicTemplateManifest, buildTemplateManifest, mapTemplateRuntimeStatus, normalizeTemplateManifest, parseTemplateRegistry, readTemplateSamplePdf, summarizeTemplateVariant, templateSampleObjectKey } from "./template-registry";
+import { buildGeneralAcademicTemplateManifest, buildTemplateManifest, isTemplateSnapshotLockValid, mapTemplateRuntimeStatus, normalizeTemplateManifest, parseTemplateRegistry, readTemplateSamplePdf, summarizeTemplateVariant, templateSampleObjectKey } from "./template-registry";
 
 describe("template registry", () => {
   it("keeps recommendation and runtime status separate", () => {
@@ -43,5 +43,11 @@ describe("template registry", () => {
     expect(readTemplateSamplePdf({ pdf: { provider: "local", key: "../secret.pdf" } })).toBeNull();
     expect(templateSampleObjectKey("school:id:default", "sha-256/abc")).toBe("template-samples/school__id__default/sha256abc.pdf");
     expect(() => templateSampleObjectKey("", "sha")).toThrow();
+  });
+
+  it("accepts only a materialized snapshot id or commit as a binding lock", () => {
+    expect(isTemplateSnapshotLockValid({ materialized: true, snapshotId: "variant:abc", commitOrVersion: "abc" }, "variant:abc")).toBe(true);
+    expect(isTemplateSnapshotLockValid({ materialized: true, snapshotId: "variant:abc" }, "other")).toBe(false);
+    expect(isTemplateSnapshotLockValid({ materialized: false, snapshotId: "variant:abc" }, "variant:abc")).toBe(false);
   });
 });

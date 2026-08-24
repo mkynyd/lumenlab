@@ -8,8 +8,9 @@ import { selectCompilationPreview } from "./compilation-preview";
 import { parsePaperImport, type PaperImportSourceType } from "./importer";
 import { parseBibTeX } from "./reference-import";
 import { normalizeDoi } from "@/lib/research/source-identity";
-import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
+import { buildGeneralAcademicTemplateManifest, isTemplateSnapshotLockValid, normalizeTemplateManifest } from "./template-registry";
 import { classifyAmbiguousPaperImport } from "./import-classifier";
+import { isLatexTemplateFormat } from "./template-snapshot";
 
 export class PaperServiceError extends Error {
   constructor(public readonly code: "NOT_FOUND" | "INVALID_STATE" | "INVALID_INPUT", message: string) {
@@ -361,7 +362,7 @@ export async function listTemplateRegistry(input: { query?: string; format?: str
     },
     orderBy: [{ recommendationLevel: "asc" }, { university: "asc" }],
     take: Math.min(input.limit ?? 1_000, 1_000),
-    include: { variants: { select: { id: true, variantKey: true, status: true, adapterId: true, validation: true, sample: true } } },
+    include: { variants: { select: { id: true, variantKey: true, status: true, adapterId: true, pinnedUpstreamSnapshot: true, validation: true, sample: true } } },
   });
 }
 
@@ -375,11 +376,16 @@ export async function bindTemplate(input: { userId: string; documentId: string; 
   } catch (error) {
     throw new PaperServiceError("INVALID_INPUT", error instanceof Error ? error.message : "模板 Manifest 无效");
   }
+  if (!isLatexTemplateFormat(manifest.format)) {
+    throw new PaperServiceError("INVALID_INPUT", "当前只能绑定可执行的 LaTeX/Overleaf Template Variant");
+  }
   const pinnedSnapshot = variant.pinnedUpstreamSnapshot && typeof variant.pinnedUpstreamSnapshot === "object" && !Array.isArray(variant.pinnedUpstreamSnapshot)
     ? variant.pinnedUpstreamSnapshot as Record<string, unknown>
     : null;
-  const acceptedLocks = [pinnedSnapshot?.snapshotId, pinnedSnapshot?.commitOrVersion].filter((value): value is string => typeof value === "string" && value.length > 0);
-  if (acceptedLocks.length > 0 && !acceptedLocks.includes(input.lockedVersion)) {
+  if (pinnedSnapshot?.materialized !== true) {
+    throw new PaperServiceError("INVALID_INPUT", "Template Variant 尚未固定可执行的 upstream snapshot，不能绑定到论文");
+  }
+  if (!isTemplateSnapshotLockValid(pinnedSnapshot, input.lockedVersion)) {
     throw new PaperServiceError("INVALID_INPUT", "Template Binding 必须锁定已审核的 upstream snapshot 版本");
   }
   return prisma.$transaction(async (tx) => {

@@ -91,6 +91,12 @@ export function templateSampleObjectKey(variantKey: string, sha256: string): str
   return `template-samples/${safeVariantKey}/${safeHash}.pdf`;
 }
 
+export function isTemplateSnapshotLockValid(snapshot: unknown, lockedVersion: string): boolean {
+  const record = recordValue(snapshot);
+  if (record?.materialized !== true || !lockedVersion) return false;
+  return [record.snapshotId, record.commitOrVersion].some((value) => typeof value === "string" && value.length > 0 && value === lockedVersion);
+}
+
 export interface TemplateUpstreamSnapshot {
   snapshotId: string;
   repositoryUrl: string | null;

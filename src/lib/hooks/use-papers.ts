@@ -28,18 +28,35 @@ export function useCreatePaperWorkspace() {
   });
 }
 
-export function usePaperTemplates(input: string | { query?: string; format?: string; status?: string; recommendationLevel?: string } = "") {
-  const filters = typeof input === "string" ? { query: input } : input;
+export interface PaperTemplateQuery {
+  query?: string;
+  format?: string;
+  status?: string;
+  recommendationLevel?: string;
+  limit?: number;
+}
+
+export function usePaperTemplates(input: string | PaperTemplateQuery = "", options: { enabled?: boolean } = {}) {
+  const filters: PaperTemplateQuery = typeof input === "string" ? { query: input } : input;
   const params = new URLSearchParams();
   if (filters.query?.trim()) params.set("q", filters.query.trim());
   if (filters.format) params.set("format", filters.format);
   if (filters.status) params.set("status", filters.status);
   if (filters.recommendationLevel) params.set("recommendation", filters.recommendationLevel);
-  params.set("limit", "1000");
+  params.set("limit", String(filters.limit ?? 1000));
   const queryString = params.toString();
   return useQuery({
     queryKey: queryKeys.papers.templates(queryString),
+    enabled: options.enabled ?? true,
     queryFn: async () => (await fetchJson<{ templates: unknown[] }>(`/api/papers/templates?${queryString}`)).templates,
+  });
+}
+
+export function useBindPaperTemplate(workspaceId: string, documentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { templateVariantId: string; lockedVersion: string }) => (await fetchJson<{ binding: unknown }>(`/api/papers/documents/${documentId}/template`, { method: "POST", body: JSON.stringify(input) })).binding,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.papers.workspace(workspaceId) }),
   });
 }
 
