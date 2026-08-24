@@ -11,9 +11,10 @@ import { compileResourceLimits, safeCompilePath } from "@/lib/paper/compile-poli
 import { runCompileCommand, runCompilePipeline } from "@/lib/paper/compile-worker";
 import { normalizeTemplateManifest } from "@/lib/paper/template-registry";
 import { renderAcademicDocumentToLatex } from "@/lib/paper/latex-renderer";
-import { buildDtxBootstrapPlan, isLatexTemplateFormat, isSystemDocumentClass, resolveTemplateBibliography, resolveTemplateDocumentClass } from "@/lib/paper/template-snapshot";
+import { buildDtxBootstrapPlan, isLatexTemplateFormat, isSystemDocumentClass, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "@/lib/paper/template-snapshot";
 
 const ONE_PIXEL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+const GENERATED_TEMPLATE_PATHS = new Set(["main.tex", "generated-content.tex", "references.bib"]);
 
 function requestedVariants(): Set<string> | null {
   const value = process.env.TEMPLATE_VALIDATE_VARIANTS?.trim();
@@ -72,10 +73,11 @@ async function materializeArchive(directory: string, archiveBuffer: Buffer) {
   for (const [rawPath, entry] of Object.entries(archive.files)) {
     if (entry.dir) continue;
     const path = safeCompilePath(rawPath);
-    if (["main.tex", "generated-content.tex", "references.bib"].includes(path)) continue;
-    const buffer = await entry.async("nodebuffer");
-    await mkdir(join(directory, dirname(path)), { recursive: true });
-    await writeFile(join(directory, path), buffer);
+    const buffer = normalizeTemplateRuntimeBuffer(path, await entry.async("nodebuffer"));
+    if (!GENERATED_TEMPLATE_PATHS.has(path)) {
+      await mkdir(join(directory, dirname(path)), { recursive: true });
+      await writeFile(join(directory, path), buffer);
+    }
     files.push({ path, buffer });
   }
   return files;
@@ -97,7 +99,7 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
     const upstreamFiles = await materializeArchive(directory, archiveBuffer);
     const documentClass = resolveTemplateDocumentClass(manifest, upstreamFiles);
     if (!documentClass) throw new Error("Manifest 没有声明 documentClass，不能进行真实 Template Pack 编译");
-    const effectiveManifest = manifest.documentClass ? manifest : { ...manifest, documentClass };
+    const effectiveManifest = documentClass !== manifest.documentClass ? { ...manifest, documentClass } : manifest;
     const compileManifest = resolveTemplateBibliography(effectiveManifest, upstreamFiles);
     const document = buildSampleAcademicDocument();
     const rendered = renderAcademicDocumentToLatex(document, { manifest: compileManifest, references: [{ id: "ref-sample", title: "Sample Reference", authors: ["Author"], year: 2026, venue: "Journal", doi: null, url: null }], assetPaths: { "sample-figure": "assets/sample-figure.png" }, templateFiles: upstreamFiles });

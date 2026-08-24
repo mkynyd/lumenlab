@@ -11,9 +11,10 @@ import { assertCompileArtifactSize, assertCompileBundleLimits, CompilePolicyErro
 import { renderAcademicDocumentToLatex } from "./latex-renderer";
 import { parseAcademicDocument } from "./document-schema";
 import { buildGeneralAcademicTemplateManifest, normalizeTemplateManifest } from "./template-registry";
-import { buildDtxBootstrapPlan, resolveTemplateBibliography, resolveTemplateDocumentClass } from "./template-snapshot";
+import { buildDtxBootstrapPlan, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "./template-snapshot";
 
 const POLL_INTERVAL_MS = 1_000;
+const GENERATED_TEMPLATE_PATHS = new Set(["main.tex", "generated-content.tex", "references.bib"]);
 
 type CompilationError = {
   code: string;
@@ -229,12 +230,13 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
   for (const [rawPath, entry] of Object.entries(archive.files)) {
     if (entry.dir) continue;
     const path = safeCompilePath(rawPath);
-    // The adapter owns the generated entry files. Upstream class/style/assets
-    // remain available without allowing an archive to replace generated input.
-    if (["main.tex", "generated-content.tex", "references.bib"].includes(path)) continue;
-    const buffer = await entry.async("nodebuffer");
-    await mkdir(join(input.cwd, dirname(path)), { recursive: true });
-    await writeFile(join(input.cwd, path), buffer);
+    const buffer = normalizeTemplateRuntimeBuffer(path, await entry.async("nodebuffer"));
+    // Keep upstream entry files in memory for class/package discovery, but do
+    // not let them replace the adapter-owned generated compilation inputs.
+    if (!GENERATED_TEMPLATE_PATHS.has(path)) {
+      await mkdir(join(input.cwd, dirname(path)), { recursive: true });
+      await writeFile(join(input.cwd, path), buffer);
+    }
     files.push({ path, buffer });
   }
   const documentClass = resolveTemplateDocumentClass(input.manifest, files);
@@ -307,7 +309,11 @@ export async function sourceBundle(input: {
   zip.file("generated-content.tex", input.generatedContentTex);
   zip.file("references.bib", input.referencesBib);
   zip.file("template-manifest.json", JSON.stringify(input.manifest, null, 2));
-  for (const file of input.files ?? []) zip.file(safeCompilePath(file.path), file.buffer);
+  for (const file of input.files ?? []) {
+    const path = safeCompilePath(file.path);
+    if (GENERATED_TEMPLATE_PATHS.has(path)) continue;
+    zip.file(path, file.buffer);
+  }
   for (const asset of input.assets ?? []) zip.file(safeCompilePath(asset.path), asset.buffer);
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
@@ -360,7 +366,7 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
     if (manifest.upstreamSnapshot?.materialized && !resolvedClass) {
       throw new Error("TEMPLATE_MANIFEST_INCOMPLETE：pinned Template Pack 没有可用 documentClass");
     }
-    const effectiveManifest = !manifest.documentClass && resolvedClass ? { ...manifest, documentClass: resolvedClass } : manifest;
+    const effectiveManifest = resolvedClass && resolvedClass !== manifest.documentClass ? { ...manifest, documentClass: resolvedClass } : manifest;
     const compileManifest = resolveTemplateBibliography(effectiveManifest, upstreamFiles);
     const rendered = renderAcademicDocumentToLatex(document, {
       manifest: compileManifest,

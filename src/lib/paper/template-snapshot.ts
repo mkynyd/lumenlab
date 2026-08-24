@@ -33,6 +33,14 @@ export interface DtxBootstrapPlan {
   outputFiles: string[];
 }
 
+/** Normalize legacy repository-relative class references for the flat compile root. */
+export function normalizeTemplateRuntimeBuffer(path: string, buffer: Buffer): Buffer {
+  if (!/\.(?:cls|sty)$/i.test(path)) return buffer;
+  const source = buffer.toString("utf8");
+  if (!source.includes("../Template/")) return buffer;
+  return Buffer.from(source.replaceAll("../Template/", "Template/"), "utf8");
+}
+
 export function buildDtxBootstrapPlan(documentClass: string, dtxName: string, dtxSource: string): DtxBootstrapPlan {
   const generated = [...dtxSource.matchAll(/\\file\s*\{([^}]+)\}\s*\{\s*\\from\s*\{[^}]+\}\s*\{([^}]+)\}\s*\}/gi)]
     .map((match) => ({ output: (match[1] ?? "").replace(/\\jobname/g, documentClass), tag: match[2] ?? "" }))
@@ -144,7 +152,20 @@ export function resolveTemplateDocumentClass(
   files: TemplateSourceFile[],
 ): string | null {
   const explicit = manifest.documentClass ? validDocumentClass(manifest.documentClass) : null;
-  if (explicit) return explicit;
+  const explicitFilename = explicit ? files.map((file) => validDocumentClass(basename(file.path))).find((name) => name?.toLowerCase() === explicit.toLowerCase()) : null;
+  const explicitDeclared = Boolean(explicit && files.some((file) => {
+    const filenameClass = validDocumentClass(basename(file.path));
+    if (filenameClass?.toLowerCase() === explicit.toLowerCase()) return true;
+    if (!file.buffer) return false;
+    return new RegExp(`\\\\Provides(?:Expl)?Class\\s*\\{${explicit}\\}`, "i").test(stripLatexComments(file.buffer.toString("utf8")));
+  }));
+  // Registry metadata can point at a historical class name while the pinned
+  // snapshot contains the maintained implementation under a slightly
+  // different name (for example `bnu-thesis` vs `bnuthesis`). Prefer the
+  // executable source when the explicit class is absent; keep system classes
+  // and exact sources authoritative.
+  if (explicitFilename) return explicitFilename;
+  if (explicit && (isSystemDocumentClass(explicit) || explicitDeclared)) return explicit;
 
   const candidates = files
     .filter((file) => /\.(?:cls|ins|dtx)$/i.test(file.path))
@@ -162,6 +183,8 @@ export function resolveTemplateDocumentClass(
   });
   const unique = [...new Map([...declared, ...candidates].map((candidate) => [candidate.name, candidate])).values()];
   if (unique.length === 0) return null;
+  const declaredEntryClass = declared.find((candidate) => !candidate.path.includes("/") && GENERIC_DOCUMENT_CLASSES.has(candidate.name));
+  if (declaredEntryClass) return declaredEntryClass.name;
 
   const hints = hintTokens(manifest);
   const scored = unique.map((candidate) => {
@@ -170,7 +193,7 @@ export function resolveTemplateDocumentClass(
     let score = 0;
     if (!candidate.path.includes("/")) score += 8;
     if (normalizedName.includes("thesis") || normalizedName.includes("dissert")) score += 6;
-    if (normalizedPath.includes("dependency") || normalizedPath.includes("/base/") || normalizedPath.includes("/ctex/")) score -= 20;
+    if (normalizedPath.includes("dependency") || normalizedPath.includes("/base/") || normalizedPath.includes("/ctex/") || normalizedPath.includes("/reference/") || normalizedPath.includes("/vendor/")) score -= 20;
     for (const hint of hints) {
       if (normalizedName === hint || normalizedName.includes(hint) || hint.includes(normalizedName)) score += 12;
     }
@@ -181,7 +204,7 @@ export function resolveTemplateDocumentClass(
   const custom = scored.find((candidate) => !GENERIC_DOCUMENT_CLASSES.has(candidate.name));
   if (custom) return custom.name;
   const declaredGeneric = declared.find((candidate) => GENERIC_DOCUMENT_CLASSES.has(candidate.name));
-  return declaredGeneric?.name ?? null;
+  return declaredGeneric?.name ?? explicit ?? null;
 }
 
 function degreeToken(value: string | null | undefined): "bachelor" | "master" | "doctor" | null {
@@ -204,7 +227,10 @@ export function resolveTemplateClassOptions(
   const degree = degreeToken(manifest.degreeType);
   if (!degree || !documentClass) return [];
   const normalized = documentClass.toLowerCase();
-  if (["thuthesis", "xjtuthesis", "hithesis", "shtthesis"].includes(normalized)) return [degree];
+  if (["thuthesis", "xjtuthesis", "hithesis", "shtthesis", "bnuthesis"].includes(normalized)) return [degree];
+  if (normalized === "seuthesiy") return [degree === "doctor" ? "phd" : degree === "bachelor" ? "engineering" : "masters"];
+  if (normalized === "hhuthesis") return [degree === "doctor" ? "doctor" : degree === "bachelor" ? "bachelor" : "academicmaster"];
+  if (normalized === "scuthesis") return [degree];
   if (normalized === "jnuthesis") return [degree === "doctor" ? "phd" : degree];
   if (normalized === "nuaathesis") return [`degree=${degree}`, "fontset=fandol"];
   if (["ccnuthesis", "cquthesis", "buaathesis", "buctthesis", "shuthesis", "csuthesis"].includes(normalized)) return [`type=${degree}`];
@@ -223,10 +249,14 @@ export function resolveTemplateBibliography(
   files: Array<{ path: string; buffer?: Buffer }>,
 ): AcademicTemplateManifest {
   const classSources = files
-    .filter((file) => /\.(?:cls|sty|dtx)$/i.test(file.path) && file.buffer)
+    .filter((file) => (
+      /\.(?:cls|sty|dtx)$/i.test(file.path) || isLikelyTemplateEntrySource(file, manifest)
+    ) && file.buffer)
     .map((file) => stripLatexComments(file.buffer!.toString("utf8")))
     .join("\n");
   const classUsesBiblatex = /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(classSources);
+  const sourceRequestsBibtex = /\\(?:RequirePackage|usepackage)\s*\[[^\]]*\bbibtex\b[^\]]*\]\s*\{[^}]+\}/i.test(classSources);
+  if (sourceRequestsBibtex) return { ...manifest, bibliography: "bibtex" };
   if (classUsesBiblatex && !/biber|biblatex/i.test(manifest.bibliography ?? "")) return { ...manifest, bibliography: "biblatex" };
   if (!/biber|biblatex/i.test(manifest.bibliography ?? "")) return manifest;
   if (classUsesBiblatex) return manifest;
@@ -238,6 +268,12 @@ export function resolveTemplateBibliography(
 
 function stripLatexComments(source: string): string {
   return source.replace(/(^|[^\\])%[^\n]*/g, "$1");
+}
+
+function isLikelyTemplateEntrySource(file: { path: string; buffer?: Buffer }, manifest: AcademicTemplateManifest): boolean {
+  if (!file.buffer || !/\.tex$/i.test(file.path)) return false;
+  const source = stripLatexComments(file.buffer.toString("utf8"));
+  return file.path === manifest.entryFile || (!file.path.includes("/") && /\\documentclass\b/i.test(source));
 }
 
 export async function normalizeTemplateZip(input: Buffer): Promise<{ buffer: Buffer; files: string[]; sha256: string; bytes: number }> {

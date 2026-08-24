@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import type { AcademicTemplateManifest } from "./template-registry";
-import { buildDtxBootstrapPlan, githubRepositorySlug, normalizeTemplateTarGz, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
+import { buildDtxBootstrapPlan, githubRepositorySlug, normalizeTemplateRuntimeBuffer, normalizeTemplateTarGz, normalizeTemplateZip, resolveTemplateBibliography, resolveTemplateClassOptions, resolveTemplateDocumentClass } from "./template-snapshot";
 
 describe("template upstream snapshots", () => {
   it("accepts only GitHub owner/repository identities", () => {
     expect(githubRepositorySlug("https://github.com/tuna/thuthesis.git")).toBe("tuna/thuthesis");
     expect(githubRepositorySlug("https://example.com/tuna/thuthesis")).toBeNull();
+  });
+
+  it("normalizes only legacy Template-relative class references at runtime", () => {
+    const source = Buffer.from("\\input{../Template/scuthesis.def}\n\\input{../Other/file}");
+    expect(normalizeTemplateRuntimeBuffer("Template/scuthesis.cls", source).toString()).toContain("\\input{Template/scuthesis.def}");
+    expect(normalizeTemplateRuntimeBuffer("Template/scuthesis.cls", source).toString()).toContain("../Other/file");
+    expect(normalizeTemplateRuntimeBuffer("README.md", source)).toBe(source);
   });
 
   it("strips archive roots and rejects unsafe files through the shared policy", async () => {
@@ -59,6 +66,17 @@ describe("template upstream snapshots", () => {
       { id: "nuaa", university: "南京航空航天大学", repositoryUrl: "https://github.com/example/nuaa", documentClass: null },
       [{ path: "nuaathesis.dtx", buffer: Buffer.from("\\ProvidesClass{nuaathesis}") }],
     )).toBe("nuaathesis");
+    expect(resolveTemplateDocumentClass(
+      { id: "bnu", university: "北京师范大学", repositoryUrl: "https://github.com/example/bnu", documentClass: "bnu-thesis" },
+      [{ path: "bnuthesis.cls", buffer: Buffer.from("\\ProvidesClass{bnuthesis}") }],
+    )).toBe("bnuthesis");
+    expect(resolveTemplateDocumentClass(
+      { id: "xtu", university: "湘潭大学", repositoryUrl: "https://github.com/example/xtu", documentClass: null },
+      [
+        { path: "reference/IEEEtran.cls" },
+        { path: "xtuthesis.tex", buffer: Buffer.from("\\documentclass{ctexbook}") },
+      ],
+    )).toBe("ctexbook");
   });
 
   it("uses documented degree option shapes for common thesis classes", () => {
@@ -67,6 +85,10 @@ describe("template upstream snapshots", () => {
     expect(resolveTemplateClassOptions({ degreeType: "本科" }, "buctthesis")).toEqual(["type=bachelor"]);
     expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "jnuthesis")).toEqual(["master"]);
     expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "nuaathesis")).toEqual(["degree=master", "fontset=fandol"]);
+    expect(resolveTemplateClassOptions({ degreeType: "博士" }, "bnuthesis")).toEqual(["doctor"]);
+    expect(resolveTemplateClassOptions({ degreeType: "博士" }, "seuthesiY")).toEqual(["phd"]);
+    expect(resolveTemplateClassOptions({ degreeType: "本科" }, "hhuthesis")).toEqual(["bachelor"]);
+    expect(resolveTemplateClassOptions({ degreeType: "硕士" }, "scuthesis")).toEqual(["master"]);
   });
 
   it("bootstraps every generated artifact declared by a DTX installer", () => {
@@ -80,5 +102,6 @@ describe("template upstream snapshots", () => {
     expect(resolveTemplateBibliography(manifest, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{natbib}") }]).bibliography).toBe("bibtex");
     expect(resolveTemplateBibliography(manifest, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{biblatex}") }]).bibliography).toBe("biblatex-gb7714-2015");
     expect(resolveTemplateBibliography({ ...manifest, bibliography: null }, [{ path: "demo.cls", buffer: Buffer.from("\\RequirePackage{biblatex}") }]).bibliography).toBe("biblatex");
+    expect(resolveTemplateBibliography({ ...manifest, id: "neu", documentClass: "neuthesis", entryFile: "Thesis.tex" }, [{ path: "Thesis.tex", buffer: Buffer.from("\\usepackage[bibtex,myhdr]{Style/artratex}") }]).bibliography).toBe("bibtex");
   });
 });

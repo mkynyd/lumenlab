@@ -28,15 +28,16 @@ export function renderAcademicDocumentToLatex(document: AcademicDocument, option
   const metadata = document.blocks.find((block): block is Extract<DocumentBlock, { kind: "paper_metadata" }> => block.kind === "paper_metadata");
   const usesBiber = /biber|biblatex/i.test(manifest?.bibliography ?? "");
   const sourceUsesBiblatex = templateFiles
-    .filter((file) => /\.(?:cls|sty)$/i.test(file.path))
+    .filter((file) => /\.(?:cls|sty)$/i.test(file.path) || isLikelyTemplateEntrySource(file, manifest))
     .some((file) => /\\(?:RequirePackage|usepackage)\s*(?:\[[^\]]*\])?\s*\{\s*biblatex\s*\}/i.test(stripLatexComments(file.buffer?.toString("utf8") ?? "")));
-  const usesTemplateBiblatex = usesBiber || sourceUsesBiblatex || isBiblatexTemplateClass(documentClass);
+  const usesTemplateBiblatex = usesBiber || (sourceUsesBiblatex && !/bibtex/i.test(manifest?.bibliography ?? "")) || isBiblatexTemplateClass(documentClass);
   const lines = [
     ...renderTemplatePreClassOptions(documentClass, templateFiles),
     `\\documentclass${classOptions.length > 0 ? `[${classOptions.join(",")}]` : ""}{${documentClass}}`,
     ...renderTemplatePreamble(templateFiles, manifest),
     "\\usepackage{amsmath,graphicx,booktabs,hyperref}",
-    ...(usesBiber && !isBiblatexTemplateClass(documentClass) && !sourceUsesBiblatex ? [`\\usepackage[backend=biber,style=${biblatexStyle(documentClass)}]{biblatex}`, "\\addbibresource{references.bib}"] : []),
+    ...(usesBiber && !sourceUsesBiblatex && (!isBiblatexTemplateClass(documentClass) || templateFiles.length === 0) ? [`\\usepackage[backend=biber,style=${biblatexStyle(documentClass)}]{biblatex}`] : []),
+    ...(usesTemplateBiblatex && !isBiblatexTemplateClass(documentClass) ? ["\\addbibresource{references.bib}"] : []),
     ...(metadata ? renderTemplateMetadataSetup(metadata, documentClass, usesTemplateBiblatex, templateFiles) : []),
     "\\begin{document}",
   ];
@@ -68,6 +69,12 @@ function stripLatexComments(source: string): string {
   return source.replace(/(^|[^\\])%[^\n]*/g, "$1");
 }
 
+function isLikelyTemplateEntrySource(file: TemplateSourceFile, manifest?: AcademicTemplateManifest): boolean {
+  if (!file.buffer || !/\.tex$/i.test(file.path)) return false;
+  const source = stripLatexComments(file.buffer.toString("utf8"));
+  return file.path === manifest?.entryFile || (!file.path.includes("/") && /\\documentclass\b/i.test(source));
+}
+
 function bibtexField(value: string | number | null | undefined): string {
   return String(value ?? "").replace(/[{}]/g, "").replace(/([\\])/g, "\\$1");
 }
@@ -88,6 +95,7 @@ function toBibtex(reference: LatexReference): string {
 function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, manifest?: AcademicTemplateManifest, usesTemplateBiblatex = false, templateFiles: TemplateSourceFile[] = []): string {
   switch (block.kind) {
     case "paper_metadata":
+      if ((manifest?.documentClass ?? "").toLowerCase() === "hhuthesis") return "";
       return hasCustomMetadataAdapter(templateFiles)
         ? "\\maketitle"
         : (manifest?.documentClass ?? "").toLowerCase() === "ccnuthesis"
@@ -114,7 +122,9 @@ function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, 
     case "quote":
       return `\\begin{quote}\n${renderInline(block.children)}${block.attribution ? `\\par\\hfill—${escapeLatex(block.attribution)}` : ""}\n\\end{quote}`;
     case "bibliography":
-      return usesTemplateBiblatex ? "\\printbibliography" : "\\bibliography{references}\n\\bibliographystyle{plain}";
+      return usesTemplateBiblatex
+        ? "\\printbibliography"
+        : `\\bibliography{references}${hasTemplateBibliographyStyle(templateFiles) ? "" : "\n\\bibliographystyle{plain}"}`;
     case "appendix":
       return `\\appendix\n\\section{${escapeLatex(block.title)}}`;
     case "acknowledgement":
@@ -127,11 +137,11 @@ function renderBlock(block: DocumentBlock, assetPaths?: Record<string, string>, 
 }
 
 function isBiblatexTemplateClass(documentClass: string | null | undefined): boolean {
-  return ["ccnuthesis", "seuthesiy", "shtthesis"].includes((documentClass ?? "").toLowerCase());
+  return ["ccnuthesis", "thuthesis", "shtthesis"].includes((documentClass ?? "").toLowerCase());
 }
 
 function isSpecialMetadataClass(documentClass: string | null | undefined): boolean {
-  return ["ccnuthesis", "thuthesis", "shtthesis"].includes((documentClass ?? "").toLowerCase());
+  return ["ccnuthesis", "seuthesiy", "thuthesis", "shtthesis"].includes((documentClass ?? "").toLowerCase());
 }
 
 function biblatexStyle(documentClass: string): string {
@@ -149,6 +159,23 @@ function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "p
       return [`\\thusetup{title = {${title}}, author = {${templateAuthor}}}`];
     case "shtthesis":
       return [`\\shtsetup{title = {${title}}, author = {${templateAuthor}}${usesBiblatex ? ", bib-resource = {references.bib}" : ""}}`];
+    case "seuthesiy":
+      return [`\\title{${title}}{${title}}{}{}{${title}}{${title}}`, `\\author{${templateAuthor}}{${templateAuthor}}`];
+    case "scuthesis": {
+      const lines: string[] = [];
+      if (hasTemplateCommand(templateFiles, "CoverTitle")) lines.push(`\\CoverTitle{${title}}`);
+      if (hasTemplateCommand(templateFiles, "ENGtitle")) lines.push(`\\ENGtitle{${title}}`);
+      if (hasTemplateCommand(templateFiles, "ENGauthor")) lines.push(`\\ENGauthor{${templateAuthor}}`);
+      if (hasTemplateCommand(templateFiles, "accomplishdate")) lines.push("\\accomplishdate{2026}");
+      if (hasTemplateCommand(templateFiles, "school") && institution) lines.push(`\\school{${institution}}`);
+      if (hasTemplateCommand(templateFiles, "supervisor")) lines.push("\\supervisor{Research Supervisor}");
+      if (hasTemplateCommand(templateFiles, "major")) lines.push("\\major{Computer Science}");
+      if (hasTemplateCommand(templateFiles, "direction")) lines.push("\\direction{Deep Research}");
+      if (hasTemplateCommand(templateFiles, "defensedate")) lines.push("\\defensedate{2026}");
+      if (hasTemplateCommand(templateFiles, "keywords")) lines.push("\\keywords{深度研究、论文排版、证据}");
+      if (hasTemplateCommand(templateFiles, "ENGkeywords")) lines.push("\\ENGkeywords{research, paper, evidence}");
+      return lines;
+    }
     case "ccnuthesis":
       return [`\\ccnusetup{info = {title = {${title}}, author = {${templateAuthor}}}, style = {bib-resource = {references.bib}}}`];
     default: {
@@ -179,8 +206,12 @@ function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "p
   }
 }
 
-function needsChapterAbstract(documentClass: string | null | undefined): boolean {
-  return ["book", "ctexbook", "ctexrep", "cquthesis", "buctthesis", "ctexreport", "report", "scrbook", "scrreprt", "ucasthesis", "tongjithesis"].includes((documentClass ?? "").toLowerCase());
+function needsChapterAbstract(documentClass: string | null | undefined, templateFiles: TemplateSourceFile[]): boolean {
+  const normalized = (documentClass ?? "").toLowerCase();
+  if (["book", "ctexbook", "ctexrep", "cquthesis", "buctthesis", "ctexreport", "report", "scrbook", "scrreprt", "ucasthesis", "tongjithesis"].includes(normalized)) return true;
+  return templateFiles
+    .filter((file) => /\.cls$/i.test(file.path) && isPrimaryTemplateDefinitionFile(file))
+    .some((file) => /\\LoadClass(?:WithOptions)?\s*(?:\[[^\]]*\])?\s*\{\s*(?:book|report|ctexbook|ctexrep|scrbook|scrreprt)\s*\}/i.test(stripLatexComments(file.buffer?.toString("utf8") ?? "")));
 }
 
 function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>, documentClass: string | null | undefined, templateFiles: TemplateSourceFile[]): string {
@@ -195,7 +226,7 @@ function renderAbstractBlock(block: Extract<DocumentBlock, { kind: "abstract" }>
   const environment = block.language === "en"
     ? hasTemplateEnvironment(templateFiles, "abstractEn") ? "abstractEn" : hasTemplateEnvironment(templateFiles, "enabstract") ? "enabstract" : null
     : hasTemplateEnvironment(templateFiles, "abstract") ? "abstract" : null;
-  return (needsChapterAbstract(documentClass) && !environment) || (templateFiles.length > 0 && !environment)
+  return needsChapterAbstract(documentClass, templateFiles) && !environment
     ? `\\chapter*{${block.language === "en" ? "Abstract" : "摘要"}}\n${content}`
     : `\\begin{${environment ?? "abstract"}}\n${content}\n\\end{${environment ?? "abstract"}}`;
 }
@@ -209,17 +240,30 @@ function renderKeywordsBlock(block: Extract<DocumentBlock, { kind: "keywords" }>
 
 function hasTemplateCommand(files: TemplateSourceFile[], command: string): boolean {
   if (!files.length) return false;
-  const pattern = new RegExp(`\\\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand|def)\\s*\\*?\\s*(?:\\\\?\\{)?\\\\${command}\\b`, "i");
-  return files.some((file) => file.buffer?.toString("utf8").match(pattern));
+  const pattern = new RegExp(`\\\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand|def)\\s*\\*?\\s*(?:\\\\?\\{)?\\\\${command}\\b`);
+  return files.filter(isPrimaryTemplateDefinitionFile).some((file) => file.buffer?.toString("utf8").match(pattern));
 }
 
 function hasTemplateToken(files: TemplateSourceFile[], token: string): boolean {
-  return files.some((file) => (file.buffer?.toString("utf8") ?? "").includes(`\\${token}`));
+  return files.filter(isPrimaryTemplateDefinitionFile).some((file) => (file.buffer?.toString("utf8") ?? "").includes(`\\${token}`));
+}
+
+function hasTemplateBibliographyStyle(files: TemplateSourceFile[]): boolean {
+  return files
+    .filter(isPrimaryTemplateDefinitionFile)
+    .some((file) => /\\bibliographystyle\s*\{/i.test(stripLatexComments(file.buffer?.toString("utf8") ?? "")));
 }
 
 function hasTemplateEnvironment(files: TemplateSourceFile[], environment: string): boolean {
-  const pattern = new RegExp(`\\\\(?:newenvironment|renewenvironment|NewDocumentEnvironment)\\s*(?:\\*\\s*)?\\{${environment}\\}`, "i");
-  return files.some((file) => pattern.test(file.buffer?.toString("utf8") ?? ""));
+  const pattern = new RegExp(`\\\\(?:newenvironment|renewenvironment|NewDocumentEnvironment)\\s*(?:\\*\\s*)?\\{${environment}\\}`);
+  return files.filter(isPrimaryTemplateDefinitionFile).some((file) => pattern.test(file.buffer?.toString("utf8") ?? ""));
+}
+
+function isPrimaryTemplateDefinitionFile(file: TemplateSourceFile): boolean {
+  if (/\.(?:cls|sty)$/i.test(file.path)) {
+    return !/(?:^|\/)(?:reference|references|dependency|dependencies|vendor|base|ctex)(?:\/|$)/i.test(file.path);
+  }
+  return /(?:^|\/)(?:main|template|thesis)\.tex$/i.test(file.path);
 }
 
 function hasCustomMetadataAdapter(files: TemplateSourceFile[]): boolean {
@@ -242,7 +286,7 @@ function renderTemplatePreamble(files: TemplateSourceFile[], manifest?: Academic
   if (!entry?.buffer) return [];
   const lines: string[] = [];
   const seen = new Set<string>();
-  const source = entry.buffer.toString("utf8");
+  const source = stripLatexComments(entry.buffer.toString("utf8"));
   const pattern = /\\usepackage(?:\[([^\]]*)\])?\s*\{([^}]+)\}/gi;
   for (const match of source.matchAll(pattern)) {
     const options = (match[1] ?? "").trim();
