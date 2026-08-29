@@ -67,8 +67,8 @@ function LoginForm() {
 
   return (
     <AuthShell
-      title="LumenLab"
-      subtitle="登录你的账户"
+      title="欢迎回来"
+      subtitle="登录 LumenLab，继续学习、项目与创作。"
       footer={
         <>
           还没有账户？{" "}
@@ -81,8 +81,8 @@ function LoginForm() {
         </>
       }
     >
-      <form method="post" onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-1.5">
+      <form method="post" onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-2">
           <label
             htmlFor="email"
             className="block text-sm font-medium text-[var(--color-text-primary)]"
@@ -96,25 +96,34 @@ function LoginForm() {
             autoComplete="email"
             required
             placeholder="you@example.com"
+            className="h-11 px-3"
             aria-invalid={errorField === "email" || undefined}
             aria-describedby={error ? errorId : undefined}
           />
         </div>
 
-        <div className="space-y-1.5">
-          <label
-            htmlFor="password"
-            className="block text-sm font-medium text-[var(--color-text-primary)]"
-          >
-            密码
-          </label>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-[var(--color-text-primary)]"
+            >
+              密码
+            </label>
+            <Link
+              href="/forgot-password"
+              className="-my-2 inline-flex min-h-11 items-center text-sm text-[var(--color-accent)] transition-colors hover:text-[var(--color-accent-hover)]"
+            >
+              忘记密码？
+            </Link>
+          </div>
           <PasswordInput
             id="password"
             name="password"
             autoComplete="current-password"
             required
             placeholder="••••••••"
-            className="font-mono"
+            className="h-11 px-3 pr-11 font-mono"
             aria-invalid={errorField === "password" || undefined}
             aria-describedby={
               error ? `${errorId} login-password-help` : "login-password-help"
@@ -151,7 +160,7 @@ function LoginForm() {
         <Button
           type="submit"
           disabled={isLoading}
-          className="w-full h-9 rounded-[var(--radius-md)]"
+          className="h-11 w-full rounded-[var(--radius-md)] text-sm"
         >
           {isLoading ? (
             <>
@@ -163,14 +172,6 @@ function LoginForm() {
           )}
         </Button>
 
-        <div className="text-center">
-          <Link
-            href="/forgot-password"
-            className="inline-flex min-h-11 min-w-11 items-center justify-center px-1 text-sm text-[var(--color-accent)] transition-colors hover:text-[var(--color-accent-hover)]"
-          >
-            忘记密码？
-          </Link>
-        </div>
       </form>
     </AuthShell>
   );
