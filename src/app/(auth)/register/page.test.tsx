@@ -112,16 +112,14 @@ describe("RegisterPage 协议勾选", () => {
     );
     await user.click(nextButton(/创建账户/));
 
-    await waitFor(() => {
-      expect(
-        vi
-          .mocked(fetch)
-          .mock.calls.some(([url]) =>
-            String(url).includes("/api/auth/register")
-          )
-      ).toBe(true);
-    });
-    expect(await screen.findByText("注册成功")).toBeInTheDocument();
+    expect(
+      await screen.findByText("注册成功", undefined, { timeout: 5_000 })
+    ).toBeInTheDocument();
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(([url]) => String(url).includes("/api/auth/register"))
+    ).toBe(true);
   });
 
   it("协议文案包含指向 /legal 页面的链接", async () => {

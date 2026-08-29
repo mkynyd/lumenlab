@@ -990,6 +990,23 @@ pre code {
   height: 100%;
 }
 
+/* Authentication product stage: an inset cool-neutral surface with the shared
+   interactive dot field, tuned to stay quiet behind long-form product copy. */
+.auth-showcase-surface {
+  background:
+    radial-gradient(
+      ellipse at 18% 18%,
+      color-mix(in oklch, var(--color-accent) 13%, transparent),
+      transparent 44%
+    ),
+    radial-gradient(
+      ellipse at 82% 74%,
+      color-mix(in oklch, var(--color-accent) 8%, transparent),
+      transparent 40%
+    ),
+    var(--color-surface);
+}
+
 .workbench-glass {
   background: var(--color-panel);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
