@@ -453,7 +453,7 @@ npx prisma migrate deploy
 npm run dev
 ```
 
-打开 `http://localhost:3000`。中央模式使用有效注册码注册；自托管开发模式可先运行 `USER_API_KEYS_ENABLED=1 npm run seed:dev-access` 创建本地账号与凭据。
+打开 `http://localhost:3000`。中央模式使用邮箱 + 验证码注册；自托管开发模式可先运行 `USER_API_KEYS_ENABLED=1 npm run seed:dev-access` 创建本地账号与凭据。
 
 ## 使用指南
 

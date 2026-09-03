@@ -62,7 +62,7 @@ LumenLab 是面向大学生与通用学习者的项目化 AI 工作台。用户�
 ### 账号、凭据与安全
 
 - Auth.js v5 Credentials + JWT，密码使用 bcrypt。
-- 中央模式要求 Alpha 注册码；注册码与 provider 凭据由独立的 `course-ai-regadmin` 发布加密快照。
+- 中央模式下用户通过邮箱 + 验证码注册（一次性注册票据）；provider 凭据与可选的注册码密钥组绑定由独立的 `course-ai-regadmin` 发布加密快照。
 - 主业务与管理端使用独立数据库、`ENCRYPTION_KEY` 和注册码摘要 secret。
 - 同步协议使用 RSA-OAEP + AES-256-GCM（16-byte tag）+ HMAC + timestamp + nonce 防重放。
 - API Key 只在服务端以 AES-256-GCM 加密存储，客户端只能看到掩码。

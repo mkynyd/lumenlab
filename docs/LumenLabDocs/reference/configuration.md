@@ -68,7 +68,7 @@
 
 `src/lib/config.ts` 中的 `USER_API_KEYS_ENABLED` 控制部署模式：
 
-- 默认 `false`：使用 `CredentialProfile` 中的中央密钥组（Alpha 注册码流程）。
+- 默认 `false`：使用 `CredentialProfile` 中的中央密钥组（中央凭据流程，用户经邮箱 + 验证码注册）。
 - 设为 `1` 或 `true`：优先读取 `ApiKey` 表中用户自行提供的 API Key，未找到时回退到中央密钥组。
 
 该开关没有前端 UI，需由部署者通过环境变量控制。
