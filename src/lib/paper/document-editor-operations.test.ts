@@ -1,8 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { buildEmptyAcademicDocument, type AcademicDocument } from "./document-schema";
-import { createInsertableBlock, insertDocumentBlock, moveHeadingSubtree, moveHeadingSubtreeTo, removeDocumentBlock, updateDocumentBlockText } from "./document-editor-operations";
+import { buildDocumentOutline, createInsertableBlock, insertDocumentBlock, moveHeadingSubtree, moveHeadingSubtreeTo, removeDocumentBlock, updateDocumentBlockText } from "./document-editor-operations";
 
 describe("document editor operations", () => {
+  it("projects nested chapter cards without consuming back matter or changing document order", () => {
+    const blocks = [
+      { kind: "paper_metadata" }, { kind: "abstract" },
+      { kind: "heading", id: "h1", level: 1 }, { kind: "paragraph", id: "p1" },
+      { kind: "heading", id: "h2", level: 2 }, { kind: "paragraph", id: "p2" },
+      { kind: "heading", id: "h3", level: 1 }, { kind: "bibliography" },
+    ];
+    const before = structuredClone(blocks);
+    const outline = buildDocumentOutline(blocks);
+    expect(outline.map((node) => node.index)).toEqual([0, 1, 2, 6, 7]);
+    expect(outline[2].children.map((node) => node.index)).toEqual([3, 4]);
+    expect(outline[2].children[1].children[0].key).toBe("p2");
+    expect(blocks).toEqual(before);
+  });
+
+  it("keeps references at the end when moving the last chapter upward", () => {
+    const source = buildEmptyAcademicDocument();
+    source.blocks.push(createInsertableBlock("heading", "last"), createInsertableBlock("paragraph", "last-body"), createInsertableBlock("bibliography", "refs"));
+    const moved = moveHeadingSubtree(source, 4, "up");
+    expect(moved.blocks.at(-1)?.kind).toBe("bibliography");
+    expect(moved.blocks[2]).toMatchObject({ id: "last" });
+    expect(moved.blocks[3]).toMatchObject({ id: "last-body" });
+  });
   it("inserts and removes structured blocks without mutating the source", () => {
     const source = buildEmptyAcademicDocument("论文");
     const withQuote = insertDocumentBlock(source, 3, createInsertableBlock("quote", "quote-1"));

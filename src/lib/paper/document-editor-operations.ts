@@ -3,6 +3,33 @@ import type { AcademicDocument, DocumentBlock } from "./document-schema";
 export type InsertableBlockKind = "paragraph" | "heading" | "quote" | "equation" | "list" | "table" | "bibliography" | "appendix" | "page_break";
 export type HeadingMoveDirection = "up" | "down";
 
+const standaloneKinds = new Set(["paper_metadata", "abstract", "keywords", "bibliography", "acknowledgement", "appendix"]);
+
+export interface DocumentOutlineNode {
+  key: string;
+  index: number;
+  children: DocumentOutlineNode[];
+}
+
+/** A view of the flat document; folding never changes the saved content. */
+export function buildDocumentOutline(blocks: Array<{ kind: string; id?: string; level?: number }>): DocumentOutlineNode[] {
+  const roots: DocumentOutlineNode[] = [];
+  const stack: Array<{ level: number; node: DocumentOutlineNode }> = [];
+  const occurrences = new Map<string, number>();
+  blocks.forEach((block, index) => {
+    const occurrence = occurrences.get(block.kind) ?? 0;
+    occurrences.set(block.kind, occurrence + 1);
+    const node: DocumentOutlineNode = { key: block.id ?? `${block.kind}-${occurrence}`, index, children: [] };
+    if (standaloneKinds.has(block.kind)) stack.length = 0;
+    if (block.kind === "heading") {
+      while (stack.length && stack[stack.length - 1].level >= (block.level ?? 1)) stack.pop();
+    }
+    (stack.at(-1)?.node.children ?? roots).push(node);
+    if (block.kind === "heading") stack.push({ level: block.level ?? 1, node });
+  });
+  return roots;
+}
+
 function textChildren(text: string) {
   return [{ kind: "text" as const, text }];
 }
@@ -52,6 +79,7 @@ function headingSubtreeEnd(blocks: DocumentBlock[], start: number): number {
   if (!block || block.kind !== "heading") return start + 1;
   for (let index = start + 1; index < blocks.length; index += 1) {
     const candidate = blocks[index];
+    if (standaloneKinds.has(candidate.kind)) return index;
     if (candidate.kind === "heading" && candidate.level <= block.level) return index;
   }
   return blocks.length;

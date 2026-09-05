@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ArrowLeft, BookStack, Check, CloudUpload, DragHandGesture, NavArrowDown, NavArrowUp, Play, Plus, Trash } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson } from "@/lib/api/client";
 import { usePaperWorkspace } from "@/lib/hooks/use-papers";
-import { createInsertableBlock, insertDocumentBlock, moveHeadingSubtree, moveHeadingSubtreeTo, removeDocumentBlock, updateDocumentBlockText, type InsertableBlockKind } from "@/lib/paper/document-editor-operations";
+import { buildDocumentOutline, type DocumentOutlineNode, createInsertableBlock, insertDocumentBlock, moveHeadingSubtree, moveHeadingSubtreeTo, removeDocumentBlock, updateDocumentBlockText, type InsertableBlockKind } from "@/lib/paper/document-editor-operations";
 import type { AcademicDocument } from "@/lib/paper/document-schema";
 import { PaperReferencesPanel } from "@/components/paper/paper-references-panel";
 import { PaperPdfViewer } from "@/components/paper/paper-pdf-viewer";
@@ -96,7 +99,7 @@ interface PaperSelectOption {
 }
 
 function PaperSelect({ label, value, options, onValueChange, className }: { label: string; value: string; options: PaperSelectOption[]; onValueChange: (value: string) => void; className?: string }) {
-  return <div className="min-w-0 text-[11px] text-[var(--color-text-tertiary)]"><span>{label}</span><Select value={value} onValueChange={onValueChange}><SelectTrigger aria-label={label} size="sm" className={`mt-1 w-full bg-[var(--color-panel-muted)] text-xs text-[var(--color-text-primary)] ring-1 ring-[var(--color-border-light)] ${className ?? ""}`}><SelectValue /></SelectTrigger><SelectContent position="popper" align="start"><SelectGroup><SelectLabel>{label}</SelectLabel>{options.map((option) => <SelectItem key={option.value} value={option.value} disabled={option.disabled}>{option.label}</SelectItem>)}</SelectGroup></SelectContent></Select></div>;
+  return <div className="min-w-0 text-[11px] text-[var(--color-text-tertiary)]"><span>{label}</span><Select value={value} onValueChange={onValueChange}><SelectTrigger aria-label={label} size="sm" className={`mt-1 w-full bg-[var(--color-panel-muted)] text-xs text-[var(--color-text-primary)] ${className ?? ""}`}><SelectValue /></SelectTrigger><SelectContent position="popper" align="start"><SelectGroup><SelectLabel>{label}</SelectLabel>{options.map((option) => <SelectItem key={option.value} value={option.value} disabled={option.disabled}>{option.label}</SelectItem>)}</SelectGroup></SelectContent></Select></div>;
 }
 
 function CitationReferenceField({ referenceId, references, onChange }: { referenceId?: string; references: PaperReferenceRecord[]; onChange: (referenceId?: string) => void }) {
@@ -129,6 +132,17 @@ function blockText(block: BlockRecord) {
   return block.children ? inlineNodesToText(block.children) : (block.title ?? block.kind);
 }
 
+function blockLabel(block: BlockRecord): string {
+  const labels: Record<string, string> = {
+    paper_metadata: "标题与作者", abstract: block.language === "en" ? "英文摘要" : "中文摘要",
+    keywords: block.language === "en" ? "英文关键词" : "中文关键词", paragraph: "正文",
+    heading: "章节", figure: "图片", table: "表格", equation: "公式", list: "列表",
+    quote: "引文", bibliography: "参考文献", appendix: "附录", acknowledgement: "致谢",
+    page_break: "分页", raw_latex: "导入的 LaTeX 内容",
+  };
+  return labels[block.kind] ?? block.kind;
+}
+
 function importedBlockChildren(block: BlockRecord): InlineRecord[] {
   if (block.children?.length) return block.children;
   if (block.latex) return [{ kind: "text", text: block.latex }];
@@ -153,7 +167,7 @@ function BlockCommandMenu({ onSelect }: { onSelect: (kind: InsertableBlockKind) 
     { kind: "appendix", label: "附录" },
     { kind: "page_break", label: "分页" },
   ];
-  return <div className="mt-2 flex flex-wrap items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 py-2 text-xs shadow-sm ring-1 ring-[var(--color-border-light)]"><span className="mr-1 text-[var(--color-text-tertiary)]">插入块</span>{commands.map((command) => <button type="button" key={command.kind} onClick={() => onSelect(command.kind)} className="rounded-[var(--radius-sm)] px-2 py-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]">{command.label}</button>)}</div>;
+  return <div className="mt-2 flex flex-wrap items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2 py-2 text-xs"><span className="mr-1 text-[var(--color-text-tertiary)]">插入块</span>{commands.map((command) => <button type="button" key={command.kind} onClick={() => onSelect(command.kind)} className="rounded-[var(--radius-sm)] px-2 py-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]">{command.label}</button>)}</div>;
 }
 
 function InlineStructureEditor({ nodes, onChange, references, nested = false }: { nodes: InlineRecord[]; onChange: (nodes: InlineRecord[]) => void; references: PaperReferenceRecord[]; nested?: boolean }) {
@@ -204,7 +218,7 @@ function PaperBlockEditor({ block, index, references, onTextChange, onUpdate }: 
   const fieldClass = "w-full rounded-[var(--radius-sm)] bg-[var(--color-panel-muted)] px-2 py-1.5 text-xs text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] placeholder:text-[var(--color-text-tertiary)] focus:bg-[var(--color-bg)] focus:ring-[var(--color-accent)]";
 
   if (block.kind === "paper_metadata") {
-    return <div className="grid gap-2 rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 sm:grid-cols-2"><label className="text-[11px] text-[var(--color-text-tertiary)] sm:col-span-2">论文标题<input value={block.title ?? ""} onChange={(event) => update((current) => ({ ...current, title: event.target.value.trim() || "未命名论文" }))} className={`${fieldClass} mt-1 text-sm`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)] sm:col-span-2">作者（逗号分隔）<input value={(block.authors ?? []).join(", ")} onChange={(event) => update((current) => ({ ...current, authors: event.target.value.split(",").map((item) => item.trim()).filter(Boolean).length > 0 ? event.target.value.split(",").map((item) => item.trim()).filter(Boolean) : ["作者"] }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">机构<input value={block.institution ?? ""} onChange={(event) => update((current) => ({ ...current, institution: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">学位<input value={block.degreeType ?? ""} onChange={(event) => update((current) => ({ ...current, degreeType: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">日期<input value={block.date ?? ""} onChange={(event) => update((current) => ({ ...current, date: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label></div>;
+    return <div className="grid gap-2 rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 sm:grid-cols-2"><label className="text-[11px] text-[var(--color-text-tertiary)] sm:col-span-2">论文标题<input value={block.title ?? ""} onChange={(event) => update((current) => ({ ...current, title: event.target.value }))} className={`${fieldClass} mt-1 text-sm`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)] sm:col-span-2">作者（逗号分隔）<input value={(block.authors ?? []).join(", ")} onChange={(event) => update((current) => ({ ...current, authors: event.target.value.split(",").map((item) => item.trim()).filter(Boolean).length > 0 ? event.target.value.split(",").map((item) => item.trim()).filter(Boolean) : ["作者"] }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">机构<input value={block.institution ?? ""} onChange={(event) => update((current) => ({ ...current, institution: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">学位<input value={block.degreeType ?? ""} onChange={(event) => update((current) => ({ ...current, degreeType: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label><label className="text-[11px] text-[var(--color-text-tertiary)]">日期<input value={block.date ?? ""} onChange={(event) => update((current) => ({ ...current, date: event.target.value || undefined }))} className={`${fieldClass} mt-1`} /></label></div>;
   }
 
   if (block.kind === "keywords") {
@@ -217,7 +231,7 @@ function PaperBlockEditor({ block, index, references, onTextChange, onUpdate }: 
       const nodes = block.children?.length ? block.children : [{ kind: "text", text: text }];
       return <div className="space-y-2"><InlineStructureEditor references={references} nodes={nodes} onChange={(children) => update((current) => ({ ...current, children }))} /><button type="button" onClick={() => { onTextChange(index, inlineNodesToText(nodes)); setRichMode(false); }} className="text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]">切回普通文本（合并内联内容）</button></div>;
     }
-    return <div className="space-y-1"><textarea value={text} onChange={(event) => onTextChange(index, event.target.value)} rows={block.kind === "heading" ? 1 : Math.max(2, Math.min(8, Math.ceil(text.length / 40)))} aria-label={`编辑第 ${index + 1} 个${block.kind === "heading" ? "标题" : "正文块"}`} className={`w-full resize-y rounded-[var(--radius-sm)] bg-[var(--color-panel-muted)] px-3 py-2 text-[15px] leading-8 text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] placeholder:text-[var(--color-text-tertiary)] focus:bg-[var(--color-bg)] focus:ring-[var(--color-accent)] ${block.kind === "heading" ? `font-semibold ${block.level === 1 ? "text-xl" : "text-lg"}` : ""}`} /><button type="button" onClick={() => setRichMode(true)} className="text-[10px] text-[var(--color-text-tertiary)] opacity-0 transition-opacity hover:text-[var(--color-text-primary)] group-hover:opacity-100 focus:opacity-100">添加内联结构</button></div>;
+    return <div className="space-y-1">{block.kind === "heading" ? <PaperSelect label="章节层级" value={String(block.level ?? 1)} options={[1, 2, 3, 4, 5, 6].map((level) => ({ value: String(level), label: `${level} 级标题` }))} onValueChange={(value) => update((current) => ({ ...current, level: Number(value) }))} /> : null}<textarea placeholder={block.kind === "heading" ? "填写章节标题" : "在这里写正文…"} value={text} onChange={(event) => onTextChange(index, event.target.value)} rows={block.kind === "heading" ? 1 : Math.max(2, Math.min(8, Math.ceil(text.length / 40)))} aria-label={`编辑第 ${index + 1} 个${block.kind === "heading" ? "标题" : "正文块"}`} className={`w-full resize-y rounded-[var(--radius-sm)] bg-[var(--color-panel-muted)] px-3 py-2 text-[15px] leading-8 text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] placeholder:text-[var(--color-text-tertiary)] focus:bg-[var(--color-bg)] focus:ring-[var(--color-accent)] ${block.kind === "heading" ? `font-semibold ${block.level === 1 ? "text-xl" : "text-lg"}` : ""}`} /><button type="button" onClick={() => setRichMode(true)} className="text-[10px] text-[var(--color-text-tertiary)] opacity-0 transition-opacity hover:text-[var(--color-text-primary)] group-hover:opacity-100 focus:opacity-100">添加内联结构</button></div>;
   }
 
   if (block.kind === "equation") {
@@ -264,6 +278,9 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     _count?: { materials: number; references: number; researchLinks: number };
     references: PaperReferenceRecord[];
   } | undefined;
+  const queryClient = useQueryClient();
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const [collapsedCards, setCollapsedCards] = useState<Set<string>>(new Set());
   const [draftDocument, setDraftDocument] = useState<AcademicDocumentRecord | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
   const [compileMessage, setCompileMessage] = useState("");
@@ -282,12 +299,29 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
 
   const document = draftDocument ?? workspace?.document?.currentVersion?.content ?? null;
 
-  useEffect(() => {
-    if (!selectedNodeId) return;
-    window.requestAnimationFrame(() => {
-      window.document.getElementById(`document-node-${selectedNodeId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  function focusNode(nodeId: string) {
+    if (!document) return;
+    function findPath(nodes: DocumentOutlineNode[], parents: string[] = []): string[] | null {
+      for (const node of nodes) {
+        const path = [...parents, node.key];
+        if (node.key === nodeId || node.key === `${nodeId}-0`) return path;
+        const found = findPath(node.children, path);
+        if (found) return found;
+      }
+      return null;
+    }
+    const path = findPath(buildDocumentOutline(document.blocks));
+    const target = path?.at(-1) ?? nodeId;
+    setCollapsedCards((current) => {
+      const next = new Set(current);
+      for (const key of path ?? [target]) next.delete(key);
+      return next;
     });
-  }, [selectedNodeId]);
+    setSelectedNodeId(target);
+    window.requestAnimationFrame(() => {
+      window.document.getElementById(`document-node-${target}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
 
   useEffect(() => {
     const documentId = workspace?.document?.id;
@@ -318,60 +352,73 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     return () => { active = false; };
   }, [workspace?.document?.id]);
 
+  const persistDocument = useCallback((snapshot: AcademicDocumentRecord) => {
+    const pending = saveQueue.current.catch(() => undefined).then(async () => {
+      const result = await fetchJson<{ version: { content: AcademicDocumentRecord; version: number } }>(`/api/papers/workspaces/${workspaceId}/document`, { method: "PUT", body: JSON.stringify({ content: snapshot }) });
+      queryClient.setQueryData(queryKeys.papers.workspace(workspaceId), (current: typeof workspace) => current?.document ? {
+        ...current, document: { ...current.document, currentVersion: result.version },
+      } : current);
+      // A response to an earlier save must not erase typing that happened in flight.
+      setDraftDocument((current) => current === snapshot ? null : current);
+      setSaveMessage("已保存");
+    });
+    saveQueue.current = pending;
+    return pending;
+  }, [queryClient, workspaceId]);
+
   useEffect(() => {
     const documentId = workspace?.document?.id;
     if (!documentId || !draftDocument || pendingImport) return;
-    let active = true;
     const timer = window.setTimeout(async () => {
       try {
         setSaveMessage("正在自动保存…");
-        await fetchJson(`/api/papers/workspaces/${workspaceId}/document`, { method: "PUT", body: JSON.stringify({ content: draftDocument }) });
-        const result = await fetchJson<{ compilation: { status: string } }>(`/api/papers/documents/${documentId}/compile`, { method: "POST" });
-        if (!active) return;
-        setDraftDocument(null);
-        setSaveMessage("已自动保存为新的 Document Version");
-        setCompileMessage(`已自动排队编译 PDF：${result.compilation.status}`);
+        await persistDocument(draftDocument);
+        await fetchJson(`/api/papers/documents/${documentId}/compile`, { method: "POST" });
+        setCompileMessage("正在更新 PDF…");
         const versions = await fetchJson<{ versions: DocumentVersionRecord[] }>(`/api/papers/documents/${documentId}/versions`);
-        if (active) setDocumentVersions(versions.versions);
+        setDocumentVersions(versions.versions);
       } catch (error) {
-        if (active) setSaveMessage(error instanceof Error ? error.message : "自动保存失败");
+        setSaveMessage(error instanceof Error ? error.message : "自动保存或排版失败");
       }
     }, 1_200);
-    return () => { active = false; window.clearTimeout(timer); };
-  }, [draftDocument, pendingImport, workspace?.document?.id, workspaceId]);
+    return () => window.clearTimeout(timer);
+  }, [draftDocument, pendingImport, workspace?.document?.id, persistDocument]);
 
   function updateBlock(index: number, value: string) {
     setDraftDocument((current) => {
+      current = current ?? document;
       if (!current) return current;
       return updateDocumentBlockText(current as unknown as AcademicDocument, index, value) as unknown as AcademicDocumentRecord;
     });
   }
 
   function updateBlockRecord(index: number, updater: (block: BlockRecord) => BlockRecord) {
-    setDraftDocument((current) => current ? { ...current, blocks: current.blocks.map((block, blockIndex) => blockIndex === index ? updater(block) : block) } : current);
+    setDraftDocument((draft) => { const current = draft ?? document; return current ? { ...current, blocks: current.blocks.map((block, blockIndex) => blockIndex === index ? updater(block) : block), title: current.blocks[index]?.kind === "paper_metadata" ? updater(current.blocks[index]).title ?? current.title : current.title } : current; });
   }
 
   function insertBlock(index: number, kind: InsertableBlockKind) {
-    setDraftDocument((current) => current ? insertDocumentBlock(current as unknown as AcademicDocument, index, createInsertableBlock(kind, newBlockId(kind))) as unknown as AcademicDocumentRecord : current);
+    setDraftDocument((draft) => { const current = draft ?? document; return current ? insertDocumentBlock(current as unknown as AcademicDocument, index, createInsertableBlock(kind, newBlockId(kind))) as unknown as AcademicDocumentRecord : current; });
     setCommandIndex(null);
   }
 
   function replaceBlock(index: number, kind: InsertableBlockKind) {
     setDraftDocument((current) => {
+      current = current ?? document;
       if (!current) return current;
-      const document = current as unknown as AcademicDocument;
-      const without = removeDocumentBlock(document, index);
+      const source = current as unknown as AcademicDocument;
+      const without = removeDocumentBlock(source, index);
       return insertDocumentBlock(without, index, createInsertableBlock(kind, newBlockId(kind))) as unknown as AcademicDocumentRecord;
     });
     setCommandIndex(null);
   }
 
   function removeBlock(index: number) {
-    setDraftDocument((current) => current ? removeDocumentBlock(current as unknown as AcademicDocument, index) as unknown as AcademicDocumentRecord : current);
+    setDraftDocument((draft) => { const current = draft ?? document; return current ? removeDocumentBlock(current as unknown as AcademicDocument, index) as unknown as AcademicDocumentRecord : current; });
   }
 
   function classifyImportedBlock(index: number, classification: ImportedBlockClassification) {
     setDraftDocument((current) => {
+      current = current ?? document;
       if (!current) return current;
       const block = current.blocks[index];
       if (!block) return current;
@@ -391,19 +438,17 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
   }
 
   function moveHeading(index: number, direction: "up" | "down") {
-    setDraftDocument((current) => current ? moveHeadingSubtree(current as unknown as AcademicDocument, index, direction) as unknown as AcademicDocumentRecord : current);
+    setDraftDocument((draft) => { const current = draft ?? document; return current ? moveHeadingSubtree(current as unknown as AcademicDocument, index, direction) as unknown as AcademicDocumentRecord : current; });
   }
 
   function moveHeadingTo(index: number, targetIndex: number) {
-    setDraftDocument((current) => current ? moveHeadingSubtreeTo(current as unknown as AcademicDocument, index, targetIndex) as unknown as AcademicDocumentRecord : current);
+    setDraftDocument((draft) => { const current = draft ?? document; return current ? moveHeadingSubtreeTo(current as unknown as AcademicDocument, index, targetIndex) as unknown as AcademicDocumentRecord : current; });
     setDraggingHeadingIndex(null);
   }
 
   async function saveDocument() {
     if (!workspace?.document || !document) return;
-    await fetchJson(`/api/papers/workspaces/${workspaceId}/document`, { method: "PUT", body: JSON.stringify({ content: document }) });
-    setDraftDocument(null);
-    setSaveMessage("已保存为新的 Document Version");
+    await persistDocument(document);
     const versions = await fetchJson<{ versions: DocumentVersionRecord[] }>(`/api/papers/documents/${workspace.document.id}/versions`);
     setDocumentVersions(versions.versions);
   }
@@ -451,7 +496,7 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
     try {
       setSaveMessage("正在上传图片…");
       const result = await fetchJson<{ asset: { id: string; originalName: string } }>(`/api/papers/workspaces/${workspaceId}/assets`, { method: "POST", body: formData });
-      setDraftDocument((current) => current ? { ...current, blocks: [...current.blocks, { kind: "figure", id: newBlockId("figure"), assetId: result.asset.id, caption: result.asset.originalName, alignment: "center", placement: "float" }] } : current);
+      setDraftDocument((draft) => { const current = draft ?? document; return current ? { ...current, blocks: [...current.blocks, { kind: "figure", id: newBlockId("figure"), assetId: result.asset.id, caption: result.asset.originalName, alignment: "center", placement: "float" }] } : current; });
       setSaveMessage("图片已加入 Document，停顿后自动保存并编译");
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "图片上传失败");
@@ -508,9 +553,81 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
   if (workspaceQuery.isPending || !workspace) return <main className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">正在加载论文工作区…</main>;
   if (!workspace.document || !document) return <main className="flex h-full items-center justify-center text-sm text-[var(--color-text-tertiary)]">论文文档版本尚未准备好。</main>;
   const paperDocument = workspace.document;
+  const outline = buildDocumentOutline(document.blocks);
   const paperReferences = workspace.references ?? [];
   const knownReferenceIds = new Set(paperReferences.map((reference) => reference.id));
   const missingReferenceIds = findMissingDocumentReferenceIds(document, [...knownReferenceIds]);
+
+  const blocks = document.blocks;
+  const cardButtonClass = "inline-flex min-h-8 items-center justify-center gap-1 rounded-[var(--radius-sm)] px-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-accent-muted)]";
+  const allKeys = (nodes: DocumentOutlineNode[]): string[] => nodes.flatMap((node) => [node.key, ...allKeys(node.children)]);
+
+  function addSection() {
+    const heading = createInsertableBlock("heading", newBlockId("heading"));
+    const paragraph = createInsertableBlock("paragraph", newBlockId("paragraph"));
+    setDraftDocument((draft) => {
+      const current = (draft ?? document) as unknown as AcademicDocument;
+      const tail = current.blocks.findIndex((block) => ["bibliography", "acknowledgement", "appendix"].includes(block.kind));
+      const index = tail < 0 ? current.blocks.length : tail;
+      return insertDocumentBlock(insertDocumentBlock(current, index, heading), index + 1, paragraph) as unknown as AcademicDocumentRecord;
+    });
+    setCollapsedCards(new Set());
+  }
+
+  function renderOutline(nodes: DocumentOutlineNode[], depth = 0): React.ReactNode {
+    return nodes.map((node) => {
+      const block = blocks[node.index];
+      const title = block.kind === "heading" ? blockText(block) || "未命名章节" : blockLabel(block);
+      return <div key={node.key}>
+        <button type="button" onClick={() => focusNode(node.key)} aria-label={`定位${title}`} aria-current={selectedNodeId === node.key ? "location" : undefined} style={{ paddingLeft: `${8 + Math.min(depth, 3) * 12}px` }} className={`block min-h-8 w-full truncate rounded-[var(--radius-sm)] py-1.5 pr-2 text-left text-xs hover:bg-[var(--color-accent-muted)] ${selectedNodeId === node.key ? "bg-[var(--color-accent-muted)] font-medium text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]"}`}>{title}</button>
+        {renderOutline(node.children, depth + 1)}
+      </div>;
+    });
+  }
+
+  function renderCards(nodes: DocumentOutlineNode[]): React.ReactNode {
+    return nodes.map((node) => {
+      const index = node.index;
+      const block = blocks[index];
+      const isHeading = block.kind === "heading";
+      const text = blockText(block);
+      const title = isHeading ? text || "未命名章节" : blockLabel(block);
+      const open = !collapsedCards.has(node.key);
+      return <Collapsible key={node.key} id={`document-node-${node.key}`} open={open} onOpenChange={(nextOpen) => setCollapsedCards((current) => {
+        const next = new Set(current);
+        if (nextOpen) next.delete(node.key); else next.add(node.key);
+        return next;
+      })} onDragOver={isHeading ? (event) => event.preventDefault() : undefined} onDrop={isHeading ? (event) => { event.preventDefault(); event.stopPropagation(); if (draggingHeadingIndex !== null) moveHeadingTo(draggingHeadingIndex, index); } : undefined} className={`group min-w-0 rounded-[var(--radius-md)] p-3 ${selectedNodeId === node.key || draggingHeadingIndex === index ? "bg-[var(--color-accent-muted)]" : "bg-[var(--color-panel-muted)]"}`}>
+        <div className="flex flex-wrap items-center gap-1">
+          <CollapsibleTrigger className="flex min-h-9 min-w-0 flex-1 basis-full items-center gap-2 sm:basis-auto rounded-[var(--radius-sm)] px-1 text-left text-sm font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-accent-muted)]" aria-label={`${open ? "收起" : "展开"}${title}`}>
+            <NavArrowDown width={15} height={15} className={`shrink-0 transition-transform ${open ? "" : "-rotate-90"}`} />
+            <span className="truncate">{title}</span>
+            {block.kind === "paper_metadata" ? <span className="shrink-0 text-[10px] font-normal text-[var(--color-text-tertiary)]">唯一</span> : null}
+            {isHeading ? <span className="shrink-0 text-[10px] font-normal text-[var(--color-text-tertiary)]">{block.level} 级</span> : null}
+          </CollapsibleTrigger>
+          {isHeading ? <>
+            <button type="button" className={cardButtonClass} onClick={() => { setCollapsedCards((current) => { const next = new Set(current); next.delete(node.key); return next; }); insertBlock(index + 1, "paragraph"); }} aria-label={`在${title}中添加正文`}><Plus width={13} height={13} />正文</button>
+            <button type="button" draggable onDragStart={(event) => { event.stopPropagation(); setDraggingHeadingIndex(index); }} onDragEnd={() => setDraggingHeadingIndex(null)} aria-label={`拖动${title}`} className={`${cardButtonClass} cursor-grab`}><DragHandGesture width={13} height={13} /></button>
+            <button type="button" onClick={() => moveHeading(index, "up")} aria-label={`${title}整节上移`} className={cardButtonClass}><NavArrowUp width={13} height={13} /></button>
+            <button type="button" onClick={() => moveHeading(index, "down")} aria-label={`${title}整节下移`} className={cardButtonClass}><NavArrowDown width={13} height={13} /></button>
+          </> : null}
+        </div>
+        {!open && !isHeading ? <p className="truncate px-6 pb-1 text-xs text-[var(--color-text-tertiary)]">{block.children ? inlineNodesToText(block.children) || "待填写" : block.title ?? block.caption ?? (block.keywords ?? []).join("、")}</p> : null}
+        <CollapsibleContent>
+          <div className="space-y-3 pt-3">
+            <PaperBlockEditor block={block} index={index} references={paperReferences} onTextChange={updateBlock} onUpdate={updateBlockRecord} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button type="button" onClick={() => setCommandIndex(commandIndex === index + 1 ? null : index + 1)} aria-label={`在第 ${index + 1} 个块后插入`} className={cardButtonClass}><Plus width={13} height={13} />插入内容</button>
+              {block.kind !== "paper_metadata" ? <button type="button" onClick={() => removeBlock(index)} aria-label={`删除第 ${index + 1} 个块`} className={cardButtonClass}><Trash width={13} height={13} />{isHeading ? "删除标题" : "删除"}</button> : null}
+            </div>
+            {commandIndex === index + 1 ? <BlockCommandMenu onSelect={(kind) => insertBlock(index + 1, kind)} /> : null}
+            {block.kind === "paragraph" && text.trim() === "/" ? <BlockCommandMenu onSelect={(kind) => replaceBlock(index, kind)} /> : null}
+            {node.children.length ? <div className="space-y-3 pl-1 sm:pl-3">{renderCards(node.children)}</div> : null}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>;
+    });
+  }
 
   return (
     <main className="h-full overflow-y-auto bg-[var(--color-bg)]"><div className="mx-auto max-w-[1600px] px-5 py-6 sm:px-8 sm:py-8">
@@ -519,7 +636,7 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
       <nav aria-label="论文工作区" className="mt-5 flex flex-wrap gap-2 text-xs">
         {[{ id: "writing", label: "写作" }, { id: "overview", label: "概览" }, { id: "materials", label: "资料与引用" }, { id: "typesetting", label: "排版设置" }].map((item) => <a key={item.id} href={`#${item.id}`} className="rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]">{item.label}</a>)}
       </nav>
-      <div className="mt-5 flex flex-wrap items-center gap-2"><Button type="button" variant="primary" size="sm" onClick={saveDocument}><Check width={16} height={16} />保存版本</Button><Button type="button" variant="secondary" size="sm" onClick={compile}><Play width={16} height={16} />编译 PDF</Button><label className="inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"><CloudUpload width={16} height={16} />导入论文<input type="file" accept=".docx,.md,.markdown,.txt,.tex" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); event.currentTarget.value = ""; }} /></label>{saveMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{saveMessage}</span> : null}{compileMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{compileMessage}</span> : null}{importMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{importMessage}</span> : null}</div>
+      <div className="mt-5 flex flex-wrap items-center gap-2"><Button type="button" variant="primary" size="sm" onClick={() => void saveDocument().catch((error) => setSaveMessage(error instanceof Error ? error.message : "保存失败"))} disabled={Boolean(pendingImport)}><Check width={16} height={16} />保存版本</Button><Button type="button" variant="secondary" size="sm" onClick={() => void compile().catch((error) => setCompileMessage(error instanceof Error ? error.message : "排版失败"))} disabled={Boolean(pendingImport)}><Play width={16} height={16} />编译 PDF</Button><label className="inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"><CloudUpload width={16} height={16} />导入论文<input type="file" accept=".docx,.md,.markdown,.txt,.tex" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); event.currentTarget.value = ""; }} /></label>{saveMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{saveMessage}</span> : null}{compileMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{compileMessage}</span> : null}{importMessage ? <span className="text-xs text-[var(--color-text-secondary)]">{importMessage}</span> : null}</div>
       <div className="mt-6 flex flex-col">
       <section id="overview" className="order-2 grid gap-3 sm:grid-cols-3">
         <div className="bg-[var(--color-panel-muted)] px-4 py-4"><p className="text-[11px] text-[var(--color-text-tertiary)]">工作区</p><p className="mt-2 text-sm text-[var(--color-text-primary)]">{workspace.project?.name ?? "独立论文"}</p></div>
@@ -528,47 +645,32 @@ export function PaperWorkspaceView({ workspaceId }: { workspaceId: string }) {
       </section>
       {missingReferenceIds.length > 0 ? <section className="order-3 mt-3 bg-[var(--color-warning-muted)] px-5 py-4"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">有待修复的引用链接</h2><p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">Citation / Bibliography：{missingReferenceIds.slice(0, 8).join("、")}{missingReferenceIds.length > 8 ? ` 等 ${missingReferenceIds.length} 项` : ""}。</p></section> : null}
       <section className="order-4 mt-3 bg-[var(--color-surface)] px-5 py-4"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Document 版本历史</h2><span className="text-xs text-[var(--color-text-tertiary)]">{documentVersions.length} 个版本</span></div><div className="mt-3 flex flex-wrap gap-2">{documentVersions.slice(0, 12).map((version) => <div key={version.id} className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--color-panel-muted)] px-3 py-2 text-xs"><span className="text-[var(--color-text-primary)]">v{version.version}</span><span className="text-[var(--color-text-tertiary)]">{new Date(version.createdAt).toLocaleString("zh-CN")}</span>{version.version === paperDocument.currentVersion?.version ? <span className="text-[var(--color-success)]">当前</span> : <Button type="button" variant="ghost" size="sm" onClick={() => void restoreVersion(version.version)} disabled={Boolean(draftDocument)}>恢复</Button>}</div>)}</div></section>
-      <section id="typesetting" className="order-5 scroll-mt-4"><PaperTemplateBindingPanel workspaceId={workspaceId} documentId={paperDocument.id} currentBinding={paperDocument.bindings?.[0]} /></section>
+      <section id="typesetting" className="order-0 mb-5 scroll-mt-4"><PaperTemplateBindingPanel workspaceId={workspaceId} documentId={paperDocument.id} currentBinding={paperDocument.bindings?.[0]} /></section>
       <section id="materials" className="order-6 scroll-mt-4"><PaperReferencesPanel workspaceId={workspaceId} /><div className="mt-4 bg-[var(--color-surface)] px-5 py-4"><div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Research 材料</h2><Link href="/research" className="text-xs text-[var(--color-accent)] hover:underline">打开深度研究</Link></div><p className="mt-3 text-xs text-[var(--color-text-tertiary)]">已关联 {workspace._count?.materials ?? workspace.materials?.length ?? 0} 条资料。</p></div></section>
       <section id="writing" className="order-1 mt-0 scroll-mt-4">
       {pendingImport ? <section className="mt-5 bg-[var(--color-info-muted)] px-5 py-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">确认导入结构</h2><p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">以下块由确定性解析器标为低置信度，请先在正文中检查并选择结构。原始文件、Import Snapshot 和 Draft Version 会继续保留，确认前不会自动保存或编译。</p><ul className="mt-3 space-y-2 text-xs text-[var(--color-text-secondary)]">{pendingImport.lowConfidenceBlocks.map((item) => { const candidate = document.blocks[item.index]; return <li key={`${item.index}-${item.reason}`} className="flex flex-wrap items-center gap-2"><span>第 {item.index + 1} 块：{item.reason}</span><Select value={IMPORT_CLASSIFICATION_PLACEHOLDER} onValueChange={(value) => { if (value !== IMPORT_CLASSIFICATION_PLACEHOLDER) classifyImportedBlock(item.index, value as ImportedBlockClassification); }}><SelectTrigger aria-label={`调整第 ${item.index + 1} 个导入块`} size="sm" className="min-w-28 bg-[var(--color-bg)] px-2 text-[11px] text-[var(--color-text-primary)]"><SelectValue /></SelectTrigger><SelectContent position="popper" align="start"><SelectGroup><SelectLabel>转换为</SelectLabel><SelectItem value={IMPORT_CLASSIFICATION_PLACEHOLDER}>转换为…</SelectItem><SelectItem value="paragraph">正文</SelectItem><SelectItem value="heading1">一级标题</SelectItem><SelectItem value="heading2">二级标题</SelectItem><SelectItem value="quote">引文</SelectItem><SelectItem value="figure" disabled={!candidate?.assetId}>图注 / Figure{candidate?.assetId ? "" : "（需要已有图片）"}</SelectItem><SelectItem value="bibliography">参考文献块</SelectItem></SelectGroup></SelectContent></Select></li>; })}</ul></div><Button type="button" variant="primary" size="sm" onClick={() => void confirmImport()}>确认结构</Button></div></section> : null}
-      <div className="mt-5 grid items-start gap-4 lg:grid-cols-[11rem_minmax(0,1fr)_22rem]">
-        <aside className="rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-4">
-          <p className="text-xs font-medium text-[var(--color-text-tertiary)]">Outline</p>
-          <div className="mt-3 space-y-2">
-            {document.blocks.filter((block) => block.kind === "heading").map((block) => <button type="button" key={block.id} onClick={() => setSelectedNodeId(block.id ?? null)} className={`block w-full truncate rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-sm hover:bg-[var(--color-bg)] ${selectedNodeId === block.id ? "bg-[var(--color-bg)] text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]"}`}>{blockText(block)}</button>)}
-          </div>
+      <div className="mt-5 grid items-start gap-4 xl:grid-cols-[11rem_minmax(0,1fr)_22rem]">
+        <aside className="rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-4 xl:sticky xl:top-4">
+          <p className="text-xs font-medium text-[var(--color-text-primary)]">文档大纲</p>
+          <div className="mt-3 max-h-48 space-y-1 overflow-y-auto xl:max-h-[70vh]">{renderOutline(outline)}</div>
         </aside>
-        <section className="min-w-0 rounded-[var(--radius-md)] bg-[var(--color-surface)] px-4 py-4 sm:px-8 sm:py-4">
-          <div className="mx-auto max-w-[74ch] space-y-5">
-            {document.blocks.map((block, index) => {
-              const text = blockText(block);
-              const isSlashCommand = block.kind === "paragraph" && text.trim() === "/";
-              const isHeading = block.kind === "heading";
-              return <div id={block.id ? `document-node-${block.id}` : undefined} key={block.id ?? `${block.kind}-${index}`} onDragOver={isHeading ? (event) => { event.preventDefault(); } : undefined} onDrop={isHeading ? (event) => { event.preventDefault(); if (draggingHeadingIndex !== null) moveHeadingTo(draggingHeadingIndex, index); } : undefined} className={`group relative rounded-[var(--radius-sm)] p-2 transition-colors hover:bg-[var(--color-surface-hover)] ${selectedNodeId === block.id ? "bg-[var(--color-interaction-selected)]/40 ring-1 ring-[var(--color-accent)]/40" : ""} ${draggingHeadingIndex === index ? "ring-1 ring-[var(--color-accent)]" : ""}`}>
-                <div className="relative">
-                  <PaperBlockEditor block={block} index={index} references={paperReferences} onTextChange={updateBlock} onUpdate={updateBlockRecord} />
-                  <div className="absolute -left-10 top-0 flex flex-col gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                    <button type="button" onClick={() => setCommandIndex(index + 1)} aria-label={`在第 ${index + 1} 个块后插入`} className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><Plus width={13} height={13} /></button>
-                    {block.kind === "heading" ? <><button type="button" draggable onDragStart={() => setDraggingHeadingIndex(index)} onDragEnd={() => setDraggingHeadingIndex(null)} aria-label="拖动整节" title="拖动整节" className="flex size-6 cursor-grab items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><DragHandGesture width={13} height={13} /></button><button type="button" onClick={() => moveHeading(index, "up")} aria-label="整节上移" className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><NavArrowUp width={13} height={13} /></button><button type="button" onClick={() => moveHeading(index, "down")} aria-label="整节下移" className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><NavArrowDown width={13} height={13} /></button></> : null}
-                    {block.kind !== "paper_metadata" ? <button type="button" onClick={() => removeBlock(index)} aria-label={`删除第 ${index + 1} 个块`} className="flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-danger-muted)] hover:text-[var(--color-danger)]"><Trash width={13} height={13} /></button> : null}
-                  </div>
-                </div>
-                {commandIndex === index + 1 ? <BlockCommandMenu onSelect={(kind) => insertBlock(index + 1, kind)} /> : null}
-                {isSlashCommand ? <BlockCommandMenu onSelect={(kind) => replaceBlock(index, kind)} /> : null}
-              </div>;
-            })}
-            <div className="flex flex-wrap items-center gap-2 pt-1"><button type="button" onClick={() => setCommandIndex(document.blocks.length)} className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><Plus width={13} height={13} />添加块</button><label className="inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><CloudUpload width={13} height={13} />插入图片<input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void insertImage(file); event.currentTarget.value = ""; }} /></label>{commandIndex === document.blocks.length ? <BlockCommandMenu onSelect={(kind) => insertBlock(document.blocks.length, kind)} /> : null}</div>
+        <section className="min-w-0 rounded-[var(--radius-md)] bg-[var(--color-surface)] p-3 sm:p-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">模块化写作</h2><div className="flex gap-1"><button type="button" className={cardButtonClass} onClick={() => setCollapsedCards(new Set(allKeys(outline)))}>全部收起</button><button type="button" className={cardButtonClass} onClick={() => setCollapsedCards(new Set())}>全部展开</button></div></div>
+          <div className="space-y-3">{renderCards(outline)}</div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={addSection}><Plus width={14} height={14} />添加章节</Button>
+            <button type="button" onClick={() => insertBlock(document.blocks.length, "paragraph")} className={cardButtonClass}><Plus width={13} height={13} />添加正文</button>
+            <label className={`${cardButtonClass} cursor-pointer`}><CloudUpload width={13} height={13} />插入图片<input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void insertImage(file); event.currentTarget.value = ""; }} /></label>
           </div>
         </section>
-        <aside className="min-h-[22rem] rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-4 py-4">
+        <aside className="min-h-[22rem] rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-4 py-4 xl:sticky xl:top-4">
           <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-1" role="tablist" aria-label="右侧面板"><button type="button" role="tab" aria-selected={railMode === "pdf"} onClick={() => setRailMode("pdf")} className={`rounded-[var(--radius-sm)] px-2 py-1 text-xs ${railMode === "pdf" ? "bg-[var(--color-interaction-selected)] text-[var(--color-text-primary)]" : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)]"}`}>PDF</button><button type="button" role="tab" aria-selected={railMode === "assistant"} onClick={() => setRailMode("assistant")} className={`rounded-[var(--radius-sm)] px-2 py-1 text-xs ${railMode === "assistant" ? "bg-[var(--color-interaction-selected)] text-[var(--color-text-primary)]" : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)]"}`}>AI Assistant</button></div>{compilation ? <span className="text-[11px] text-[var(--color-text-tertiary)]">{compilation.status}</span> : null}</div>
-          {railMode === "pdf" ? <>{compilation?.pdfUrl ? <PaperPdfViewer key={compilation.pdfCompilationId ?? compilation.id} pdfUrl={compilation.pdfUrl} mapUrl={compilation.syncTex && compilation.pdfCompilationId ? `/api/papers/compilations/${compilation.pdfCompilationId}/synctex/map` : undefined} selectedNodeId={selectedNodeId} /> : <div className="mt-4 min-h-64 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">编译后显示 PDF。<br />AI 修改先进入 Patch。</div>}
+          {railMode === "pdf" ? <>{compilation?.pdfUrl ? <PaperPdfViewer key={compilation.pdfCompilationId ?? compilation.id} pdfUrl={compilation.pdfUrl} mapUrl={compilation.syncTex && compilation.pdfCompilationId ? `/api/papers/compilations/${compilation.pdfCompilationId}/synctex/map` : undefined} selectedNodeId={selectedNodeId} /> : <div className="mt-4 min-h-64 text-center text-xs leading-5 text-[var(--color-text-tertiary)]">填写内容后自动更新 PDF，也可以点击“编译 PDF”。</div>}
             {compilation?.pdfUrl && compilation.status !== "succeeded" ? <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">当前编译{compilation.status === "failed" ? "失败" : "进行中"}，继续显示上一版成功 PDF。</p> : null}
             {compilation?.syncTex && compilation.pdfCompilationId ? <a href={`/api/papers/compilations/${compilation.pdfCompilationId}/synctex`} className="mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 SyncTeX 映射</a> : null}
             {compilation?.pdfUrl ? <a href={compilation.pdfUrl} download="paper.pdf" className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载 PDF</a> : null}
             {compilation?.sourceUrl ? <a href={compilation.sourceUrl} className="ml-3 mt-3 inline-flex text-xs text-[var(--color-accent)] hover:underline">下载完整 LaTeX Project</a> : null}
-            {compilation?.status === "failed" && compilation.errorLog?.message ? <div className="mt-3 space-y-2"><p className="text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p>{compilation.errorLog.nodeId ? <button type="button" onClick={() => setSelectedNodeId(compilation.errorLog?.nodeId ?? null)} className="text-xs text-[var(--color-accent)] hover:underline">定位到 Document 块</button> : null}</div> : null}
+            {compilation?.status === "failed" && compilation.errorLog?.message ? <div className="mt-3 space-y-2"><p className="text-xs leading-5 text-[var(--color-danger)]">{compilation.errorLog.code ?? "COMPILE_FAILED"}：{compilation.errorLog.message}</p>{compilation.errorLog.nodeId ? <button type="button" onClick={() => { if (compilation.errorLog?.nodeId) focusNode(compilation.errorLog.nodeId); }} className="text-xs text-[var(--color-accent)] hover:underline">定位到 Document 块</button> : null}</div> : null}
           </> : <div className="mt-4 space-y-4"><div><h3 className="text-sm font-semibold text-[var(--color-text-primary)]">AI Assistant</h3><p className="mt-1 text-xs text-[var(--color-text-tertiary)]">生成可审核的 Document Patch。</p></div><textarea value={assistantInstruction} onChange={(event) => setAssistantInstruction(event.target.value)} rows={5} placeholder="描述要修改的内容" className="w-full resize-y rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 py-2 text-xs leading-5 text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" /><Button type="button" variant="secondary" size="sm" onClick={() => void requestAssistantPatch()} disabled={assistantPending || !assistantInstruction.trim()}>生成 Patch</Button>{assistantPatch ? <div className="rounded-[var(--radius-md)] bg-[var(--color-panel)] px-3 py-3"><p className="text-xs font-medium text-[var(--color-text-primary)]">{assistantPatch.summary}</p><p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">待审核</p><div className="mt-3 flex gap-2"><Button type="button" variant="primary" size="sm" onClick={() => void decideAssistantPatch("accept")} disabled={assistantPending}>接受</Button><Button type="button" variant="ghost" size="sm" onClick={() => void decideAssistantPatch("reject")} disabled={assistantPending}>拒绝</Button></div></div> : null}{assistantMessage ? <p className="text-xs leading-5 text-[var(--color-text-secondary)]">{assistantMessage}</p> : null}</div>}
         </aside>
       </div>
