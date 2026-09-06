@@ -14,3 +14,11 @@
 - 验证环境：`http://127.0.0.1:3000/papers/beta-qa`，Playwright + Chrome，1600×1100 和 390×844。API 为测试数据，PDF 来自真实 renderer + XeLaTeX；本机 PostgreSQL/Docker 未运行，未验证服务端数据库/Worker 端到端及真实学校模板编译。
 - 浏览器证据与临时脚本：`/tmp/lumenlab-paper-beta/`（未纳入 Git）。模板筛选中的“测试大学”仅为脚本中的 fixture，未添加到产品模板库。
 - 不需要数据库迁移或新依赖。最终提交仅推送 `feature/research-paper`，不部署。
+
+## 2026-09-06 · PDF 预览 Failed to fetch 修复
+
+- 原因已由真实浏览器 Network/Log 确认：PDF API 将 fetch 重定向到七牛域名，被页面 `connect-src 'self'` 拦截（blockedReason=csp）。与 GitHub 模板获取无关。
+- 实际编译 `cmtoo6jrp00063ac9hz2pdphs` 状态 succeeded，XeLaTeX；重庆大学模板为 materialized 七牛快照 `template-snapshots/cqu-bdsc__CQUThesis/1a8441c5a24e5ecafd47614d28bfc137e42d6153.normalized-v2.zip`。PDF 同样存储于七牛，服务端读到 15,761 字节、有效 `%PDF-` 文件头。
+- PDF API 保留归属校验，在服务端读取对象并同源返回 PDF，添加 private/no-store；不修改 CSP、不修改七牛配置、不搬迁模板。
+- 真实登录页面 `http://localhost:3000/papers/cmt70nrkv0000jbc9dx8a07nt` 刷新后显示“第 1 / 2 页”；PDF 同源 GET 200 application/pdf，修复后网络记录无 CSP 错误。未修改论文正文或重新生成编译任务。
+- 定向验证：PDF 路由 2 项测试（七牛 PDF 返回字节、不跳转、归属隔离）与 ESLint 通过。
