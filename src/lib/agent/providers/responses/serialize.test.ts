@@ -179,7 +179,7 @@ describe("messagesToInputItems", () => {
   });
 
   it("rejects video attachments unsupported by the shared Responses endpoints", () => {
-    expect(() => attachmentsToContentParts([attachment("clip.mp4", "video/mp4")])).toThrow(/视频或音频/);
+    expect(() => attachmentsToContentParts([attachment("clip.mp4", "video/mp4")])).toThrow(/视频理解请选择 Qwen/);
   });
 });
 
@@ -345,6 +345,6 @@ describe("buildQwenResponsesBody", () => {
   });
 
   it("rejects Qwen video before sending an undocumented wire item", () => {
-    expect(() => buildQwenResponsesBody(baseInput({ attachments: [attachment("clip.mp4", "video/mp4")] }))).toThrow(/视频或音频/);
+    expect(() => buildQwenResponsesBody(baseInput({ attachments: [attachment("clip.mp4", "video/mp4")] }))).toThrow(/视频理解请选择 Qwen/);
   });
 });

@@ -5,6 +5,7 @@ import { createProviderRound } from "@/lib/agent/provider-adapter";
 import type { ToolMetadata } from "@/lib/agent/types";
 import { fromResponsesToolName, buildQwenResponsesBody } from "@/lib/agent/providers/responses/serialize";
 import { prepareResponsesMessages, responsesModel, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
+import { BailianQwenNativeAdapter } from "./bailian-qwen-native";
 
 export class BailianQwenError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -13,10 +14,39 @@ export class BailianQwenError extends Error {
   }
 }
 
-/** Qwen Responses replays platform history. Video/audio are not supported by this endpoint. */
+function hasVideoMedia(params: {
+  attachments?: Array<{ mimeType: string }>;
+  messages?: DeepSeekMessage[];
+}): boolean {
+  const mimeTypes = [
+    ...(params.attachments ?? []).map((attachment) => attachment.mimeType),
+    ...(params.messages ?? []).flatMap((message) =>
+      (message.attachments ?? []).map((attachment) => attachment.mimeType)
+    ),
+  ];
+  return mimeTypes.some((mimeType) => mimeType.startsWith("video/"));
+}
+
+/**
+ * Qwen adapter: text/image traffic uses Responses; requests that carry video
+ * attachments delegate to the DashScope native compatibility path, which
+ * remains the only endpoint with verified video understanding (task 04).
+ */
 export class BailianQwenAdapter implements ProviderAdapter {
   readonly provider = "bailian" as const;
-  constructor(private readonly apiKey: string, private readonly baseUrl: string) {}
+  private readonly native: BailianQwenNativeAdapter;
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly baseUrl: string
+  ) {
+    // 原生端点与 Responses 工作空间域名不同：去掉 compatible-mode 后缀回到
+    // DashScope API 根；若传入的 baseUrl 已是原生形态则原样使用。
+    const nativeBase = baseUrl.includes("/compatible-mode")
+      ? baseUrl.replace(/\/compatible-mode\/v1\/?$/, "/api/v1")
+      : baseUrl;
+    this.native = new BailianQwenNativeAdapter(apiKey, nativeBase);
+  }
 
   async stream(params: AdapterStreamParams): Promise<AdapterStreamResult> {
     return streamResponsesAdapter({
@@ -38,6 +68,9 @@ export class BailianQwenAdapter implements ProviderAdapter {
   }
 
   async startRound(params: ProviderRoundInput): Promise<ProviderRound> {
+    if (hasVideoMedia(params)) {
+      return this.native.startRound(params);
+    }
     const messages = prepareResponsesMessages(params);
     const result = await this.stream({
       ...params, messages, attachments: [],
@@ -47,6 +80,9 @@ export class BailianQwenAdapter implements ProviderAdapter {
   }
 
   async continueRound(params: ProviderContinuationInput): Promise<ProviderRound> {
+    if (hasVideoMedia(params)) {
+      return this.native.continueRound(params);
+    }
     const assistantContent: DeepSeekContentBlock[] = [];
     const text = sanitizeModelText(params.rawContent);
     if (text) assistantContent.push({ type: "text", text });

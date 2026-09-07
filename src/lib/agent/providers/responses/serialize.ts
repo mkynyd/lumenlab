@@ -148,7 +148,11 @@ export function attachmentsToContentParts(
       continue;
     }
     if (attachment.mimeType.startsWith("video/") || attachment.mimeType.startsWith("audio/")) {
-      throw new ResponsesSerializationError("Responses 暂不支持视频或音频输入，请使用文字或图片（兼容方案待任务 04）");
+      throw new ResponsesSerializationError(
+        attachment.mimeType.startsWith("video/")
+          ? "Responses 路径暂不支持视频输入；视频理解请选择 Qwen 模型后重试"
+          : "Responses 暂不支持音频输入，请使用文字或图片"
+      );
     }
     throw new ResponsesSerializationError(
       `暂不支持 ${attachment.mimeType || attachment.name} 附件，请转换为 PDF、DOCX 或图片后重试`
