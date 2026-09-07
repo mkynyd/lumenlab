@@ -1,9 +1,17 @@
 # light-ai-chat 交接
 
-> 2026-09-07 · GPT-6 · Codex（最新）｜Kimi · Kimi Code（前两阶段）
-> 范围：260907 迭代。任务 01 已提交 `22e5b19`；任务 02 DeepSeek Vision 代码收口已提交 `2af313e` 并推送 main。仍未部署。
+> 2026-09-07 · GLM-5.3-Flash · ZCode（任务 03）｜GPT-6 · Codex（任务 01/02）｜Kimi · Kimi Code（前两阶段）
+> 范围：260907 迭代。任务 01 提交 `22e5b19`、任务 02 提交 `2af313e` 已推送 main（后续 run 34136896240 全绿，注册页超时为偶发）；任务 03 代码完成，仍未部署。
 
-## 最新：任务 02 — DeepSeek Vision 路径收口
+## 最新：任务 03 — MiniMax 文档输入替代与旧链路清退
+
+- 新建 `src/lib/files/document-extract.ts`：聊天附件中的 PDF/DOCX 在进入路由与适配器前完成本地转换（任务 03.7 推荐替代链路）。文本型 PDF 按页提取正文（pdfjs-dist，带「第 N 页」标记）内联进提示词；DOCX 用 adm-zip 读 `word/document.xml` 提取段落正文；扫描 PDF（平均每页低于阈值即无文本层）用 pdfjs + `@napi-rs/canvas` 渲染为有上限的页面 PNG，作为原生 `input_image` 交给最终多模态模型。无任何独立视觉/OCR 模型调用；页数/正文超限都以显式说明标注，不静默截断。`.doc` 等无提取链路的格式以明确错误要求转换，不再退化。
+- `runtime.ts` 在附件入口调用 `resolveChatDocumentAttachments`，转换后的媒体列表供路由、模型锁和 adapter 使用；`DocumentExtractionError` 映射为 400。文本 PDF 转换后不再强制触发 minimax 视觉路由。三家 adapter（DeepSeek/MiniMax/Qwen）共用该链路，序列化层 `attachmentsToContentParts` 的 TODO-03 拒绝改为对未转换文档格式的 fail-closed 兜底。
+- 删除 `minimax-chat.ts` 中无人调用的 Anthropic `streamMiniMaxChat` 死实现（含 PDF document block 构造），`MiniMaxChatError` 迁至 `minimax-error.ts`，runtime 与 route.test mock 同步更新。业务源码已无 MiniMax Anthropic 聊天入口。
+- 03.6/03.8 清点结论：源码无 `response_format`/`json_schema` 发送（结构化结果仍走提示+服务端校验）；`cache/minimax-active-cache.ts` 仅剩 `vision/minimax.ts` 与 document-pipeline 视觉链路引用（属 05 删除范围），Responses 请求不携带任何缓存控制字段，命中以 usage `cached_tokens` 回执为准。
+- 验证：新增 `document-extract.test.ts` 6 项（文本 PDF/扫描页图 PNG 签名/DOCX/.doc 拒绝/媒体透传/损坏 DOCX），全量 268 文件 / 1592 项、tsc、lint、production build、diff check 全绿；构建仍只有既有 CSS `--color-*` warning。真实账号的 PDF/扫描件/Word 样本验收、MiniMax 账号地区与Responses 访问确认因本机无凭据未执行；Project 侧文档管线的逐图视觉增强关闭属 05 范围，本轮未动。未部署。
+
+## 前次：任务 02 — DeepSeek Vision 路径收口
 
 - 删除 `deepseek.ts` 中无人调用的 Anthropic 流式实现；流式聊天由 `DeepSeekAdapter` 唯一接入 Responses，非流式继续复用 `postResponses`。源码业务范围已无 DeepSeek Anthropic 请求入口。
 - DeepSeek 全部平台 Tool 现以 Responses `function_call` / `function_call_output` 续接：`web.search` 保持 `web_search` 映射，其余 Tool ID 可逆编码，按 call_id 回放；不再注入、解析或生成 XML/DSML fallback。

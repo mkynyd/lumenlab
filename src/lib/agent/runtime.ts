@@ -6,7 +6,7 @@ import {
   DeepSeekError,
   DeepSeekMessage,
 } from "@/lib/deepseek";
-import { MiniMaxChatError } from "@/lib/chat/minimax-chat";
+import { MiniMaxChatError } from "@/lib/chat/minimax-error";
 import { createProviderAdapter } from "@/lib/agent/adapters";
 import { PiAiProviderError } from "@/lib/agent/adapters/pi-ai-adapter";
 import { BailianQwenError } from "@/lib/agent/adapters/bailian-qwen-adapter";
@@ -17,6 +17,10 @@ import {
   type ServerFileAttachment,
 } from "@/lib/chat/router";
 import { providerForChatModel } from "@/lib/chat/model-catalog";
+import {
+  DocumentExtractionError,
+  resolveChatDocumentAttachments,
+} from "@/lib/files/document-extract";
 import { assembleSystemPrompt } from "@/lib/classification";
 import { ensureDiscovery } from "@/lib/skills/registry";
 import {
@@ -339,7 +343,24 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       };
     },
   };
-  const attachmentText = await textAttachmentContext(attachments);
+  // 任务 03.7：PDF/DOCX 附件在进入路由与适配器前完成本地文本提取/扫描页
+  // 渲染；文本型文档内联进提示词，扫描件替换为页面图片交给最终多模态模型。
+  let effectiveAttachments = attachments;
+  let documentSections: string[] = [];
+  try {
+    const resolved = await resolveChatDocumentAttachments(attachments);
+    effectiveAttachments = resolved.attachments;
+    documentSections = resolved.textSections;
+  } catch (error) {
+    if (error instanceof DocumentExtractionError) {
+      throw new AgentRuntimeError(400, error.message);
+    }
+    throw error;
+  }
+  const attachmentText = [
+    await textAttachmentContext(effectiveAttachments),
+    ...documentSections,
+  ].filter(Boolean).join("\n\n");
   let effectivePrompt = [
     hiddenPrompt || message,
     attachmentText,
@@ -454,7 +475,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
 
   const preflightRoute = !conversationId
-    ? routeModel(null, attachments, { requiresVisionModel, requestedModel: model })
+    ? routeModel(null, effectiveAttachments, { requiresVisionModel, requestedModel: model })
     : null;
   let preflightApiKey: string | null = null;
   if (preflightRoute) {
@@ -571,7 +592,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     systemPrompt = `${systemPrompt}\n\n【工具恢复】若工具结果包含 recoveryOfExecutionId，且你决定自动恢复该失败操作，请在下一次工具调用附带同名 recoveryOfExecutionId 字段。该字段只用于关联失败与恢复，不会传给工具处理器。`;
   }
 
-  const modelRoute = routeModel(conversation, attachments, {
+  const modelRoute = routeModel(conversation, effectiveAttachments, {
     requiresVisionModel,
     requestedModel: model,
   });
@@ -1143,7 +1164,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         thinkingEnabled,
         reasoningEffort,
         activeTools,
-        attachments,
+        attachments: effectiveAttachments,
         signal: input.signal,
       });
     }

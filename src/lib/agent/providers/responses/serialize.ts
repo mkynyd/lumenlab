@@ -126,10 +126,11 @@ export function messagesToInputItems(
  * Non-text attachments become multimodal content parts for the last user
  * message, matching the legacy "attach to last user turn" behavior.
  *
- * TODO-03: Responses content parts have no document type; the current
- * MiniMax document-block path is Anthropic-only. PDF/Word attachments keep
- * no Responses document schema in the target model — this layer rejects them
- * until task 03 lands the replacement input path.
+ * PDF/DOCX and scanned-PDF page images are resolved upstream by
+ * `resolveChatDocumentAttachments` (task 03): text PDFs/DOCX are inlined as
+ * prompt text there and scanned PDFs arrive here already as PNG parts. Any
+ * other document format reaching this layer has no extraction path and stays
+ * fail-closed instead of degrading to a filename placeholder.
  */
 export function attachmentsToContentParts(
   attachments: ServerFileAttachment[]
@@ -150,7 +151,7 @@ export function attachmentsToContentParts(
       throw new ResponsesSerializationError("Responses 暂不支持视频或音频输入，请使用文字或图片（兼容方案待任务 04）");
     }
     throw new ResponsesSerializationError(
-      `TODO-03: Responses 合同暂不支持 ${attachment.mimeType || attachment.name} 附件（PDF/Word 输入路径由任务 03 落地）`
+      `暂不支持 ${attachment.mimeType || attachment.name} 附件，请转换为 PDF、DOCX 或图片后重试`
     );
   }
   return parts;

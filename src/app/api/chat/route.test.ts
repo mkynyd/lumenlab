@@ -99,7 +99,7 @@ vi.mock("@/lib/deepseek", () => ({
   createTextMessage: mocks.createTextMessage,
 }));
 
-vi.mock("@/lib/chat/minimax-chat", () => ({
+vi.mock("@/lib/chat/minimax-error", () => ({
   MiniMaxChatError: class MiniMaxChatError extends Error {
     constructor(public status: number, message: string) {
       super(message);

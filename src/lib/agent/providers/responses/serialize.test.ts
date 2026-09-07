@@ -164,7 +164,7 @@ describe("messagesToInputItems", () => {
     });
   });
 
-  it("skips text attachments and rejects PDF/Word with a TODO-03 marker", () => {
+  it("skips text attachments and fail-closes on unconverted document formats", () => {
     expect(
       attachmentsToContentParts([attachment("notes.md", "text/markdown")])
     ).toEqual([]);
@@ -175,7 +175,7 @@ describe("messagesToInputItems", () => {
     ).toThrow(ResponsesSerializationError);
     expect(() =>
       attachmentsToContentParts([attachment("paper.pdf", "application/pdf")])
-    ).toThrow(/TODO-03/);
+    ).toThrow(/转换为 PDF、DOCX 或图片/);
   });
 
   it("rejects video attachments unsupported by the shared Responses endpoints", () => {
