@@ -1,4 +1,6 @@
-import { streamChat, type DeepSeekRequest } from "@/lib/deepseek";
+import { buildDeepSeekResponsesBody } from "@/lib/agent/providers/responses/serialize";
+import { prepareResponsesMessages, responsesModel, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
+
 import type {
   ProviderAdapter,
   AdapterStreamParams,
@@ -32,18 +34,19 @@ export class DeepSeekAdapter implements ProviderAdapter {
   constructor(private readonly apiKey: string) {}
 
   async stream(params: AdapterStreamParams): Promise<AdapterStreamResult> {
-    const request: DeepSeekRequest = {
-      model: params.model,
-      messages: params.messages,
-      thinking: params.thinkingEnabled
-        ? { type: "enabled" }
-        : { type: "disabled" },
-      reasoning_effort: params.reasoningEffort,
-      ...(params.tools?.length ? { tools: params.tools } : {}),
-    };
-    return params.signal
-      ? streamChat(this.apiKey, request, params.signal)
-      : streamChat(this.apiKey, request);
+    return streamResponsesAdapter({
+      apiKey: this.apiKey,
+      baseUrl: "https://api.deepseek.com",
+      signal: params.signal,
+      body: buildDeepSeekResponsesBody({
+        ...params,
+        model: responsesModel(params.model, "deepseek"),
+        messages: prepareResponsesMessages(params),
+        attachments: [],
+        maxOutputTokens: 8192,
+        toolChoice: params.tools?.length ? "auto" : "none",
+      }),
+    });
   }
 
   toolProtocol(activeTools: ToolMetadata[]): ProviderToolProtocol {
@@ -61,7 +64,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
       (tool) => !this.supportsNativeTool(tool.toolId)
     );
     const messages = appendSystemInstructions(
-      params.messages,
+      prepareResponsesMessages(params),
       formatFallbackToolInstructions(fallbackTools)
     );
     const result = await this.stream({

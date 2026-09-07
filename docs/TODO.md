@@ -1,8 +1,16 @@
 # TODO
 
-> Last updated: 2026-08-01
+> Last updated: 2026-09-07
 
 This document tracks the completed Agent Runtime consolidation plus deferred Skill, Tool, and production-hardening work.
+
+## In progress — Responses migration (260907 task 01)
+
+- Shared types/transport/serialization, active model catalog/billing, and all three text/image chat adapters are implemented in the uncommitted main working tree. See repo-root HANDOFF.md for the current contract and verification.
+- Checkpoint v2 is implemented: bounded normalized message/function/file-reference items, v1 read-and-upgrade, legacy model upgrade at the next request, structured approval continuation with provider call identity, replay guards, and partial output/usage persistence for interruption and cancellation.
+- Non-streaming `createTextMessage` / `completeChat` now use the shared Responses transport; classification/profile/quick-action direct DeepSeek Anthropic calls were also removed. Full gates passed: 267 files / 1590 tests, TypeScript, ESLint, production build, and diff check.
+- Still required: durable image authorization/loading in task 08; task 03 document compatibility and task 04 video compatibility. Qwen Responses explicitly does not accept video/audio; the previous input_video assumption has been removed. No authenticated real-provider acceptance or deployment.
+- The task 01 shared contract is frozen for tasks 02–05. Do not deploy until task 03 document compatibility, task 04 video compatibility, task 08 durable image loading, and authenticated provider acceptance are complete.
 
 ## Completed Learning P1-E — Release Quality Gates
 

@@ -85,7 +85,7 @@ describe("sendMessageSchema", () => {
     expect(
       sendMessageSchema.parse({
         message: "总结资料",
-        model: "deepseek-v4-pro",
+        model: "deepseek-v4-flash-vision-exp",
       })
     ).toMatchObject({
       thinkingEnabled: true,
@@ -111,7 +111,7 @@ describe("sendMessageSchema", () => {
     try {
       expect(() => sendMessageSchema.parse({
         message: "分析视频内容",
-        model: "qwen3.7-plus",
+        model: "qwen3.8-flash",
       })).toThrow("Qwen 模型暂未开放");
     } finally {
       if (previous === undefined) delete process.env.MODEL_QWEN_ENABLED;
@@ -125,8 +125,8 @@ describe("sendMessageSchema", () => {
     try {
       expect(sendMessageSchema.parse({
         message: "分析图片内容",
-        model: "qwen3.7-plus",
-      })).toMatchObject({ model: "qwen3.7-plus" });
+        model: "qwen3.8-flash",
+      })).toMatchObject({ model: "qwen3.8-flash" });
     } finally {
       if (previous === undefined) delete process.env.MODEL_QWEN_ENABLED;
       else process.env.MODEL_QWEN_ENABLED = previous;

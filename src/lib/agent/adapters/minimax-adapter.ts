@@ -1,5 +1,7 @@
-import { streamMiniMaxChat } from "@/lib/chat/minimax-chat";
-import { filterThinkingForMiniMax } from "@/lib/chat/history-adapter";
+import { fromResponsesToolName, buildMiniMaxResponsesBody } from "@/lib/agent/providers/responses/serialize";
+import { prepareResponsesMessages, responsesModel, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
+
+
 import { isTextAttachment } from "@/lib/chat/router";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
 import type { DeepSeekContentBlock, DeepSeekMessage } from "@/lib/deepseek";
@@ -21,29 +23,19 @@ export class MiniMaxAdapter implements ProviderAdapter {
   constructor(private readonly apiKey: string) {}
 
   async stream(params: AdapterStreamParams): Promise<AdapterStreamResult> {
-    const tools = params.tools?.length
-      ? params.tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.input_schema,
-        }))
-      : undefined;
-    const result = await streamMiniMaxChat(this.apiKey, {
-      messages: params.messages,
-      attachments: params.attachments,
-      thinking: params.thinkingEnabled,
-      maxTokens: 8192,
-      ...(params.signal ? { signal: params.signal } : {}),
-      ...(tools ? { tools, toolChoice: { type: "auto" } } : {}),
+    return streamResponsesAdapter({
+      apiKey: this.apiKey,
+      baseUrl: "https://api.minimax.cn/v1",
+      signal: params.signal,
+      body: buildMiniMaxResponsesBody({
+        ...params,
+        model: responsesModel(params.model, "minimax"),
+        messages: prepareResponsesMessages(params),
+        attachments: [],
+        maxOutputTokens: 8192,
+        toolChoice: params.tools?.length ? "auto" : "none",
+      }),
     });
-
-    return {
-      stream: result.stream,
-      getUsage: result.getUsage,
-      getToolCalls: result.getToolCalls,
-      getRawContent: result.getRawContent,
-      getRawReasoning: result.getRawReasoning,
-    };
   }
 
   toolProtocol(activeTools: ToolMetadata[]): ProviderToolProtocol {
@@ -51,7 +43,7 @@ export class MiniMaxAdapter implements ProviderAdapter {
   }
 
   async startRound(params: ProviderRoundInput): Promise<ProviderRound> {
-    const messages = filterThinkingForMiniMax(params.messages);
+    const messages = prepareResponsesMessages(params);
     const result = await this.stream({
       ...params,
       messages,
@@ -64,7 +56,7 @@ export class MiniMaxAdapter implements ProviderAdapter {
         input_schema: tool.inputSchema,
       })),
     });
-    return createProviderRound(result, (name) => name, messages);
+    return createProviderRound(result, fromResponsesToolName, messages);
   }
 
   async continueRound(params: ProviderContinuationInput): Promise<ProviderRound> {

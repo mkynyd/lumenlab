@@ -1,3 +1,5 @@
+import { providerForChatModel } from "./model-catalog";
+
 export interface FileAttachment {
   id: string;
   name: string;
@@ -96,8 +98,11 @@ export function routeModel(
   if (conversation?.modelLock === "minimax") {
     return { provider: "minimax", shouldLock: false };
   }
-  if (options.requestedModel === "qwen3.7-plus") {
-    return { provider: "bailian", shouldLock: hasMultimodalContent(attachments) };
+  if (options.requestedModel) {
+    const requestedProvider = providerForChatModel(options.requestedModel);
+    if (requestedProvider === "bailian") {
+      return { provider: "bailian", shouldLock: hasMultimodalContent(attachments) };
+    }
   }
   if (options.requiresVisionModel) {
     return { provider: "minimax", shouldLock: true };
@@ -105,8 +110,11 @@ export function routeModel(
   if (hasMultimodalContent(attachments)) {
     return { provider: "minimax", shouldLock: true };
   }
-  if (options.requestedModel === "minimax-m3") {
-    return { provider: "minimax", shouldLock: false };
+  if (options.requestedModel) {
+    const requestedProvider = providerForChatModel(options.requestedModel);
+    if (requestedProvider === "minimax") {
+      return { provider: "minimax", shouldLock: false };
+    }
   }
   return { provider: "deepseek", shouldLock: false };
 }

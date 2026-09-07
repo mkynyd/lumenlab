@@ -1,3 +1,6 @@
+import { ResponsesHttpError } from "@/lib/agent/providers/responses/transport";
+import { ResponsesConfigurationError, ResponsesModelError } from "@/lib/agent/providers/responses/adapter-stream";
+import { ResponsesSerializationError } from "@/lib/agent/providers/responses/serialize";
 import { randomUUID } from "node:crypto";
 import {
   DeepSeekError,
@@ -13,6 +16,7 @@ import {
   routeModel,
   type ServerFileAttachment,
 } from "@/lib/chat/router";
+import { providerForChatModel } from "@/lib/chat/model-catalog";
 import { assembleSystemPrompt } from "@/lib/classification";
 import { ensureDiscovery } from "@/lib/skills/registry";
 import {
@@ -251,9 +255,7 @@ function adapterFallbackEvent(
 function providerForRequestedModel(
   model: AgentRunInput["model"]["requestedModel"]
 ): "deepseek" | "minimax" | "bailian" {
-  if (model === "minimax-m3") return "minimax";
-  if (model === "qwen3.7-plus") return "bailian";
-  return "deepseek";
+  return providerForChatModel(model) ?? "deepseek";
 }
 
 export class AgentRuntimeError extends Error {
@@ -852,7 +854,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   const preludeAttemptedCalls: Array<{
     toolId: string;
     arguments: Record<string, unknown>;
-  }> = [];
+  }> = [...(input.durable?.completedToolCalls ?? [])];
   const preludePendingExecutionIds: string[] = [];
   let orchestratorSources: AgentSource[] = [
     ...quickTaskMaterialSources,
@@ -869,13 +871,18 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
   if (projectRetrievalAttempted) explainRetrieval(legacySources.length);
   if (agentOrchestratorEnabled && !projectMaterialQuickTask) {
-    const plannedCalls = buildPlannedToolCalls({
-      prompt: effectivePrompt,
-      profile: skillRoute.profile,
-      projectId: project?.id,
-      selectedFileIds: uniqueFileIds,
-      webAccessRecommended: webSearchActive,
-    });
+    // A resumed v2 turn already contains the approved tool call and its durable
+    // output. Re-running the deterministic prelude here could repeat a side
+    // effect before the provider even sees that output.
+    const plannedCalls = input.durable?.continuationMessages?.length
+      ? []
+      : buildPlannedToolCalls({
+          prompt: effectivePrompt,
+          profile: skillRoute.profile,
+          projectId: project?.id,
+          selectedFileIds: uniqueFileIds,
+          webAccessRecommended: webSearchActive,
+        });
 
     if (plannedCalls.length > 0) {
       const toolRun = await executePlannedToolCalls({
@@ -969,20 +976,39 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       ? `${userPromptWithTools}\n\n[系统提示：${contextNotice}]`
       : userPromptWithTools;
 
+  const currentTurnMessages: DeepSeekMessage[] = input.durable
+    ?.continuationMessages?.length
+    ? [
+        { role: "user", content: contextualUserMessage },
+        ...input.durable.continuationMessages,
+      ]
+    : [{ role: "user", content: contextualUserMessage }];
   const legacyMessages: DeepSeekMessage[] = [
     { role: "system", content: systemPrompt },
     ...history.map((m) => ({ role: m.role, content: m.content })),
-    { role: "user", content: contextualUserMessage },
+    ...currentTurnMessages,
   ];
   const experimentalBaseMessages: DeepSeekMessage[] = [
     { role: "system", content: systemPrompt },
     ...history.map((m) => ({ role: m.role, content: m.content })),
-    {
-      role: "user",
-      content: contextNotice
-        ? `${userPromptWithTools}\n\n[系统提示：${contextNotice}]`
-        : userPromptWithTools,
-    },
+    ...(input.durable?.continuationMessages?.length
+      ? [
+          {
+            role: "user",
+            content: contextNotice
+              ? `${userPromptWithTools}\n\n[系统提示：${contextNotice}]`
+              : userPromptWithTools,
+          } as DeepSeekMessage,
+          ...input.durable.continuationMessages,
+        ]
+      : [
+          {
+            role: "user",
+            content: contextNotice
+              ? `${userPromptWithTools}\n\n[系统提示：${contextNotice}]`
+              : userPromptWithTools,
+          } as DeepSeekMessage,
+        ]),
   ];
   type StringMessage = { role: string; content: string };
   const stringMessages =
@@ -1255,7 +1281,9 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           Boolean(input.durable),
           !input.durable,
           input.durable?.priorUsage ?? null,
-          loopResult.usage ?? null
+          loopResult.usage ?? null,
+          // 峰谷计费档按请求开始时间冻结
+          new Date(runStartedAt)
         )
           .then(async (result) => {
             runMetrics.recordUsage(result.usage);
@@ -1340,6 +1368,15 @@ export class DefaultAgentRuntime implements AgentRuntime {
 export const agentRuntime: AgentRuntime = new DefaultAgentRuntime();
 
 function mapProviderError(error: unknown): AgentRuntimeError | null {
+  if (error instanceof ResponsesConfigurationError) {
+    return new AgentRuntimeError(error.status, error.message);
+  }
+  if (error instanceof ResponsesHttpError) {
+    return new AgentRuntimeError(error.status >= 400 && error.status < 500 ? error.status : 502, error.message, { responsesStatus: error.status });
+  }
+  if (error instanceof ResponsesModelError || error instanceof ResponsesSerializationError) {
+    return new AgentRuntimeError(400, error.message);
+  }
   if (error instanceof PiAiProviderError) {
     const status =
       error.status >= 400 && error.status < 500 ? error.status : 502;
@@ -1444,6 +1481,8 @@ export async function accumulateAndSave(
       prompt_cache_hit_tokens?: number;
       prompt_cache_miss_tokens?: number;
     } | null;
+    /** 请求开始时间；DeepSeek 峰谷计费档按它冻结 */
+    requestStartedAt?: Date | null;
   } = {}
 ): Promise<AgentCompletion> {
   return accumulateAndSaveEvents(
@@ -1460,7 +1499,8 @@ export async function accumulateAndSave(
     options.preserveEmptyMessage ?? false,
     options.persistTokenUsage ?? true,
     options.priorUsage ?? null,
-    options.loopUsage ?? null
+    options.loopUsage ?? null,
+    options.requestStartedAt ?? null
   );
 }
 
@@ -1490,7 +1530,8 @@ async function accumulateAndSaveEvents(
     total_tokens: number;
     prompt_cache_hit_tokens?: number;
     prompt_cache_miss_tokens?: number;
-  } | null = null
+  } | null = null,
+  requestStartedAt: Date | null = null
 ): Promise<AgentCompletion> {
   const reader = stream.getReader();
   let fullContent = "";
@@ -1558,6 +1599,8 @@ async function accumulateAndSaveEvents(
         inputCacheMissTokens: completionUsage.promptCacheMissTokens ?? 0,
         outputTokens: completionUsage.completionTokens,
         totalTokens: completionUsage.totalTokens,
+        // 峰谷计费档按请求开始时间冻结；缺省时按低谷计价（见 credits.ts）
+        ...(requestStartedAt ? { requestStartedAt } : {}),
       }).catch((err) => {
         logger.error("Token 用量记录失败", { error: String(err) });
       });

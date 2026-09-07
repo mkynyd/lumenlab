@@ -21,7 +21,7 @@ describe("ModelSelector", () => {
 
     expect(screen.getByRole("dialog")).toHaveTextContent("选择模型");
     expect(
-      screen.getByRole("button", { name: "DeepSeek V4 Flash" })
+      screen.getByRole("button", { name: "DeepSeek V4 Flash Vision" })
     ).toHaveClass("h-11");
     expect(screen.getByRole("button", { name: "快速" })).toHaveClass("h-11");
   });

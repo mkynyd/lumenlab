@@ -45,7 +45,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-function checkpoint(): AgentCheckpoint {
+function checkpoint(): Extract<AgentCheckpoint, { version: 1 }> {
   return {
     version: 1,
     messages: [],
@@ -1406,6 +1406,51 @@ describe("PrismaAgentExecutionStore", () => {
         },
       })
     ).not.toThrow();
+  });
+
+  it("accepts v2 platform file references and rejects signed URL payloads", () => {
+    const v2 = {
+      version: 2 as const,
+      items: [
+        {
+          type: "message" as const,
+          role: "user" as const,
+          content: [
+            { type: "text" as const, text: "inspect this image" },
+            {
+              type: "file" as const,
+              fileAssetId: "file-1",
+              contentFingerprint: "sha256:image-v1",
+            },
+          ],
+        },
+      ],
+      round: 0,
+      model: { provider: "bailian", name: "qwen3.8-flash" },
+      skill: { id: null, version: null },
+      rag: { sourceIds: [], selectedFileIds: [] },
+      allowedToolIds: [],
+    };
+    expect(parseAgentCheckpoint(v2)).toEqual(v2);
+    expect(() =>
+      parseAgentCheckpoint({
+        ...v2,
+        items: [
+          {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "file",
+                fileAssetId: "file-1",
+                contentFingerprint: "sha256:image-v1",
+                signedUrl: "https://private.example/token=secret",
+              },
+            ],
+          },
+        ],
+      })
+    ).toThrow("Agent checkpoint is invalid");
   });
 
   it("rejects non-JSON and provider-private values nested in a pending tool call", async () => {

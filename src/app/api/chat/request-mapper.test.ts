@@ -3,7 +3,7 @@ import { mapAgentRunInput, parseChatRequest } from "./request-mapper";
 
 const validBody = {
   message: "hello",
-  model: "deepseek-v4-pro",
+  model: "deepseek-v4-flash-vision-exp",
 };
 
 describe("parseChatRequest", () => {

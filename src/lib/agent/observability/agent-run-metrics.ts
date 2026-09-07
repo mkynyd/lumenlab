@@ -1,7 +1,7 @@
 import type { AgentCompletion, AgentUsage } from "../contracts";
 import type { ProviderStreamEvent } from "../providers/provider-event-stream";
 import type { AgentEvent } from "../types";
-import { calculateCredits } from "@/lib/tokens";
+import { calculateCredits, UnknownModelCreditError } from "@/lib/tokens";
 
 export interface AgentRunMetrics {
   runId: string;
@@ -151,16 +151,36 @@ export class AgentRunMetricsCollector {
       },
       retrievalHit: this.retrievedSourceCount > 0,
       retrievedSourceCount: this.retrievedSourceCount,
-      estimatedCredits: usage
-        ? calculateCredits(this.model, {
-            inputCacheHitTokens: usage.promptCacheHitTokens ?? 0,
-            inputCacheMissTokens:
-              usage.promptCacheMissTokens ??
-              Math.max(usage.promptTokens - (usage.promptCacheHitTokens ?? 0), 0),
-            outputTokens: usage.completionTokens,
-          })
-        : 0,
+      estimatedCredits: usage ? estimateCredits(this.model, usage, this.startedAt) : 0,
     };
+  }
+}
+
+/**
+ * 指标里的信用点只是观测估算，不是结算路径：
+ * 未知模型按 0 记录而不是抛出，避免审计写入把已完成的运行打成失败。
+ * 峰谷档按 run 开始时间冻结。
+ */
+function estimateCredits(
+  model: string,
+  usage: AgentUsage,
+  startedAt: number
+): number {
+  try {
+    return calculateCredits(
+      model,
+      {
+        inputCacheHitTokens: usage.promptCacheHitTokens ?? 0,
+        inputCacheMissTokens:
+          usage.promptCacheMissTokens ??
+          Math.max(usage.promptTokens - (usage.promptCacheHitTokens ?? 0), 0),
+        outputTokens: usage.completionTokens,
+      },
+      { requestStartedAt: new Date(startedAt) }
+    );
+  } catch (error) {
+    if (error instanceof UnknownModelCreditError) return 0;
+    throw error;
   }
 }
 

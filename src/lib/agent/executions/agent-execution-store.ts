@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
+import { ALL_CHAT_MODELS, LEGACY_CHAT_MODELS } from "@/lib/chat/model-catalog";
 import type { AgentExecutionErrorCode } from "./contracts";
 
 export const AGENT_EXECUTION_STATUSES = [
@@ -20,16 +21,51 @@ const normalizedMessageSchema = z
   })
   .strict();
 
+const checkpointContentPartSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }).strict(),
+  z
+    .object({
+      type: z.literal("file"),
+      fileAssetId: z.string().min(1),
+      contentFingerprint: z.string().min(1),
+    })
+    .strict(),
+]);
+
+const checkpointItemSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("message"),
+      role: z.enum(["system", "user", "assistant"]),
+      content: z.array(checkpointContentPartSchema).max(256),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("function_call"),
+      callId: z.string().min(1),
+      name: z.string().min(1),
+      arguments: z.record(z.string(), z.unknown()),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("function_call_output"),
+      callId: z.string().min(1),
+      toolExecutionId: z.string().min(1),
+      status: z.enum(["succeeded", "failed", "blocked", "rejected", "unknown"]),
+      output: z.string(),
+    })
+    .strict(),
+]);
+
 const durableRequestSchema = z
   .object({
     message: z.string().min(1).max(200_000),
     hiddenPrompt: z.string().min(1).max(200_000).optional(),
-    model: z.enum([
-      "deepseek-v4-pro",
-      "deepseek-v4-flash",
-      "minimax-m3",
-      "qwen3.7-plus",
-    ]),
+    // 活跃模型 + 历史别名：存量 v1 checkpoint 里可能是历史 ID，
+    // 需要能解析恢复；新请求由 sendMessageSchema 限定为活跃模型。
+    model: z.enum([...ALL_CHAT_MODELS, ...LEGACY_CHAT_MODELS]),
     thinkingEnabled: z.boolean(),
     reasoningEffort: z.enum(["high", "max"]),
     webSearchActive: z.boolean(),
@@ -61,7 +97,7 @@ function isCheckpointUsageCounterKey(
   return (
     ((path.length === 1 && path[0] === "usage") ||
       (path.length === 2 &&
-        path[0] === "output" &&
+        (path[0] === "output" || path[0] === "partialOutput") &&
         path[1] === "usage")) &&
     checkpointUsageCounterKeys.has(key)
   );
@@ -114,40 +150,43 @@ const checkpointUsageSchema = z
   })
   .strict();
 
-export const agentCheckpointSchema = z
-  .object({
+const checkpointBaseSchema = z.object({
+  round: z.number().int().nonnegative(),
+  model: z
+    .object({
+      provider: z.string().min(1),
+      name: z.string().min(1),
+    })
+    .strict(),
+  skill: z
+    .object({
+      id: z.string().min(1).nullable(),
+      version: z.string().min(1).nullable(),
+    })
+    .strict(),
+  rag: z
+    .object({
+      sourceIds: z.array(z.string().min(1)),
+      selectedFileIds: z.array(z.string().min(1)).default([]),
+    })
+    .strict(),
+  allowedToolIds: z.array(z.string().min(1)),
+  request: durableRequestSchema.optional(),
+  usage: checkpointUsageSchema.optional(),
+  output: z
+    .object({
+      text: z.string(),
+      reasoning: z.string(),
+      usage: checkpointUsageSchema.nullable(),
+    })
+    .strict()
+    .optional(),
+});
+
+const agentCheckpointV1Schema = checkpointBaseSchema
+  .extend({
     version: z.literal(1),
     messages: z.array(normalizedMessageSchema),
-    round: z.number().int().nonnegative(),
-    model: z
-      .object({
-        provider: z.string().min(1),
-        name: z.string().min(1),
-      })
-      .strict(),
-    skill: z
-      .object({
-        id: z.string().min(1).nullable(),
-        version: z.string().min(1).nullable(),
-      })
-      .strict(),
-    rag: z
-      .object({
-        sourceIds: z.array(z.string().min(1)),
-        selectedFileIds: z.array(z.string().min(1)).default([]),
-      })
-      .strict(),
-    allowedToolIds: z.array(z.string().min(1)),
-    request: durableRequestSchema.optional(),
-    usage: checkpointUsageSchema.optional(),
-    output: z
-      .object({
-        text: z.string(),
-        reasoning: z.string(),
-        usage: checkpointUsageSchema.nullable(),
-      })
-      .strict()
-      .optional(),
     pendingToolCall: z
       .object({
         id: z.string().min(1),
@@ -159,7 +198,38 @@ export const agentCheckpointSchema = z
   })
   .strict();
 
+const agentCheckpointV2Schema = checkpointBaseSchema
+  .extend({
+    version: z.literal(2),
+    items: z.array(checkpointItemSchema).max(2_000),
+    partialOutput: z
+      .object({
+        text: z.string(),
+        reasoning: z.string(),
+        usage: checkpointUsageSchema.nullable(),
+      })
+      .strict()
+      .optional(),
+    pendingToolCall: z
+      .object({
+        callId: z.string().min(1),
+        toolExecutionId: z.string().min(1),
+        toolId: z.string().min(1),
+        arguments: z.record(z.string(), z.unknown()),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export const agentCheckpointSchema = z.discriminatedUnion("version", [
+  agentCheckpointV1Schema,
+  agentCheckpointV2Schema,
+]);
+
 export type AgentCheckpoint = z.infer<typeof agentCheckpointSchema>;
+export type AgentCheckpointV2 = z.infer<typeof agentCheckpointV2Schema>;
+export type AgentCheckpointItem = z.infer<typeof checkpointItemSchema>;
 
 export function parseAgentCheckpoint(value: unknown): AgentCheckpoint {
   const parsed = agentCheckpointSchema.safeParse(value);

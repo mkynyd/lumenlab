@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MODEL_CATALOG_ENTRIES } from "@/lib/chat/model-catalog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,12 +36,11 @@ interface ModelSelectorProps {
   availableModels?: readonly string[];
 }
 
-const MODELS = [
-  { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
-  { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-  { value: "minimax-m3", label: "MiniMax M3" },
-  { value: "qwen3.7-plus", label: "Qwen3.7-Plus" },
-] as const;
+// 选项来自服务端模型目录：活跃模型在前，历史别名保留标签供旧会话展示
+const MODELS = MODEL_CATALOG_ENTRIES.map((entry) => ({
+  value: entry.id,
+  label: entry.displayName,
+}));
 
 const EFFORTS: Array<{ value: ReasoningEffort; label: string }> = [
   { value: "high", label: "快速" },
@@ -59,7 +59,7 @@ export function ModelSelector({
   disabled = false,
   compact = false,
   className,
-  availableModels = ["deepseek-v4-flash", "deepseek-v4-pro", "minimax-m3"],
+  availableModels = ["deepseek-v4-flash-vision-exp", "minimax-m3"],
 }: ModelSelectorProps) {
   const models = MODELS.filter((item) => availableModels.includes(item.value));
   const current = models.find((item) => item.value === model) ?? models[0];

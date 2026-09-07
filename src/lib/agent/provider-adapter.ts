@@ -112,7 +112,7 @@ export function createProviderRound(
       }));
       const seen = new Set<string>();
       return [...nativeCalls, ...fallbackToolCalls()].filter((call) => {
-        const key = `${call.name}:${stableStringify(call.input)}`;
+        const key = call.source === "native" ? `native:${call.id}` : `fallback:${call.name}:${stableStringify(call.input)}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;

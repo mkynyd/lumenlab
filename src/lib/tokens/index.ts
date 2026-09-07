@@ -8,9 +8,11 @@ export {
   calculateCredits,
   estimateCreditsForBudget,
   getCreditWeights,
+  deepSeekBillingTier,
+  UnknownModelCreditError,
   CREDIT_WEIGHTS,
 } from "./credits";
-export type { TokenBreakdown, CreditWeights } from "./credits";
+export type { TokenBreakdown, CreditWeights, DeepSeekBillingTier } from "./credits";
 
 export {
   checkContextBudget,

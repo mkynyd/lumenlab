@@ -20,6 +20,7 @@ import {
   type ProjectPromptSchema,
 } from "@/lib/ai/profile-schemas";
 import { skillRegistry } from "@/lib/agent/skill-registry";
+import { createTextMessage } from "@/lib/deepseek";
 
 // ============================================================
 // LLM 生成项目级 Prompt
@@ -30,9 +31,6 @@ export async function generateProjectPrompt(
   mode: string,
   apiKey: string
 ): Promise<string> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const { mapDeepSeekModel } = await import("@/lib/deepseek");
-
   const modeLabel =
     mode === "experiment" ? "实验/实践" :
     mode === "review" ? "复习/资料整理" :
@@ -57,31 +55,16 @@ ${JSON.stringify(PROJECT_PROMPT_SCHEMA_JSON, null, 2)}
 - confirmed_goals: 用户已明确的项目目标，最多 5 条
 - overrides: 仅当用户有明确的呈现偏好时提供，通常省略`;
 
-  const client = new Anthropic({
-    baseURL: "https://api.deepseek.com/anthropic",
-    apiKey,
-    timeout: 30_000,
-    maxRetries: 0,
-  });
-
-  const response = await client.messages.create({
-    model: mapDeepSeekModel("deepseek-v4-flash"),
-    max_tokens: 800,
+  const text = await createTextMessage(apiKey, {
+    model: "deepseek-v4-flash-vision-exp",
+    maxTokens: 800,
     temperature: 0.2,
     system: systemPrompt,
-    messages: [
-      {
-        role: "user",
-        content: `用户描述：${userInput}\n工作模式：${modeLabel}\n\n请生成结构化的项目配置 JSON。`,
-      },
-    ],
+    prompt: `用户描述：${userInput}\n工作模式：${modeLabel}\n\n请生成结构化的项目配置 JSON。`,
   });
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock || !("text" in textBlock)) return "";
-
   try {
-    const cleaned = textBlock.text
+    const cleaned = text
       .replace(/```json\n?/g, "")
       .replace(/```/g, "")
       .trim();
@@ -89,7 +72,7 @@ ${JSON.stringify(PROJECT_PROMPT_SCHEMA_JSON, null, 2)}
     return renderProjectPrompt(parsed);
   } catch {
     // JSON 解析失败时降级到自由文本
-    return textBlock.text.trim();
+    return text.trim();
   }
 }
 
@@ -103,9 +86,6 @@ export async function generateUserProfilePrompt(
   details: string,
   apiKey: string
 ): Promise<string> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const { mapDeepSeekModel } = await import("@/lib/deepseek");
-
   const systemPrompt = `你是一个用户画像助手。根据用户提供的信息，生成结构化的用户画像配置。
 
 你必须输出纯 JSON，严格遵循以下 JSON Schema。不要输出任何 JSON 以外的内容。
@@ -123,31 +103,16 @@ ${JSON.stringify(USER_PROFILE_SCHEMA_JSON, null, 2)}
 - format_preferences: 根据用户描述推断格式偏好
 - constraints: 根据用户描述推断约束条件`;
 
-  const client = new Anthropic({
-    baseURL: "https://api.deepseek.com/anthropic",
-    apiKey,
-    timeout: 30_000,
-    maxRetries: 0,
-  });
-
-  const response = await client.messages.create({
-    model: mapDeepSeekModel("deepseek-v4-flash"),
-    max_tokens: 400,
+  const text = await createTextMessage(apiKey, {
+    model: "deepseek-v4-flash-vision-exp",
+    maxTokens: 400,
     temperature: 0.2,
     system: systemPrompt,
-    messages: [
-      {
-        role: "user",
-        content: `昵称：${nickname || "未提供"}\n职业/专业：${profession || "未提供"}\n详情：${details || "未提供"}\n\n请生成结构化的用户画像 JSON。`,
-      },
-    ],
+    prompt: `昵称：${nickname || "未提供"}\n职业/专业：${profession || "未提供"}\n详情：${details || "未提供"}\n\n请生成结构化的用户画像 JSON。`,
   });
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock || !("text" in textBlock)) return "";
-
   try {
-    const cleaned = textBlock.text
+    const cleaned = text
       .replace(/```json\n?/g, "")
       .replace(/```/g, "")
       .trim();
@@ -155,7 +120,7 @@ ${JSON.stringify(USER_PROFILE_SCHEMA_JSON, null, 2)}
     return renderUserProfilePrompt(parsed);
   } catch {
     // JSON 解析失败时降级到自由文本
-    return textBlock.text.trim();
+    return text.trim();
   }
 }
 
@@ -168,19 +133,9 @@ export async function generateQuickActions(
   mode: string,
   apiKey: string
 ): Promise<Array<{ title: string; prompt: string }>> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const { mapDeepSeekModel } = await import("@/lib/deepseek");
-
-  const client = new Anthropic({
-    baseURL: "https://api.deepseek.com/anthropic",
-    apiKey,
-    timeout: 30_000,
-    maxRetries: 0,
-  });
-
-  const response = await client.messages.create({
-    model: mapDeepSeekModel("deepseek-v4-flash"),
-    max_tokens: 400,
+  const text = await createTextMessage(apiKey, {
+    model: "deepseek-v4-flash-vision-exp",
+    maxTokens: 400,
     temperature: 0.3,
     system: `你是一个快捷任务推荐助手。根据用户描述和使用场景，推荐 3-5 个快捷任务。
 
@@ -194,19 +149,11 @@ export async function generateQuickActions(
 ]
 
 不要输出其他内容。`,
-    messages: [
-      {
-        role: "user",
-        content: `用户描述：${userInput}\n工作模式：${mode}\n\n请推荐 3-5 个快捷任务。`,
-      },
-    ],
+    prompt: `用户描述：${userInput}\n工作模式：${mode}\n\n请推荐 3-5 个快捷任务。`,
   });
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock || !("text" in textBlock)) return [];
-
   try {
-    const cleaned = textBlock.text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+    const cleaned = text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
     return JSON.parse(cleaned);
   } catch {
     return [];

@@ -130,7 +130,7 @@ export default function ProjectDetailPage() {
   } = useChat({
     initialConversationId: undefined,
     initialMessages: [],
-    model: project?.defaultModel || "deepseek-v4-flash",
+    model: project?.defaultModel || "deepseek-v4-flash-vision-exp",
     thinkingEnabled: project?.thinkingEnabled ?? true,
     projectId,
     selectedFileIds: selectedFileIdList,

@@ -40,6 +40,8 @@ export type RecordTokenUsageInput = {
   inputCacheMissTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** 请求开始时间；DeepSeek 峰谷计费档按它冻结，缺省按低谷计价 */
+  requestStartedAt?: Date;
 };
 
 /**
@@ -47,11 +49,16 @@ export type RecordTokenUsageInput = {
  * 若已跨周期，会自动重置 creditsUsed 和 cycleStartedAt。
  */
 export async function recordTokenUsage(input: RecordTokenUsageInput) {
-  const credits = calculateCredits(input.model, {
-    inputCacheHitTokens: input.inputCacheHitTokens,
-    inputCacheMissTokens: input.inputCacheMissTokens,
-    outputTokens: input.outputTokens,
-  });
+  const { requestStartedAt, ...usageData } = input;
+  const credits = calculateCredits(
+    input.model,
+    {
+      inputCacheHitTokens: input.inputCacheHitTokens,
+      inputCacheMissTokens: input.inputCacheMissTokens,
+      outputTokens: input.outputTokens,
+    },
+    { requestStartedAt }
+  );
 
   const user = await prisma.user.findUnique({
     where: { id: input.userId },
@@ -65,7 +72,7 @@ export async function recordTokenUsage(input: RecordTokenUsageInput) {
   const [usage] = await prisma.$transaction([
     prisma.tokenUsage.create({
       data: {
-        ...input,
+        ...usageData,
         creditsConsumed: credits,
       },
     }),
