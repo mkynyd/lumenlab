@@ -5,9 +5,9 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* 设计规范文档里的示例类名（如 bg-[var(--color-*)]）不是真实样式，
-   排除出 Tailwind 自动扫描，避免生成非法的 var(--color-*) 规则。 */
-@source not "../../通用设计规范.md";
+/* Markdown 文档（设计规范等）里的示例类名不是真实样式，整体排除出
+   Tailwind 扫描，避免生成 var(--color-*) 这类非法规则。 */
+@source not "../../**/*.md";
 
 @custom-variant dark (&:is(.dark *));
 
