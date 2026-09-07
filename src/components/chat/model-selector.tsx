@@ -61,7 +61,7 @@ function ModelDetail({
   onReasoningEffortChange?: (effort: ReasoningEffort) => void;
 }) {
   return (
-    <div className="flex w-full flex-col gap-3 p-4 md:w-[19rem]">
+    <div className="flex w-full flex-col gap-3">
       <div>
         <p className="text-sm font-medium text-[var(--color-text-primary)]">
           {entry.detailName ?? entry.displayName}
@@ -105,21 +105,21 @@ function ModelDetail({
         )}
       </dl>
       {onReasoningEffortChange && (
-        <div className="space-y-1.5 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] p-3">
+        <div className="space-y-1.5">
           <p className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-[var(--color-text-tertiary)]">
             <Zap className="size-3.5" strokeWidth={2} />
             思考深度
           </p>
-          <div className="grid grid-cols-2 gap-1 rounded-[var(--radius-md)] bg-[var(--color-surface)] p-1">
+          <div className="grid grid-cols-2 gap-1">
             {EFFORTS.map((item) => (
               <button
                 key={item.value}
                 type="button"
                 onClick={() => onReasoningEffortChange(item.value)}
                 className={cn(
-                  "h-7 rounded-[var(--radius-md)] text-sm text-[var(--color-text-secondary)] transition-colors",
+                  "h-8 rounded-[var(--radius-md)] text-sm text-[var(--color-text-secondary)] transition-colors",
                   reasoningEffort === item.value
-                    ? "bg-[var(--color-interaction-active)] font-medium text-[var(--color-text-primary)]"
+                    ? "bg-[var(--color-surface)] font-medium text-[var(--color-text-primary)]"
                     : "hover:bg-[var(--color-interaction-hover)]"
                 )}
               >
@@ -180,13 +180,17 @@ export function ModelSelector({
           <ChevronDown data-icon="inline-end" />
         </Button>
       </DropdownMenuTrigger>
+      {/* 单一大卡片：覆盖默认 max-h/overflow（滚动条）与内边距，
+          左白右灰两个平铺区域，圆角由外层 overflow-hidden 统一裁剪。
+          右区固定高度：不同模型简介换行数不同，若跟随内容变化，
+          弹层会在 hover 时反复 resize 重定位，导致列表抖动。 */}
       <DropdownMenuContent
         align="start"
         sideOffset={8}
-        className="w-[34rem] rounded-[var(--radius-xl)] p-2"
+        className="h-[27.5rem] w-[38rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[var(--radius-xl)] p-0"
       >
-        <div className="flex gap-2">
-          <div className="w-56 shrink-0">
+        <div className="flex h-full">
+          <div className="w-56 shrink-0 py-2">
             <DropdownMenuLabel className="px-3 py-2 text-sm font-normal text-[var(--color-text-tertiary)]">
               模型
             </DropdownMenuLabel>
@@ -216,7 +220,7 @@ export function ModelSelector({
             </DropdownMenuRadioGroup>
           </div>
           {detailEntry && (
-            <div className="flex-1 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)]">
+            <div className="h-full flex-1 bg-[var(--color-panel-muted)] p-5">
               <ModelDetail
                 entry={detailEntry}
                 reasoningEffort={reasoningEffort}
