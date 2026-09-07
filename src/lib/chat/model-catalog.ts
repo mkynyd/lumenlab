@@ -29,8 +29,6 @@ export type ModelCatalogEntry = {
   detailName?: string;
   /** 官方口径的 1–2 句简介（来源见各条目注释） */
   description: string;
-  /** 官方价格摘要（元 / 百万 tokens） */
-  priceNote?: string;
   /** 详情栏输入类型展示文案 */
   inputLabel?: string;
   /** 支持的输入类型 */
@@ -88,8 +86,6 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     detailName: "DeepSeek V4 Flash Vision",
     // 简介与图片能力口径：api-docs.deepseek.com「图像理解」与模型更新列表
     description: "DeepSeek V4 系列的快速视觉模型：除文本外支持输入图片，可描述图片、识别截图文字、分析图表；思考模式默认开启。",
-    // 价格口径：模型更新列表（峰谷时段，元/百万 tokens）
-    priceNote: "输入 1.5–3 元、输出 4.5–9 元 / 百万 tokens",
     inputLabel: "文本 · 图片",
     inputTypes: ["text", "image"],
     contextWindowTokens: 1_000_000,
@@ -106,8 +102,6 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     vendor: "MiniMax",
     // 简介口径：platform.minimaxi.com「模型概览」（M3 原文）
     description: "MiniMax 的 Frontier Coding 模型：原生多模态，支持 1M 上下文。",
-    // 价格口径：platform.minimaxi.com「按量计费」（≤512K 标准档，M3 永久 5 折）
-    priceNote: "输入 2.1 元起、输出 8.4 元起 / 百万 tokens",
     inputLabel: "文本 · 图片",
     inputTypes: ["text", "image"],
     contextWindowTokens: 1_000_000,
@@ -127,8 +121,6 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     // 简介与能力口径：模型更新列表 qwen3.8-flash 官方参数表；
     // 音频输入 Responses/平台均未开放，不在此宣称。
     description: "通义千问 Qwen3.8 系列的 Flash 档模型，支持 Function Calling、结构化输出、联网搜索与缓存加速，输入覆盖文本、图片与视频。",
-    // 价格口径：模型更新列表 qwen3.8-flash 价格表（元/百万 tokens）
-    priceNote: "输入 0.8 元、输出 2.7 元 / 百万 tokens",
     inputLabel: "文本 · 图片 · 视频",
     inputTypes: ["text", "image"],
     contextWindowTokens: 1_000_000,

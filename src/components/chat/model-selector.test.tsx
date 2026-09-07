@@ -19,15 +19,14 @@ describe("ModelSelector", () => {
     });
     await user.click(triggers.at(-1)!);
 
-    expect(screen.getByRole("dialog")).toHaveTextContent("选择模型");
+    expect(screen.getByRole("dialog")).toHaveTextContent("配置");
     const deepseekOption = screen.getByRole("button", {
       name: /DeepSeek V4 Flash/,
     });
-    expect(deepseekOption).toHaveClass("py-2.5");
-    // 官方口径简介随选项展示
-    expect(deepseekOption).toHaveTextContent("DeepSeek");
+    // 模型名下方带一行官方口径小字介绍
     expect(deepseekOption).toHaveTextContent("视觉模型");
-    expect(screen.getByRole("button", { name: "快速" })).toHaveClass("h-11");
+    expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "快速" })).toHaveClass("h-8");
   });
 
   it("keeps model and reasoning effort independent", async () => {

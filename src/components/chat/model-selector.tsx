@@ -50,7 +50,9 @@ function catalogEntry(id: string): ModelCatalogEntry | undefined {
   return MODEL_CATALOG_ENTRIES.find((entry) => entry.id === id);
 }
 
-/** 详情栏内容：官方口径简介 + 可核实的参数（上下文/输入/价格）。 */
+/** 详情栏内容：官方口径简介 + 可核实的参数（上下文/输入/价格）。
+ * 三个区域各用固定高度插槽：不同模型的文字换行数不同，
+ * 若区域高度跟随内容，悬浮切换时会引起上下浮动。 */
 function ModelDetail({
   entry,
   reasoningEffort,
@@ -61,18 +63,20 @@ function ModelDetail({
   onReasoningEffortChange?: (effort: ReasoningEffort) => void;
 }) {
   return (
-    <div className="flex w-full flex-col gap-3">
-      <div>
+    <div className="flex h-full w-full flex-col gap-3">
+      <div className="shrink-0">
         <p className="text-sm font-medium text-[var(--color-text-primary)]">
           {entry.detailName ?? entry.displayName}
         </p>
         <p className="text-xs text-[var(--color-text-tertiary)]">{entry.vendor}</p>
       </div>
-      <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
+      {/* 介绍区：固定三行，价格行移除后可完整展示 */}
+      <p className="h-[69px] shrink-0 text-sm leading-relaxed text-[var(--color-text-secondary)] line-clamp-3">
         {entry.description}
       </p>
-      <dl className="space-y-1.5 text-sm">
-        <div className="flex items-center justify-between gap-3">
+      {/* 参数区：固定两行 */}
+      <dl className="h-[46px] shrink-0 space-y-1.5 text-sm">
+        <div className="flex h-5 items-center justify-between gap-3">
           <dt className="flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
             <Layers className="size-3.5" strokeWidth={2} />
             上下文
@@ -84,7 +88,7 @@ function ModelDetail({
           </dd>
         </div>
         {entry.inputLabel && (
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex h-5 items-center justify-between gap-3">
             <dt className="flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
               <Paperclip className="size-3.5" strokeWidth={2} />
               输入
@@ -92,20 +96,10 @@ function ModelDetail({
             <dd className="text-[var(--color-text-primary)]">{entry.inputLabel}</dd>
           </div>
         )}
-        {entry.priceNote && (
-          <div className="flex items-start justify-between gap-3">
-            <dt className="flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
-              <Coins className="size-3.5" strokeWidth={2} />
-              价格
-            </dt>
-            <dd className="max-w-[11rem] text-right text-xs leading-relaxed text-[var(--color-text-secondary)]">
-              {entry.priceNote}
-            </dd>
-          </div>
-        )}
       </dl>
+      {/* 思考深度：固定在卡片底部，与顶部介绍保持相同间距 */}
       {onReasoningEffortChange && (
-        <div className="space-y-1.5">
+        <div className="mt-auto space-y-1.5">
           <p className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-[var(--color-text-tertiary)]">
             <Zap className="size-3.5" strokeWidth={2} />
             思考深度
@@ -187,7 +181,7 @@ export function ModelSelector({
       <DropdownMenuContent
         align="start"
         sideOffset={8}
-        className="h-[27.5rem] w-[38rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[var(--radius-xl)] p-0"
+        className="h-[20rem] w-[38rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[var(--radius-xl)] p-0"
       >
         <div className="flex h-full">
           <div className="w-56 shrink-0 py-2">
@@ -248,70 +242,65 @@ export function ModelSelector({
         </Button>
       </DialogTrigger>
       <DialogContent
-        className="top-auto bottom-0 left-0 max-w-none -translate-x-0 -translate-y-0 gap-3 rounded-t-xl rounded-b-none p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-w-none"
+        className="top-auto bottom-0 left-0 max-w-none -translate-x-0 -translate-y-0 gap-4 rounded-t-xl rounded-b-none p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-w-none"
       >
         <DialogHeader>
-          <DialogTitle>选择模型</DialogTitle>
+          <DialogTitle>配置</DialogTitle>
         </DialogHeader>
-        <div className="space-y-2">
-          <p className="px-1 text-xs text-[var(--color-text-tertiary)]">模型</p>
-          <div className="space-y-1">
-            {models.map((item) => {
-              const entry = catalogEntry(item.value);
-              const active = current?.value === item.value;
-              return (
-                <Button
-                  key={item.value}
-                  type="button"
-                  variant="ghost"
-                  className={cn(
-                    "h-auto w-full justify-start rounded-[var(--radius-md)] px-3 py-2.5",
-                    active && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                  )}
-                  onClick={() => {
-                    onChange(item.value);
-                    setMobileOpen(false);
-                  }}
-                >
-                  <span className="flex flex-1 flex-col items-start gap-0.5 text-left">
-                    <span className="text-base">{item.label}</span>
-                    <span className="text-xs text-[var(--color-text-tertiary)]">
-                      {entry?.vendor}
-                    </span>
-                    {entry?.description && (
-                      <span className="line-clamp-2 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
-                        {entry.description}
-                      </span>
-                    )}
+        {/* 模型分组：扁平列表 + 细分隔线，选中项右侧打勾；单行小字介绍 */}
+        <div className="divide-y divide-[var(--color-border-light)]">
+          {models.map((item) => {
+            const entry = catalogEntry(item.value);
+            const active = current?.value === item.value;
+            return (
+              <button
+                key={item.value}
+                type="button"
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 py-3 text-left",
+                  active ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"
+                )}
+                onClick={() => onChange(item.value)}
+              >
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-base">{item.label}</span>
+                  <span className="truncate text-xs text-[var(--color-text-tertiary)]">
+                    {entry?.description ?? entry?.vendor}
                   </span>
-                  {active && <Check data-icon="inline-end" />}
-                </Button>
-              );
-            })}
-          </div>
+                </span>
+                {active && <Check className="size-4 shrink-0" strokeWidth={2} />}
+              </button>
+            );
+          })}
         </div>
         {onReasoningEffortChange && (
-          <div className="space-y-2">
-            <p className="px-1 text-xs text-[var(--color-text-tertiary)]">思考深度</p>
-            <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-[var(--color-text-secondary)]">思考深度</span>
+            <div className="grid grid-cols-2 gap-1 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] p-1">
               {EFFORTS.map((item) => (
-                <Button
+                <button
                   key={item.value}
                   type="button"
-                  variant="ghost"
-                  className={cn(
-                    "h-11 justify-start rounded-[var(--radius-md)] px-3",
-                    reasoningEffort === item.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                  )}
                   onClick={() => onReasoningEffortChange(item.value)}
+                  className={cn(
+                    "h-8 rounded-[var(--radius-md)] px-4 text-sm text-[var(--color-text-secondary)]",
+                    reasoningEffort === item.value &&
+                      "bg-[var(--color-surface)] font-medium text-[var(--color-text-primary)]"
+                  )}
                 >
                   {item.label}
-                  {reasoningEffort === item.value && <Check data-icon="inline-end" />}
-                </Button>
+                </button>
               ))}
             </div>
           </div>
         )}
+        <Button
+          type="button"
+          className="h-11 w-full rounded-full text-base"
+          onClick={() => setMobileOpen(false)}
+        >
+          完成
+        </Button>
       </DialogContent>
     </Dialog>
     </>
