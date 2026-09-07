@@ -1,7 +1,7 @@
 # light-ai-chat 交接
 
 > 2026-09-07 · GPT-6 · Codex（最新）｜Kimi · Kimi Code（前两阶段）
-> 范围：260907 迭代。任务 01 已提交 `22e5b19`；任务 02 DeepSeek Vision 代码收口正在验收。仍在 `main`，未部署。
+> 范围：260907 迭代。任务 01 已提交 `22e5b19`；任务 02 DeepSeek Vision 代码收口已提交 `2af313e` 并推送 main。仍未部署。
 
 ## 最新：任务 02 — DeepSeek Vision 路径收口
 
@@ -9,7 +9,7 @@
 - DeepSeek 全部平台 Tool 现以 Responses `function_call` / `function_call_output` 续接：`web.search` 保持 `web_search` 映射，其余 Tool ID 可逆编码，按 call_id 回放；不再注入、解析或生成 XML/DSML fallback。
 - 显式模型选择现在优先于旧 `modelLock` 与附件自动路由，选择 `deepseek-v4-flash-vision-exp` 携带图片时仍走 DeepSeek；PNG/JPEG/WebP 在 multipart HTTP 边界核对扩展名、真实文件签名与规范 MIME 后才进入 data URL。
 - `web.search` 改为平台直接执行 Bing RSS → DuckDuckGo HTTP 检索，相关性闸门与来源卡片保持；移除无法在嵌套 `completeChat` 中执行的伪 server-tool 往返，模型只通过受审计的 function output 消费可验证搜索结果。
-- 全量门禁通过：267 个文件 / 1586 项、TypeScript、ESLint、production build、diff check 全绿；构建仍只有既有 CSS `--color-*` warning，测试仍有 jsdom canvas 提示。真实 DeepSeek 文本/图片/工具账号验收因本机无凭据未执行；管理端凭证探针按方案留给 04，未部署。
+- 本地全量门禁通过：267 个文件 / 1586 项、TypeScript、ESLint、production build、diff check 全绿；构建仍只有既有 CSS `--color-*` warning，测试仍有 jsdom canvas 提示。远端 [GitHub Actions run 34136320494](https://github.com/mkynyd/lumenlab/actions/runs/34136320494) 的 macOS lockfile 通过，但 Linux `npm test` 因 `src/app/(auth)/register/page.test.tsx` 单项 5 秒超时失败（266 文件 / 1585 项通过），需后续修复/重跑。真实 DeepSeek 文本/图片/工具账号验收因本机无凭据未执行；管理端凭证探针按方案留给 04，未部署。
 
 ## 前次：任务 01 第五阶段 — 非流式 Responses 调用
 
