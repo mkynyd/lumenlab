@@ -16,17 +16,21 @@ describe("routeModel", () => {
     });
   });
 
-  it("keeps an explicitly selected Qwen model for multimodal attachments and follow-up turns", () => {
+  it("keeps every explicitly selected model for multimodal attachments", () => {
     const image = { name: "diagram.png", mimeType: "image/png" };
 
-    expect(routeModel(null, [image], { requestedModel: "qwen3.7-plus" })).toEqual({
+    expect(routeModel(null, [image], { requestedModel: "qwen3.8-flash" })).toEqual({
       provider: "bailian",
-      shouldLock: true,
+      shouldLock: false,
     });
     expect(
-      routeModel({ modelLock: "qwen" }, [], { requestedModel: "deepseek-v4-pro" })
+      routeModel(
+        { modelLock: "qwen" },
+        [image],
+        { requestedModel: "deepseek-v4-flash-vision-exp" }
+      )
     ).toEqual({
-      provider: "bailian",
+      provider: "deepseek",
       shouldLock: false,
     });
   });

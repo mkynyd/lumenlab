@@ -48,7 +48,7 @@ The implementation covers manual Skill controls, follow-up actions, provider-neu
    - file listing intent -> `project_files.list`
    - reference listing intent -> `reference.list`
 6. `AgentLoop` sends deterministic prelude and model-requested calls through the same `ToolRunner`, with allowlists, stable deduplication, no-progress detection, round limits, abort propagation, and approval suspension.
-7. A provider adapter starts and continues each model round. DeepSeek owns its native names and XML/DSML fallback; MiniMax owns native tool-use/tool-result blocks.
+7. A provider adapter starts and continues each model round. Active providers own their Responses tool-name mapping and function call/output continuation.
 8. `ConversationPersistence` owns conversation, message, source, and Skill-state persistence.
 9. Structured runtime events are mapped to the existing SSE events and rendered in the current UI.
 
@@ -140,7 +140,7 @@ The current validation totals are recorded in the workspace `log.md` for the 202
 - Add follow-up buttons for deeper Socratic analysis, exam extraction, flashcards, and artifact save. DONE.
 - Move provider-specific model calls out of `/api/chat` into dedicated adapters. DONE.
 - Add native tool calling where provider support is reliable. DONE (DeepSeek and MiniMax).
-- Isolate fallback parsing inside provider adapters. DONE (DeepSeek XML/DSML fallback).
+- Isolate provider protocol handling inside adapters. DONE (Responses serializers and reversible tool-name mapping).
 - Migrate legacy RAG sources into the unified bottom sources UI. DONE.
 - Add deeper smoke tests with real DeepSeek and MiniMax keys after local dev access is seeded.
 - Resume the suspended provider round automatically after an approved tool completes; today the approval is executed and audited, and the user continues with a new message.

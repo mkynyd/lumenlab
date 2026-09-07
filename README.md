@@ -63,7 +63,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### 受控 Agent 模式
 
-入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek 使用 native `web.search` 并在其他工具上保留 adapter 内部 XML/DSML fallback，MiniMax 使用 native `tool_use`，Qwen 使用 DashScope 原生 Function Calling；三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
+入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek、MiniMax 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
 
 服务端 Policy Engine 拦截所有 `tool_use`，按 L0–L4 风险等级决定执行、预批准或逐次确认。
 
@@ -224,7 +224,7 @@ src/
 │       ├── health/                     # 健康检查
 │       └── metrics/cache/              # 缓存指标
 ├── lib/
-│   ├── deepseek.ts                     # DeepSeek API 客户端 (Anthropic SDK 流式)
+│   ├── deepseek.ts                     # DeepSeek Responses 非流式兼容封装
 │   ├── agent/                          # Agent 模式核心
 │   │   ├── contracts.ts                # AgentRuntime / AgentRun 输入输出合同
 │   │   ├── runtime.ts                  # 唯一 Runtime 编排入口

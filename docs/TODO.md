@@ -12,6 +12,13 @@ This document tracks the completed Agent Runtime consolidation plus deferred Ski
 - Still required: durable image authorization/loading in task 08; task 03 document compatibility and task 04 video compatibility. Qwen Responses explicitly does not accept video/audio; the previous input_video assumption has been removed. No authenticated real-provider acceptance or deployment.
 - The task 01 shared contract is frozen for tasks 02–05. Do not deploy until task 03 document compatibility, task 04 video compatibility, task 08 durable image loading, and authenticated provider acceptance are complete.
 
+## In progress — DeepSeek Vision migration (260907 task 02)
+
+- Removed the last DeepSeek Anthropic streaming entry point and XML/DSML tool fallback. DeepSeek now uses Responses for all streaming and one-shot generation, with reversible native tool names and call_id continuation.
+- Explicit DeepSeek selection now keeps image requests on DeepSeek. Multipart PNG/JPEG/WebP bytes are signature-checked and normalized before becoming input_image data URLs.
+- `web.search` now performs the existing verified HTTP search directly and returns sources through the audited platform tool output; it no longer makes a nested model call that cannot execute its requested function.
+- Full gates passed: 267 files / 1586 tests, TypeScript, ESLint, production build, and diff check. Authenticated provider acceptance remains unavailable without credentials; the management probe is task 04.
+
 ## Completed Learning P1-E — Release Quality Gates
 
 - Added `src/lib/learning/evals/p1/release-gates.ts`: 15 deterministic release-gate cases across five domains (answer leakage, authorization, source integrity, projection, idempotency), all free of user data / DB / real providers, so CI can execute them.
@@ -36,7 +43,7 @@ This document tracks the completed Agent Runtime consolidation plus deferred Ski
 - Reduced `/api/chat` to authentication, rate limiting, request mapping, `AgentRuntime.run()`, and SSE response adaptation.
 - Added a transport-independent `AgentRuntime` contract with explicit context assembly, provider adapters, persistence ports, and structured runtime events.
 - Replaced the provider-specific continuation path with one `AgentLoop` used by deterministic prelude tools and model-requested tools.
-- Added native DeepSeek and MiniMax round/continuation adapters. DeepSeek XML/DSML fallback parsing stays inside its adapter; MiniMax uses native tool-use/tool-result blocks.
+- Added native Responses round/continuation adapters. DeepSeek now encodes every platform tool as function calls without XML/DSML; MiniMax and Qwen use their provider-specific Responses mappings.
 - Added durable approval execution with token binding, atomic single-use token and execution claims, restored tool context, and terminal tool audit state.
 - Added `AGENT_RUNTIME_MODE=legacy|shadow|new`; `shadow` compares side-effect-free planning decisions, while the old `AGENT_ORCHESTRATOR_ENABLED` variable remains only as a compatibility bridge.
 - Preserved the public `/api/chat` request shape and SSE event protocol while adding runtime/tool protocol version headers.
@@ -181,7 +188,7 @@ Add these after the MVP loop, approval UX, and tool-result continuation are stab
 
 - Moved provider-specific streaming logic out of `src/app/api/chat/route.ts` into `src/lib/agent/adapters/`.
 - Added `ProviderAdapter` interface and `createProviderAdapter` factory.
-- Added `DeepSeekAdapter` with native tool normalization, XML/DSML fallback parsing, and continuation support.
+- Added `DeepSeekAdapter` with native tool-name normalization and call_id continuation support; the later Responses migration removed its XML/DSML fallback.
 - Added `MiniMaxAdapter` with native tool-use/tool-result normalization and continuation support.
 - `AgentRuntime` selects the adapter by `modelRoute.provider` and drives it through `startRound()` / `continueRound()`.
 - Provider-specific stream parsing, tool protocol details, and fallback formats remain inside adapters rather than the Runtime or route.
@@ -192,7 +199,7 @@ Add these after the MVP loop, approval UX, and tool-result continuation are stab
 - Move provider-specific logic out of `src/app/api/chat/route.ts`. DONE.
 - Add provider adapters that normalize DeepSeek and MiniMax streams into shared internal events. DONE.
 - Support native tool calling where the provider supports it. DONE (DeepSeek and MiniMax).
-- Keep provider-specific fallback parsing isolated behind adapters. DONE (DeepSeek XML/DSML fallback).
+- Keep provider-specific protocol handling isolated behind adapters. DONE (Responses serializers and tool-name codecs).
 - Keep DeepSeek built-in `web_search_20250305` only as an optimization path; do not make it the only web access path. DONE.
 - Make `web.fetch` and future `web.search` server-side product tools so DeepSeek, MiniMax, and future providers can share the same Agent capabilities. DONE.
 

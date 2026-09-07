@@ -92,29 +92,23 @@ export function routeModel(
   provider: "deepseek" | "minimax" | "bailian";
   shouldLock: boolean;
 } {
+  if (options.requestedModel) {
+    const requestedProvider = providerForChatModel(options.requestedModel);
+    if (requestedProvider) {
+      return { provider: requestedProvider, shouldLock: false };
+    }
+  }
   if (conversation?.modelLock === "qwen") {
     return { provider: "bailian", shouldLock: false };
   }
   if (conversation?.modelLock === "minimax") {
     return { provider: "minimax", shouldLock: false };
   }
-  if (options.requestedModel) {
-    const requestedProvider = providerForChatModel(options.requestedModel);
-    if (requestedProvider === "bailian") {
-      return { provider: "bailian", shouldLock: hasMultimodalContent(attachments) };
-    }
-  }
   if (options.requiresVisionModel) {
     return { provider: "minimax", shouldLock: true };
   }
   if (hasMultimodalContent(attachments)) {
     return { provider: "minimax", shouldLock: true };
-  }
-  if (options.requestedModel) {
-    const requestedProvider = providerForChatModel(options.requestedModel);
-    if (requestedProvider === "minimax") {
-      return { provider: "minimax", shouldLock: false };
-    }
   }
   return { provider: "deepseek", shouldLock: false };
 }

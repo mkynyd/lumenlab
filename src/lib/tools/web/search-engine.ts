@@ -1,24 +1,12 @@
 /**
- * DeepSeek 内置 web_search 的独立调用实现。
- *
- * 由于主对话流已经让 DeepSeek 自己处理 web_search，这里的场景是：
- *   - Agent continuation / DSML 回退中显式调用了 web.search 工具
- *   - 需要从 DeepSeek 拿到联网摘要 + 来源 URL
- *
- * 实现策略：
- *   1. 用系统提示要求模型调用内置 web_search（DeepSeek Anthropic 兼容端点是
- *      server tool，不支持按 name 强制 tool_choice，见 supportsForcedSearchToolChoice）。
- *   2. 若模型未产生可验证来源，降级为 HTTP 直接搜索（DuckDuckGo → Bing）。
- *   3. 从 tool_use 块或 content 中提取来源 URL。
+ * Platform-owned web.search implementation. It retrieves verifiable HTTP
+ * results directly; the Agent Runtime then gives those results to the model
+ * through a normal function_call_output item. This avoids a nested model call
+ * and ensures every source shown to the user came from the search transport.
  */
-
-import { completeChat, type DeepSeekMessage } from "@/lib/deepseek";
-import { supportsForcedSearchToolChoice } from "@/lib/chat/model-capabilities";
 import { getRedis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 
-const SEARCH_MODEL = "deepseek-v4-flash";
-const SEARCH_MAX_TOKENS = 4096;
 const CACHE_TTL_SECONDS = 60;
 const SEARCH_TIMEOUT_MS = 10_000;
 const DUCKDUCKGO_HTML_SEARCH = "https://html.duckduckgo.com/html/";
@@ -101,124 +89,6 @@ export function parseBingRssResults(xml: string, maxResults: number) {
     });
   }
   return results;
-}
-
-function extractUrlsFromText(text: string): string[] {
-  const urlPattern = /https?:\/\/[^\s<>"'\)\]\}，。；、]+/g;
-  const matches = text.match(urlPattern) ?? [];
-  return [...new Set(matches.map((url) => url.replace(/[),.;!?]+$/, "")))].filter(Boolean);
-}
-
-function normalizeSources(
-  toolSources: Array<{ url?: string; title?: string } | string> = [],
-  fallbackUrls: string[] = []
-): Array<{ url: string; title?: string }> {
-  const result = new Map<string, { url: string; title?: string }>();
-
-  for (const source of toolSources) {
-    if (typeof source === "string") {
-      result.set(source, { url: source });
-    } else if (source && typeof source.url === "string") {
-      result.set(source.url, { url: source.url, title: source.title });
-    }
-  }
-
-  for (const url of fallbackUrls) {
-    if (!result.has(url)) {
-      result.set(url, { url });
-    }
-  }
-
-  return [...result.values()];
-}
-
-function extractToolSources(responseContent: unknown[]): Array<{ url: string; title?: string }> {
-  const sources: Array<{ url: string; title?: string }> = [];
-
-  for (const block of responseContent) {
-    if (!block || typeof block !== "object") continue;
-    const typed = block as { type?: string; name?: string; input?: Record<string, unknown> };
-    if (typed.type !== "tool_use" || typed.name !== "web_search") continue;
-
-    const input = typed.input ?? {};
-    // DeepSeek 内置 web_search 的 tool_use input 可能直接包含 sources 数组。
-    const rawSources = input.sources;
-    if (Array.isArray(rawSources)) {
-      for (const item of rawSources) {
-        if (typeof item === "string") {
-          sources.push({ url: item });
-        } else if (item && typeof item === "object") {
-          const url = (item as { url?: string }).url;
-          const title = (item as { title?: string }).title;
-          if (url) sources.push({ url, title });
-        }
-      }
-    }
-  }
-
-  return sources;
-}
-
-function buildSearchMessages(query: string): DeepSeekMessage[] {
-  return [
-    {
-      role: "system",
-      content: `你是一个联网搜索助手。用户会给你一个查询词，你必须调用 web_search 工具搜索网络，然后基于搜索结果给出简洁、准确的摘要。
-
-要求：
-- 优先使用搜索获得的信息，不要凭记忆回答。
-- 摘要控制在 2000 字以内。
-- 在引用处使用 [^1^]、[^2^] 等标记，并在文末列出对应的 URL 来源。
-- 如果搜索没有返回有效结果，明确说明。`,
-    },
-    {
-      role: "user",
-      content: query,
-    },
-  ];
-}
-
-async function callSearchWithToolChoice(
-  apiKey: string,
-  query: string
-): Promise<WebSearchResult | null> {
-  const response = await completeChat(apiKey, {
-    model: SEARCH_MODEL,
-    messages: buildSearchMessages(query),
-    thinking: { type: "disabled" },
-    max_tokens: SEARCH_MAX_TOKENS,
-    // DeepSeek Anthropic 兼容层通过标准 tools 字段暴露内置 web_search，
-    // 使用标准 name + description + input_schema 格式触发。
-    tools: [{
-      name: "web_search",
-      description: "联网搜索关键词并返回摘要与来源",
-      input_schema: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "搜索关键词" },
-        },
-        required: ["query"],
-      },
-    }],
-    // DeepSeek 的内置 web_search 是 server tool，按 name 强制 tool_choice 会 400，
-    // 因此这里不传 tool_choice，靠 buildSearchMessages 的系统提示驱动模型调用；
-    // 仅对 supportsForcedSearchToolChoice 判定为支持的 provider 恢复强制。
-    // 若模型未调用 web_search，runWebSearch 的 sources 判空会自动降级到
-    // callSearchFallback，兜底逻辑不变。
-    ...(supportsForcedSearchToolChoice("deepseek")
-      ? { tool_choice: { type: "tool", name: "web_search" } }
-      : {}),
-  });
-
-  if (!response.content) return null;
-
-  const toolSources = extractToolSources(response.rawContentBlocks ?? []);
-  const fallbackUrls = extractUrlsFromText(response.content);
-  return {
-    summary: response.content,
-    sources: normalizeSources(toolSources, fallbackUrls),
-    query,
-  };
 }
 
 // 每个 provider 尝试使用独立的 AbortController + 10s 超时，
@@ -351,7 +221,7 @@ export function softenExactDates(query: string, now = new Date()): string {
 
 export async function runWebSearch(
   query: string,
-  apiKey: string,
+  _apiKey: string,
   maxResults = 5
 ): Promise<WebSearchResult> {
   const userQuestionMarker = "# 用户问题";
@@ -386,19 +256,7 @@ export async function runWebSearch(
     // Cache failures are non-fatal.
   }
 
-  let result: WebSearchResult;
-  try {
-    const forced = await callSearchWithToolChoice(apiKey, trimmed);
-    result = forced?.sources.length
-      ? forced
-      : await callSearchFallback(trimmed, maxResults);
-  } catch (error) {
-    logger.warn("web.search forced tool_choice failed, falling back", {
-      query: trimmed,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    result = await callSearchFallback(trimmed, maxResults);
-  }
+  const result = await callSearchFallback(trimmed, maxResults);
 
   try {
     await getRedis().setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(result));

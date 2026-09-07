@@ -83,7 +83,7 @@ response-stream.ts
   └─ 浏览器 useChat 按原协议消费
 ```
 
-`AgentRuntime` 不依赖 `NextRequest`、`NextResponse` 或 SSE 文本格式，Provider 特有的工具名、原生 block、XML/DSML fallback 与 continuation transcript 也只存在于 `ProviderAdapter` 边界内。DeepSeek / MiniMax 默认使用项目自有 Adapter，也可通过 `AGENT_PROVIDER_ADAPTER=pi` 切到隔离 POC；Qwen 始终由 `BailianQwenAdapter` 承接。来源由 `src/lib/agent/sources.ts` 聚合去重，并通过 `ConversationPersistence` 写入同一条 `Message.sources` JSON 字段，前端来源展示协议保持不变。
+`AgentRuntime` 不依赖 `NextRequest`、`NextResponse` 或供应商 SSE 文本格式；Provider 特有的工具名、Responses items 与 continuation transcript 只存在于 `ProviderAdapter` 边界内。三家活跃模型均走项目自有 Responses Adapter；旧 Pi POC 不承接这组模型。来源由 `src/lib/agent/sources.ts` 聚合去重，并通过 `ConversationPersistence` 写入同一条 `Message.sources` JSON 字段，前端来源展示协议保持不变。
 
 ## Runtime 发布模式
 

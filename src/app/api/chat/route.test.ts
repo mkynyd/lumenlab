@@ -1058,7 +1058,7 @@ describe("Streaming tool loop", () => {
     );
   });
 
-  it("injects XML tool instructions into the system prompt before the first DeepSeek stream", async () => {
+  it("sends platform tools as native Responses functions without XML instructions", async () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
@@ -1087,13 +1087,18 @@ describe("Streaming tool loop", () => {
       );
 
       const firstCall = mocks.deepseekStream.mock.calls[0];
-      const request = firstCall[0] as { messages: Array<{ role: string; content: string | unknown[] }> };
+      const request = firstCall[0] as {
+        messages: Array<{ role: string; content: string | unknown[] }>;
+        tools: Array<{ name: string }>;
+      };
       const systemMessage = request.messages.find((m) => m.role === "system");
       expect(systemMessage).toBeDefined();
       const systemText = typeof systemMessage!.content === "string" ? systemMessage!.content : "";
-      expect(systemText).toContain("<tool_calls>");
-      expect(systemText).toContain("project_files.list");
-      expect(systemText).toContain("严格使用如下 XML 格式");
+      expect(systemText).not.toContain("<tool_calls>");
+      expect(systemText).not.toContain("严格使用如下 XML 格式");
+      expect(request.tools).toContainEqual(
+        expect.objectContaining({ name: "project_ufiles_dlist" })
+      );
     } finally {
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;
@@ -1169,23 +1174,17 @@ describe("Streaming tool loop", () => {
     }
   });
 
-  it("executes DSML tool calls from raw reasoning", async () => {
+  it("does not execute DSML-like text from raw reasoning", async () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    mocks.deepseekStream
-      .mockResolvedValueOnce(
-        makeStreamResult({
-          deltas: [{ reasoning_content: "检索资料中。" }],
-          rawReasoning:
-            '检索资料中。<| | DSML | | invoke name="project_files.list"><| | DSML | | parameter name="projectId">project-1</| | DSML | | parameter></| | DSML | | invoke>',
-        })
-      )
-      .mockResolvedValueOnce(
-        makeStreamResult({
-          deltas: [{ content: "资料列表为空，继续回答。" }],
-        })
-      );
+    mocks.deepseekStream.mockResolvedValueOnce(
+      makeStreamResult({
+        deltas: [{ reasoning_content: "检索资料中。" }],
+        rawReasoning:
+          '检索资料中。<| | DSML | | invoke name="project_files.list"><| | DSML | | parameter name="projectId">project-1</| | DSML | | parameter></| | DSML | | invoke>',
+      })
+    );
 
     try {
       const response = await POST(
@@ -1207,17 +1206,9 @@ describe("Streaming tool loop", () => {
 
       expect(response.status).toBe(200);
       const body = await response.text();
-      expect(body).toContain("资料列表为空，继续回答。");
       expect(body).not.toContain("DSML");
-      expect(mocks.deepseekStream).toHaveBeenCalledTimes(2);
-      expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            toolId: "project_files.list",
-            status: "proposed",
-          }),
-        })
-      );
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(1);
+      expect(mocks.toolExecutionCreate).not.toHaveBeenCalled();
     } finally {
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;

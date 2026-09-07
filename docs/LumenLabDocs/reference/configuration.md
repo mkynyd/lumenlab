@@ -79,7 +79,7 @@
 
 - `AGENT_RUNTIME_MODE=legacy` 是固定默认值，保持兼容响应，不启用确定性工具前奏。
 - `AGENT_RUNTIME_MODE=shadow` 仍返回 legacy 结果，只比较 Skill、联网与计划 Tool ID 并记录日志；不会为候选方案额外调用 Provider 或执行 Tool，因此没有重复费用和副作用。
-- `AGENT_RUNTIME_MODE=new` 启用确定性工具前奏、Skill 状态事件与统一 Tool loop。Provider continuation 由 Adapter 根据原生 Tool block 或 DeepSeek XML/DSML fallback 自动处理，不再需要独立 continuation 开关。
+- `AGENT_RUNTIME_MODE=new` 启用确定性工具前奏、Skill 状态事件与统一 Tool loop。Provider continuation 由 Adapter 根据 Responses 原生 function call/output items 处理，不再需要独立 continuation 开关。
 - 旧变量 `AGENT_ORCHESTRATOR_ENABLED` 只用于迁移兼容；两者同时存在时 `AGENT_RUNTIME_MODE` 优先。新部署不要再配置旧变量。
 - `AGENT_PROVIDER_ADAPTER=legacy` 是默认值。只有需要验证 `@earendil-works/pi-ai` 的 DeepSeek/MiniMax 协议适配时才设为 `pi`（旧 `pi-ai` 仍兼容）；该 POC 不会读取 pi 的本地认证文件，仍使用 LumenLab 已解析的中央 API Key。
 - `MODEL_QWEN_ENABLED=true` 且配置 `BAILIAN_WORKSPACE_ID` 后，已获得 Bailian 凭据的用户可选择 `qwen3.7-plus`。Qwen 走 DashScope 原生多模态与 Function Calling 协议，图片用 data URL，视频仅使用上传到七牛后的短期受限链接；视频临时对象会在请求结束或取消后删除。它只提供文本、图片/视频理解，不提供图片或视频生成。

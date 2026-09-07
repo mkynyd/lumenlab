@@ -1,4 +1,9 @@
-import { validateUploadBatch } from "@/lib/files/file-upload-policy";
+import {
+  IMAGE_EXTENSIONS,
+  extensionOf,
+  validateImageFileBytes,
+  validateUploadBatch,
+} from "@/lib/files/file-upload-policy";
 import { isPdfLike, repairPdfBuffer } from "@/lib/files/pdf-integrity";
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import { sendMessageSchema, type SendMessageInput } from "@/lib/validators";
@@ -94,9 +99,17 @@ export async function parseChatRequest(request: Request): Promise<ParsedChatRequ
       }
       data = repaired.data;
     }
+    let mimeType = value.type || "application/octet-stream";
+    if (IMAGE_EXTENSIONS[extensionOf(value.name)]) {
+      const imageCheck = validateImageFileBytes(value.name, data);
+      if (!imageCheck.ok) {
+        throw new Error(`${value.name}：${imageCheck.error}`);
+      }
+      mimeType = imageCheck.mimeType;
+    }
     attachments.push({
       name: value.name,
-      mimeType: value.type || "application/octet-stream",
+      mimeType,
       size: value.size,
       data,
     });

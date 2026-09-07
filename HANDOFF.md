@@ -1,15 +1,24 @@
 # light-ai-chat 交接
 
 > 2026-09-07 · GPT-6 · Codex（最新）｜Kimi · Kimi Code（前两阶段）
-> 范围：260907 迭代任务 01（Responses 公共合同）。**前五阶段（合同层、目录计费、文本/图片适配器、Checkpoint v2、非流式调用）已落地，均未 commit**。仍在 `main`（`f7fc810` 起）。
+> 范围：260907 迭代。任务 01 已提交 `22e5b19`；任务 02 DeepSeek Vision 代码收口正在验收。仍在 `main`，未部署。
 
-## 最新：任务 01 第五阶段 — 非流式 Responses 调用
+## 最新：任务 02 — DeepSeek Vision 路径收口
+
+- 删除 `deepseek.ts` 中无人调用的 Anthropic 流式实现；流式聊天由 `DeepSeekAdapter` 唯一接入 Responses，非流式继续复用 `postResponses`。源码业务范围已无 DeepSeek Anthropic 请求入口。
+- DeepSeek 全部平台 Tool 现以 Responses `function_call` / `function_call_output` 续接：`web.search` 保持 `web_search` 映射，其余 Tool ID 可逆编码，按 call_id 回放；不再注入、解析或生成 XML/DSML fallback。
+- 显式模型选择现在优先于旧 `modelLock` 与附件自动路由，选择 `deepseek-v4-flash-vision-exp` 携带图片时仍走 DeepSeek；PNG/JPEG/WebP 在 multipart HTTP 边界核对扩展名、真实文件签名与规范 MIME 后才进入 data URL。
+- `web.search` 改为平台直接执行 Bing RSS → DuckDuckGo HTTP 检索，相关性闸门与来源卡片保持；移除无法在嵌套 `completeChat` 中执行的伪 server-tool 往返，模型只通过受审计的 function output 消费可验证搜索结果。
+- 全量门禁通过：267 个文件 / 1586 项、TypeScript、ESLint、production build、diff check 全绿；构建仍只有既有 CSS `--color-*` warning，测试仍有 jsdom canvas 提示。真实 DeepSeek 文本/图片/工具账号验收因本机无凭据未执行；管理端凭证探针按方案留给 04，未部署。
+
+## 前次：任务 01 第五阶段 — 非流式 Responses 调用
 
 - `createTextMessage` / `completeChat` 保持原调用签名，内部改用共享 `postResponses` + `buildDeepSeekResponsesBody`，固定发往 `https://api.deepseek.com/responses`；旧 DeepSeek ID 和未知别名统一升级为活跃 `deepseek-v4-flash-vision-exp`。
 - 非流式响应兼容顶层 `output_text` 与 message/output_text items，reasoning 和 usage 走公共映射；completed 才成功，incomplete/failed/refusal/空正文全部 fail closed，HTTP 状态与上游错误详情继续映射为 `DeepSeekError`。
 - 摘要、标题、资料索引、学习模型网关、快捷任务、搜索封装等 8 个既有封装调用方自动迁移；另清除 `classification.ts` 中项目提示词、用户画像、快捷推荐的 3 处 DeepSeek Anthropic 直连旁路。业务范围内已无 DeepSeek Anthropic 非流式直连。
 - 任务 01 整体门禁通过：267 个文件 / 1590 项、TypeScript、ESLint、production build、diff check 全绿；构建保留既有 CSS `--color-*` warning，测试保留 jsdom canvas 提示。真实 provider 验收仍因本机无凭据未执行；尚未部署。
 - 01.11 durable 图片重新鉴权/加载仍随任务 08 附件入口实现；当前不会把请求内 Buffer 或供应商私有引用写入 checkpoint。
+- 任务 01 提交 `22e5b19` 已推送 main，[GitHub Actions CI](https://github.com/mkynyd/lumenlab/actions/runs/34134493736) 的 Linux 全门禁与 macOS lockfile 均通过。
 
 ## 前次：任务 01 第四阶段 — Checkpoint v2 与恢复语义
 
