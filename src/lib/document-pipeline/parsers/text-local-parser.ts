@@ -49,7 +49,6 @@ export class TextLocalParser implements DocumentParser {
         parser: this.parserId,
         pipelineVersion: PIPELINE_VERSION,
         sourceKind: this.sourceKind,
-        requiresVisionModel: false,
         assetCount: 0,
         parseStartedAt: startedAt,
         parseCompletedAt: endedAt,

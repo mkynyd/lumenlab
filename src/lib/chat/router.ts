@@ -84,10 +84,14 @@ export function hasMultimodalContent(
   return attachments.some((attachment) => !isTextAttachment(attachment));
 }
 
+/**
+ * 任务 05：全部活跃模型都能看图，附件不再触发强制模型路由或模型锁。
+ * 优先级：显式选择 > 旧会话 modelLock（只读兼容，不再新写）> 默认 DeepSeek。
+ */
 export function routeModel(
   conversation: { modelLock: string | null } | null,
   attachments: Array<Pick<FileAttachment | ServerFileAttachment, "name" | "mimeType">>,
-  options: { requiresVisionModel?: boolean; requestedModel?: string } = {}
+  options: { requestedModel?: string } = {}
 ): {
   provider: "deepseek" | "minimax" | "bailian";
   shouldLock: boolean;
@@ -103,12 +107,6 @@ export function routeModel(
   }
   if (conversation?.modelLock === "minimax") {
     return { provider: "minimax", shouldLock: false };
-  }
-  if (options.requiresVisionModel) {
-    return { provider: "minimax", shouldLock: true };
-  }
-  if (hasMultimodalContent(attachments)) {
-    return { provider: "minimax", shouldLock: true };
   }
   return { provider: "deepseek", shouldLock: false };
 }

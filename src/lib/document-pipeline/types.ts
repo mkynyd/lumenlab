@@ -65,7 +65,6 @@ export interface ParsingMetadata {
   parser: string;
   pipelineVersion: string;
   sourceKind: string;
-  requiresVisionModel: boolean;
   assetCount: number;
   parseStartedAt: string;
   parseCompletedAt: string;

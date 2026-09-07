@@ -86,7 +86,6 @@ export class MinerUParser implements DocumentParser {
         parser: this.parserId,
         pipelineVersion: PIPELINE_VERSION,
         sourceKind: this.sourceKind,
-        requiresVisionModel: Boolean(parsed.metadata?.requiresVisionModel) || assets.length > 0,
         assetCount: assets.length,
         parseStartedAt: startedAt,
         parseCompletedAt: endedAt,

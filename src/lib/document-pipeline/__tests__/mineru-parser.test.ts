@@ -228,7 +228,6 @@ describe("MinerUParser", () => {
     expect(result.metadata.parser).toBe("mineru-office");
     expect(result.metadata.sourceKind).toBe("office");
     expect(result.metadata.pipelineVersion).toBe("0.2.0");
-    expect(result.metadata.requiresVisionModel).toBe(true);
     expect(result.metadata.parseWarnings).toEqual([]);
   });
 

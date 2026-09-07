@@ -4,7 +4,6 @@ import * as storage from "@/lib/storage/object-storage";
 import * as providerAccess from "@/lib/data/provider-access";
 import * as minimax from "@/lib/vision/minimax";
 import * as mineru from "@/lib/parse/mineru";
-import * as minimaxAnalyzer from "@/lib/document-pipeline/vision/minimax-analyzer";
 import * as vectorStore from "@/lib/rag/vector-store";
 import * as projectIndex from "@/lib/rag/project-index";
 import * as embedding from "@/lib/rag/embedding";
@@ -15,7 +14,6 @@ vi.mock("@/lib/storage/object-storage");
 vi.mock("@/lib/data/provider-access");
 vi.mock("@/lib/vision/minimax");
 vi.mock("@/lib/parse/mineru");
-vi.mock("@/lib/document-pipeline/vision/minimax-analyzer");
 vi.mock("@/lib/rag/vector-store");
 vi.mock("@/lib/rag/project-index");
 vi.mock("@/lib/rag/embedding");
@@ -45,12 +43,6 @@ describe("parseFileContent", () => {
     vi.mocked(storage.readStoredObject).mockResolvedValue(Buffer.from("content"));
     vi.mocked(providerAccess.getProviderApiKey).mockResolvedValue("key");
     vi.mocked(prisma.fileAsset.update).mockResolvedValue({} as never);
-    vi.mocked(minimaxAnalyzer.analyzeImageWithMiniMax).mockResolvedValue({
-      summary: "A chart",
-      ocrText: "10, 20",
-      confidence: 0.9,
-      warnings: [],
-    });
   });
 
   it("routes text files to text-local parser", async () => {
@@ -66,7 +58,6 @@ describe("parseFileContent", () => {
       },
     });
     expect(result.metadata.parser).toBe("text-local");
-    expect(result.metadata.requiresVisionModel).toBe(false);
   });
 
   it("routes pdf to minimax-m3-pdf parser", async () => {
@@ -83,7 +74,6 @@ describe("parseFileContent", () => {
       },
     });
     expect(result.metadata.parser).toBe("minimax-m3-pdf");
-    expect(result.metadata.requiresVisionModel).toBe(true);
   });
 
   it("routes office files to mineru-office parser", async () => {
@@ -229,6 +219,7 @@ describe("parseFileAsset", () => {
       id: "f1",
       userId: "u1",
       originalName: "slides.pptx",
+      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       projectId: "p1",
       enhancedContent: null,
       contentFingerprint: "sha256:v1:previous",
@@ -270,12 +261,6 @@ describe("parseFileAsset", () => {
       changed: true,
       knowledgePoints: [],
       practiceItems: [],
-    });
-    vi.mocked(minimaxAnalyzer.analyzeImageWithMiniMax).mockResolvedValue({
-      summary: "A chart",
-      ocrText: "10, 20",
-      confidence: 0.9,
-      warnings: [],
     });
   });
 

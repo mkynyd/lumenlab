@@ -26,7 +26,6 @@ export interface AssembledResourceContext {
   project: ContextProject | null;
   selectedFiles: ContextFile[];
   selectedFileIds: string[];
-  requiresVisionModel: boolean;
 }
 
 export interface ContextAssembler {
@@ -38,16 +37,6 @@ export class ContextAssemblyError extends Error {
     super(message);
     this.name = "ContextAssemblyError";
   }
-}
-
-function metadataRequiresVision(metadata: unknown) {
-  if (!metadata || typeof metadata !== "object") return false;
-  const record = metadata as Record<string, unknown>;
-  return (
-    record.requiresVisionModel === true ||
-    (typeof record.retainedImageCount === "number" &&
-      record.retainedImageCount > 0)
-  );
 }
 
 /**
@@ -99,9 +88,6 @@ export class PrismaContextAssembler implements ContextAssembler {
       project,
       selectedFiles,
       selectedFileIds,
-      requiresVisionModel: selectedFiles.some((file) =>
-        metadataRequiresVision(file.processingMetadata)
-      ),
     };
   }
 }

@@ -50,7 +50,6 @@ export class MiniMaxPdfParser implements DocumentParser {
         parser: this.parserId,
         pipelineVersion: PIPELINE_VERSION,
         sourceKind: this.sourceKind,
-        requiresVisionModel: true,
         assetCount: 0,
         parseStartedAt: startedAt,
         parseCompletedAt: endedAt,

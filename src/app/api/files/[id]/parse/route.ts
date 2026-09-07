@@ -19,10 +19,34 @@ export async function POST(
 
   const file = await prisma.fileAsset.findFirst({
     where: { id, userId },
-    select: { id: true, projectId: true },
+    select: { id: true, projectId: true, mimeType: true },
   });
   if (!file) {
     return NextResponse.json({ error: "文件不存在" }, { status: 404 });
+  }
+  // 任务 05：图片不重走解析——保存即就绪；前端应展示查看/重新上传入口。
+  if (file.mimeType.startsWith("image/")) {
+    await prisma.fileAsset.update({
+      where: { id: file.id },
+      data: {
+        status: "parsed",
+        processingMetadata: {
+          parsingStage: "complete",
+          parsingStageLabel: "图片已就绪",
+          mediaReady: true,
+          parser: "direct-image",
+        },
+      },
+    });
+    return NextResponse.json({
+      file: {
+        id: file.id,
+        status: "parsed",
+        hasTextContent: false,
+        parser: "direct-image",
+        truncated: false,
+      },
+    });
   }
 
   try {

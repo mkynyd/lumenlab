@@ -6,7 +6,6 @@ const baseMeta: ParsingMetadata = {
   parser: "mineru-office",
   pipelineVersion: "0.2.0",
   sourceKind: "office",
-  requiresVisionModel: true,
   assetCount: 2,
   parseStartedAt: "",
   parseCompletedAt: "",

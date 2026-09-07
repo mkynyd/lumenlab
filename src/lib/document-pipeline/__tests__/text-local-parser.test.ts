@@ -33,7 +33,6 @@ describe("TextLocalParser", () => {
     expect(result.metadata.parser).toBe("text-local");
     expect(result.metadata.sourceKind).toBe("text");
     expect(result.metadata.pipelineVersion).toBe("0.2.0");
-    expect(result.metadata.requiresVisionModel).toBe(false);
     expect(result.metadata.assetCount).toBe(0);
     expect(result.metadata.parseWarnings).toEqual([]);
   });

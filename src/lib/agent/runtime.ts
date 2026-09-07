@@ -17,6 +17,7 @@ import {
   type ServerFileAttachment,
 } from "@/lib/chat/router";
 import { providerForChatModel } from "@/lib/chat/model-catalog";
+import { resolveProjectMediaContext } from "@/lib/agent/context/media-context";
 import {
   DocumentExtractionError,
   resolveChatDocumentAttachments,
@@ -166,24 +167,6 @@ async function textAttachmentContext(attachments: ServerFileAttachment[]) {
       return `---\n文件：${attachment.name}\n\n${content}`;
     });
   return sections.join("\n\n");
-}
-
-function summarizeHistoryForMiniMax(
-  history: Array<{ role: string; content: string }>
-) {
-  const lines = history
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .slice(-12)
-    .map((message) => {
-      const role = message.role === "user" ? "用户" : "助手";
-      return `${role}: ${message.content.replace(/\s+/g, " ").trim()}`;
-    })
-    .filter((line) => line.length > 4);
-
-  const summary = lines.join("\n").slice(-12000);
-  return summary
-    ? `【此前对话压缩上下文】\n${summary}\n\n请在后续回答中继承这些事实与约束。`
-    : "";
 }
 
 function buildAllowedTools(input: {
@@ -384,7 +367,6 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     project,
     selectedFiles,
     selectedFileIds: uniqueFileIds,
-    requiresVisionModel,
   } = resourceContext;
 
   // 确保 Skill discovery 已完成；catalog / instructions / activate_skill enum 都依赖 skillRegistry。
@@ -442,6 +424,35 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     });
   }
 
+  // 任务 05.3—05.5：项目图片按引用直接进入本次请求——选中必达，未选时
+  // 按文件名/描述匹配少量候选，整库快捷任务显式覆盖说明；不调用任何
+  // 独立图像解析。图片 Buffer 只在请求内存在，持久化归 08。
+  if (project) {
+    try {
+      const projectMedia = await resolveProjectMediaContext({
+        userId,
+        projectId: project.id,
+        selectedFiles,
+        prompt: message,
+        includeProjectImages: shouldUseProjectContext(
+          effectivePrompt,
+          uniqueFileIds,
+          isQuickTask
+        ),
+        wholeCorpus:
+          projectMaterialQuickTask && materialScope === "project-corpus",
+      });
+      if (projectMedia.attachments.length > 0) {
+        effectiveAttachments = [...effectiveAttachments, ...projectMedia.attachments];
+      }
+      if (projectMedia.coverageNote) {
+        effectivePrompt = `${effectivePrompt}\n\n【项目图片覆盖说明】${projectMedia.coverageNote}`;
+      }
+    } catch (error) {
+      logger.warn("project media context failed", { error: String(error) });
+    }
+  }
+
   if (project && !agentOrchestratorEnabled && !projectMaterialQuickTask) {
 
     if (shouldUseProjectContext(effectivePrompt, uniqueFileIds, isQuickTask)) {
@@ -475,7 +486,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
 
   const preflightRoute = !conversationId
-    ? routeModel(null, effectiveAttachments, { requiresVisionModel, requestedModel: model })
+    ? routeModel(null, effectiveAttachments, { requestedModel: model })
     : null;
   let preflightApiKey: string | null = null;
   if (preflightRoute) {
@@ -592,8 +603,8 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     systemPrompt = `${systemPrompt}\n\n【工具恢复】若工具结果包含 recoveryOfExecutionId，且你决定自动恢复该失败操作，请在下一次工具调用附带同名 recoveryOfExecutionId 字段。该字段只用于关联失败与恢复，不会传给工具处理器。`;
   }
 
+  // 任务 05：附件不再触发强制路由；modelLock 只读兼容旧会话，新会话不写锁。
   const modelRoute = routeModel(conversation, effectiveAttachments, {
-    requiresVisionModel,
     requestedModel: model,
   });
   runMetrics.setRoute({ model, provider: modelRoute.provider });
@@ -640,8 +651,6 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     });
   }
 
-  const shouldCompressDeepSeekHistory =
-    modelRoute.provider === "minimax" && conversation.modelLock !== "minimax";
   if (modelRoute.shouldLock) {
     conversation = await conversationPersistence.lockModel({
       conversationId: conversation.id,
@@ -1128,16 +1137,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     }
   }
 
-  const minimaxHistorySummary = shouldCompressDeepSeekHistory
-    ? summarizeHistoryForMiniMax(history)
-    : "";
-  const routedMessages = minimaxHistorySummary
-    ? [
-        { role: "system", content: systemPrompt } as DeepSeekMessage,
-        { role: "user", content: minimaxHistorySummary } as DeepSeekMessage,
-        { role: "user", content: contextualUserMessage } as DeepSeekMessage,
-      ]
-    : messages;
+  const routedMessages = messages;
 
   // 11. 调用模型
   let streamResult: ProviderRound;

@@ -178,6 +178,9 @@ export async function POST(
           buffer,
         });
 
+        // 任务 05：图片不走解析队列——保存与校验完成即为可用，原图由所选
+        // 多模态模型直接消费，不做独立 OCR/图片摘要。
+        const isDirectImage = mimeType.startsWith("image/");
         const fileAsset = await prisma.fileAsset.create({
           data: {
             id: fileId,
@@ -190,14 +193,22 @@ export async function POST(
             storageProvider: stored.provider,
             storagePath: stored.key,
             textContent: null,
-            status: "parsing",
+            status: isDirectImage ? "parsed" : "parsing",
             category: pendingCategory,
             categoryConfidence: 1,
-            processingMetadata: {
-              parsingStage: "converting",
-              parsingStageLabel: "转换格式中",
-              queuedAt: new Date().toISOString(),
-            },
+            processingMetadata: isDirectImage
+              ? {
+                  parsingStage: "complete",
+                  parsingStageLabel: "图片已就绪",
+                  mediaReady: true,
+                  parser: "direct-image",
+                  queuedAt: new Date().toISOString(),
+                }
+              : {
+                  parsingStage: "converting",
+                  parsingStageLabel: "转换格式中",
+                  queuedAt: new Date().toISOString(),
+                },
           },
         });
 
@@ -216,7 +227,7 @@ export async function POST(
             categoryConfidence: fileAsset.categoryConfidence,
             createdAt: fileAsset.createdAt,
           },
-          note: "文件已进入解析队列",
+          note: isDirectImage ? "图片已就绪，可直接提问" : "文件已进入解析队列",
         });
       } catch (fileErr) {
         logger.error("文件上传失败", { error: String(fileErr) });
