@@ -5,6 +5,10 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* 设计规范文档里的示例类名（如 bg-[var(--color-*)]）不是真实样式，
+   排除出 Tailwind 自动扫描，避免生成非法的 var(--color-*) 规则。 */
+@source not "../../通用设计规范.md";
+
 @custom-variant dark (&:is(.dark *));
 
 /* ---- Local fonts: Noto Sans SC (Chinese subset) ---- */
