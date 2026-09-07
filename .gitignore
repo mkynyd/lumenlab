@@ -72,3 +72,16 @@ LOCALTEST.md
 # Agent handoff / sensitive setup docs (local only, never pushed)
 /docs/auth-email-frontend-handoff.md
 /docs/tencent-ses-setup-guide.md
+
+# 过程类与内部详细记录文档：本地保留，不入库（2026-09-08）
+/HANDOFF.md
+/PROJECT_SUMMARY.md
+/IMPLEMENTATION.md
+/docs/TODO.md
+/docs/agent-audit-2026-08.md
+/docs/agent-iteration-plan-2026-08.md
+/docs/agent-orchestrator-diff.md
+/docs/export-and-lumenflow-execution-plan.md
+/docs/learning-loop-p0-iteration-plan.md
+/docs/learning-p1-iteration-plan.md
+/docs/learning-p1c-execution-plan.md
