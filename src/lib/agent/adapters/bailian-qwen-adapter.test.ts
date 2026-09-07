@@ -80,7 +80,8 @@ describe("Qwen 视频兼容委托", () => {
     await collect(second.events);
     expect(native.urls).toHaveLength(2);
     expect(native.urls[1]).toContain("/services/aigc/multimodal-generation/generation");
-    expect(native.bodies[1].input.messages).toEqual(expect.arrayContaining([
+    const continuationInput = native.bodies[1].input as { messages: Array<Record<string, unknown>> };
+    expect(continuationInput.messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: "tool", tool_call_id: "call-9" }),
     ]));
   });

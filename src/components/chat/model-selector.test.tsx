@@ -20,9 +20,13 @@ describe("ModelSelector", () => {
     await user.click(triggers.at(-1)!);
 
     expect(screen.getByRole("dialog")).toHaveTextContent("选择模型");
-    expect(
-      screen.getByRole("button", { name: "DeepSeek V4 Flash Vision" })
-    ).toHaveClass("h-11");
+    const deepseekOption = screen.getByRole("button", {
+      name: /DeepSeek V4 Flash/,
+    });
+    expect(deepseekOption).toHaveClass("py-2.5");
+    // 官方口径简介随选项展示
+    expect(deepseekOption).toHaveTextContent("DeepSeek");
+    expect(deepseekOption).toHaveTextContent("视觉模型");
     expect(screen.getByRole("button", { name: "快速" })).toHaveClass("h-11");
   });
 
@@ -41,7 +45,7 @@ describe("ModelSelector", () => {
 
     const triggers = screen.getAllByRole("button", { name: "选择模型" });
     await user.click(triggers.at(-1)!);
-    await user.click(screen.getByRole("button", { name: "MiniMax M3" }));
+    await user.click(screen.getByRole("button", { name: /MiniMax M3/ }));
 
     expect(onChange).toHaveBeenCalledWith("minimax-m3");
     expect(onReasoningEffortChange).not.toHaveBeenCalled();

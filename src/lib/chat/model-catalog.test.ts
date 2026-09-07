@@ -121,8 +121,9 @@ describe("chat model catalog", () => {
     expect(chatModelLabel("deepseek-v4-flash")).toBe("DeepSeek V4 Flash");
     expect(chatModelLabel("deepseek-v4-pro")).toBe("DeepSeek V4 Pro");
     expect(chatModelLabel("qwen3.7-plus")).toBe("Qwen3.7-Plus");
+    // 列表标签保持简短（Vision 属性移到详情栏），历史别名标签不变
     expect(chatModelLabel("deepseek-v4-flash-vision-exp")).toBe(
-      "DeepSeek V4 Flash Vision"
+      "DeepSeek V4 Flash"
     );
     expect(chatModelLabel("qwen3.8-flash")).toBe("Qwen3.8-Flash");
     expect(chatModelLabel("some-old-model")).toBe("some-old-model");

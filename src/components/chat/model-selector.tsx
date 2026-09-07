@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Coins, Layers, Paperclip, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MODEL_CATALOG_ENTRIES } from "@/lib/chat/model-catalog";
+import { MODEL_CATALOG_ENTRIES, type ModelCatalogEntry } from "@/lib/chat/model-catalog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +18,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -42,14 +41,104 @@ const MODELS = MODEL_CATALOG_ENTRIES.map((entry) => ({
   label: entry.displayName,
 }));
 
-const EFFORTS: Array<{ value: ReasoningEffort; label: string }> = [
-  { value: "high", label: "快速" },
-  { value: "max", label: "深度" },
+const EFFORTS: Array<{ value: ReasoningEffort; label: string; hint: string }> = [
+  { value: "high", label: "快速", hint: "跳过深度思考，直接回答。" },
+  { value: "max", label: "深度", hint: "回答前进行更完整的推理。" },
 ];
 
+function catalogEntry(id: string): ModelCatalogEntry | undefined {
+  return MODEL_CATALOG_ENTRIES.find((entry) => entry.id === id);
+}
+
+/** 详情栏内容：官方口径简介 + 可核实的参数（上下文/输入/价格）。 */
+function ModelDetail({
+  entry,
+  reasoningEffort,
+  onReasoningEffortChange,
+}: {
+  entry: ModelCatalogEntry;
+  reasoningEffort: ReasoningEffort;
+  onReasoningEffortChange?: (effort: ReasoningEffort) => void;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-3 p-4 md:w-[19rem]">
+      <div>
+        <p className="text-sm font-medium text-[var(--color-text-primary)]">
+          {entry.detailName ?? entry.displayName}
+        </p>
+        <p className="text-xs text-[var(--color-text-tertiary)]">{entry.vendor}</p>
+      </div>
+      <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        {entry.description}
+      </p>
+      <dl className="space-y-1.5 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <dt className="flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
+            <Layers className="size-3.5" strokeWidth={2} />
+            上下文
+          </dt>
+          <dd className="text-[var(--color-text-primary)]">
+            {entry.contextWindowTokens >= 1_000_000
+              ? `${entry.contextWindowTokens / 1_000_000}M tokens`
+              : `${Math.round(entry.contextWindowTokens / 1000)}K tokens`}
+          </dd>
+        </div>
+        {entry.inputLabel && (
+          <div className="flex items-center justify-between gap-3">
+            <dt className="flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
+              <Paperclip className="size-3.5" strokeWidth={2} />
+              输入
+            </dt>
+            <dd className="text-[var(--color-text-primary)]">{entry.inputLabel}</dd>
+          </div>
+        )}
+        {entry.priceNote && (
+          <div className="flex items-start justify-between gap-3">
+            <dt className="flex items-center gap-1.5 text-[var(--color-text-tertiary)]">
+              <Coins className="size-3.5" strokeWidth={2} />
+              价格
+            </dt>
+            <dd className="max-w-[11rem] text-right text-xs leading-relaxed text-[var(--color-text-secondary)]">
+              {entry.priceNote}
+            </dd>
+          </div>
+        )}
+      </dl>
+      {onReasoningEffortChange && (
+        <div className="space-y-1.5 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] p-3">
+          <p className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-[var(--color-text-tertiary)]">
+            <Zap className="size-3.5" strokeWidth={2} />
+            思考深度
+          </p>
+          <div className="grid grid-cols-2 gap-1 rounded-[var(--radius-md)] bg-[var(--color-surface)] p-1">
+            {EFFORTS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => onReasoningEffortChange(item.value)}
+                className={cn(
+                  "h-7 rounded-[var(--radius-md)] text-sm text-[var(--color-text-secondary)] transition-colors",
+                  reasoningEffort === item.value
+                    ? "bg-[var(--color-interaction-active)] font-medium text-[var(--color-text-primary)]"
+                    : "hover:bg-[var(--color-interaction-hover)]"
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs leading-relaxed text-[var(--color-text-tertiary)]">
+            {EFFORTS.find((item) => item.value === reasoningEffort)?.hint}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
- * ChatGPT 式模型选择：模型与思考深度是两个独立分组，
- * 切换模型不动思考深度，调整思考深度也不换模型。
+ * 模型选择器：左侧模型列表 + 右侧官方口径详情栏（悬浮预览，选中即详情）。
+ * 模型与思考深度是两个独立分组，切换模型不动思考深度，反之亦然。
  */
 export function ModelSelector({
   model,
@@ -65,6 +154,8 @@ export function ModelSelector({
   const current = models.find((item) => item.value === model) ?? models[0];
   const triggerLabel = current?.label ?? model;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [previewed, setPreviewed] = useState<string | null>(null);
+  const detailEntry = catalogEntry(previewed ?? current?.value ?? "");
 
   const triggerClassName = cn(
     "h-8 shrink-0 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-3 text-sm font-normal text-[var(--color-text-primary)] hover:bg-[var(--color-interaction-hover)] focus-visible:bg-[var(--color-interaction-active)]",
@@ -75,7 +166,7 @@ export function ModelSelector({
   return (
     <>
     <div className="hidden md:block">
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => { if (!open) setPreviewed(null); }}>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
           type="button"
@@ -92,49 +183,48 @@ export function ModelSelector({
       <DropdownMenuContent
         align="start"
         sideOffset={8}
-        className="w-56 rounded-[var(--radius-xl)] p-2"
+        className="w-[34rem] rounded-[var(--radius-xl)] p-2"
       >
-        <DropdownMenuLabel className="px-3 py-2 text-sm font-normal text-[var(--color-text-tertiary)]">
-          模型
-        </DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={current?.value}
-          onValueChange={onChange}
-        >
-          {models.map((item) => (
-            <DropdownMenuRadioItem
-              key={item.value}
-              value={item.value}
-              className="h-10 rounded-[var(--radius-md)] px-3 text-base"
-            >
-              {item.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        {onReasoningEffortChange && (
-          <>
-            <DropdownMenuSeparator className="mx-3 my-2" />
+        <div className="flex gap-2">
+          <div className="w-56 shrink-0">
             <DropdownMenuLabel className="px-3 py-2 text-sm font-normal text-[var(--color-text-tertiary)]">
-              思考深度
+              模型
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup
-              value={reasoningEffort}
-              onValueChange={(value) =>
-                onReasoningEffortChange(value as ReasoningEffort)
-              }
+              value={current?.value}
+              onValueChange={onChange}
             >
-              {EFFORTS.map((item) => (
-                <DropdownMenuRadioItem
-                  key={item.value}
-                  value={item.value}
-                  className="h-10 rounded-[var(--radius-md)] px-3 text-base"
-                >
-                  {item.label}
-                </DropdownMenuRadioItem>
-              ))}
+              {models.map((item) => {
+                const entry = catalogEntry(item.value);
+                return (
+                  <DropdownMenuRadioItem
+                    key={item.value}
+                    value={item.value}
+                    onMouseEnter={() => setPreviewed(item.value)}
+                    onFocus={() => setPreviewed(item.value)}
+                    className="h-12 rounded-[var(--radius-md)] px-3"
+                  >
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-base leading-tight">{item.label}</span>
+                      <span className="text-xs leading-tight text-[var(--color-text-tertiary)]">
+                        {entry?.vendor}
+                      </span>
+                    </span>
+                  </DropdownMenuRadioItem>
+                );
+              })}
             </DropdownMenuRadioGroup>
-          </>
-        )}
+          </div>
+          {detailEntry && (
+            <div className="flex-1 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)]">
+              <ModelDetail
+                entry={detailEntry}
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={onReasoningEffortChange}
+              />
+            </div>
+          )}
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
     </div>
@@ -162,24 +252,38 @@ export function ModelSelector({
         <div className="space-y-2">
           <p className="px-1 text-xs text-[var(--color-text-tertiary)]">模型</p>
           <div className="space-y-1">
-            {models.map((item) => (
-              <Button
-                key={item.value}
-                type="button"
-                variant="ghost"
-                className={cn(
-                  "h-11 w-full justify-start rounded-[var(--radius-md)] px-3",
-                  current?.value === item.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                )}
-                onClick={() => {
-                  onChange(item.value);
-                  setMobileOpen(false);
-                }}
-              >
-                <span className="flex-1 text-left">{item.label}</span>
-                {current?.value === item.value && <Check data-icon="inline-end" />}
-              </Button>
-            ))}
+            {models.map((item) => {
+              const entry = catalogEntry(item.value);
+              const active = current?.value === item.value;
+              return (
+                <Button
+                  key={item.value}
+                  type="button"
+                  variant="ghost"
+                  className={cn(
+                    "h-auto w-full justify-start rounded-[var(--radius-md)] px-3 py-2.5",
+                    active && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
+                  )}
+                  onClick={() => {
+                    onChange(item.value);
+                    setMobileOpen(false);
+                  }}
+                >
+                  <span className="flex flex-1 flex-col items-start gap-0.5 text-left">
+                    <span className="text-base">{item.label}</span>
+                    <span className="text-xs text-[var(--color-text-tertiary)]">
+                      {entry?.vendor}
+                    </span>
+                    {entry?.description && (
+                      <span className="line-clamp-2 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
+                        {entry.description}
+                      </span>
+                    )}
+                  </span>
+                  {active && <Check data-icon="inline-end" />}
+                </Button>
+              );
+            })}
           </div>
         </div>
         {onReasoningEffortChange && (
