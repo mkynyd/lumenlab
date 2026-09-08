@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { parseBingRssResults, parseDuckDuckGoResults, runWebSearch, softenExactDates } from "./search-engine";
+import { buildAnySearchResult, parseBingRssResults, parseDuckDuckGoResults, runWebSearch, softenExactDates } from "./search-engine";
+import { AnySearchError, type AnySearchResponse } from "./anysearch";
 
 const mockRedisGet = vi.fn();
 const mockRedisSetex = vi.fn();
@@ -53,7 +54,7 @@ describe("runWebSearch", () => {
   });
 
   it("returns empty result for empty query", async () => {
-    const result = await runWebSearch("", "sk-test");
+    const result = await runWebSearch("");
     expect(result).toEqual({ summary: "", sources: [], query: "" });
   });
 
@@ -65,14 +66,14 @@ describe("runWebSearch", () => {
     };
     mockRedisGet.mockResolvedValue(JSON.stringify(cached));
 
-    const result = await runWebSearch("test", "sk-test");
+    const result = await runWebSearch("test");
     expect(result).toEqual(cached);
   });
 
   it("returns verified HTTP search results without a nested model call", async () => {
     mockRedisGet.mockResolvedValue(null);
 
-    const result = await runWebSearch("example", "sk-test");
+    const result = await runWebSearch("example");
 
     expect(result.summary).toContain("Verified snippet");
     expect(result.sources).toEqual([
@@ -85,7 +86,7 @@ describe("runWebSearch", () => {
     mockRedisGet.mockResolvedValue(null);
     vi.mocked(fetch).mockResolvedValue({ ok: true, text: async () => "no results" } as Response);
 
-    const result = await runWebSearch("test", "sk-test");
+    const result = await runWebSearch("test");
 
     expect(result.sources).toEqual([]);
     expect(result.summary).toContain("未找到与问题相关的可验证结果");
@@ -100,7 +101,7 @@ describe("runWebSearch", () => {
         "<rss><channel><item><title>快递100-查快递,寄快递</title><link>https://junk.example.com/</link><description>快递单号查询</description></item></channel></rss>",
     } as Response);
 
-    const result = await runWebSearch("编程语言排行榜", "sk-test");
+    const result = await runWebSearch("编程语言排行榜");
 
     expect(result.sources).toEqual([]);
     expect(result.summary).toContain("未找到与问题相关的可验证结果");
@@ -120,8 +121,7 @@ describe("runWebSearch", () => {
     mockRedisGet.mockResolvedValue(null);
 
     const result = await runWebSearch(
-      "# 当前时间上下文\nsecret internal instruction\n\n# 用户问题\n\nOpenAI 官网",
-      "sk-test"
+      "# 当前时间上下文\nsecret internal instruction\n\n# 用户问题\n\nOpenAI 官网"
     );
 
     expect(result.query).toBe("OpenAI 官网");
@@ -133,8 +133,7 @@ describe("runWebSearch", () => {
     mockRedisGet.mockResolvedValue(null);
 
     const result = await runWebSearch(
-      "最终回归：联网查找 OpenAI 官方网站首页并附上来源。",
-      "sk-test"
+      "最终回归：联网查找 OpenAI 官方网站首页并附上来源。"
     );
 
     expect(result.query).toBe("OpenAI 官方网站首页");
@@ -175,7 +174,7 @@ describe("runWebSearch", () => {
         } as Response;
       });
 
-    const resultPromise = runWebSearch("example", "sk-test");
+    const resultPromise = runWebSearch("example");
     await vi.advanceTimersByTimeAsync(10_000);
     const result = await resultPromise;
 
@@ -185,5 +184,92 @@ describe("runWebSearch", () => {
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[1][0])).toContain("duckduckgo.com");
+  });
+});
+
+describe("AnySearch provider chain", () => {
+  const anysearchItems = (items: AnySearchResponse["items"]): AnySearchResponse => ({ items, requestId: "req-1" });
+
+  beforeEach(() => {
+    mockRedisGet.mockReset().mockResolvedValue(null);
+    mockRedisSetex.mockReset();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => "no results" } as Response));
+  });
+
+  it("returns AnySearch results immediately and never calls Bing or DuckDuckGo", async () => {
+    const anysearch = vi.fn().mockResolvedValue(anysearchItems([{ title: "T", url: "https://example.com/a", snippet: "S", content: "C" }]));
+    const result = await runWebSearch("query", { maxResults: 3 }, { anysearchApiKey: "as_sk", anysearch });
+
+    expect(result.sources).toEqual([{ url: "https://example.com/a", title: "T" }]);
+    expect(result.summary).toContain("https://example.com/a");
+    expect(anysearch).toHaveBeenCalledWith(expect.objectContaining({ query: "query", maxResults: 3, apiKey: "as_sk" }));
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it("does not apply the literal relevance gate to AnySearch's own ranking", async () => {
+    const anysearch = vi.fn().mockResolvedValue(anysearchItems([{ title: "完全无关的标题", url: "https://example.com/a", snippet: "无关摘要", content: "" }]));
+    const result = await runWebSearch("编程语言排行榜", {}, { anysearchApiKey: "as_sk", anysearch });
+    expect(result.sources).toHaveLength(1);
+  });
+
+  it("falls back to Bing when AnySearch returns no usable result", async () => {
+    const anysearch = vi.fn().mockResolvedValue(anysearchItems([]));
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      text: async () => "<rss><channel><item><title>example</title><link>https://example.com/</link><description>example result</description></item></channel></rss>",
+    } as Response);
+
+    const result = await runWebSearch("example", {}, { anysearchApiKey: "as_sk", anysearch });
+    expect(result.sources).toEqual([{ url: "https://example.com/", title: "example" }]);
+    expect(anysearch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([400, 401, 402, 403, 503])("falls back after an AnySearch HTTP %i failure", async (status) => {
+    const anysearch = vi.fn().mockRejectedValue(new AnySearchError(status >= 500 ? "server" : "request", status, "failed"));
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      text: async () => "<rss><channel><item><title>example</title><link>https://example.com/</link><description>example result</description></item></channel></rss>",
+    } as Response);
+
+    const result = await runWebSearch("example", {}, { anysearchApiKey: "as_sk", anysearch });
+    expect(result.sources).toEqual([{ url: "https://example.com/", title: "example" }]);
+  });
+
+  it("skips AnySearch entirely when no platform key is configured", async () => {
+    const anysearch = vi.fn();
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      text: async () => "<rss><channel><item><title>example</title><link>https://example.com/</link><description>example result</description></item></channel></rss>",
+    } as Response);
+
+    const result = await runWebSearch("example", {}, { anysearchApiKey: null, anysearch });
+    expect(anysearch).not.toHaveBeenCalled();
+    expect(result.sources).toHaveLength(1);
+  });
+
+  it("keeps tag/zone/language/params in the cache key", async () => {
+    const anysearch = vi.fn().mockResolvedValue(anysearchItems([{ title: "T", url: "https://example.com/a", snippet: "", content: "" }]));
+    await runWebSearch("query", { tag: "academic.search", zone: "intl", language: "en" }, { anysearchApiKey: "as_sk", anysearch });
+    await runWebSearch("query", { tag: "code.doc" }, { anysearchApiKey: "as_sk", anysearch });
+
+    const keys = mockRedisSetex.mock.calls.map((call) => String(call[0]));
+    expect(new Set(keys).size).toBe(2);
+    expect(keys[0]).toContain("websearch:v3:");
+    expect(keys[0]).toContain("academic.search");
+    expect(keys[0]).toContain("intl");
+    expect(keys[1]).toContain("code.doc");
+  });
+
+  it("uses a bounded content excerpt when the snippet is missing", () => {
+    const result = buildAnySearchResult(anysearchItems([{ title: "T", url: "https://example.com/a", snippet: "", content: "C".repeat(500) }]), "q");
+    expect(result?.summary).toContain("C".repeat(200));
+    expect(result?.summary).not.toContain("C".repeat(201));
+  });
+
+  it("keeps the legacy query + maxResults call shape working", async () => {
+    const anysearch = vi.fn().mockResolvedValue(anysearchItems([{ title: "T", url: "https://example.com/a", snippet: "S", content: "" }]));
+    const result = await runWebSearch("legacy query", { maxResults: 2 }, { anysearchApiKey: "as_sk", anysearch });
+    expect(anysearch).toHaveBeenCalledWith(expect.objectContaining({ maxResults: 2 }));
+    expect(result.sources).toHaveLength(1);
   });
 });

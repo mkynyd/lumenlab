@@ -105,7 +105,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 | L2 首次询问 | `artifact.save`、`reference.add`、`reference.attach` |
 | L3 每次询问 | `project_files.delete`、`artifact.export_docx` |
 
-`web.search` 与 `web.fetch` 走 host 白名单与 SSRF 校验，IPv4、IPv6 和 IPv4-mapped IPv6 都会先排除非公网地址；`web.fetch` 的实际连接会固定到已验证 DNS 地址，每次重定向都重新解析与固定，阻断 DNS rebinding。抓取设置 8 秒超时和 1.5MB body 上限。项目与成果 Tool 还会检查持久化的 `User.scopes`，空权限集合按无权限处理，不会回退到默认全集。所有 Tool 在执行前都要做跨租户预检和参数校验，`artifact.save` 的 handler 会再次确认目标项目归属。待审批记录在 token 兑换前还会用当前 Tool/Skill、scope 与资源归属重新评估，防止审批等待期的权限撤销被绕过。
+`web.search` 是平台统一的联网搜索能力，调用链固定为 `AnySearch → Bing RSS → DuckDuckGo`，与对话模型供应商无关；AnySearch 结果只做结构校验、URL 校验与规范化去重，Bing/DuckDuckGo 仍保留查询词相关性闸门。`web.search` 与 `web.fetch` 走 host 白名单与 SSRF 校验，IPv4、IPv6 和 IPv4-mapped IPv6 都会先排除非公网地址；`web.fetch` 的实际连接会固定到已验证 DNS 地址，每次重定向都重新解析与固定，阻断 DNS rebinding。抓取设置 8 秒超时和 1.5MB body 上限。项目与成果 Tool 还会检查持久化的 `User.scopes`，空权限集合按无权限处理，不会回退到默认全集。所有 Tool 在执行前都要做跨租户预检和参数校验，`artifact.save` 的 handler 会再次确认目标项目归属。待审批记录在 token 兑换前还会用当前 Tool/Skill、scope 与资源归属重新评估，防止审批等待期的权限撤销被绕过。
 
 ### SSE Agent 事件流
 
@@ -438,6 +438,7 @@ cp .env.example .env
 | `AGENT_PROVIDER_ADAPTER` | 默认 `responses`；兼容 `legacy` 别名，拒绝旧 `pi` / `pi-ai` 配置 |
 | `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_MINIMAX_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
 | `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 开放开关，示例默认 `false`；设为 `true` 前须验证目标账号的实际聊天权限，只有 Embedding 权限不足以开放默认聊天 |
+| `ANYSEARCH_API_KEY` | 平台级联网搜索基础设施密钥（仅服务端读取）。`web.search` 优先走 AnySearch，再回退 Bing RSS 与 DuckDuckGo；留空则跳过 AnySearch，本地开发仍可搜索 |
 | `BAILIAN_WORKSPACE_ID` | 启用 Qwen 聊天时必填 |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛云 Kodo 密钥（生产必填） |
 | `QINIU_BUCKET` | Kodo 空间名 |

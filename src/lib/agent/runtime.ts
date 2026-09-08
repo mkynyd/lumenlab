@@ -789,18 +789,8 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
 
   if (modelRoute.provider === "minimax" && manualWebSearchActive) {
-    let searchApiKey: string;
-    try {
-      searchApiKey = await getProviderApiKey(userId, "deepseek");
-    } catch (error) {
-      throw new AgentRuntimeError(
-        403,
-        error instanceof ProviderAccessError
-          ? error.message
-          : "联网搜索服务密钥暂时不可用"
-      );
-    }
-
+    // 搜索走平台自有栈（AnySearch → Bing RSS → DuckDuckGo），不再解析任何
+    // 模型供应商密钥；缺少 ANYSEARCH_API_KEY 时自动降级到 Bing/DDG。
     const searchExecutionId = `manual-web-search:${runId}`;
     emitAgentEvent({
       type: "tool_proposed",
@@ -817,7 +807,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       },
     });
     emitAgentEvent({ type: "tool_started", executionId: searchExecutionId });
-    const webResult = await runWebSearch(effectivePrompt, searchApiKey).catch((error) => {
+    const webResult = await runWebSearch(effectivePrompt).catch((error) => {
       emitAgentEvent({
         type: "tool_failed",
         executionId: searchExecutionId,

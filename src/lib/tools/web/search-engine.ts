@@ -6,9 +6,12 @@
  */
 import { getRedis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
+import { AnySearchError, clampAnySearchMaxResults, requestAnySearch, type AnySearchResponse, type AnySearchZone } from "./anysearch";
 
 const CACHE_TTL_SECONDS = 60;
 const SEARCH_TIMEOUT_MS = 10_000;
+const CACHE_VERSION = "websearch:v3";
+const ANYSEARCH_CONTENT_EXCERPT_CHARS = 200;
 const DUCKDUCKGO_HTML_SEARCH = "https://html.duckduckgo.com/html/";
 const BING_RSS_SEARCH = "https://www.bing.com/search";
 
@@ -19,9 +22,49 @@ export interface WebSearchResult {
   [key: string]: unknown;
 }
 
-function buildCacheKey(query: string, maxResults: number): string {
+export interface WebSearchOptions {
+  maxResults?: number;
+  tag?: string;
+  zone?: AnySearchZone;
+  language?: string;
+  params?: Record<string, unknown>;
+}
+
+/** Injectable AnySearch transport so provider fallback stays testable. */
+export type AnySearchTransport = (input: {
+  query: string;
+  maxResults: number;
+  tag?: string;
+  zone?: AnySearchZone;
+  language?: string;
+  params?: Record<string, unknown>;
+  apiKey: string;
+  signal?: AbortSignal;
+}) => Promise<AnySearchResponse>;
+
+export interface WebSearchDependencies {
+  anysearchApiKey?: string | null;
+  anysearch?: AnySearchTransport;
+}
+
+function stableParamsKey(params: Record<string, unknown> | undefined): string {
+  if (!params || typeof params !== "object" || Array.isArray(params)) return "";
+  const entries = Object.entries(params).filter(([, value]) => value !== undefined).sort(([left], [right]) => left.localeCompare(right));
+  if (!entries.length) return "";
+  try {
+    return JSON.stringify(entries).slice(0, 400);
+  } catch {
+    return "";
+  }
+}
+
+/** Query identity must include every wire field: tag/zone/language/params change results. */
+function buildCacheKey(query: string, options: WebSearchOptions): string {
   const normalized = query.trim().replace(/\s+/g, " ").toLowerCase().slice(0, 200);
-  return `websearch:v2:${maxResults}:${normalized}`;
+  const tag = options.tag?.trim() ?? "";
+  const zone = options.zone ?? "";
+  const language = options.language?.trim() ?? "";
+  return [CACHE_VERSION, clampAnySearchMaxResults(options.maxResults), tag, zone, language, stableParamsKey(options.params), normalized].join(":");
 }
 
 function decodeHtml(value: string) {
@@ -176,9 +219,62 @@ function buildVerifiedResult(
   };
 }
 
-async function callSearchFallback(query: string, maxResults: number): Promise<WebSearchResult> {
-  // Bing RSS 对中文查询的结果质量明显好于 DuckDuckGo HTML 抓取，因此 Bing 优先；
-  // 每一级都先过相关性闸门，两级都无相关结果时返回空来源。
+/** AnySearch output keeps its own ordering and original URLs; snippets are optional. */
+export function buildAnySearchResult(response: AnySearchResponse, query: string): WebSearchResult | null {
+  const items = response.items;
+  if (!items.length) return null;
+  return {
+    summary: items
+      .map((item, index) => {
+        const excerpt = item.snippet || item.content.slice(0, ANYSEARCH_CONTENT_EXCERPT_CHARS).trim();
+        return `[^${index + 1}^] ${item.title}${excerpt ? `\n${excerpt}` : ""}\n${item.url}`;
+      })
+      .join("\n\n"),
+    sources: items.map(({ url, title }) => ({ url, title })),
+    query,
+  };
+}
+
+async function searchAnySearch(input: { query: string; options: WebSearchOptions; apiKey: string; transport: AnySearchTransport; signal?: AbortSignal }): Promise<WebSearchResult | null> {
+  const startedAt = Date.now();
+  const response = await input.transport({
+    query: input.query,
+    maxResults: clampAnySearchMaxResults(input.options.maxResults),
+    ...(input.options.tag ? { tag: input.options.tag } : {}),
+    ...(input.options.zone ? { zone: input.options.zone } : {}),
+    ...(input.options.language ? { language: input.options.language } : {}),
+    ...(input.options.params ? { params: input.options.params } : {}),
+    apiKey: input.apiKey,
+    signal: input.signal,
+  });
+  logger.info("web.search anysearch ok", { provider: "anysearch", status: 200, requestId: response.requestId, results: response.items.length, durationMs: Date.now() - startedAt });
+  return buildAnySearchResult(response, input.query);
+}
+
+async function callSearchFallback(query: string, options: WebSearchOptions, dependencies: WebSearchDependencies): Promise<WebSearchResult> {
+  const maxResults = clampAnySearchMaxResults(options.maxResults);
+  const apiKey = dependencies.anysearchApiKey ?? null;
+  const transport = dependencies.anysearch ?? requestAnySearch;
+
+  // 1. AnySearch primary. A missing platform key skips it entirely so local dev
+  //    and keyless deployments still search; every failure falls through.
+  if (apiKey) {
+    try {
+      const result = await searchAnySearch({ query, options, apiKey, transport });
+      if (result) return result;
+      logger.info("web.search anysearch empty, falling back", { provider: "anysearch" });
+    } catch (error) {
+      const failure = error instanceof AnySearchError ? error : null;
+      if (failure?.kind === "auth") {
+        logger.error("web.search anysearch credential rejected", { provider: "anysearch", status: failure.status, code: failure.kind });
+      } else {
+        logger.warn("web.search anysearch failed, falling back", { provider: "anysearch", status: failure?.status ?? null, reason: failure?.kind ?? "unknown", error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  // 2. Bing RSS then DuckDuckGo. Both keep the original relevance gate: they are
+  //    raw scrapes, unlike AnySearch's routed/reranked output.
   const providers = [searchBingRss, searchDuckDuckGo];
   for (const provider of providers) {
     try {
@@ -221,8 +317,8 @@ export function softenExactDates(query: string, now = new Date()): string {
 
 export async function runWebSearch(
   query: string,
-  _apiKey: string,
-  maxResults = 5
+  options: WebSearchOptions = {},
+  dependencies: WebSearchDependencies = {}
 ): Promise<WebSearchResult> {
   const userQuestionMarker = "# 用户问题";
   const userQuestionIndex = query.lastIndexOf(userQuestionMarker);
@@ -242,7 +338,7 @@ export async function runWebSearch(
     return { summary: "", sources: [], query: "" };
   }
 
-  const cacheKey = buildCacheKey(trimmed, maxResults);
+  const cacheKey = buildCacheKey(trimmed, options);
   try {
     const cached = await getRedis().get(cacheKey);
     if (cached) {
@@ -256,7 +352,7 @@ export async function runWebSearch(
     // Cache failures are non-fatal.
   }
 
-  const result = await callSearchFallback(trimmed, maxResults);
+  const result = await callSearchFallback(trimmed, options, dependencies);
 
   try {
     await getRedis().setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(result));

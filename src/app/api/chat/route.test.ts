@@ -496,17 +496,15 @@ describe("POST /api/chat", () => {
 
       const response = await POST(request);
       expect(response.status).toBe(200);
+      // 搜索走平台自有栈，不再解析任何模型供应商密钥。
       expect(mocks.runWebSearch).toHaveBeenCalledWith(
-        expect.stringContaining("当前服务器时间"),
-        "sk-test"
+        expect.stringContaining("当前服务器时间")
       );
       expect(mocks.runWebSearch).toHaveBeenCalledWith(
-        expect.stringContaining("2026-07-10T15:44:17.000Z"),
-        "sk-test"
+        expect.stringContaining("2026-07-10T15:44:17.000Z")
       );
       expect(mocks.runWebSearch).toHaveBeenCalledWith(
-        expect.stringContaining("今天有什么 AI 新闻"),
-        "sk-test"
+        expect.stringContaining("今天有什么 AI 新闻")
       );
       expect(mocks.minimaxStream).toHaveBeenCalledWith(
         expect.objectContaining({

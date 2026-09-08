@@ -382,12 +382,21 @@ const TOOLS: ToolMetadata[] = [
   {
     toolId: "web.search",
     name: "联网检索",
-    description: "通过模型内置 web_search 联网检索关键词。",
+    description: [
+      "LumenLab 的统一联网搜索能力，平台自有搜索栈（AnySearch 优先，Bing RSS 与 DuckDuckGo 兜底），与当前对话模型无关。",
+      "返回标题、摘要与原始 URL 来源；需要阅读网页全文时再调用 web.fetch。",
+      "可选 tag 用于选择 AnySearch 能力：general.general、academic.search、academic.preprint、academic.dataset、code.snippet 可直接使用；code.doc 需同时给出 params.library，academic.citation 需 params.id，security.vuln 需 params.type 与 params.value。",
+      "不确定 tag 时请省略，让 AnySearch 自行路由；不要猜测不存在的 tag。zone 仅在明确需要特定区域资料时提供（cn 或 intl），中文问题也可能需要国际资料。",
+    ].join(""),
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string" },
-        maxResults: { type: "integer" },
+        query: { type: "string", description: "搜索查询，一句话表达一个意图" },
+        maxResults: { type: "integer", description: "返回条数，服务端限制为 1-10" },
+        tag: { type: "string", description: "可选能力标签（如 academic.search）；不确定时省略" },
+        zone: { type: "string", enum: ["cn", "intl"], description: "可选区域偏好；不确定时省略" },
+        language: { type: "string", description: "可选结果语言，例如 zh-CN、en" },
+        params: { type: "object", description: "可选能力参数对象，例如 {\"library\":\"react\"}；不确定时省略" },
       },
       required: ["query"],
     },
@@ -732,7 +741,13 @@ export function registerBuiltinTools(): void {
     );
   });
   registerToolHandler("web.search", async (ctx, args) => {
-    return webSearch(ctx, String(args.query ?? ""), args.maxResults ? Number(args.maxResults) : 5);
+    return webSearch(ctx, String(args.query ?? ""), {
+      maxResults: args.maxResults ? Number(args.maxResults) : undefined,
+      tag: args.tag ? String(args.tag) : undefined,
+      zone: args.zone === "cn" || args.zone === "intl" ? args.zone : undefined,
+      language: args.language ? String(args.language) : undefined,
+      params: args.params && typeof args.params === "object" && !Array.isArray(args.params) ? (args.params as Record<string, unknown>) : undefined,
+    });
   });
   registerToolHandler("web.fetch", async (_ctx, args) => {
     return webFetch(String(args.url ?? ""));

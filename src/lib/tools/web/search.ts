@@ -1,40 +1,28 @@
-import { logger } from "@/lib/logger";
-import { getProviderApiKey } from "@/lib/data/provider-access";
-import { ProviderAccessError } from "@/lib/provider-access";
-import { runWebSearch, type WebSearchResult } from "./search-engine";
+import { runWebSearch, type WebSearchOptions, type WebSearchResult } from "./search-engine";
 import type { ToolExecutionContext } from "@/lib/agent/tool-executor";
 
-export type { WebSearchResult };
+export type { WebSearchResult, WebSearchOptions };
 
 /**
- * 执行联网搜索。
+ * LumenLab 的统一联网搜索能力。
  *
- * 内部统一使用 DeepSeek 内置 web_search，即使主对话模型是 MiniMax。
- * 如果用户账户没有配置 DeepSeek 凭证，则抛出 ProviderAccessError。
+ * 平台自有搜索栈：AnySearch → Bing RSS → DuckDuckGo，与对话模型供应商无关。
+ * 无论当前模型是 DeepSeek、Qwen、MiniMax 还是以后新增的模型，上层 Agent 都只
+ * 调用本函数；模型供应商不决定实际搜索 Provider。`web.search` 也不再是任何
+ * 模型的“内置 web_search”，而是由 Tool Registry 拥有的普通工具。
  */
 export async function webSearch(
-  ctx: ToolExecutionContext,
+  _ctx: ToolExecutionContext,
   query: string,
-  maxResults = 5
+  options: WebSearchOptions = {}
 ): Promise<WebSearchResult> {
   const trimmed = query.trim().slice(0, 500);
   if (!trimmed) {
     return { summary: "", sources: [], query: "" };
   }
 
-  let apiKey: string;
-  try {
-    apiKey = await getProviderApiKey(ctx.userId, "deepseek");
-  } catch (error) {
-    logger.warn("web.search failed to resolve DeepSeek API key", {
-      userId: ctx.userId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    if (error instanceof ProviderAccessError) {
-      throw new Error(`联网搜索需要 DeepSeek 服务配置：${error.message}`);
-    }
-    throw new Error("无法获取 DeepSeek API Key，请检查服务配置");
-  }
-
-  return runWebSearch(trimmed, apiKey, maxResults);
+  // Platform infrastructure key, server-only. No key means AnySearch is skipped
+  // and the existing Bing/DuckDuckGo fallbacks keep search working.
+  const anysearchApiKey = process.env.ANYSEARCH_API_KEY?.trim() || null;
+  return runWebSearch(trimmed, options, { anysearchApiKey });
 }

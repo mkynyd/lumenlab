@@ -1,5 +1,15 @@
 # Research / Paper 测试版交接
 
+## 2026-09-09 · AnySearch 统一联网搜索接入（main）
+
+- 目标：`web.search` 从 Bing RSS → DuckDuckGo 原型搜索升级为平台自有搜索栈 **AnySearch → Bing RSS → DuckDuckGo**，并彻底解除联网搜索与 DeepSeek API Key 的耦合。上层 Agent 只调用统一 `web.search`，模型供应商不决定搜索 Provider；不引入 MCP、不替换 `web.fetch`、不改 SSRF/DNS pinning。
+- 新增 `src/lib/tools/web/anysearch.ts`：唯一 HTTP 传输（`POST https://api.anysearch.com/v1/search`、`Authorization: Bearer ${ANYSEARCH_API_KEY}`、JSON）；请求体 camelCase→`max_results`，按官方范围钳制 1–10；`tag/zone/language/params` 仅在提供时透传；响应解析 `{code,message,request_id,data:{results,metadata}}`，逐项读取 title/url/snippet/content，只接受 http(s) 且按 canonical URL 去重；400 直接回退、401/403 记安全日志后回退、402 不重试直接回退、429 最多一次有界重试（尊重 Retry-After，超过 2s 上限直接回退）、5xx/网络一次 300ms 退避后回退。
+- `search-engine.ts`：缓存键升级为 `websearch:v3:{maxResults}:{tag}:{zone}:{language}:{stableParams}:{normalizedQuery}`，不同 tag/区域不再互相命中；AnySearch 成功且有结果立即返回、空结果继续 fallback、无 key 完全跳过 AnySearch；Bing RSS 与 DuckDuckGo 保留原相关性闸门，AnySearch 因已自带 routing/fusion/rerank 只做结构/URL 校验与去重。summary 默认标题+snippet+原始 URL，snippet 缺失时才从 content 截取 200 字符。
+- `search.ts` 不再解析任何模型供应商密钥；`src/lib/agent/runtime.ts` 的 MiniMax 手动联网预取同样去掉 DeepSeek 密钥解析。Tool Registry 的 `web.search` description 改为“平台统一联网搜索”，input schema 扩展 `tag?/zone?/language?/params?` 且保持向后兼容；已注明 `code.doc` 需 `params.library`、`academic.citation` 需 `params.id`、`security.vuln` 需 `params.type/value`（实测这些 tag 缺参返回 `code:-1`）。
+- 真实联网验证：中文查询、`academic.search`+en（返回 DOI 论文）、`code.doc`（真实 400 → 自动回退 Bing 并返回 React 文档）、`maxResults:25` 被钳制到 10、无 key 时跳过 AnySearch 全部符合预期；本机 `localhost:3000` 真实对话（Qwen3.8-Flash + 联网开关）中 Agent 调用 5 次 AnySearch，答案引用原始 URL（10 个工具、89,669 tokens）。证据 `output/playwright/anysearch/`。
+- 门禁：333 文件 / 1869 测试、tsc、ESLint（0 问题）、Prisma validate、production build、diff check 全绿。**官方 Docs 与提示词差异**：提示词写 `max_results` 1–20，官方接口文档为 1–10 且实测服务端返回上限为 10，按“以最新官方 Docs 为准”实现 1–10。
+- 未做（按要求）：AnySearch MCP/Skill、`/v1/deep-search`、替换 `web.fetch`、删除 Bing/DDG fallback、前端搜索 Provider 选择器、向用户暴露 AnySearch Key、完整 Deep Research。
+
 ## 2026-09-09 · 任务 11 完成：后台论文排版与旧编辑功能退场
 
 - 入口与向导：新增 `/api/papers/formatting`（提交/列表）、`/api/papers/formatting/templates`（学校搜索 + 逐 Variant 可用性与原因 + 计数）、`/[id]`（详情/取消/重试/确认/原稿下载）；`/papers` 改为任务与结果列表，`/papers/typesetting` 改为「选学校模板 → 填元数据 → 上传原稿」向导，`/papers/formatting/[id]` 展示阶段进度、结构确认与 PDF 预览/下载，`/papers/[id]` 改为只读历史论文（大纲 + 最近成功 PDF）。前端 hooks 与查询键集中在新 `use-formatting.ts`。

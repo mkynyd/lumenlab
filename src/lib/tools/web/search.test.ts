@@ -1,15 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { webSearch } from "./search";
 import * as searchEngine from "./search-engine";
-import * as providerAccess from "@/lib/data/provider-access";
-import { ProviderAccessError } from "@/lib/provider-access";
 
 vi.mock("@/lib/tools/web/search-engine", () => ({
   runWebSearch: vi.fn(),
-}));
-
-vi.mock("@/lib/data/provider-access", () => ({
-  getProviderApiKey: vi.fn(),
 }));
 
 const mockCtx = {
@@ -19,56 +13,47 @@ const mockCtx = {
 
 describe("webSearch tool", () => {
   beforeEach(() => {
-    vi.mocked(providerAccess.getProviderApiKey).mockReset();
     vi.mocked(searchEngine.runWebSearch).mockReset();
+    delete process.env.ANYSEARCH_API_KEY;
   });
 
   it("returns empty result for empty query", async () => {
     const result = await webSearch(mockCtx, "   ");
     expect(result).toEqual({ summary: "", sources: [], query: "" });
-    expect(providerAccess.getProviderApiKey).not.toHaveBeenCalled();
+    expect(searchEngine.runWebSearch).not.toHaveBeenCalled();
   });
 
-  it("resolves DeepSeek key and delegates to runWebSearch", async () => {
-    vi.mocked(providerAccess.getProviderApiKey).mockResolvedValue("sk-deepseek");
+  it("delegates to the platform search stack with the requested options", async () => {
     vi.mocked(searchEngine.runWebSearch).mockResolvedValue({
       summary: "result",
       sources: [{ url: "https://example.com" }],
       query: "query",
     });
 
-    const result = await webSearch(mockCtx, "query", 3);
+    const result = await webSearch(mockCtx, "query", { maxResults: 3, tag: "academic.search", zone: "intl", language: "en", params: { year: 2026 } });
 
-    expect(providerAccess.getProviderApiKey).toHaveBeenCalledWith("user-1", "deepseek");
-    expect(searchEngine.runWebSearch).toHaveBeenCalledWith("query", "sk-deepseek", 3);
+    expect(searchEngine.runWebSearch).toHaveBeenCalledWith("query", { maxResults: 3, tag: "academic.search", zone: "intl", language: "en", params: { year: 2026 } }, { anysearchApiKey: null });
     expect(result.summary).toBe("result");
   });
 
-  it("throws descriptive error when DeepSeek credential is missing", async () => {
-    vi.mocked(providerAccess.getProviderApiKey).mockRejectedValue(
-      new ProviderAccessError("credential_unavailable", "无可用凭证")
-    );
+  it("passes the platform AnySearch key when configured and never a model provider key", async () => {
+    process.env.ANYSEARCH_API_KEY = "as_sk_platform";
+    vi.mocked(searchEngine.runWebSearch).mockResolvedValue({ summary: "ok", sources: [], query: "q" });
 
-    await expect(webSearch(mockCtx, "query")).rejects.toThrow(
-      /联网搜索需要 DeepSeek 服务配置/
-    );
+    await webSearch(mockCtx, "q");
+
+    expect(searchEngine.runWebSearch).toHaveBeenCalledWith("q", {}, { anysearchApiKey: "as_sk_platform" });
   });
 
   it("truncates query to 500 chars", async () => {
-    vi.mocked(providerAccess.getProviderApiKey).mockResolvedValue("sk-deepseek");
     vi.mocked(searchEngine.runWebSearch).mockResolvedValue({
       summary: "ok",
       sources: [],
       query: "x",
     });
 
-    const longQuery = "x".repeat(1000);
-    await webSearch(mockCtx, longQuery);
+    await webSearch(mockCtx, "x".repeat(1000));
 
-    expect(searchEngine.runWebSearch).toHaveBeenCalledWith(
-      "x".repeat(500),
-      "sk-deepseek",
-      5
-    );
+    expect(searchEngine.runWebSearch).toHaveBeenCalledWith("x".repeat(500), {}, { anysearchApiKey: null });
   });
 });
