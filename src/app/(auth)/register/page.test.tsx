@@ -59,19 +59,25 @@ function stepContent() {
   return within(screen.getByRole("group"));
 }
 
+// These cases verify agreement gates, not per-keystroke input behavior. Paste
+// fixture values to avoid repeated strength-meter renders exhausting the CI timeout.
 async function reachPasswordStep(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(stepContent().getByLabelText("邮箱"), "test@example.com");
+  await user.click(stepContent().getByLabelText("邮箱"));
+  await user.paste("test@example.com");
   await user.click(nextButton(/发送验证邮件/));
   await waitFor(() => {
     expect(stepContent().getByLabelText("验证码")).toBeInTheDocument();
   });
-  await user.type(stepContent().getByLabelText("验证码"), "123456");
+  await user.click(stepContent().getByLabelText("验证码"));
+  await user.paste("123456");
   await user.click(nextButton(/^验证$/));
   await waitFor(() => {
     expect(stepContent().getByLabelText("密码")).toBeInTheDocument();
   });
-  await user.type(stepContent().getByLabelText("密码"), "password-8");
-  await user.type(stepContent().getByLabelText("确认密码"), "password-8");
+  await user.click(stepContent().getByLabelText("密码"));
+  await user.paste("password-8");
+  await user.click(stepContent().getByLabelText("确认密码"));
+  await user.paste("password-8");
 }
 
 describe("RegisterPage 协议勾选", () => {
