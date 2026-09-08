@@ -393,66 +393,6 @@ export async function bindChatAttachmentsToMessage(input: {
   return result.count;
 }
 
-/** 本轮已持久化的附件（按上传顺序），用于响应头与历史读取。 */
-export async function listChatAttachmentsForRun(input: {
-  userId: string;
-  clientRunKey: string;
-}): Promise<PersistedChatAttachment[]> {
-  const rows = await prisma.messageAttachment.findMany({
-    where: { userId: input.userId, clientRunKey: input.clientRunKey },
-    orderBy: { position: "asc" },
-    select: {
-      id: true,
-      originalName: true,
-      mimeType: true,
-      size: true,
-      width: true,
-      height: true,
-      contentHash: true,
-      storageProvider: true,
-      storagePath: true,
-      position: true,
-      status: true,
-      thumbnailPath: true,
-    },
-  });
-  return rows.map(toPersisted);
-}
-
-/** 按消息读取附件引用，供新回合重新鉴权组装图像输入。 */
-export async function loadMessageAttachmentRefs(input: {
-  userId: string;
-  messageIds: string[];
-}): Promise<MediaRef[]> {
-  if (input.messageIds.length === 0) return [];
-  const rows = await prisma.messageAttachment.findMany({
-    where: {
-      userId: input.userId,
-      messageId: { in: input.messageIds },
-      status: "bound",
-      mimeType: { startsWith: "image/" },
-    },
-    orderBy: [{ messageId: "asc" }, { position: "asc" }],
-    select: {
-      id: true,
-      originalName: true,
-      mimeType: true,
-      storageProvider: true,
-      storagePath: true,
-      contentHash: true,
-    },
-  });
-  return rows.map((row) => ({
-    source: "message-attachment" as const,
-    id: row.id,
-    originalName: row.originalName,
-    mimeType: row.mimeType,
-    storageProvider: row.storageProvider,
-    storagePath: row.storagePath,
-    contentHash: row.contentHash,
-  }));
-}
-
 /** 按资源 ID 读取附件引用，供 durable Checkpoint 恢复解析。 */
 export async function loadAttachmentRefsByIds(input: {
   userId: string;
