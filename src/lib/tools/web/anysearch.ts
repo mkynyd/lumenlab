@@ -122,14 +122,15 @@ export function normalizeAnySearchItems(value: unknown, maxResults: number): Any
   return items;
 }
 
-export function parseAnySearchResponse(payload: unknown): AnySearchResponse {
+export function parseAnySearchResponse(payload: unknown, requestedMaxResults?: number): AnySearchResponse {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new AnySearchError("response", null, "AnySearch 返回结构无法解析");
   const record = payload as Record<string, unknown>;
   if (record.code !== 0) throw new AnySearchError("response", null, `AnySearch 返回错误码 ${String(record.code)}：${String(record.message ?? "")}`.slice(0, 300));
   const data = record.data && typeof record.data === "object" && !Array.isArray(record.data) ? (record.data as Record<string, unknown>) : {};
-  const maxResults = Number((data.metadata as { total_results?: unknown } | undefined)?.total_results);
+  // Never return more than the caller asked for, even if metadata is missing.
+  const limit = clampAnySearchMaxResults(requestedMaxResults ?? (data.metadata as { total_results?: unknown } | undefined)?.total_results);
   return {
-    items: normalizeAnySearchItems(data, Number.isFinite(maxResults) && maxResults > 0 ? Math.min(maxResults, ANYSEARCH_MAX_RESULTS_LIMIT) : ANYSEARCH_MAX_RESULTS_LIMIT),
+    items: normalizeAnySearchItems(data, limit),
     requestId: typeof record.request_id === "string" ? record.request_id : null,
   };
 }
@@ -210,7 +211,7 @@ export async function requestAnySearch(input: AnySearchRequestOptions & {
     if (wait !== null && wait <= ANYSEARCH_MAX_RETRY_WAIT_MS) {
       await sleep(wait);
       const retried = await attempt();
-      if (retried.ok) return parseAnySearchResponse(await retried.json().catch(() => null));
+      if (retried.ok) return parseAnySearchResponse(await retried.json().catch(() => null), body.max_results as number);
       response = retried;
     }
   } else if (response.status >= 500) {
@@ -224,5 +225,5 @@ export async function requestAnySearch(input: AnySearchRequestOptions & {
     const kind = classifyStatus(response.status);
     throw new AnySearchError(kind, response.status, `AnySearch HTTP ${response.status}`, kind === "rate_limit" ? retryAfterMs(response.headers) : null);
   }
-  return parseAnySearchResponse(await response.json().catch(() => null));
+  return parseAnySearchResponse(await response.json().catch(() => null), body.max_results as number);
 }
