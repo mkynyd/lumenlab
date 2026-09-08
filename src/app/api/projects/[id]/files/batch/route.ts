@@ -129,22 +129,52 @@ export async function POST(
   }
 
   if (body.action === "reparse") {
-    await prisma.fileAsset.updateMany({
+    // 任务 05：图片没有解析队列，重解析对图片只是重新确认可用。
+    const targets = await prisma.fileAsset.findMany({
       where: { id: { in: fileIds }, userId: session.user.id, projectId },
-      data: {
-        status: "parsing",
-        processingMetadata: {
-          parsingStage: "uploading",
-          parsingStageLabel: "上传文件中",
-          queuedAt: new Date().toISOString(),
+      select: { id: true, mimeType: true },
+    });
+    const imageIds = targets
+      .filter((file) => file.mimeType.startsWith("image/"))
+      .map((file) => file.id);
+    const documentIds = targets
+      .filter((file) => !file.mimeType.startsWith("image/"))
+      .map((file) => file.id);
+    if (imageIds.length > 0) {
+      await prisma.fileAsset.updateMany({
+        where: { id: { in: imageIds } },
+        data: {
+          status: "parsed",
+          processingMetadata: {
+            parsingStage: "complete",
+            parsingStageLabel: "图片已就绪",
+            mediaReady: true,
+            parser: "direct-image",
+          },
         },
-      },
+      });
+    }
+    if (documentIds.length > 0) {
+      await prisma.fileAsset.updateMany({
+        where: { id: { in: documentIds } },
+        data: {
+          status: "parsing",
+          processingMetadata: {
+            parsingStage: "uploading",
+            parsingStageLabel: "上传文件中",
+            queuedAt: new Date().toISOString(),
+          },
+        },
+      });
+      startFileParseBatch({
+        userId: session.user.id,
+        fileIds: documentIds,
+      });
+    }
+    return NextResponse.json({
+      queued: documentIds.length,
+      imagesReady: imageIds.length,
     });
-    startFileParseBatch({
-      userId: session.user.id,
-      fileIds,
-    });
-    return NextResponse.json({ queued: fileIds.length });
   }
 
   if (body.category) {

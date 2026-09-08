@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { runResearchModelStage, type ResearchModelStageResult } from "@/lib/research/model-stage";
+import { selectResearchModel } from "@/lib/research/model-routing";
 import type { AcademicDocument } from "./document-schema";
 
 export type ImportSuggestedKind = "paragraph" | "heading" | "figure" | "table" | "equation" | "bibliography" | "raw_latex";
@@ -69,10 +70,11 @@ export async function classifyAmbiguousPaperImport(input: {
 }): Promise<ImportClassificationResult> {
   const validIndexes = new Set(input.lowConfidenceBlocks.map((item) => item.index).filter((index) => index >= 0 && index < input.document.blocks.length));
   if (validIndexes.size === 0) return { status: "unavailable", model: "none", suggestions: [] };
-  const model = "deepseek-v4-pro";
+  let model = "none";
   let conversationId: string | null = null;
   let result: ResearchModelStageResult<RawClassification> | null = null;
   try {
+    model = selectResearchModel("research.evaluator").model;
     conversationId = (await createEphemeralConversation(input.userId, model)).id;
     result = await runResearchModelStage({
       role: "research.evaluator",

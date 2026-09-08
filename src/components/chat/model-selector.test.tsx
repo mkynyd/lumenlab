@@ -19,11 +19,14 @@ describe("ModelSelector", () => {
     });
     await user.click(triggers.at(-1)!);
 
-    expect(screen.getByRole("dialog")).toHaveTextContent("选择模型");
-    expect(
-      screen.getByRole("button", { name: "DeepSeek V4 Flash" })
-    ).toHaveClass("h-11");
-    expect(screen.getByRole("button", { name: "快速" })).toHaveClass("h-11");
+    expect(screen.getByRole("dialog")).toHaveTextContent("配置");
+    const deepseekOption = screen.getByRole("button", {
+      name: /DeepSeek V4 Flash/,
+    });
+    // 模型名下方带一行官方口径小字介绍
+    expect(deepseekOption).toHaveTextContent("视觉模型");
+    expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "快速" })).toHaveClass("h-8");
   });
 
   it("keeps model and reasoning effort independent", async () => {
@@ -41,7 +44,7 @@ describe("ModelSelector", () => {
 
     const triggers = screen.getAllByRole("button", { name: "选择模型" });
     await user.click(triggers.at(-1)!);
-    await user.click(screen.getByRole("button", { name: "MiniMax M3" }));
+    await user.click(screen.getByRole("button", { name: /MiniMax M3/ }));
 
     expect(onChange).toHaveBeenCalledWith("minimax-m3");
     expect(onReasoningEffortChange).not.toHaveBeenCalled();

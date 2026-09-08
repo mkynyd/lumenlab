@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -27,8 +27,8 @@ const mocks = vi.hoisted(() => ({
   retrieveProjectContext: vi.fn(),
   shouldUseProjectContext: vi.fn(),
   embedQuery: vi.fn(),
-  streamChat: vi.fn(),
-  streamMiniMaxChat: vi.fn(),
+  deepseekStream: vi.fn(),
+  minimaxStream: vi.fn(),
   completeChat: vi.fn(),
   createTextMessage: vi.fn(),
   runWebSearch: vi.fn(),
@@ -94,32 +94,53 @@ vi.mock("@/lib/deepseek", () => ({
       super(message);
     }
   },
-  streamChat: mocks.streamChat,
+
   completeChat: mocks.completeChat,
   createTextMessage: mocks.createTextMessage,
 }));
 
-vi.mock("@/lib/chat/minimax-chat", () => ({
+vi.mock("@/lib/chat/minimax-error", () => ({
   MiniMaxChatError: class MiniMaxChatError extends Error {
     constructor(public status: number, message: string) {
       super(message);
     }
   },
-  streamMiniMaxChat: mocks.streamMiniMaxChat,
+
 }));
+
+// Route tests exercise Runtime/Policy/persistence with controlled provider results.
+// Wire serialization and fetch/SSE are covered by responses-adapters.test.ts.
+vi.mock("@/lib/agent/adapters/deepseek-adapter", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/agent/adapters/deepseek-adapter")>();
+  return { ...original, DeepSeekAdapter: class extends original.DeepSeekAdapter {
+    async stream(params: import("@/lib/agent/provider-adapter").AdapterStreamParams) {
+      return mocks.deepseekStream(params);
+    }
+  } };
+});
+vi.mock("@/lib/agent/adapters/minimax-adapter", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/agent/adapters/minimax-adapter")>();
+  return { ...original, MiniMaxAdapter: class extends original.MiniMaxAdapter {
+    async stream(params: import("@/lib/agent/provider-adapter").AdapterStreamParams) {
+      return mocks.minimaxStream(params);
+    }
+  } };
+});
+beforeEach(() => vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Unexpected network call in chat route test"); })));
+afterEach(() => vi.unstubAllGlobals());
 
 vi.mock("@/lib/tools/web/search-engine", () => ({
   runWebSearch: mocks.runWebSearch,
 }));
 
-import { DeepSeekError } from "@/lib/deepseek";
+import { ResponsesHttpError } from "@/lib/agent/providers/responses/transport";
 import { accumulateAndSave, POST } from "@/app/api/chat/route";
 
 describe("POST /api/chat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.streamChat.mockReset();
-    mocks.streamMiniMaxChat.mockReset();
+    mocks.deepseekStream.mockReset();
+    mocks.minimaxStream.mockReset();
     mocks.completeChat.mockReset();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
     mocks.projectFindFirst.mockResolvedValue({
@@ -189,13 +210,13 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash-vision-exp",
       modelLock: null,
       thinkingEnabled: false,
       activeSkillId: null,
       skillDisabled: false,
     });
-    mocks.streamMiniMaxChat.mockResolvedValue({
+    mocks.minimaxStream.mockResolvedValue({
       stream: new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(
@@ -224,7 +245,7 @@ describe("POST /api/chat", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "生成实验报告",
-        model: "deepseek-v4-pro",
+        model: "deepseek-v4-flash-vision-exp",
         thinkingEnabled: false,
         reasoningEffort: "high",
         projectId: "project-1",
@@ -244,8 +265,8 @@ describe("POST /api/chat", () => {
 
   it("maps a provider request error through the thin HTTP adapter", async () => {
     mocks.getProviderApiKey.mockResolvedValue("sk-test");
-    mocks.streamChat.mockRejectedValue(
-      new DeepSeekError(401, "DeepSeek API Key 无效")
+    mocks.deepseekStream.mockRejectedValue(
+      new ResponsesHttpError(401, "invalid credential", false)
     );
 
     const response = await POST(
@@ -254,7 +275,7 @@ describe("POST /api/chat", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "hello",
-          model: "deepseek-v4-pro",
+          model: "deepseek-v4-flash-vision-exp",
           thinkingEnabled: false,
           reasoningEffort: "high",
           selectedFileIds: [],
@@ -264,8 +285,8 @@ describe("POST /api/chat", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({
-      error: "DeepSeek API Key 无效",
-      deepseekStatus: 401,
+      error: "Responses API HTTP 401: invalid credential",
+      responsesStatus: 401,
     });
   });
 
@@ -275,7 +296,7 @@ describe("POST /api/chat", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "你好，帮我解释一下动态规划是什么",
-        model: "deepseek-v4-pro",
+        model: "deepseek-v4-flash-vision-exp",
         thinkingEnabled: false,
         reasoningEffort: "high",
         projectId: "project-1",
@@ -300,7 +321,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash-vision-exp",
       modelLock: null,
       thinkingEnabled: false,
       activeSkillId: null,
@@ -313,7 +334,7 @@ describe("POST /api/chat", () => {
       content: "你好",
       usage: null,
     });
-    mocks.streamChat.mockResolvedValue(
+    mocks.deepseekStream.mockResolvedValue(
       makeStreamResult({ deltas: [{ content: "你好" }] })
     );
 
@@ -323,7 +344,7 @@ describe("POST /api/chat", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "你好，帮我解释一下动态规划是什么",
-          model: "deepseek-v4-pro",
+          model: "deepseek-v4-flash-vision-exp",
           thinkingEnabled: false,
           reasoningEffort: "high",
           projectId: "project-1",
@@ -372,7 +393,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash-vision-exp",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: "code-reader",
@@ -381,7 +402,7 @@ describe("POST /api/chat", () => {
     mocks.messageCreate
       .mockResolvedValueOnce({ id: "user-message-1" })
       .mockResolvedValueOnce({ id: "assistant-message-1" });
-    mocks.streamChat.mockResolvedValue(
+    mocks.deepseekStream.mockResolvedValue(
       makeStreamResult({ deltas: [{ content: "已生成逻辑图" }] })
     );
 
@@ -392,7 +413,7 @@ describe("POST /api/chat", () => {
         body: JSON.stringify({
           message: "快捷任务：生成 Mermaid 逻辑图",
           hiddenPrompt: "请基于项目资料生成 Mermaid flowchart LR",
-          model: "deepseek-v4-pro",
+          model: "deepseek-v4-flash-vision-exp",
           thinkingEnabled: true,
           reasoningEffort: "max",
           projectId: "project-1",
@@ -409,10 +430,10 @@ describe("POST /api/chat", () => {
       expect(response.status).toBe(200);
       expect(body).toContain("sources_updated");
       expect(mocks.retrieveProjectContext).not.toHaveBeenCalled();
-      expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(1);
 
-      const firstCall = mocks.streamChat.mock.calls[0];
-      const streamRequest = firstCall[1] as {
+      const firstCall = mocks.deepseekStream.mock.calls[0];
+      const streamRequest = firstCall[0] as {
         messages: Array<{ role: string; content: string }>;
         tools?: Array<{ function?: { name?: string }; name?: string }>;
       };
@@ -487,8 +508,7 @@ describe("POST /api/chat", () => {
         expect.stringContaining("今天有什么 AI 新闻"),
         "sk-test"
       );
-      expect(mocks.streamMiniMaxChat).toHaveBeenCalledWith(
-        "sk-test",
+      expect(mocks.minimaxStream).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: expect.arrayContaining([
             expect.objectContaining({
@@ -541,7 +561,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: null,
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash-vision-exp",
       modelLock: null,
       thinkingEnabled: false,
       activeSkillId: null,
@@ -550,7 +570,7 @@ describe("POST /api/chat", () => {
     mocks.messageCreate
       .mockResolvedValueOnce({ id: "user-message-1" })
       .mockResolvedValueOnce({ id: "assistant-message-1" });
-    mocks.streamChat.mockResolvedValue(
+    mocks.deepseekStream.mockResolvedValue(
       makeStreamResult({ deltas: [{ content: "联网回答" }] })
     );
 
@@ -560,7 +580,7 @@ describe("POST /api/chat", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "今天有什么科技新闻？",
-          model: "deepseek-v4-pro",
+          model: "deepseek-v4-flash-vision-exp",
           thinkingEnabled: false,
           reasoningEffort: "high",
           webSearchActive: true,
@@ -569,9 +589,9 @@ describe("POST /api/chat", () => {
 
       const response = await POST(request);
       expect(response.status).toBe(200);
-      expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(1);
 
-      const streamRequest = mocks.streamChat.mock.calls[0][1] as {
+      const streamRequest = mocks.deepseekStream.mock.calls[0][0] as {
         messages: Array<{ role: string; content: string }>;
       };
       const userMessage = streamRequest.messages.find((m) => m.role === "user");
@@ -623,7 +643,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash-vision-exp",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: null,
@@ -633,7 +653,7 @@ describe("POST /api/chat", () => {
       .mockResolvedValueOnce({ id: "user-message-1" })
       .mockResolvedValueOnce({ id: "assistant-message-1" });
 
-    mocks.streamChat
+    mocks.deepseekStream
       .mockResolvedValueOnce(
         makeStreamResult({
           deltas: [
@@ -666,7 +686,7 @@ describe("POST /api/chat", () => {
         body: JSON.stringify({
           message: "基于项目资料写一篇关于等级保护的论文提纲",
           skillOff: true,
-          model: "deepseek-v4-pro",
+          model: "deepseek-v4-flash-vision-exp",
           thinkingEnabled: true,
           reasoningEffort: "max",
           projectId: "project-1",
@@ -679,7 +699,7 @@ describe("POST /api/chat", () => {
       const body = await response.text();
 
       expect(response.status).toBe(200);
-      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(2);
       expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -772,7 +792,7 @@ describe("accumulateAndSave", () => {
       "conversation-1",
       "message-1",
       "user-1",
-      "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
       "deepseek",
       () => ({
         prompt_tokens: 1377,
@@ -818,7 +838,7 @@ describe("accumulateAndSave", () => {
       "conversation-1",
       "message-1",
       "user-1",
-      "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
       "deepseek",
       () => ({
         prompt_tokens: 20,
@@ -876,7 +896,7 @@ describe("accumulateAndSave", () => {
         "conversation-1",
         "message-1",
         "user-1",
-        "deepseek-v4-pro",
+        "deepseek-v4-flash-vision-exp",
         "deepseek",
         () => null
       )
@@ -906,7 +926,7 @@ describe("accumulateAndSave", () => {
         "conversation-1",
         "message-1",
         "user-1",
-        "deepseek-v4-pro",
+        "deepseek-v4-flash-vision-exp",
         "deepseek",
         () => null
       )
@@ -972,8 +992,8 @@ function makeStreamResult(options: {
 describe("Streaming tool loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.streamChat.mockReset();
-    mocks.streamMiniMaxChat.mockReset();
+    mocks.deepseekStream.mockReset();
+    mocks.minimaxStream.mockReset();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
     mocks.projectFindFirst.mockResolvedValue({
       id: "project-1",
@@ -995,7 +1015,7 @@ describe("Streaming tool loop", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash-vision-exp",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: null,
@@ -1005,7 +1025,7 @@ describe("Streaming tool loop", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash-vision-exp",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: null,
@@ -1038,11 +1058,11 @@ describe("Streaming tool loop", () => {
     );
   });
 
-  it("injects XML tool instructions into the system prompt before the first DeepSeek stream", async () => {
+  it("sends platform tools as native Responses functions without XML instructions", async () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    mocks.streamChat.mockResolvedValueOnce(
+    mocks.deepseekStream.mockResolvedValueOnce(
       makeStreamResult({
         deltas: [{ content: "好的。" }],
       })
@@ -1055,7 +1075,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             skillOff: true,
             thinkingEnabled: true,
             reasoningEffort: "max",
@@ -1066,14 +1086,19 @@ describe("Streaming tool loop", () => {
         })
       );
 
-      const firstCall = mocks.streamChat.mock.calls[0];
-      const request = firstCall[1] as { messages: Array<{ role: string; content: string | unknown[] }> };
+      const firstCall = mocks.deepseekStream.mock.calls[0];
+      const request = firstCall[0] as {
+        messages: Array<{ role: string; content: string | unknown[] }>;
+        tools: Array<{ name: string }>;
+      };
       const systemMessage = request.messages.find((m) => m.role === "system");
       expect(systemMessage).toBeDefined();
       const systemText = typeof systemMessage!.content === "string" ? systemMessage!.content : "";
-      expect(systemText).toContain("<tool_calls>");
-      expect(systemText).toContain("project_files.list");
-      expect(systemText).toContain("严格使用如下 XML 格式");
+      expect(systemText).not.toContain("<tool_calls>");
+      expect(systemText).not.toContain("严格使用如下 XML 格式");
+      expect(request.tools).toContainEqual(
+        expect.objectContaining({ name: "project_ufiles_dlist" })
+      );
     } finally {
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;
@@ -1087,7 +1112,7 @@ describe("Streaming tool loop", () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    mocks.streamChat
+    mocks.deepseekStream
       .mockResolvedValueOnce(
         makeStreamResult({
           deltas: [{ content: "我先" }, { content: "查看资料。" }],
@@ -1113,7 +1138,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1129,7 +1154,7 @@ describe("Streaming tool loop", () => {
       expect(body).toContain("最终");
       expect(body).toContain("论文提纲");
       expect(body).not.toContain("<tool_calls>");
-      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(2);
       expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -1149,23 +1174,17 @@ describe("Streaming tool loop", () => {
     }
   });
 
-  it("executes DSML tool calls from raw reasoning", async () => {
+  it("does not execute DSML-like text from raw reasoning", async () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    mocks.streamChat
-      .mockResolvedValueOnce(
-        makeStreamResult({
-          deltas: [{ reasoning_content: "检索资料中。" }],
-          rawReasoning:
-            '检索资料中。<| | DSML | | invoke name="project_files.list"><| | DSML | | parameter name="projectId">project-1</| | DSML | | parameter></| | DSML | | invoke>',
-        })
-      )
-      .mockResolvedValueOnce(
-        makeStreamResult({
-          deltas: [{ content: "资料列表为空，继续回答。" }],
-        })
-      );
+    mocks.deepseekStream.mockResolvedValueOnce(
+      makeStreamResult({
+        deltas: [{ reasoning_content: "检索资料中。" }],
+        rawReasoning:
+          '检索资料中。<| | DSML | | invoke name="project_files.list"><| | DSML | | parameter name="projectId">project-1</| | DSML | | parameter></| | DSML | | invoke>',
+      })
+    );
 
     try {
       const response = await POST(
@@ -1174,7 +1193,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "列出项目资料",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1187,17 +1206,9 @@ describe("Streaming tool loop", () => {
 
       expect(response.status).toBe(200);
       const body = await response.text();
-      expect(body).toContain("资料列表为空，继续回答。");
       expect(body).not.toContain("DSML");
-      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
-      expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            toolId: "project_files.list",
-            status: "proposed",
-          }),
-        })
-      );
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(1);
+      expect(mocks.toolExecutionCreate).not.toHaveBeenCalled();
     } finally {
       if (originalFlag === undefined) {
         delete process.env.AGENT_ORCHESTRATOR_ENABLED;
@@ -1213,7 +1224,7 @@ describe("Streaming tool loop", () => {
 
     const raw =
       '思考。<tool_calls> <tool_calls> list </tool_calls> 继续。';
-    mocks.streamChat.mockResolvedValueOnce(
+    mocks.deepseekStream.mockResolvedValueOnce(
       makeStreamResult({
         // The stream from deepseek.ts is already sanitized; raw markup is only
         // exposed through getRawContent for route-level parsing.
@@ -1229,7 +1240,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1246,7 +1257,7 @@ describe("Streaming tool loop", () => {
       expect(body).toContain("继续。");
       expect(body).not.toContain("<tool_calls>");
       expect(body).not.toContain("list");
-      expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(1);
       expect(mocks.toolExecutionCreate).not.toHaveBeenCalled();
     } finally {
       if (originalFlag === undefined) {
@@ -1261,7 +1272,7 @@ describe("Streaming tool loop", () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    mocks.streamChat.mockResolvedValueOnce(
+    mocks.deepseekStream.mockResolvedValueOnce(
       makeStreamResult({
         deltas: [{ content: "我将调用 foo.bar。" }],
         toolCalls: [{ id: "tu-foo", name: "foo.bar", input: { x: 1 } }],
@@ -1275,7 +1286,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "测试",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1286,7 +1297,7 @@ describe("Streaming tool loop", () => {
       );
 
       expect(response.status).toBe(200);
-      expect(mocks.streamChat).toHaveBeenCalledTimes(1);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(1);
       await flushPromises();
       expect(mocks.agentAuditLogCreate).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1319,7 +1330,7 @@ describe("Streaming tool loop", () => {
       enhancedContent: "",
     });
 
-    const chain = mocks.streamChat;
+    const chain = mocks.deepseekStream;
     for (let i = 0; i < 8; i++) {
       chain.mockResolvedValueOnce(
         makeStreamResult({
@@ -1347,7 +1358,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "详细分析资料",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1360,11 +1371,11 @@ describe("Streaming tool loop", () => {
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("已输出总结");
-      expect(mocks.streamChat).toHaveBeenCalledTimes(9);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(9);
       expect(mocks.toolExecutionCreate).toHaveBeenCalledTimes(8);
 
-      const lastCall = mocks.streamChat.mock.calls[8];
-      const lastRequest = lastCall[1] as { messages: Array<{ role: string; content: string | unknown }> };
+      const lastCall = mocks.deepseekStream.mock.calls[8];
+      const lastRequest = lastCall[0] as { messages: Array<{ role: string; content: string | unknown }> };
       const messagesText = JSON.stringify(lastRequest.messages);
       expect(messagesText).toContain("已达到工具调用上限");
     } finally {
@@ -1376,7 +1387,7 @@ describe("Streaming tool loop", () => {
     }
   });
 
-  it("blocks duplicate tool calls with the same arguments", async () => {
+  it("blocks replay of the same native call_id", async () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
@@ -1392,7 +1403,7 @@ describe("Streaming tool loop", () => {
       },
     ]);
 
-    mocks.streamChat
+    mocks.deepseekStream
       .mockResolvedValueOnce(
         makeStreamResult({
           deltas: [{ content: "第1轮：列出文件。" }],
@@ -1410,7 +1421,7 @@ describe("Streaming tool loop", () => {
           deltas: [{ content: "最终回答" }],
           toolCalls: [
             {
-              id: "tu-list-dup",
+              id: "tu-list",
               name: "project_files.list",
               input: { projectId: "project-1" },
             },
@@ -1425,7 +1436,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "列出项目资料",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1439,7 +1450,7 @@ describe("Streaming tool loop", () => {
       const body = await response.text();
       expect(body).toContain("最终回答");
       expect(body).toContain("tool_blocked");
-      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(2);
       expect(mocks.toolExecutionCreate).toHaveBeenCalledTimes(1);
 
       await flushPromises();
@@ -1465,7 +1476,7 @@ describe("Streaming tool loop", () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    mocks.streamChat
+    mocks.deepseekStream
       .mockResolvedValueOnce(
         makeStreamResult({
           deltas: [{ content: "第1轮：列出文件。" }],
@@ -1503,7 +1514,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "列出项目资料",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1516,10 +1527,10 @@ describe("Streaming tool loop", () => {
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("最终回答");
-      expect(mocks.streamChat).toHaveBeenCalledTimes(3);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(3);
 
-      const wrapUpCall = mocks.streamChat.mock.calls[2];
-      const wrapUpRequest = wrapUpCall[1] as {
+      const wrapUpCall = mocks.deepseekStream.mock.calls[2];
+      const wrapUpRequest = wrapUpCall[0] as {
         messages: Array<{ role: string; content: string | unknown }>;
       };
       const messagesText = JSON.stringify(wrapUpRequest.messages);
@@ -1537,7 +1548,7 @@ describe("Streaming tool loop", () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "1";
 
-    mocks.streamChat
+    mocks.deepseekStream
       .mockResolvedValueOnce(
         makeStreamResult({
           deltas: [{ content: "我先看资料。" }],
@@ -1563,7 +1574,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "deepseek-v4-pro",
+            model: "deepseek-v4-flash-vision-exp",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1579,7 +1590,7 @@ describe("Streaming tool loop", () => {
       // POST 现在在模型生成期间就返回流;读完流后再断言副作用已全部发生。
       const body = await response.text();
       expect(body).toContain("最终回答");
-      expect(mocks.streamChat).toHaveBeenCalledTimes(2);
+      expect(mocks.deepseekStream).toHaveBeenCalledTimes(2);
       expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -1601,7 +1612,7 @@ describe("Streaming tool loop", () => {
     const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
     process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
 
-    mocks.streamMiniMaxChat
+    mocks.minimaxStream
       .mockResolvedValueOnce(
         makeStreamResult({
           deltas: [{ content: "我先" }, { content: "查看资料。" }],
@@ -1643,9 +1654,8 @@ describe("Streaming tool loop", () => {
       expect(body).toContain("最终");
       expect(body).toContain("论文提纲");
       expect(body).not.toContain("<tool_calls>");
-      expect(mocks.streamMiniMaxChat).toHaveBeenCalledTimes(2);
-      expect(mocks.streamMiniMaxChat).toHaveBeenCalledWith(
-        "sk-test",
+      expect(mocks.minimaxStream).toHaveBeenCalledTimes(2);
+      expect(mocks.minimaxStream).toHaveBeenCalledWith(
         expect.objectContaining({
           tools: expect.arrayContaining([
             expect.objectContaining({ name: "project_files.list" }),
@@ -1693,7 +1703,7 @@ describe("accumulateAndSave sanitization", () => {
       "conversation-1",
       "message-1",
       "user-1",
-      "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
       "deepseek",
       () => ({
         prompt_tokens: 10,

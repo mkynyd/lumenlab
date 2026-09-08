@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { runAgentRuntime } from "@/lib/agent/runtime";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
+import { logger } from "@/lib/logger";
 import type { ResearchPriority, ResearchRole } from "./contracts";
 import { selectResearchModel } from "./model-routing";
 
@@ -33,7 +34,10 @@ export async function runResearchModelStage<T>(input: ResearchModelStageInput): 
     attempted = true;
     const run = await runAgentRuntime({
       user: { id: input.userId },
-      conversation: { id: input.conversationId, ...(input.projectId ? { projectId: input.projectId } : {}) },
+      // Structured Research stages receive their bounded Evidence in the prompt.
+      // Do not enable generic project context here: task 05 may otherwise attach
+      // unselected project images merely because their names match the stage prompt.
+      conversation: { id: input.conversationId },
       prompt: { message: input.prompt, attachments: [] },
       model: { requestedModel: selection.model, thinkingEnabled: false, reasoningEffort: selection.reasoningEffort },
       capabilities: { webSearchActive: false, skillOff: true, selectedFileIds: [], isQuickTask: false, mode: "general" },
@@ -51,7 +55,12 @@ export async function runResearchModelStage<T>(input: ResearchModelStageInput): 
       usage: completion.usage,
       attempted,
     };
-  } catch {
+  } catch (error) {
+    logger.warn("Research model stage unavailable", {
+      role: input.role,
+      model: selection.model,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { value: null, model: selection.model, usage: null, attempted };
   }
 }

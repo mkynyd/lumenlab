@@ -1,22 +1,16 @@
 import type {
   DocumentBlock,
   DocumentParser,
-  ImageBlock,
   ParseInput,
   ParseResult,
   ParsedAsset,
   ProgressCallback,
 } from "./types";
 import { renderDocumentToMarkdown } from "./renderer";
-import { filterImagesForAnalysis, inferImageMode } from "./image-filter";
-import { analyzeImageWithMiniMax } from "./vision/minimax-analyzer";
-import type { MiniMaxImageMedia } from "./vision/minimax-analyzer";
-import { analyzeImageWithQwen } from "./vision/qwen-analyzer";
 import { MiniMaxError } from "@/lib/vision/minimax";
 import { TextLocalParser } from "./parsers/text-local-parser";
 import { MinerUParser } from "./parsers/mineru-parser";
 import { MiniMaxPdfParser } from "./parsers/minimax-pdf-parser";
-import { ImageParser } from "./parsers/image-parser";
 import { extensionOf, MAX_MINERU_FILE_BYTES } from "./parsers/utils";
 import { buildParseQualityReport } from "./quality-checker";
 
@@ -29,8 +23,9 @@ export interface PipelineResult {
 }
 
 export class DocumentPipeline {
+  // 任务 05：独立图片解析器与逐图视觉分析已删除；文档内图片仅保留
+  // 原始资源（FileAssetResource），由最终多模态模型按引用消费。
   private parsers: DocumentParser[] = [
-    new ImageParser(),
     new TextLocalParser(),
     new MinerUParser(),
     new MiniMaxPdfParser(),
@@ -50,14 +45,6 @@ export class DocumentPipeline {
     }
 
     const parseResult = await this.parseWithFallback(parser, input, onProgress);
-
-    if (
-      parseResult.assets.length > 0 &&
-      (input.apiKeys.bailian || input.apiKeys.minimax) &&
-      parseResult.metadata.requiresVisionModel
-    ) {
-      await this.analyzeImages(parseResult, input, onProgress);
-    }
 
     const content = renderDocumentToMarkdown(parseResult.blocks);
     const completedAt = new Date().toISOString();
@@ -118,80 +105,6 @@ export class DocumentPipeline {
         `MiniMax PDF 解析失败（${message}），已回退到 MinerU 解析`
       );
       return fallbackResult;
-    }
-  }
-
-  private async analyzeImages(
-    parseResult: ParseResult,
-    input: ParseInput,
-    onProgress?: ProgressCallback
-  ): Promise<void> {
-    const imageBlocks = parseResult.blocks.filter(
-      (b): b is ImageBlock => b.type === "image"
-    );
-    if (imageBlocks.length === 0) return;
-
-    const { retained, skipped } = filterImagesForAnalysis(
-      imageBlocks,
-      parseResult.assets
-    );
-
-    for (const { block, reason } of skipped) {
-      block.analysisStatus = "skipped";
-      block.skipReason = reason;
-    }
-
-    const assetMap = new Map(parseResult.assets.map((a) => [a.id, a]));
-    const analyzed = new Set<string>();
-
-    for (let i = 0; i < retained.length; i++) {
-      const block = retained[i];
-      const asset = assetMap.get(block.assetId);
-      if (!asset || analyzed.has(asset.sha256)) continue;
-      analyzed.add(asset.sha256);
-
-      onProgress?.("analyzing-images", {
-        current: i + 1,
-        total: retained.length,
-      });
-
-      try {
-        const mode = inferImageMode(block);
-        const image = {
-          type: "base64" as const,
-          mediaType: asset.mimeType as MiniMaxImageMedia,
-          data: asset.buffer,
-        };
-        const result = input.apiKeys.bailian
-          ? await analyzeImageWithQwen({
-              apiKey: input.apiKeys.bailian,
-              image,
-              mode,
-            })
-          : await analyzeImageWithMiniMax({
-              apiKey: input.apiKeys.minimax!,
-              image,
-              mode,
-            });
-
-        block.visionSummary = result.summary;
-        block.visionText = result.ocrText;
-        block.extractedText = result.ocrText;
-        block.confidence = result.confidence;
-        block.analysisStatus = "parsed";
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "视觉分析失败";
-        block.analysisStatus = "failed";
-        block.skipReason = message;
-        parseResult.metadata.parseWarnings.push(
-          `图片 ${block.relativePath} 分析失败: ${message.slice(0, 120)}`
-        );
-      }
-    }
-
-    if (skipped.length > 0) {
-      parseResult.metadata.parseWarnings.push(`${skipped.length} 张图片被跳过`);
     }
   }
 }

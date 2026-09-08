@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import { runResearchModelStage } from "./model-stage";
 
@@ -13,13 +13,25 @@ describe("real Research provider stage", () => {
       data: {
         userId,
         title: "Research Provider E2E",
-        model: process.env.RESEARCH_MODEL_RESEARCH_EVALUATOR ?? "deepseek-v4-pro",
+        model: process.env.RESEARCH_MODEL_RESEARCH_EVALUATOR ?? "deepseek-v4-flash-vision-exp",
         thinkingEnabled: false,
         kind: "research-system",
       },
       select: { id: true },
     });
     try {
+      vi.stubEnv("AGENT_RESPONSES_DEEPSEEK_ENABLED", "false");
+      const paused = await runResearchModelStage({
+        role: "research.evaluator",
+        userId,
+        conversationId: conversation.id,
+        projectId: null,
+        signal: AbortSignal.timeout(30_000),
+        prompt: "只返回 JSON：{\"status\":\"resolved\"}",
+      });
+      expect(paused).toMatchObject({ attempted: true, value: null });
+
+      vi.stubEnv("AGENT_RESPONSES_DEEPSEEK_ENABLED", "true");
       const result = await runResearchModelStage({
         role: "research.evaluator",
         userId,
@@ -36,7 +48,13 @@ describe("real Research provider stage", () => {
       expect(result.attempted).toBe(true);
       expect(result.value).toMatchObject({ status: "resolved" });
       expect(result.usage?.totalTokens).toBeGreaterThan(0);
+      console.log(JSON.stringify({
+        recovery: "provider_pause_to_completed",
+        model: result.model,
+        totalTokens: result.usage?.totalTokens ?? 0,
+      }));
     } finally {
+      vi.unstubAllEnvs();
       await prisma.conversation.delete({ where: { id: conversation.id } });
     }
   }, 120_000);

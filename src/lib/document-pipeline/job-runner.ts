@@ -7,8 +7,6 @@ export const PARSE_STAGES = [
   "read_file",
   "parse_layout",
   "store_assets",
-  "filter_images",
-  "vision_analysis",
   "render",
   "rewrite_refs",
   "chunk_index",

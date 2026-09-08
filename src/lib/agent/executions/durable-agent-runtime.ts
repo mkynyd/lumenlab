@@ -11,6 +11,12 @@ import type { AgentRuntimeEvent } from "@/lib/agent/runtime-events";
 import { runAgentRuntime } from "@/lib/agent/runtime";
 import type { AgentEvent, ToolCallPreview } from "@/lib/agent/types";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
+import type { DeepSeekMessage } from "@/lib/deepseek";
+import {
+  activeModelForStoredModel,
+  providerForChatModel,
+  type CatalogModelId,
+} from "@/lib/chat/model-catalog";
 import { prisma } from "@/lib/db";
 import { mergeAgentUsage } from "@/lib/agent/usage";
 import { logger } from "@/lib/logger";
@@ -20,6 +26,8 @@ import {
 } from "@/lib/tokens";
 import type {
   AgentCheckpoint,
+  AgentCheckpointItem,
+  AgentCheckpointV2,
   AgentExecutionRecord,
 } from "./agent-execution-store";
 import type {
@@ -41,17 +49,21 @@ const LIVE_SEGMENT_MIN_CHARS = 400;
 const LIVE_FLUSH_INTERVAL_MS = 300;
 
 function providerForModel(model: AgentRunInput["model"]["requestedModel"]) {
-  if (model === "minimax-m3") return "minimax";
-  if (model === "qwen3.7-plus") return "bailian";
-  return "deepseek";
+  return providerForChatModel(model) ?? "deepseek";
 }
 
 export function buildInitialAgentCheckpoint(
   input: AgentRunInput
 ): AgentCheckpoint {
   return {
-    version: 1,
-    messages: [{ role: "user", content: input.prompt.message }],
+    version: 2,
+    items: [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "text", text: input.prompt.message }],
+      },
+    ],
     round: 0,
     model: {
       provider: providerForModel(input.model.requestedModel),
@@ -85,6 +97,73 @@ export function buildInitialAgentCheckpoint(
         ? { materialScope: input.capabilities.materialScope }
         : {}),
     },
+  };
+}
+
+export function upgradeAgentCheckpoint(
+  checkpoint: AgentCheckpoint
+): AgentCheckpointV2 {
+  const storedModel = checkpoint.request?.model ?? checkpoint.model.name;
+  const activeModel = activeModelForStoredModel(storedModel as CatalogModelId);
+  let items: AgentCheckpointItem[] =
+    checkpoint.version === 2
+      ? checkpoint.items
+      : checkpoint.messages.map((message) => ({
+          type: "message" as const,
+          role:
+            message.role === "tool" ? ("user" as const) : message.role,
+          content: [{ type: "text" as const, text: message.content }],
+        }));
+  const pendingToolCall = checkpoint.pendingToolCall
+    ? checkpoint.version === 2
+      ? checkpoint.pendingToolCall
+      : {
+          callId: checkpoint.pendingToolCall.id,
+          toolExecutionId: checkpoint.pendingToolCall.id,
+          toolId: checkpoint.pendingToolCall.toolId,
+          arguments: checkpoint.pendingToolCall.arguments,
+        }
+    : undefined;
+  if (
+    pendingToolCall &&
+    !items.some(
+      (item) =>
+        item.type === "function_call" && item.callId === pendingToolCall.callId
+    )
+  ) {
+    items = [
+      ...items,
+      {
+        type: "function_call",
+        callId: pendingToolCall.callId,
+        name: pendingToolCall.toolId,
+        arguments: pendingToolCall.arguments,
+      },
+    ];
+  }
+  return {
+    version: 2,
+    items,
+    round: checkpoint.round,
+    model: {
+      provider: providerForModel(activeModel),
+      name: activeModel,
+    },
+    skill: checkpoint.skill,
+    rag: checkpoint.rag,
+    allowedToolIds: checkpoint.allowedToolIds,
+    ...(checkpoint.request
+      ? { request: { ...checkpoint.request, model: activeModel } }
+      : {}),
+    ...(checkpoint.researchState
+      ? { researchState: checkpoint.researchState }
+      : {}),
+    ...(checkpoint.usage ? { usage: checkpoint.usage } : {}),
+    ...(checkpoint.output ? { output: checkpoint.output } : {}),
+    ...(checkpoint.version === 2 && checkpoint.partialOutput
+      ? { partialOutput: checkpoint.partialOutput }
+      : {}),
+    ...(pendingToolCall ? { pendingToolCall } : {}),
   };
 }
 
@@ -310,13 +389,14 @@ async function appendCompletionMarkers(
 }
 
 function checkpointWithOutput(input: {
-  checkpoint: AgentCheckpoint;
+  checkpoint: AgentCheckpointV2;
   text: string;
   reasoning: string;
   usage: AgentUsage | null;
 }): AgentCheckpoint {
   const base = { ...input.checkpoint };
   delete base.pendingToolCall;
+  delete base.partialOutput;
   delete base.output;
   delete base.usage;
   return {
@@ -331,22 +411,52 @@ function checkpointWithOutput(input: {
 }
 
 function waitingCheckpoint(input: {
-  checkpoint: AgentCheckpoint;
-  toolExecutionId: string;
-  toolId: string;
+  checkpoint: AgentCheckpointV2;
+  tool: DurableToolSnapshot;
   usage: AgentUsage | null;
-}): AgentCheckpoint {
+  text: string;
+  reasoning: string;
+}): AgentCheckpointV2 {
   const base = { ...input.checkpoint };
   const usage = mergeAgentUsage(input.checkpoint.usage, input.usage);
   delete base.output;
+  const callItem: AgentCheckpointItem = {
+    type: "function_call",
+    callId: input.tool.callId,
+    name: input.tool.toolId,
+    arguments: input.tool.arguments,
+  };
+  const assistantText = sanitizeModelText(input.text);
+  const itemsBeforeCall = assistantText
+    ? [
+        ...base.items,
+        {
+          type: "message" as const,
+          role: "assistant" as const,
+          content: [{ type: "text" as const, text: assistantText }],
+        },
+      ]
+    : base.items;
+  const items = itemsBeforeCall.some(
+    (item) => item.type === "function_call" && item.callId === input.tool.callId
+  )
+    ? itemsBeforeCall
+    : [...itemsBeforeCall, callItem];
   return {
     ...base,
+    items,
     round: input.checkpoint.round + 1,
     ...(usage ? { usage } : {}),
+    partialOutput: {
+      text: assistantText,
+      reasoning: sanitizeModelText(input.reasoning),
+      usage,
+    },
     pendingToolCall: {
-      id: input.toolExecutionId,
-      toolId: input.toolId,
-      arguments: { toolExecutionId: input.toolExecutionId },
+      callId: input.tool.callId,
+      toolExecutionId: input.tool.toolExecutionId,
+      toolId: input.tool.toolId,
+      arguments: input.tool.arguments,
     },
   };
 }
@@ -403,6 +513,8 @@ async function persistCompletedUsage(
       ),
       outputTokens: usage.completionTokens,
       totalTokens: usage.totalTokens,
+      // 峰谷计费档按执行创建（请求开始）时间冻结，不按结算时刻重算
+      requestStartedAt: execution.createdAt,
     });
   } catch (error) {
     if (!isUniqueConstraintError(error)) throw error;
@@ -431,6 +543,37 @@ export type ApprovedToolOutcome = {
   errorSummary: unknown;
 };
 
+export type DurableToolSnapshot = {
+  callId: string;
+  toolExecutionId: string;
+  toolId: string;
+  arguments: Record<string, unknown>;
+};
+
+async function loadDurableToolSnapshot(
+  executionId: string
+): Promise<DurableToolSnapshot | null> {
+  const row = await prisma.toolExecution.findUnique({
+    where: { id: executionId },
+    select: {
+      id: true,
+      providerToolCallId: true,
+      toolId: true,
+      normalizedArguments: true,
+    },
+  });
+  if (!row) return null;
+  return {
+    callId: row.providerToolCallId ?? row.id,
+    toolExecutionId: row.id,
+    toolId: row.toolId,
+    arguments:
+      row.normalizedArguments && typeof row.normalizedArguments === "object" && !Array.isArray(row.normalizedArguments)
+        ? (row.normalizedArguments as Record<string, unknown>)
+        : {},
+  };
+}
+
 async function loadApprovedToolOutcome(
   executionId: string
 ): Promise<ApprovedToolOutcome | null> {
@@ -454,10 +597,10 @@ async function loadApprovedToolOutcome(
  * 审批通过后恢复执行时,把"工具已执行/失败"的结果作为延续消息注入模型:
  * 否则 durable 恢复会从原始 prompt 从零重跑,模型看不到审批前的推理与结果。
  */
-function buildApprovalContinuation(
-  pending: { id: string; toolId: string },
+function buildApprovalOutput(
+  pending: { toolExecutionId: string; callId: string; toolId: string },
   outcome: ApprovedToolOutcome | null
-): string {
+): AgentCheckpointItem {
   const statusText =
     outcome?.status === "succeeded"
       ? "已成功执行"
@@ -481,29 +624,99 @@ function buildApprovalContinuation(
       ? "（无结果摘要）"
       : JSON.stringify(payload).slice(0, 6000);
 
-  return [
-    "【继续执行】上一次回答在等待工具批准时暂停，现已在用户确认后恢复。",
-    "已批准的工具 " + pending.toolId + "（执行编号 " + pending.id + "）" + statusText + "，结果如下：",
+  const output = [
+    "工具 " + pending.toolId + "（执行编号 " + pending.toolExecutionId + "）" + statusText + "，结果如下：",
     payloadText,
     "请直接基于以上结果继续完成用户的问题：不要重复调用已经成功的工具，不要再请求审批，也不要复述“我将调用工具”。",
   ].join("\n");
+  const status = outcome?.status;
+  const normalizedStatus =
+    status === "succeeded" || status === "failed" || status === "blocked" || status === "rejected"
+      ? status
+      : "unknown";
+  return {
+    type: "function_call_output",
+    callId: pending.callId,
+    toolExecutionId: pending.toolExecutionId,
+    status: normalizedStatus,
+    output,
+  };
+}
+
+function continuationFromItems(items: AgentCheckpointItem[]) {
+  const messages: DeepSeekMessage[] = [];
+  const calls = new Map<
+    string,
+    Extract<AgentCheckpointItem, { type: "function_call" }>
+  >();
+  const completedToolCalls: Array<{
+    toolId: string;
+    arguments: Record<string, unknown>;
+  }> = [];
+  for (const item of items) {
+    if (item.type === "message" && item.role === "assistant") {
+      const text = item.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("");
+      if (text) messages.push({ role: "assistant", content: text });
+    } else if (item.type === "function_call") {
+      calls.set(item.callId, item);
+      messages.push({
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: item.callId,
+            name: item.name,
+            input: item.arguments,
+          },
+        ],
+      });
+    } else if (item.type === "function_call_output") {
+      messages.push({
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: item.callId,
+            content: item.output,
+          },
+        ],
+      });
+      const call = calls.get(item.callId);
+      if (call) {
+        completedToolCalls.push({
+          toolId: call.name,
+          arguments: call.arguments,
+        });
+      }
+    }
+  }
+  return { messages, completedToolCalls };
 }
 
 export function createDurableAgentExecutionHandler(input: {
   run?: (runInput: AgentRunInput) => ReturnType<typeof runAgentRuntime>;
   recordUsage?: DurableUsageRecorder;
+  researchHandler?: AgentExecutionHandler;
   loadApprovedToolOutcome?: (
     executionId: string
   ) => Promise<ApprovedToolOutcome | null>;
+  loadToolSnapshot?: (
+    executionId: string
+  ) => Promise<DurableToolSnapshot | null>;
 } = {}): AgentExecutionHandler {
   const run = input.run ?? runAgentRuntime;
   const recordUsage = input.recordUsage ?? recordTokenUsage;
   const loadOutcome = input.loadApprovedToolOutcome ?? loadApprovedToolOutcome;
-  const researchHandler = createDurableResearchExecutionHandler();
+  const researchHandler =
+    input.researchHandler ?? createDurableResearchExecutionHandler();
+  const loadToolSnapshot = input.loadToolSnapshot ?? loadDurableToolSnapshot;
 
   return async (context) => {
-    const checkpoint = context.execution.checkpoint;
-    if (!checkpoint?.request) {
+    const storedCheckpoint = context.execution.checkpoint;
+    if (!storedCheckpoint?.request) {
       return {
         kind: "failed",
         code: "invalid_checkpoint",
@@ -511,25 +724,74 @@ export function createDurableAgentExecutionHandler(input: {
         retryable: false,
       };
     }
-    if (checkpoint.request.executionKind === "research") {
+    if (storedCheckpoint.request.executionKind === "research") {
       return researchHandler(context);
     }
-    if (checkpoint.output) {
+    if (storedCheckpoint.output) {
       await persistCompletedUsage(
         context.execution,
-        checkpoint.output.usage,
+        storedCheckpoint.output.usage,
         recordUsage
       );
-      await appendOutput(context, checkpoint);
-      return { kind: "completed", checkpoint };
+      await appendOutput(context, storedCheckpoint);
+      return { kind: "completed", checkpoint: storedCheckpoint };
     }
 
-    const runInput = runInputFromExecution(context.execution, context.signal);
+    let checkpoint = upgradeAgentCheckpoint(storedCheckpoint);
+    if (JSON.stringify(checkpoint) !== JSON.stringify(storedCheckpoint)) {
+      await context.saveCheckpoint(checkpoint);
+    }
+    const runInput = runInputFromExecution(
+      { ...context.execution, checkpoint },
+      context.signal
+    );
+    if (checkpoint.pendingToolCall && storedCheckpoint.version === 1) {
+      const snapshot = await loadToolSnapshot(
+        checkpoint.pendingToolCall.toolExecutionId
+      );
+      if (snapshot) {
+        checkpoint = {
+          ...checkpoint,
+          items: [
+            ...checkpoint.items.filter(
+              (item) =>
+                item.type !== "function_call" ||
+                item.callId !== checkpoint.pendingToolCall?.callId
+            ),
+            {
+              type: "function_call",
+              callId: snapshot.callId,
+              name: snapshot.toolId,
+              arguments: snapshot.arguments,
+            },
+          ],
+          pendingToolCall: snapshot,
+        };
+        await context.saveCheckpoint(checkpoint);
+      }
+    }
     const pending = checkpoint.pendingToolCall;
     if (pending) {
-      const outcome = await loadOutcome(pending.id);
-      runInput.prompt.message =
-        buildApprovalContinuation(pending, outcome) + "\n\n" + runInput.prompt.message;
+      const outcome = await loadOutcome(pending.toolExecutionId);
+      if (
+        !checkpoint.items.some(
+          (item) =>
+            item.type === "function_call_output" &&
+            item.toolExecutionId === pending.toolExecutionId
+        )
+      ) {
+        checkpoint = {
+          ...checkpoint,
+          items: [...checkpoint.items, buildApprovalOutput(pending, outcome)],
+        };
+        await context.saveCheckpoint(checkpoint);
+      }
+      const continuation = continuationFromItems(checkpoint.items);
+      runInput.durable = {
+        ...runInput.durable!,
+        continuationMessages: continuation.messages,
+        completedToolCalls: continuation.completedToolCalls,
+      };
     }
     let agentRun;
     try {
@@ -594,36 +856,52 @@ export function createDurableAgentExecutionHandler(input: {
       }
     };
 
-    for await (const event of agentRun.events) {
-      if (event.type === "text_delta") {
-        text += event.text;
-        liveBuffers.assistant_text.buffer += event.text;
-        await flushLiveSegment("assistant_text");
-      } else if (event.type === "reasoning_delta") {
-        reasoning += event.text;
-        liveBuffers.assistant_reasoning.buffer += event.text;
-        await flushLiveSegment("assistant_reasoning");
-      } else if (event.type === "usage") {
-        streamedUsage = event.usage;
-      } else if (isOperationalEvent(event)) {
-        operationalEvents.push(event);
-        try {
-          await appendOperationalEvent(context, event);
-        } catch (error) {
-          if (error instanceof LeaseLostDuringRun) {
-            throw error;
+    let completion: AgentCompletion;
+    try {
+      for await (const event of agentRun.events) {
+        if (event.type === "text_delta") {
+          text += event.text;
+          liveBuffers.assistant_text.buffer += event.text;
+          await flushLiveSegment("assistant_text");
+        } else if (event.type === "reasoning_delta") {
+          reasoning += event.text;
+          liveBuffers.assistant_reasoning.buffer += event.text;
+          await flushLiveSegment("assistant_reasoning");
+        } else if (event.type === "usage") {
+          streamedUsage = event.usage;
+        } else if (isOperationalEvent(event)) {
+          operationalEvents.push(event);
+          try {
+            await appendOperationalEvent(context, event);
+          } catch (error) {
+            if (error instanceof LeaseLostDuringRun) throw error;
+            logger.warn("durable operational event append failed", {
+              executionId: context.execution.id,
+              eventType: event.type,
+              error: String(error),
+            });
           }
-          logger.warn("durable operational event append failed", {
-            executionId: context.execution.id,
-            eventType: event.type,
-            error: String(error),
-          });
         }
       }
+      completion = await agentRun.completion;
+      await flushLiveSegment("assistant_text", true);
+      await flushLiveSegment("assistant_reasoning", true);
+    } catch (error) {
+      await flushLiveSegment("assistant_text", true);
+      await flushLiveSegment("assistant_reasoning", true);
+      const cumulativeUsage = mergeAgentUsage(checkpoint.usage, streamedUsage);
+      checkpoint = {
+        ...checkpoint,
+        ...(cumulativeUsage ? { usage: cumulativeUsage } : {}),
+        partialOutput: {
+          text: sanitizeModelText(text),
+          reasoning: sanitizeModelText(reasoning),
+          usage: cumulativeUsage,
+        },
+      };
+      await context.saveCheckpoint(checkpoint);
+      throw error;
     }
-    const completion = await agentRun.completion;
-    await flushLiveSegment("assistant_text", true);
-    await flushLiveSegment("assistant_reasoning", true);
 
     if (completion.status === "awaiting_approval") {
       const approval = [...operationalEvents]
@@ -640,18 +918,42 @@ export function createDurableAgentExecutionHandler(input: {
           retryable: false,
         };
       }
+      const tool = await loadToolSnapshot(approval.executionId);
+      if (!tool) {
+        return {
+          kind: "failed",
+          code: "approval_checkpoint_missing",
+          message: "Durable tool call identity is missing",
+          retryable: false,
+        };
+      }
       return {
         kind: "waiting_approval",
         toolExecutionId: approval.executionId,
         checkpoint: waitingCheckpoint({
           checkpoint,
-          toolExecutionId: approval.executionId,
-          toolId: approval.preview.toolId,
+          tool,
           usage: completion.usage ?? streamedUsage,
+          text,
+          reasoning,
         }),
       };
     }
     if (completion.status === "cancelled" || context.signal.aborted) {
+      const cumulativeUsage = mergeAgentUsage(
+        checkpoint.usage,
+        completion.usage ?? streamedUsage
+      );
+      checkpoint = {
+        ...checkpoint,
+        ...(cumulativeUsage ? { usage: cumulativeUsage } : {}),
+        partialOutput: {
+          text: sanitizeModelText(text),
+          reasoning: sanitizeModelText(reasoning),
+          usage: cumulativeUsage,
+        },
+      };
+      await context.saveCheckpoint(checkpoint);
       await writeTerminalPlaceholder(
         context.execution.assistantMessageId,
         "（本次回答已取消）"
@@ -672,7 +974,7 @@ export function createDurableAgentExecutionHandler(input: {
     });
     await context.saveCheckpoint(finalCheckpoint);
     await persistCompletedUsage(
-      context.execution,
+      { ...context.execution, checkpoint: finalCheckpoint },
       finalCheckpoint.output?.usage ?? null,
       recordUsage
     );

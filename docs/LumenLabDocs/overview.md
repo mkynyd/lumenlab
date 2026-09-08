@@ -70,7 +70,7 @@ LumenLab 是一个**项目化**的 AI 学习工作台。它把以下能力整合
 - MiniMax M3 负责图片 OCR、PDF 文档解析等多模态任务。
 - Qwen3.7-Plus 支持文本输出与图像、视频理解，当前账号具备百炼凭据时可选。
 - 流式输出，Markdown、公式、流程图、代码高亮实时渲染。
-- 通过 ProviderAdapter 统一厂商协议：DeepSeek 使用原生 Tool 与 XML/DSML fallback，MiniMax 使用原生 Tool，Qwen 使用 DashScope 原生多模态与 Function Calling；三条路径都进入同一 AgentLoop。
+- 通过 ProviderAdapter 统一厂商协议：DeepSeek、MiniMax、Qwen 均使用 Responses 原生 Function Calling，并在各自 Adapter 内完成名称与参数差异转换；三条路径都进入同一 AgentLoop。
 - `AGENT_PROVIDER_ADAPTER=pi` 可把 DeepSeek / MiniMax 切到隔离的 `@earendil-works/pi-ai` POC，Qwen 始终使用项目自有的 Bailian Adapter。
 
 ### 文档解析与转换

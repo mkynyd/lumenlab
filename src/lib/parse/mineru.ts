@@ -178,20 +178,9 @@ export async function pollMinerUTask(options: {
   throw new MinerUError("timeout", "MinerU 解析超时（超过10分钟），请重试");
 }
 
-// ============================================================
-// 图片过滤 — 过滤 MinerU 输出中的水印/小图标，避免误触发视觉模型锁定
-// ============================================================
-
-/** 图片文件小于此值（字节）视为水印/图标/装饰元素，不触发视觉模型需求 */
-const MIN_MEANINGFUL_IMAGE_BYTES = 10240; // 10 KB
-
-/** zip 中有效图片数量达到此阈值才标记 requiresVisionModel */
-const MEANINGFUL_IMAGE_COUNT_THRESHOLD = 3;
-
 interface MarkdownResult {
   content: string;
   assets: ParsedImageAsset[];
-  meaningfulImageCount: number;
 }
 
 /** 下载 MinerU 结果 zip，提取 markdown 内容 + 统计有效图片数 */
@@ -203,13 +192,7 @@ async function downloadAndExtractResult(zipUrl: string): Promise<MarkdownResult>
 
   const buffer = Buffer.from(await resp.arrayBuffer());
   try {
-    const parsed = extractMinerUResult(buffer);
-    return {
-      ...parsed,
-      meaningfulImageCount: parsed.assets.filter(
-        (asset) => asset.buffer.length >= MIN_MEANINGFUL_IMAGE_BYTES
-      ).length,
-    };
+    return extractMinerUResult(buffer);
   } catch (error) {
     throw new MinerUError(
       "invalid-result-zip",
@@ -233,8 +216,6 @@ export async function parseFileWithMinerU(options: {
     taskId: string;
     parsedAt: string;
     retainedImageCount?: number;
-    meaningfulImageCount?: number;
-    requiresVisionModel?: boolean;
   };
 }> {
   const modelVersion = options.modelVersion ?? "vlm";
@@ -265,12 +246,10 @@ export async function parseFileWithMinerU(options: {
     throw new MinerUError("missing-zip-url", "MinerU 未返回解析结果下载地址");
   }
 
-  const { content, assets, meaningfulImageCount } = await downloadAndExtractResult(
+  const { content, assets } = await downloadAndExtractResult(
     result.fullZipUrl
   );
   const retainedImageCount = assets.length;
-  const requiresVisionModel =
-    meaningfulImageCount >= MEANINGFUL_IMAGE_COUNT_THRESHOLD;
 
   return {
     content,
@@ -279,13 +258,7 @@ export async function parseFileWithMinerU(options: {
       parser: modelVersion === "vlm" ? "mineru-vlm" : "mineru-pipeline",
       taskId: submitted.taskId,
       parsedAt: new Date().toISOString(),
-      ...(retainedImageCount > 0
-        ? {
-            retainedImageCount,
-            meaningfulImageCount,
-            ...(requiresVisionModel ? { requiresVisionModel: true } : {}),
-          }
-        : {}),
+      ...(retainedImageCount > 0 ? { retainedImageCount } : {}),
     },
   };
 }

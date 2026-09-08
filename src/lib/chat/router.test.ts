@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { routeModel } from "@/lib/chat/router";
 
 describe("routeModel", () => {
-  it("locks to MiniMax when project context requires vision reasoning", () => {
-    expect(routeModel(null, [], { requiresVisionModel: true })).toEqual({
-      provider: "minimax",
-      shouldLock: true,
+  it("no longer force-locks a provider for vision-requiring attachments", () => {
+    // 任务 05：图片能力通用，无显式选择时不写锁，默认 DeepSeek Vision。
+    expect(routeModel(null, [{ name: "photo.png", mimeType: "image/png" }])).toEqual({
+      provider: "deepseek",
+      shouldLock: false,
     });
   });
 
@@ -16,17 +17,21 @@ describe("routeModel", () => {
     });
   });
 
-  it("keeps an explicitly selected Qwen model for multimodal attachments and follow-up turns", () => {
+  it("keeps every explicitly selected model for multimodal attachments", () => {
     const image = { name: "diagram.png", mimeType: "image/png" };
 
-    expect(routeModel(null, [image], { requestedModel: "qwen3.7-plus" })).toEqual({
+    expect(routeModel(null, [image], { requestedModel: "qwen3.8-flash" })).toEqual({
       provider: "bailian",
-      shouldLock: true,
+      shouldLock: false,
     });
     expect(
-      routeModel({ modelLock: "qwen" }, [], { requestedModel: "deepseek-v4-pro" })
+      routeModel(
+        { modelLock: "qwen" },
+        [image],
+        { requestedModel: "deepseek-v4-flash-vision-exp" }
+      )
     ).toEqual({
-      provider: "bailian",
+      provider: "deepseek",
       shouldLock: false,
     });
   });

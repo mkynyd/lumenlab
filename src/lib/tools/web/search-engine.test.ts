@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { parseBingRssResults, parseDuckDuckGoResults, runWebSearch, softenExactDates } from "./search-engine";
-import * as deepseek from "@/lib/deepseek";
 
 const mockRedisGet = vi.fn();
 const mockRedisSetex = vi.fn();
@@ -17,22 +16,6 @@ vi.mock("@/lib/redis", () => ({
     setex: mockRedisSetex,
   }),
 }));
-
-vi.mock("@/lib/deepseek", async (importOriginal) => {
-  const original = await importOriginal<typeof deepseek>();
-  return {
-    ...original,
-    completeChat: vi.fn(),
-  };
-});
-
-function makeTextBlock(text: string) {
-  return { type: "text", text };
-}
-
-function makeToolUseBlock(input: Record<string, unknown> = {}) {
-  return { type: "tool_use", id: "tu-1", name: "web_search", input };
-}
 
 describe("softenExactDates", () => {
   const now = new Date("2026-08-13T12:00:00Z");
@@ -57,7 +40,6 @@ describe("softenExactDates", () => {
 
 describe("runWebSearch", () => {
   beforeEach(() => {
-    vi.mocked(deepseek.completeChat).mockReset();
     mockRedisGet.mockReset();
     mockRedisSetex.mockReset();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
@@ -73,7 +55,6 @@ describe("runWebSearch", () => {
   it("returns empty result for empty query", async () => {
     const result = await runWebSearch("", "sk-test");
     expect(result).toEqual({ summary: "", sources: [], query: "" });
-    expect(deepseek.completeChat).not.toHaveBeenCalled();
   });
 
   it("returns cached result when available", async () => {
@@ -86,55 +67,10 @@ describe("runWebSearch", () => {
 
     const result = await runWebSearch("test", "sk-test");
     expect(result).toEqual(cached);
-    expect(deepseek.completeChat).not.toHaveBeenCalled();
   });
 
-  it("extracts summary and sources from forced tool_choice response", async () => {
+  it("returns verified HTTP search results without a nested model call", async () => {
     mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat).mockResolvedValue({
-      content: "According to [^1^], the answer is 42.",
-      usage: null,
-      rawContentBlocks: [
-        makeToolUseBlock({
-          sources: [
-            { url: "https://example.com/article", title: "Example Article" },
-          ],
-        }),
-        makeTextBlock("According to [^1^], the answer is 42."),
-      ],
-    });
-
-    const result = await runWebSearch("what is the answer", "sk-test");
-
-    expect(result.summary).toBe("According to [^1^], the answer is 42.");
-    expect(result.sources).toHaveLength(1);
-    expect(result.sources[0]).toEqual({
-      url: "https://example.com/article",
-      title: "Example Article",
-    });
-    expect(result.query).toBe("what is the answer");
-    expect(mockRedisSetex).toHaveBeenCalled();
-  });
-
-  it("falls back to regex URL extraction when tool_use has no sources", async () => {
-    mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat).mockResolvedValue({
-      content: "See https://example.com/foo and https://example.com/bar for details.",
-      usage: null,
-      rawContentBlocks: [makeToolUseBlock({ query: "test" })],
-    });
-
-    const result = await runWebSearch("test", "sk-test");
-
-    expect(result.sources).toHaveLength(2);
-    expect(result.sources.map((s) => s.url)).toContain("https://example.com/foo");
-    expect(result.sources.map((s) => s.url)).toContain("https://example.com/bar");
-  });
-
-  it("falls back to verified HTTP search when forced tool_choice throws", async () => {
-    mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat)
-      .mockRejectedValueOnce(new Error("tool_choice not supported"));
 
     const result = await runWebSearch("example", "sk-test");
 
@@ -142,12 +78,11 @@ describe("runWebSearch", () => {
     expect(result.sources).toEqual([
       { url: "https://example.com/article", title: "Example & Article" },
     ]);
-    expect(deepseek.completeChat).toHaveBeenCalledTimes(1);
+    expect(mockRedisSetex).toHaveBeenCalled();
   });
 
   it("returns an honest failure instead of a knowledge-only answer when no source exists", async () => {
     mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
     vi.mocked(fetch).mockResolvedValue({ ok: true, text: async () => "no results" } as Response);
 
     const result = await runWebSearch("test", "sk-test");
@@ -158,7 +93,6 @@ describe("runWebSearch", () => {
 
   it("drops irrelevant fallback results instead of feeding junk sources", async () => {
     mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
     // 中文查询下 DDG/Bing 抓回的垃圾站结果（与查询无任何词项重合）
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
@@ -184,7 +118,6 @@ describe("runWebSearch", () => {
 
   it("does not send hidden time context to the external search provider", async () => {
     mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
 
     const result = await runWebSearch(
       "# 当前时间上下文\nsecret internal instruction\n\n# 用户问题\n\nOpenAI 官网",
@@ -198,7 +131,6 @@ describe("runWebSearch", () => {
 
   it("removes interaction framing from the search query", async () => {
     mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
 
     const result = await runWebSearch(
       "最终回归：联网查找 OpenAI 官方网站首页并附上来源。",
@@ -217,40 +149,9 @@ describe("runWebSearch", () => {
     ]);
   });
 
-  it("calls completeChat without forcing tool_choice on DeepSeek", async () => {
-    mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat).mockResolvedValue({
-      content: "Answer.",
-      usage: null,
-      rawContentBlocks: [makeTextBlock("Answer.")],
-    });
-
-    await runWebSearch("query", "sk-test", 3);
-
-    const lastCall = vi.mocked(deepseek.completeChat).mock.calls[0];
-    // DeepSeek 内置 web_search 是 server tool，按 name 强制 tool_choice 会 400，
-    // 因此不传强制 tool_choice，靠系统提示驱动模型调用。
-    expect(lastCall[1].tool_choice).toBeUndefined();
-    expect(lastCall[1].tools).toEqual([
-      {
-        name: "web_search",
-        description: "联网搜索关键词并返回摘要与来源",
-        input_schema: {
-          type: "object",
-          properties: {
-            query: { type: "string", description: "搜索关键词" },
-          },
-          required: ["query"],
-        },
-      },
-    ]);
-    expect(lastCall[1].thinking).toEqual({ type: "disabled" });
-  });
-
   it("falls back to DuckDuckGo after Bing times out and aborts", async () => {
     vi.useFakeTimers();
     mockRedisGet.mockResolvedValue(null);
-    vi.mocked(deepseek.completeChat).mockRejectedValue(new Error("unsupported"));
 
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockReset();

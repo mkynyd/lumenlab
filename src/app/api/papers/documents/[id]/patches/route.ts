@@ -7,6 +7,8 @@ import { researchErrorResponse } from "@/lib/research/http";
 
 const patchSchema = z.object({ patch: documentPatchSchema }).strict();
 
+// Compatibility-only editing endpoint; scheduled for removal in task 11.
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "请先登录" }, { status: 401 });

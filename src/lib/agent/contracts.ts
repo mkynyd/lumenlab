@@ -1,15 +1,18 @@
 import type { ServerFileAttachment } from "@/lib/chat/router";
+import type { DeepSeekMessage } from "@/lib/deepseek";
+import type { CatalogModelId } from "@/lib/chat/model-catalog";
 import type { ProjectType } from "@/lib/quick-actions";
 import type { AgentSource } from "./sources";
 import type { AgentRuntimeEvent } from "./runtime-events";
 import type { AgentRuntimeMode } from "./runtime-mode";
 
 export type ProviderName = "deepseek" | "minimax" | "bailian";
-export type AgentModel =
-  | "deepseek-v4-pro"
-  | "deepseek-v4-flash"
-  | "minimax-m3"
-  | "qwen3.7-plus";
+/**
+ * 目录已知的全部模型 ID（活跃 + 历史别名）。
+ * 新请求在 sendMessageSchema 层已限定为活跃模型；历史别名保留给
+ * 存量 durable checkpoint 恢复与历史记录展示。
+ */
+export type AgentModel = CatalogModelId;
 export type MaterialScope = "project-corpus" | "none";
 
 export interface AgentRunInput {
@@ -42,6 +45,13 @@ export interface AgentRunInput {
     userMessageId: string;
     assistantMessageId: string;
     priorUsage?: AgentUsage;
+    /** Structured current-turn transcript restored from Checkpoint v2. */
+    continuationMessages?: DeepSeekMessage[];
+    /** Recovery-only guard for tool calls whose outcomes are already durable. */
+    completedToolCalls?: Array<{
+      toolId: string;
+      arguments: Record<string, unknown>;
+    }>;
   };
   signal: AbortSignal;
 }

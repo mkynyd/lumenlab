@@ -3,7 +3,7 @@ import { mapAgentRunInput, parseChatRequest } from "./request-mapper";
 
 const validBody = {
   message: "hello",
-  model: "deepseek-v4-pro",
+  model: "deepseek-v4-flash-vision-exp",
 };
 
 describe("parseChatRequest", () => {
@@ -102,6 +102,33 @@ describe("parseChatRequest", () => {
     await expect(parseChatRequest(request)).rejects.toThrow(
       "broken.pdf：不是有效的 PDF 文件（缺少 %PDF- 文件头）"
     );
+  });
+
+  it("accepts a valid image signature and rejects disguised image bytes", async () => {
+    const requestFor = (name: string, bytes: Buffer) => ({
+      headers: new Headers({ "content-type": "multipart/form-data; boundary=test" }),
+      formData: async () => ({
+        get: (key: string) => (key === "message" ? JSON.stringify(validBody) : null),
+        getAll: (key: string) =>
+          key === "attachments"
+            ? [{
+                name,
+                type: "image/png",
+                size: bytes.length,
+                arrayBuffer: async () =>
+                  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+              }]
+            : [],
+      }),
+    }) as unknown as Request;
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    await expect(parseChatRequest(requestFor("diagram.png", png))).resolves.toMatchObject({
+      attachments: [{ mimeType: "image/png" }],
+    });
+    await expect(
+      parseChatRequest(requestFor("disguised.png", Buffer.from("not an image")))
+    ).rejects.toThrow("disguised.png：图片文件头无效或格式不受支持");
   });
 
   it("rejects malformed input at the HTTP mapping boundary", async () => {

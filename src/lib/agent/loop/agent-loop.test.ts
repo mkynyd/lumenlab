@@ -189,7 +189,7 @@ describe("runAgentLoop", () => {
     );
   });
 
-  it("executes identical calls at most once within the same provider round", async () => {
+  it("executes distinct native call ids even when their names and arguments match", async () => {
     const initialRound = providerRound({
       rawContent: "",
       toolCalls: [
@@ -243,21 +243,16 @@ describe("runAgentLoop", () => {
       audit,
     });
 
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(2);
     expect(continueRound).toHaveBeenCalledWith(
       expect.objectContaining({
-        toolCalls: [expect.objectContaining({ id: "native-1" })],
+        toolCalls: [expect.objectContaining({ id: "native-1" }), expect.objectContaining({ id: "native-2" })],
       })
     );
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: "tool_blocked",
-        payload: expect.objectContaining({ reasonCode: "DUPLICATE_CALL" }),
-      })
-    );
+    expect(audit).not.toHaveBeenCalled();
   });
 
-  it("does not repeat an identical call after its first attempt fails", async () => {
+  it("does not replay the same native call id after its first attempt fails", async () => {
     const repeatedCall = {
       id: "native-1",
       name: "project_files.list",
@@ -278,7 +273,7 @@ describe("runAgentLoop", () => {
     const continueRound = vi.fn().mockResolvedValue(
       providerRound({
         rawContent: "retry",
-        toolCalls: [{ ...repeatedCall, id: "native-2" }],
+        toolCalls: [repeatedCall],
       })
     );
 

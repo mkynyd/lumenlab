@@ -7,6 +7,10 @@ import { documentPatchSchema } from "./document-patches";
 
 export const paperAssistantPatchSchema = documentPatchSchema;
 
+/**
+ * @deprecated Task 11 removes the user-facing editing workflow and its write
+ * APIs. Task 06 keeps this compatibility path buildable without extending it.
+ */
 export async function generatePaperDocumentPatch(input: { userId: string; documentId: string; instruction: string }) {
   const document = await prisma.paperDocument.findFirst({ where: { id: input.documentId, userId: input.userId }, include: { currentVersion: true, workspace: true } });
   if (!document || !document.currentVersion) throw new PaperServiceError("NOT_FOUND", "论文文档不存在或无权访问");

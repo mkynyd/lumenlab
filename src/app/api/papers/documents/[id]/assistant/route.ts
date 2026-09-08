@@ -6,6 +6,9 @@ import { researchErrorResponse } from "@/lib/research/http";
 
 const assistantSchema = z.object({ instruction: z.string().trim().min(3).max(4_000) }).strict();
 
+// Compatibility-only editing endpoint. Task 11 removes this write path when
+// Paper becomes an upload -> background typesetting -> download workflow.
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "请先登录" }, { status: 401 });

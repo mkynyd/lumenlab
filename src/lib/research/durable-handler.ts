@@ -213,7 +213,7 @@ async function synthesizeWithExistingRuntime(input: {
     signal: input.signal,
     prompt,
     parse: (content) => content.trim() || null,
-  }) : { value: null, usage: null, model: "deepseek-v4-pro" as const, attempted: false };
+  }) : { value: null, usage: null, model: "deepseek-v4-flash-vision-exp" as const, attempted: false };
   if (stage.value) return { content: stage.value, usage: stage.usage, model: stage.model, attempted: stage.attempted };
   return {
     content: evidenceText
@@ -259,7 +259,7 @@ async function repairReportWithExistingRuntime(input: {
     signal: input.signal,
     prompt,
     parse: (content) => content.trim() || null,
-  }) : { value: null, usage: null, model: "deepseek-v4-pro" as const, attempted: false };
+  }) : { value: null, usage: null, model: "deepseek-v4-flash-vision-exp" as const, attempted: false };
   return {
     content: stage.value ?? appendVerificationQualification({ draft: input.draft, unsupportedClaims: input.unsupportedClaims, conflictedClaims: input.conflictedClaims, qualifiedClaims: input.qualifiedClaims }),
     usage: stage.usage,

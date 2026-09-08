@@ -96,8 +96,7 @@ interface UseChatOptions {
 type ReasoningEffort = NonNullable<UseChatOptions["reasoningEffort"]>;
 
 const FALLBACK_CHAT_MODELS = [
-  "deepseek-v4-flash",
-  "deepseek-v4-pro",
+  "deepseek-v4-flash-vision-exp",
   "minimax-m3",
 ] as const;
 
@@ -193,7 +192,7 @@ export function useChat(options: UseChatOptions = {}) {
     tokens: number;
     ratio: number;
   } | null>(null);
-  const [model, setModel] = useState(options.model || "deepseek-v4-flash");
+  const [model, setModel] = useState(options.model || "deepseek-v4-flash-vision-exp");
   const [availableModels, setAvailableModels] = useState<readonly string[] | null>(null);
   const [thinkingEnabled, setThinkingEnabledState] = useState(true);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
@@ -230,7 +229,7 @@ export function useChat(options: UseChatOptions = {}) {
         setModel((current) =>
           nextModels.includes(current)
             ? current
-            : nextModels[0] ?? "deepseek-v4-flash"
+            : nextModels[0] ?? "deepseek-v4-flash-vision-exp"
         );
       })
       .catch((catalogError: unknown) => {

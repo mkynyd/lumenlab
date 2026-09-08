@@ -72,22 +72,20 @@
 
 ### DeepSeek
 
-- `DeepSeekAdapter` 把内部 `web.search` 映射为厂商原生 `web_search`，并把返回名称映射回内部 Tool ID。
-- 其他当前不支持原生调用的 Tool 由 Adapter 注入 XML/DSML 指令、解析 fallback 调用，并以文本工具结果构造 continuation；XML/DSML 标记不会泄漏到用户正文。
-- 原生 Tool 与 XML/DSML fallback 可在同一轮归一化、按 Tool 名称与参数去重，然后交给统一 `AgentLoop`。
+- `DeepSeekAdapter` 把内部 `web.search` 映射为 `web_search`，其余 Tool ID 使用可逆编码满足 Responses 名称限制；返回时全部还原为内部 Tool ID。
+- 所有活跃 Tool 都以原生 `function_call` / `function_call_output` items 续接并按 call_id 区分，不再注入或解析 XML/DSML。
 - `new` 模式还可在首轮模型回答前执行确定性工具前奏，如 `project_files.read`、`project_rag.search`、`web.fetch`；前奏和模型触发调用共用 `ToolRunner` 与去重记录。
 
 ### MiniMax
 
 - `MiniMaxAdapter` 将当前允许的 Tool 作为原生 Tool 注入，解析原生 `tool_use`，并用原生 `tool_result` transcript 续跑。
 - continuation 不重复携带首轮图片/PDF 等附件，历史中的 DeepSeek reasoning 也会在 Adapter 边界过滤。
-- XML/DSML fallback 是 DeepSeek 兼容策略，MiniMax 不解析这种文本标记。
+- MiniMax 同样使用 Responses 原生 function items，并在 Adapter 边界处理工具名编码。
 
-### Qwen3.7-Plus
+### Qwen3.8-Flash
 
-- `BailianQwenAdapter` 使用 DashScope 原生多模态与 Function Calling 协议，文本增量、reasoning、usage 和 Tool call 都规范化为 Runtime 内部事件。
-- 图片使用 data URL；视频只接受上传到受控对象存储后的短期 URL，请求结束或取消后会清理临时对象。
-- Qwen 支持文本输出与图像、视频理解，不提供图片或视频生成。
+- `BailianQwenAdapter` 使用百炼 compatible-mode Responses，文本增量、reasoning、usage 和 Tool call 都规范化为 Runtime 内部事件。
+- 图片使用 data URL；当前 Responses 端点不接受视频或音频，既有视频兼容由任务 04 恢复。
 - Qwen 不受 `AGENT_PROVIDER_ADAPTER=pi` 影响，始终使用项目自有 Bailian Adapter。
 
 ### 可选 Pi Adapter

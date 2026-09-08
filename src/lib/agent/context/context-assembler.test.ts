@@ -30,7 +30,7 @@ describe("PrismaContextAssembler", () => {
     mocks.fileFindMany.mockResolvedValue([]);
   });
 
-  it("deduplicates selected files and derives vision requirements", async () => {
+  it("deduplicates selected files", async () => {
     mocks.fileFindMany.mockResolvedValue([
       {
         id: "file-1",
@@ -48,7 +48,6 @@ describe("PrismaContextAssembler", () => {
     });
 
     expect(result.selectedFileIds).toEqual(["file-1"]);
-    expect(result.requiresVisionModel).toBe(true);
     expect(mocks.fileFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

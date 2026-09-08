@@ -8,9 +8,10 @@ import type {
 import {
   buildInitialAgentCheckpoint,
   createDurableAgentExecutionHandler,
+  upgradeAgentCheckpoint,
 } from "./durable-agent-runtime";
 
-function checkpoint(): AgentCheckpoint {
+function checkpoint(): Extract<AgentCheckpoint, { version: 1 }> {
   return {
     version: 1,
     messages: [{ role: "user", content: "Explain Kirchhoff's law" }],
@@ -31,7 +32,9 @@ function checkpoint(): AgentCheckpoint {
   };
 }
 
-function execution(currentCheckpoint = checkpoint()): AgentExecutionRecord {
+function execution(
+  currentCheckpoint: AgentCheckpoint = checkpoint()
+): AgentExecutionRecord {
   const now = new Date("2026-07-31T00:00:00.000Z");
   return {
     id: "run-1",
@@ -55,6 +58,13 @@ function execution(currentCheckpoint = checkpoint()): AgentExecutionRecord {
     updatedAt: now,
   };
 }
+
+const loadToolSnapshot = vi.fn(async () => ({
+  callId: "provider-call-1",
+  toolExecutionId: "tool-execution-1",
+  toolId: "artifact.save",
+  arguments: { title: "笔记" },
+}));
 
 function run(
   events: AgentRun["events"],
@@ -132,7 +142,7 @@ describe("durable Agent runtime bridge", () => {
         },
       })
     );
-    expect(saved[0].output?.text).toBe("Kirchhoff law");
+    expect(saved[saved.length - 1].output?.text).toBe("Kirchhoff law");
     expect(appended).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -143,6 +153,48 @@ describe("durable Agent runtime bridge", () => {
       ])
     );
     expect(result).toMatchObject({ kind: "completed" });
+  });
+
+  it("dispatches old Research checkpoints without routing them through chat recovery", async () => {
+    const researchCheckpoint: Extract<AgentCheckpoint, { version: 1 }> = {
+      ...checkpoint(),
+      request: {
+        ...checkpoint().request!,
+        executionKind: "research",
+        researchRunId: "research-run-1",
+      },
+      researchState: {
+        stage: "researching",
+        modelCalls: 0,
+        searchCalls: 0,
+        fetchCalls: 0,
+        sourceCount: 0,
+        replanCount: 0,
+        verificationRepairs: 0,
+      },
+    };
+    const researchHandler = vi.fn(async (context) => ({
+      kind: "rescheduled" as const,
+      checkpoint: context.execution.checkpoint!,
+      scheduledAt: new Date("2026-09-08T00:00:00.000Z"),
+    }));
+    const runMock = vi.fn();
+    const context = {
+      execution: execution(researchCheckpoint),
+      signal: new AbortController().signal,
+      saveCheckpoint: vi.fn(),
+      appendEvent: vi.fn(),
+    };
+
+    const result = await createDurableAgentExecutionHandler({
+      run: runMock,
+      recordUsage: vi.fn(),
+      researchHandler,
+    })(context);
+
+    expect(researchHandler).toHaveBeenCalledWith(context);
+    expect(runMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ kind: "rescheduled" });
   });
 
   it("flushes large text output as multiple live segments during the run", async () => {
@@ -161,6 +213,7 @@ describe("durable Agent runtime bridge", () => {
     const result = await createDurableAgentExecutionHandler({
       run: runMock,
       recordUsage: vi.fn(),
+      loadToolSnapshot,
     })({
       execution: execution(),
       signal: new AbortController().signal,
@@ -203,6 +256,7 @@ describe("durable Agent runtime bridge", () => {
     const result = await createDurableAgentExecutionHandler({
       run: runMock,
       recordUsage: vi.fn(),
+      loadToolSnapshot,
     })({
       execution: execution(current),
       signal: new AbortController().signal,
@@ -253,6 +307,7 @@ describe("durable Agent runtime bridge", () => {
     const result = await createDurableAgentExecutionHandler({
       run: runMock,
       recordUsage: vi.fn(),
+      loadToolSnapshot,
     })({
       execution: execution(),
       signal: new AbortController().signal,
@@ -266,10 +321,20 @@ describe("durable Agent runtime bridge", () => {
       kind: "waiting_approval",
       toolExecutionId: "tool-execution-1",
       checkpoint: {
+        version: 2,
         pendingToolCall: {
-          id: "tool-execution-1",
+          callId: "provider-call-1",
+          toolExecutionId: "tool-execution-1",
           toolId: "artifact.save",
         },
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            type: "function_call",
+            callId: "provider-call-1",
+            name: "artifact.save",
+            arguments: { title: "笔记" },
+          }),
+        ]),
       },
     });
     const serialized = JSON.stringify(appended);
@@ -304,6 +369,7 @@ describe("durable Agent runtime bridge", () => {
     const waiting = await createDurableAgentExecutionHandler({
       run: waitingRun,
       recordUsage: vi.fn(),
+      loadToolSnapshot,
     })({
       execution: execution(),
       signal: new AbortController().signal,
@@ -352,7 +418,7 @@ describe("durable Agent runtime bridge", () => {
     });
 
     expect(completed).toMatchObject({ kind: "completed" });
-    expect(saved[0].output?.usage).toEqual({
+    expect(saved[saved.length - 1].output?.usage).toEqual({
       promptTokens: 30,
       completionTokens: 12,
       totalTokens: 42,
@@ -362,6 +428,7 @@ describe("durable Agent runtime bridge", () => {
     expect(recordUsage).toHaveBeenCalledWith(
       expect.objectContaining({
         messageId: "message-assistant",
+        model: "deepseek-v4-flash-vision-exp",
         inputCacheMissTokens: 30,
         outputTokens: 12,
         totalTokens: 42,
@@ -420,11 +487,77 @@ describe("durable Agent runtime bridge", () => {
     });
 
     expect(initial).toMatchObject({
+      version: 2,
       model: { provider: "minimax", name: "minimax-m3" },
       rag: { selectedFileIds: ["file-1"] },
       request: { message: "Start" },
+      items: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "text", text: "Start" }],
+        },
+      ],
     });
     expect(JSON.stringify(initial)).not.toContain("attachments");
+  });
+
+  it("upgrades a v1 checkpoint and its legacy model before a new round", () => {
+    const researchState = {
+      stage: "researching" as const,
+      modelCalls: 1,
+      searchCalls: 2,
+      fetchCalls: 1,
+      sourceCount: 1,
+      replanCount: 0,
+      verificationRepairs: 0,
+    };
+    const upgraded = upgradeAgentCheckpoint({ ...checkpoint(), researchState });
+    expect(upgraded).toMatchObject({
+      version: 2,
+      model: {
+        provider: "deepseek",
+        name: "deepseek-v4-flash-vision-exp",
+      },
+      request: { model: "deepseek-v4-flash-vision-exp" },
+      items: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "text", text: "Explain Kirchhoff's law" }],
+        },
+      ],
+    });
+    expect(upgraded.researchState).toEqual(researchState);
+  });
+
+  it("maps new active models to providers through the catalog", () => {
+    const cases = [
+      ["deepseek-v4-flash-vision-exp", "deepseek"],
+      ["minimax-m3", "minimax"],
+      ["qwen3.8-flash", "bailian"],
+    ] as const;
+    for (const [requestedModel, provider] of cases) {
+      const initial = buildInitialAgentCheckpoint({
+        user: { id: "user-1" },
+        conversation: {},
+        prompt: { message: "Start", attachments: [] },
+        model: {
+          requestedModel,
+          thinkingEnabled: true,
+          reasoningEffort: "high",
+        },
+        capabilities: {
+          webSearchActive: false,
+          skillOff: false,
+          selectedFileIds: [],
+          isQuickTask: false,
+        },
+        signal: new AbortController().signal,
+      });
+      expect(initial.model).toEqual({ provider, name: requestedModel });
+      expect(initial.request?.model).toBe(requestedModel);
+    }
   });
   it("injects the approved tool result when resuming after approval", async () => {
     const resumed = {
@@ -455,6 +588,7 @@ describe("durable Agent runtime bridge", () => {
       run: runMock,
       recordUsage: vi.fn(),
       loadApprovedToolOutcome: loadOutcome,
+      loadToolSnapshot,
     })({
       execution: execution(resumed),
       signal: new AbortController().signal,
@@ -464,9 +598,16 @@ describe("durable Agent runtime bridge", () => {
 
     expect(result.kind).toBe("completed");
     expect(loadOutcome).toHaveBeenCalledWith("tool-execution-1");
-    expect(captured.value?.prompt.message).toContain("已批准的工具 artifact.save");
-    expect(captured.value?.prompt.message).toContain("artifact-1");
-    expect(captured.value?.prompt.message).toContain("Explain Kirchhoff's law");
+    expect(captured.value?.prompt.message).toBe("Explain Kirchhoff's law");
+    expect(JSON.stringify(captured.value?.durable?.continuationMessages)).toContain(
+      "artifact-1"
+    );
+    expect(JSON.stringify(captured.value?.durable?.continuationMessages)).toContain(
+      "provider-call-1"
+    );
+    expect(captured.value?.durable?.completedToolCalls).toEqual([
+      { toolId: "artifact.save", arguments: { title: "笔记" } },
+    ]);
   });
   it("writes a terminal placeholder when a durable run is cancelled", async () => {
     const result = await createDurableAgentExecutionHandler({
@@ -487,5 +628,49 @@ describe("durable Agent runtime bridge", () => {
     });
 
     expect(result.kind).toBe("cancelled");
+  });
+
+  it("checkpoints partial content and observed usage when a stream is interrupted", async () => {
+    const saved: AgentCheckpoint[] = [];
+    const handler = createDurableAgentExecutionHandler({
+      run: vi.fn(async () =>
+        run(
+          (async function* () {
+            yield { type: "text_delta" as const, text: "partial answer" };
+            yield {
+              type: "usage" as const,
+              usage: {
+                promptTokens: 8,
+                completionTokens: 2,
+                totalTokens: 10,
+              },
+            };
+            throw new Error("stream interrupted");
+          })(),
+          "completed"
+        )
+      ),
+      recordUsage: vi.fn(),
+    });
+
+    await expect(
+      handler({
+        execution: execution(),
+        signal: new AbortController().signal,
+        saveCheckpoint: async (value) => {
+          saved.push(value);
+        },
+        appendEvent: vi.fn(),
+      })
+    ).rejects.toThrow("stream interrupted");
+    expect(saved[saved.length - 1]).toMatchObject({
+      version: 2,
+      usage: { promptTokens: 8, completionTokens: 2, totalTokens: 10 },
+      partialOutput: {
+        text: "partial answer",
+        reasoning: "",
+        usage: { promptTokens: 8, completionTokens: 2, totalTokens: 10 },
+      },
+    });
   });
 });

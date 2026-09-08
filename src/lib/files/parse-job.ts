@@ -365,6 +365,37 @@ async function runDocumentPipelineForFile(
   },
   userId: string
 ): Promise<PipelineResult> {
+  // 任务 05：图片不走文档解析（独立图片 OCR 已删除）。遗留队列中的图片
+  // 任务在此短路为就绪，避免进入 pipeline 后被当作不支持类型报错。
+  if (file.mimeType?.startsWith("image/")) {
+    await prisma.fileAsset.update({
+      where: { id: file.id },
+      data: {
+        status: "parsed",
+        processingMetadata: {
+          parsingStage: "complete",
+          parsingStageLabel: "图片已就绪",
+          mediaReady: true,
+          parser: "direct-image",
+        },
+      },
+    });
+    return {
+      content: "",
+      status: "parsed",
+      metadata: {
+        parser: "direct-image",
+        pipelineVersion: "direct-image",
+        sourceKind: "image",
+        assetCount: 0,
+        parseStartedAt: new Date().toISOString(),
+        parseCompletedAt: new Date().toISOString(),
+        parseWarnings: [],
+      },
+      blocks: [],
+      assets: [],
+    };
+  }
   const data = await readStoredObject({
     provider: file.storageProvider as StorageProvider,
     key: file.storagePath,

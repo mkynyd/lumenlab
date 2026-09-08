@@ -10,6 +10,7 @@ import { ModelSelector } from "@/components/chat/model-selector";
 import { SkillSelector, type SkillSelectorValue } from "@/components/chat/skill-selector";
 import { useMeasuredTextareaHeight } from "@/lib/hooks/use-measured-textarea-height";
 import { modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
+import { MODEL_CATALOG_ENTRIES } from "@/lib/chat/model-catalog";
 import {
   Dialog,
   DialogClose,
@@ -46,12 +47,12 @@ interface ChatInputProps {
   onSkillChange?: (value: SkillSelectorValue) => void;
 }
 
-const MOBILE_MODEL_OPTIONS = [
-  { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
-  { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-  { value: "minimax-m3", label: "MiniMax M3" },
-  { value: "qwen3.7-plus", label: "Qwen3.7-Plus" },
-] as const;
+// 选项来自模型目录；availableModels 缺省时只暴露活跃模型，历史别名仅作标签
+const MOBILE_MODEL_OPTIONS = MODEL_CATALOG_ENTRIES.map((entry) => ({
+  value: entry.id,
+  label: entry.displayName,
+  enabled: entry.enabled,
+}));
 
 const MOBILE_EFFORT_OPTIONS = [
   { value: "high", label: "快速" },
@@ -136,7 +137,10 @@ export function ChatInput({
   }
 
   const mobileModels = MOBILE_MODEL_OPTIONS.filter((option) =>
-    (availableModels ?? MOBILE_MODEL_OPTIONS.map((item) => item.value)).includes(option.value)
+    (
+      availableModels ??
+      MOBILE_MODEL_OPTIONS.filter((item) => item.enabled).map((item) => item.value)
+    ).includes(option.value)
   );
 
   return (

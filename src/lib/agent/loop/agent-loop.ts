@@ -60,19 +60,16 @@ export interface AgentLoopResult {
 }
 
 export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResult> {
-  if (input.activeTools.length === 0) {
-    return completed(input.initialRound, null);
-  }
-
   const allowedToolNames = new Set(input.activeTools.map((tool) => tool.toolId));
-  const executedKeys = new Set(
+  const preludeKeys = new Set(
     (input.preAttemptedCalls ?? []).map(
       (call) => `${call.toolId}:${stableStringify(call.arguments)}`
     )
   );
+  const executedKeys = new Set<string>();
   const maxRounds = input.maxRounds ?? 8;
   let roundResult = input.initialRound;
-  let messages = input.messages;
+  let messages = input.initialRound.requestMessages;
   let previousRoundProducedNewContent = true;
   const failedExecutionIds = new Set<string>();
   let loopUsage: AdapterUsage | null = null;
@@ -106,7 +103,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         continue;
       }
       const key = toolCallKey(call);
-      if (scheduledKeys.has(key)) {
+      if (scheduledKeys.has(key) || preludeKeys.has(`${call.name}:${stableStringify(call.input)}`)) {
         await blockLoopCall(input, call, "DUPLICATE_CALL", `Tool ${call.name} 重复调用已被阻断`);
         continue;
       }
@@ -240,19 +237,6 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     pendingExecutionIds: [],
     stopReason: "round_limit",
     usage: loopUsage,
-  };
-}
-
-function completed(
-  finalRound: ProviderRound,
-  usage: AdapterUsage | null
-): AgentLoopResult {
-  return {
-    status: "completed",
-    finalRound,
-    pendingExecutionIds: [],
-    stopReason: null,
-    usage,
   };
 }
 
@@ -406,7 +390,7 @@ function isAbortError(error: unknown) {
 }
 
 function toolCallKey(call: NormalizedToolCall) {
-  return `${call.name}:${stableStringify(call.input)}`;
+  return call.source === "native" ? `native:${call.id}` : `fallback:${call.name}:${stableStringify(call.input)}`;
 }
 
 const MAX_TOOL_RESULT_CHARS = 16_000;

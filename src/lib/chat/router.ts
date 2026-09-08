@@ -1,3 +1,5 @@
+import { providerForChatModel } from "./model-catalog";
+
 export interface FileAttachment {
   id: string;
   name: string;
@@ -82,30 +84,28 @@ export function hasMultimodalContent(
   return attachments.some((attachment) => !isTextAttachment(attachment));
 }
 
+/**
+ * 任务 05：全部活跃模型都能看图，附件不再触发强制模型路由或模型锁。
+ * 优先级：显式选择 > 旧会话 modelLock（只读兼容，不再新写）> 默认 DeepSeek。
+ */
 export function routeModel(
   conversation: { modelLock: string | null } | null,
   attachments: Array<Pick<FileAttachment | ServerFileAttachment, "name" | "mimeType">>,
-  options: { requiresVisionModel?: boolean; requestedModel?: string } = {}
+  options: { requestedModel?: string } = {}
 ): {
   provider: "deepseek" | "minimax" | "bailian";
   shouldLock: boolean;
 } {
+  if (options.requestedModel) {
+    const requestedProvider = providerForChatModel(options.requestedModel);
+    if (requestedProvider) {
+      return { provider: requestedProvider, shouldLock: false };
+    }
+  }
   if (conversation?.modelLock === "qwen") {
     return { provider: "bailian", shouldLock: false };
   }
   if (conversation?.modelLock === "minimax") {
-    return { provider: "minimax", shouldLock: false };
-  }
-  if (options.requestedModel === "qwen3.7-plus") {
-    return { provider: "bailian", shouldLock: hasMultimodalContent(attachments) };
-  }
-  if (options.requiresVisionModel) {
-    return { provider: "minimax", shouldLock: true };
-  }
-  if (hasMultimodalContent(attachments)) {
-    return { provider: "minimax", shouldLock: true };
-  }
-  if (options.requestedModel === "minimax-m3") {
     return { provider: "minimax", shouldLock: false };
   }
   return { provider: "deepseek", shouldLock: false };

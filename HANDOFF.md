@@ -1,5 +1,15 @@
 # Research / Paper 测试版交接
 
+## 2026-09-08 · 任务 06 Responses/Checkpoint 分支适配完成
+
+- 在 `feature/research-paper` 合入固定 main `25befed5bd4068dd1fb9570a7d317ac4f0a8795d`（合并前 feature `038e00ce9d751fe7acb39898ad9304f8f1020d49`）。四个冲突均语义整合：`.env.example`、本地保留但 Git 删除的 `docs/TODO.md`、Checkpoint store、durable runtime；未用整文件 ours/theirs。
+- Checkpoint v1/v2 都保留 Research 状态，v2 新写入不含供应商私有载荷；chat v1→v2 恢复、Research `executionKind` 派发、`requeue`/`resumeOwned`、取消和 Follow-up 均保留。结构化 Research 阶段只解析持久化最终 Message，reasoning 不进入 JSON，非 completed 关闭为 unavailable。
+- Research 五角色默认改为活跃 `deepseek-v4-flash-vision-exp`；角色环境覆盖接受活跃 ID 或升级已知历史 ID，未知值明确报错。Paper DOCX 分类复用 evaluator 角色选择；旧 Paper Assistant/patch API 只标记为任务 11 待退场，本轮不新增编辑能力。
+- Research 阶段不把 `projectId` 交给通用 Chat 媒体装配，避免任务 05 的文件名匹配自动注入未选择项目图片；Research 自身明确提供的资料、公开事件、Evidence/Claim、预算与报告引用保持不变。
+- 真实验证：provider 暂停→恢复在同一用例中完成（恢复调用 `totalTokens=3988`）；完整 Quick Research 经过计划确认、研究、评估、合成、验证并冻结报告，`modelCalls=7`、`totalTokens=46849`、Evidence/Source 各 11、content hash `74c0467ec06eb4be9578d4f21b50640f431aba5450a735b06a115fe42dc0a8f9`。Paper DOCX 模糊 drawing 分类返回 `completed / figure`。所有临时 Research 数据已清理。
+- 最终门禁：307 个测试文件 / 1680 项、TypeScript、ESLint、Prisma schema、37 个迁移状态、production build（77 页面）、diff check 全绿；Paper 模板/预览/编译定向 6 文件 27 项通过。构建仅保留既有 compile-worker NFT tracing warning。
+- 任务 06 不部署。14 条 A/B 模板来源和 Linux `texlive-full` 隔离全量验证仍是既有边界；进入任务 11 前需按方案再次同步届时最新 main。下一步为完成 merge commit、推送并等待 CI，然后回到 main 实施任务 07。
+
 ## 2026-09-06 · GPT-6 / Codex
 
 - 工作分支：`feature/research-paper`，起点 `58b5b40772ca3c3f21d4dbcac10e2acf4eadddb2`。远端已核对一致；不合并 main，不部署。
@@ -7,7 +17,7 @@
 - Research 的目的：从计划确认、检索、证据/主张整理到不可变报告，复用既有 AgentExecution。Paper 的目的：结构化文档是正文来源，学校模板负责 LaTeX 排版，支持手动写作、PDF 预览和可选 AI 修改建议。两者通过显式资料转移连接。
 - 本轮模块：模板入口前置、标题/章节/正文卡片折叠与大纲定位、连续编辑和自动保存修复。保持既有文档格式与编译 API。
 - 已确认问题：编辑操作在 draftDocument 为 null 时不生效；自动保存清空草稿但不更新工作区缓存，造成旧内容回显。修复后验证首次输入、保存后继续输入及刷新持久化。
-- 后续独立事项：Research 真实模型端到端验证；继续提高学校模板实际编译覆盖率。旧对话中的模板数量是历史快照，不作为当前验证结果。
+- 后续独立事项：继续提高学校模板实际编译覆盖率。Research 真实模型端到端已由 2026-09-08 任务 06 补齐；旧对话中的模板数量是历史快照，不作为当前验证结果。
 - 已完成：学校模板选择前置，应用模板后请求更新 PDF；标题/摘要/正文等卡片可折叠，章节按层级包含下属卡片，支持全部折叠、大纲局部展开定位、章节添加、正文添加和既有整节移动。移动章节保留末尾参考文献。
 - 已修复：首次编辑和保存后继续编辑；保存结果同步到工作区查询缓存；串行保存避免后发请求被先发覆盖，旧响应不清除更新的草稿；元数据标题同步文档标题；自动保存后更新版本历史。
 - 已通过：目标 ESLint、TypeScript；文档操作/schema/LaTeX renderer 共 3 文件 26 测试；本机 XeLaTeX 输出中文 PDF（1 页）。浏览器 4 次保存、5 次编译请求，首次编辑/请求期间输入/保存后编辑/刷新回读/折叠/大纲局部展开/新增章节正文/单一标题/模板绑定/PDF.js 均通过，console error 为 0，移动端无横向溢出；结果见 `/tmp/lumenlab-paper-beta/result.json`。

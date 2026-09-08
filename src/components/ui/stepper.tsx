@@ -34,6 +34,7 @@ interface StepperProps {
   allowForwardJump?: boolean;
   /** await 期间 Next 按钮文案（如「发送中…」），缺省沿用原按钮文案 */
   pendingLabel?: string;
+  backLabel?: string;
   skipLabel?: string;
   nextLabel?: string;
   completeLabel?: string;
@@ -51,6 +52,7 @@ export function Stepper({
   isCompleting = false,
   allowForwardJump = true,
   pendingLabel,
+  backLabel = "Back",
   skipLabel = "Skip",
   nextLabel = "Next",
   completeLabel = "Finish",
@@ -198,8 +200,15 @@ export function Stepper({
                     className={cn(
                       "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-[background-color,color,box-shadow] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
                       isComplete && "bg-[var(--color-accent)] text-[var(--color-accent-contrast)]",
-                      isCurrent && "bg-[var(--color-accent)] text-[var(--color-accent-contrast)] ring-2 ring-[var(--color-accent-muted)]",
-                      !isComplete && !isCurrent && "border border-[var(--color-text-tertiary)] text-[var(--color-text-tertiary)]"
+                      isCurrent &&
+                        (variant === "dots"
+                          ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
+                          : "bg-[var(--color-accent)] text-[var(--color-accent-contrast)] ring-2 ring-[var(--color-accent-muted)]"),
+                      !isComplete &&
+                        !isCurrent &&
+                        (variant === "dots"
+                          ? "bg-[var(--color-panel-muted)] text-[var(--color-text-tertiary)]"
+                          : "border border-[var(--color-text-tertiary)] text-[var(--color-text-tertiary)]")
                     )}
                   >
                     {isComplete ? <Check size={12} strokeWidth={2.5} /> : index + 1}
@@ -260,23 +269,29 @@ export function Stepper({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className={cn("flex items-center gap-2", variant === "dots" && "flex-1")}>
           {!isFirst && (
             <button
               type="button"
               onClick={handlePrev}
               disabled={busy}
-              className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] px-3 text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-interaction-hover)] transition-colors duration-150 disabled:opacity-50"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-[var(--radius-md)] px-3 text-sm font-medium text-[var(--color-text-secondary)] transition-colors duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-50",
+                variant === "dots" ? "h-11" : "h-8"
+              )}
             >
               <ChevronLeft size={16} strokeWidth={1.5} />
-              Back
+              {backLabel}
             </button>
           )}
           <button
             type="button"
             onClick={handleNext}
             disabled={busy || (steps[currentStep]?.isValid === false)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] px-4 text-sm font-medium bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:bg-[var(--color-accent-hover)] active:translate-y-px transition-[background-color,transform] duration-150 disabled:opacity-50"
+            className={cn(
+              "inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 text-sm font-medium text-[var(--color-accent-contrast)] transition-[background-color,transform] duration-150 hover:bg-[var(--color-accent-hover)] active:translate-y-px disabled:opacity-50",
+              variant === "dots" ? "h-11 flex-1" : "h-8"
+            )}
           >
             {isPending ? (
               <>

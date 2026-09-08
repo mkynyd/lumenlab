@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Check, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { PasswordStrength } from "@/components/auth/password-strength";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Stepper, type Step } from "@/components/ui/stepper";
@@ -250,6 +251,7 @@ function RegisterFlow() {
               autoComplete="email"
               required
               placeholder="you@example.com"
+              className="h-11 px-3"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               aria-invalid={errorField === "email" || undefined}
@@ -285,7 +287,7 @@ function RegisterFlow() {
               maxLength={6}
               required
               placeholder="6 位数字验证码"
-              className="font-mono tracking-widest"
+              className="h-11 px-3 font-mono tracking-widest"
               value={code}
               onChange={(event) =>
                 setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
@@ -330,15 +332,19 @@ function RegisterFlow() {
               required
               minLength={8}
               placeholder="至少 8 个字符"
-              className="font-mono"
+              className="h-11 px-3 pr-11 font-mono"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               aria-invalid={errorField === "password" || undefined}
               aria-describedby={
                 error
-                  ? `${errorId} register-password-help`
-                  : "register-password-help"
+                  ? `${errorId} register-password-strength register-password-help`
+                  : "register-password-strength register-password-help"
               }
+            />
+            <PasswordStrength
+              id="register-password-strength"
+              password={password}
             />
             <p
               id="register-password-help"
@@ -361,7 +367,7 @@ function RegisterFlow() {
               required
               minLength={8}
               placeholder="再次输入密码"
-              className="font-mono"
+              className="h-11 px-3 pr-11 font-mono"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               aria-invalid={errorField === "confirm" || undefined}
@@ -433,8 +439,8 @@ function RegisterFlow() {
 
   return (
     <AuthShell
-      title="LumenLab"
-      subtitle="创建新账户"
+      title="创建你的账户"
+      subtitle="完成邮箱验证，建立属于你的 LumenLab 学习工作台。"
       footer={
         <>
           已有账户？{" "}
@@ -461,6 +467,7 @@ function RegisterFlow() {
         pendingLabel={
           step === 0 ? "发送中…" : step === 1 ? "验证中…" : "创建中…"
         }
+        backLabel="上一步"
       />
     </AuthShell>
   );

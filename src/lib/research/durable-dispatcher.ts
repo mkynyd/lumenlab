@@ -7,8 +7,14 @@ import { selectResearchModel, type ResearchModelSelection } from "./model-routin
 
 function researchCheckpoint(input: { runId: string; question: string; selection: ResearchModelSelection; stage: "planning" | "researching" }): AgentCheckpoint {
   return parseAgentCheckpoint({
-    version: 1,
-    messages: [{ role: "user", content: input.question }],
+    version: 2,
+    items: [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "text", text: input.question }],
+      },
+    ],
     round: 0,
     model: { provider: input.selection.provider, name: input.selection.model },
     skill: { id: null, version: null },

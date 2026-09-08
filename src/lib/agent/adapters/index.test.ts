@@ -1,29 +1,32 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProviderAdapter,
   resolveProviderAdapterLayer,
 } from "./index";
 import { DeepSeekAdapter } from "./deepseek-adapter";
-import { PiAiAdapter } from "./pi-ai-adapter";
 import { BailianQwenAdapter } from "./bailian-qwen-adapter";
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("createProviderAdapter", () => {
-  it("keeps the legacy adapter as the default layer", () => {
+  it.each(["deepseek", "minimax", "bailian"] as const)("can pause %s without falling back to an unverified protocol", (provider) => {
+    vi.stubEnv(`AGENT_RESPONSES_${provider.toUpperCase()}_ENABLED`, "false");
+    expect(() => createProviderAdapter(provider, "test", "responses")).toThrow(/暂停服务/);
+  });
+  it("keeps legacy as an alias for the project Responses adapter", () => {
     expect(createProviderAdapter("deepseek", "sk-test", "legacy")).toBeInstanceOf(
       DeepSeekAdapter
     );
   });
 
-  it("selects the isolated pi POC only when explicitly requested", () => {
-    expect(createProviderAdapter("minimax", "sk-test", "pi")).toBeInstanceOf(
-      PiAiAdapter
-    );
+  it("prevents the old Pi POC from bypassing the active Responses model configuration", () => {
+    expect(() => createProviderAdapter("minimax", "sk-test", "pi")).toThrow(/旧 Pi 协议/);
     expect(resolveProviderAdapterLayer("pi")).toBe("pi");
     expect(resolveProviderAdapterLayer("pi-ai")).toBe("pi");
-    expect(resolveProviderAdapterLayer("anything-else")).toBe("legacy");
+    expect(resolveProviderAdapterLayer("anything-else")).toBe("responses");
   });
 
-  it("always selects the DashScope-native adapter for Qwen", () => {
+  it("always selects the Responses adapter for Qwen", () => {
     const previous = process.env.BAILIAN_WORKSPACE_ID;
     process.env.BAILIAN_WORKSPACE_ID = "workspace-for-test";
     try {

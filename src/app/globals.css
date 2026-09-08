@@ -5,6 +5,10 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Markdown 文档（设计规范等）里的示例类名不是真实样式，整体排除出
+   Tailwind 扫描，避免生成 var(--color-*) 这类非法规则。 */
+@source not "../../**/*.md";
+
 @custom-variant dark (&:is(.dark *));
 
 /* ---- Local fonts: Noto Sans SC (Chinese subset) ---- */
@@ -988,6 +992,23 @@ pre code {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+/* Authentication product stage: an inset cool-neutral surface with the shared
+   interactive dot field, tuned to stay quiet behind long-form product copy. */
+.auth-showcase-surface {
+  background:
+    radial-gradient(
+      ellipse at 18% 18%,
+      color-mix(in oklch, var(--color-accent) 13%, transparent),
+      transparent 44%
+    ),
+    radial-gradient(
+      ellipse at 82% 74%,
+      color-mix(in oklch, var(--color-accent) 8%, transparent),
+      transparent 40%
+    ),
+    var(--color-surface);
 }
 
 .workbench-glass {

@@ -37,8 +37,9 @@ export class PrismaToolExecutionAdapter implements ToolExecutionPersistence {
       const existing = await prisma.toolExecution.findFirst({
         where: {
           agentExecutionId: input.agentExecutionId,
-          toolId: input.tool.toolId,
-          argumentsHash,
+          ...(input.providerToolCallId
+            ? { providerToolCallId: input.providerToolCallId }
+            : { toolId: input.tool.toolId, argumentsHash }),
         },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
@@ -86,15 +87,9 @@ export class PrismaToolExecutionAdapter implements ToolExecutionPersistence {
         const existing = await prisma.toolExecution.findFirst({
           where: {
             agentExecutionId: input.agentExecutionId,
-            OR: [
-              ...(input.providerToolCallId
-                ? [{ providerToolCallId: input.providerToolCallId }]
-                : []),
-              {
-                toolId: input.tool.toolId,
-                argumentsHash,
-              },
-            ],
+            ...(input.providerToolCallId
+              ? { providerToolCallId: input.providerToolCallId }
+              : { toolId: input.tool.toolId, argumentsHash }),
           },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           select: {

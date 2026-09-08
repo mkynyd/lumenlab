@@ -1,9 +1,12 @@
+import { ResponsesHttpError } from "@/lib/agent/providers/responses/transport";
+import { ResponsesConfigurationError, ResponsesModelError } from "@/lib/agent/providers/responses/adapter-stream";
+import { ResponsesSerializationError } from "@/lib/agent/providers/responses/serialize";
 import { randomUUID } from "node:crypto";
 import {
   DeepSeekError,
   DeepSeekMessage,
 } from "@/lib/deepseek";
-import { MiniMaxChatError } from "@/lib/chat/minimax-chat";
+import { MiniMaxChatError } from "@/lib/chat/minimax-error";
 import { createProviderAdapter } from "@/lib/agent/adapters";
 import { PiAiProviderError } from "@/lib/agent/adapters/pi-ai-adapter";
 import { BailianQwenError } from "@/lib/agent/adapters/bailian-qwen-adapter";
@@ -13,6 +16,12 @@ import {
   routeModel,
   type ServerFileAttachment,
 } from "@/lib/chat/router";
+import { providerForChatModel } from "@/lib/chat/model-catalog";
+import { resolveProjectMediaContext } from "@/lib/agent/context/media-context";
+import {
+  DocumentExtractionError,
+  resolveChatDocumentAttachments,
+} from "@/lib/files/document-extract";
 import { assembleSystemPrompt } from "@/lib/classification";
 import { ensureDiscovery } from "@/lib/skills/registry";
 import {
@@ -160,24 +169,6 @@ async function textAttachmentContext(attachments: ServerFileAttachment[]) {
   return sections.join("\n\n");
 }
 
-function summarizeHistoryForMiniMax(
-  history: Array<{ role: string; content: string }>
-) {
-  const lines = history
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .slice(-12)
-    .map((message) => {
-      const role = message.role === "user" ? "用户" : "助手";
-      return `${role}: ${message.content.replace(/\s+/g, " ").trim()}`;
-    })
-    .filter((line) => line.length > 4);
-
-  const summary = lines.join("\n").slice(-12000);
-  return summary
-    ? `【此前对话压缩上下文】\n${summary}\n\n请在后续回答中继承这些事实与约束。`
-    : "";
-}
-
 function buildAllowedTools(input: {
   projectId?: string | null;
   webSearchActive: boolean;
@@ -251,9 +242,7 @@ function adapterFallbackEvent(
 function providerForRequestedModel(
   model: AgentRunInput["model"]["requestedModel"]
 ): "deepseek" | "minimax" | "bailian" {
-  if (model === "minimax-m3") return "minimax";
-  if (model === "qwen3.7-plus") return "bailian";
-  return "deepseek";
+  return providerForChatModel(model) ?? "deepseek";
 }
 
 export class AgentRuntimeError extends Error {
@@ -337,7 +326,24 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       };
     },
   };
-  const attachmentText = await textAttachmentContext(attachments);
+  // 任务 03.7：PDF/DOCX 附件在进入路由与适配器前完成本地文本提取/扫描页
+  // 渲染；文本型文档内联进提示词，扫描件替换为页面图片交给最终多模态模型。
+  let effectiveAttachments = attachments;
+  let documentSections: string[] = [];
+  try {
+    const resolved = await resolveChatDocumentAttachments(attachments);
+    effectiveAttachments = resolved.attachments;
+    documentSections = resolved.textSections;
+  } catch (error) {
+    if (error instanceof DocumentExtractionError) {
+      throw new AgentRuntimeError(400, error.message);
+    }
+    throw error;
+  }
+  const attachmentText = [
+    await textAttachmentContext(effectiveAttachments),
+    ...documentSections,
+  ].filter(Boolean).join("\n\n");
   let effectivePrompt = [
     hiddenPrompt || message,
     attachmentText,
@@ -361,7 +367,6 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     project,
     selectedFiles,
     selectedFileIds: uniqueFileIds,
-    requiresVisionModel,
   } = resourceContext;
 
   // 确保 Skill discovery 已完成；catalog / instructions / activate_skill enum 都依赖 skillRegistry。
@@ -419,6 +424,35 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     });
   }
 
+  // 任务 05.3—05.5：项目图片按引用直接进入本次请求——选中必达，未选时
+  // 按文件名/描述匹配少量候选，整库快捷任务显式覆盖说明；不调用任何
+  // 独立图像解析。图片 Buffer 只在请求内存在，持久化归 08。
+  if (project) {
+    try {
+      const projectMedia = await resolveProjectMediaContext({
+        userId,
+        projectId: project.id,
+        selectedFiles,
+        prompt: message,
+        includeProjectImages: shouldUseProjectContext(
+          effectivePrompt,
+          uniqueFileIds,
+          isQuickTask
+        ),
+        wholeCorpus:
+          projectMaterialQuickTask && materialScope === "project-corpus",
+      });
+      if (projectMedia.attachments.length > 0) {
+        effectiveAttachments = [...effectiveAttachments, ...projectMedia.attachments];
+      }
+      if (projectMedia.coverageNote) {
+        effectivePrompt = `${effectivePrompt}\n\n【项目图片覆盖说明】${projectMedia.coverageNote}`;
+      }
+    } catch (error) {
+      logger.warn("project media context failed", { error: String(error) });
+    }
+  }
+
   if (project && !agentOrchestratorEnabled && !projectMaterialQuickTask) {
 
     if (shouldUseProjectContext(effectivePrompt, uniqueFileIds, isQuickTask)) {
@@ -452,7 +486,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
 
   const preflightRoute = !conversationId
-    ? routeModel(null, attachments, { requiresVisionModel, requestedModel: model })
+    ? routeModel(null, effectiveAttachments, { requestedModel: model })
     : null;
   let preflightApiKey: string | null = null;
   if (preflightRoute) {
@@ -569,8 +603,8 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     systemPrompt = `${systemPrompt}\n\n【工具恢复】若工具结果包含 recoveryOfExecutionId，且你决定自动恢复该失败操作，请在下一次工具调用附带同名 recoveryOfExecutionId 字段。该字段只用于关联失败与恢复，不会传给工具处理器。`;
   }
 
-  const modelRoute = routeModel(conversation, attachments, {
-    requiresVisionModel,
+  // 任务 05：附件不再触发强制路由；modelLock 只读兼容旧会话，新会话不写锁。
+  const modelRoute = routeModel(conversation, effectiveAttachments, {
     requestedModel: model,
   });
   runMetrics.setRoute({ model, provider: modelRoute.provider });
@@ -617,8 +651,6 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     });
   }
 
-  const shouldCompressDeepSeekHistory =
-    modelRoute.provider === "minimax" && conversation.modelLock !== "minimax";
   if (modelRoute.shouldLock) {
     conversation = await conversationPersistence.lockModel({
       conversationId: conversation.id,
@@ -852,7 +884,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   const preludeAttemptedCalls: Array<{
     toolId: string;
     arguments: Record<string, unknown>;
-  }> = [];
+  }> = [...(input.durable?.completedToolCalls ?? [])];
   const preludePendingExecutionIds: string[] = [];
   let orchestratorSources: AgentSource[] = [
     ...quickTaskMaterialSources,
@@ -869,13 +901,18 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
   if (projectRetrievalAttempted) explainRetrieval(legacySources.length);
   if (agentOrchestratorEnabled && !projectMaterialQuickTask) {
-    const plannedCalls = buildPlannedToolCalls({
-      prompt: effectivePrompt,
-      profile: skillRoute.profile,
-      projectId: project?.id,
-      selectedFileIds: uniqueFileIds,
-      webAccessRecommended: webSearchActive,
-    });
+    // A resumed v2 turn already contains the approved tool call and its durable
+    // output. Re-running the deterministic prelude here could repeat a side
+    // effect before the provider even sees that output.
+    const plannedCalls = input.durable?.continuationMessages?.length
+      ? []
+      : buildPlannedToolCalls({
+          prompt: effectivePrompt,
+          profile: skillRoute.profile,
+          projectId: project?.id,
+          selectedFileIds: uniqueFileIds,
+          webAccessRecommended: webSearchActive,
+        });
 
     if (plannedCalls.length > 0) {
       const toolRun = await executePlannedToolCalls({
@@ -969,20 +1006,39 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       ? `${userPromptWithTools}\n\n[系统提示：${contextNotice}]`
       : userPromptWithTools;
 
+  const currentTurnMessages: DeepSeekMessage[] = input.durable
+    ?.continuationMessages?.length
+    ? [
+        { role: "user", content: contextualUserMessage },
+        ...input.durable.continuationMessages,
+      ]
+    : [{ role: "user", content: contextualUserMessage }];
   const legacyMessages: DeepSeekMessage[] = [
     { role: "system", content: systemPrompt },
     ...history.map((m) => ({ role: m.role, content: m.content })),
-    { role: "user", content: contextualUserMessage },
+    ...currentTurnMessages,
   ];
   const experimentalBaseMessages: DeepSeekMessage[] = [
     { role: "system", content: systemPrompt },
     ...history.map((m) => ({ role: m.role, content: m.content })),
-    {
-      role: "user",
-      content: contextNotice
-        ? `${userPromptWithTools}\n\n[系统提示：${contextNotice}]`
-        : userPromptWithTools,
-    },
+    ...(input.durable?.continuationMessages?.length
+      ? [
+          {
+            role: "user",
+            content: contextNotice
+              ? `${userPromptWithTools}\n\n[系统提示：${contextNotice}]`
+              : userPromptWithTools,
+          } as DeepSeekMessage,
+          ...input.durable.continuationMessages,
+        ]
+      : [
+          {
+            role: "user",
+            content: contextNotice
+              ? `${userPromptWithTools}\n\n[系统提示：${contextNotice}]`
+              : userPromptWithTools,
+          } as DeepSeekMessage,
+        ]),
   ];
   type StringMessage = { role: string; content: string };
   const stringMessages =
@@ -1081,16 +1137,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     }
   }
 
-  const minimaxHistorySummary = shouldCompressDeepSeekHistory
-    ? summarizeHistoryForMiniMax(history)
-    : "";
-  const routedMessages = minimaxHistorySummary
-    ? [
-        { role: "system", content: systemPrompt } as DeepSeekMessage,
-        { role: "user", content: minimaxHistorySummary } as DeepSeekMessage,
-        { role: "user", content: contextualUserMessage } as DeepSeekMessage,
-      ]
-    : messages;
+  const routedMessages = messages;
 
   // 11. 调用模型
   let streamResult: ProviderRound;
@@ -1117,7 +1164,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         thinkingEnabled,
         reasoningEffort,
         activeTools,
-        attachments,
+        attachments: effectiveAttachments,
         signal: input.signal,
       });
     }
@@ -1255,7 +1302,9 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           Boolean(input.durable),
           !input.durable,
           input.durable?.priorUsage ?? null,
-          loopResult.usage ?? null
+          loopResult.usage ?? null,
+          // 峰谷计费档按请求开始时间冻结
+          new Date(runStartedAt)
         )
           .then(async (result) => {
             runMetrics.recordUsage(result.usage);
@@ -1340,6 +1389,15 @@ export class DefaultAgentRuntime implements AgentRuntime {
 export const agentRuntime: AgentRuntime = new DefaultAgentRuntime();
 
 function mapProviderError(error: unknown): AgentRuntimeError | null {
+  if (error instanceof ResponsesConfigurationError) {
+    return new AgentRuntimeError(error.status, error.message);
+  }
+  if (error instanceof ResponsesHttpError) {
+    return new AgentRuntimeError(error.status >= 400 && error.status < 500 ? error.status : 502, error.message, { responsesStatus: error.status });
+  }
+  if (error instanceof ResponsesModelError || error instanceof ResponsesSerializationError) {
+    return new AgentRuntimeError(400, error.message);
+  }
   if (error instanceof PiAiProviderError) {
     const status =
       error.status >= 400 && error.status < 500 ? error.status : 502;
@@ -1444,6 +1502,8 @@ export async function accumulateAndSave(
       prompt_cache_hit_tokens?: number;
       prompt_cache_miss_tokens?: number;
     } | null;
+    /** 请求开始时间；DeepSeek 峰谷计费档按它冻结 */
+    requestStartedAt?: Date | null;
   } = {}
 ): Promise<AgentCompletion> {
   return accumulateAndSaveEvents(
@@ -1460,7 +1520,8 @@ export async function accumulateAndSave(
     options.preserveEmptyMessage ?? false,
     options.persistTokenUsage ?? true,
     options.priorUsage ?? null,
-    options.loopUsage ?? null
+    options.loopUsage ?? null,
+    options.requestStartedAt ?? null
   );
 }
 
@@ -1490,7 +1551,8 @@ async function accumulateAndSaveEvents(
     total_tokens: number;
     prompt_cache_hit_tokens?: number;
     prompt_cache_miss_tokens?: number;
-  } | null = null
+  } | null = null,
+  requestStartedAt: Date | null = null
 ): Promise<AgentCompletion> {
   const reader = stream.getReader();
   let fullContent = "";
@@ -1558,6 +1620,8 @@ async function accumulateAndSaveEvents(
         inputCacheMissTokens: completionUsage.promptCacheMissTokens ?? 0,
         outputTokens: completionUsage.completionTokens,
         totalTokens: completionUsage.totalTokens,
+        // 峰谷计费档按请求开始时间冻结；缺省时按低谷计价（见 credits.ts）
+        ...(requestStartedAt ? { requestStartedAt } : {}),
       }).catch((err) => {
         logger.error("Token 用量记录失败", { error: String(err) });
       });

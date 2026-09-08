@@ -6,6 +6,8 @@ import { researchErrorResponse } from "@/lib/research/http";
 
 const decisionSchema = z.object({ decision: z.enum(["accept", "reject"]) }).strict();
 
+// Compatibility-only patch decision endpoint; scheduled for removal in task 11.
+
 export async function POST(request: Request, context: { params: Promise<{ id: string; patchId: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "请先登录" }, { status: 401 });

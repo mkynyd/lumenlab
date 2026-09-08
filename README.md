@@ -63,7 +63,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### 受控 Agent 模式
 
-入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek 使用 native `web.search` 并在其他工具上保留 adapter 内部 XML/DSML fallback，MiniMax 使用 native `tool_use`，Qwen 使用 DashScope 原生 Function Calling；三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
+入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek、MiniMax 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
 
 服务端 Policy Engine 拦截所有 `tool_use`，按 L0–L4 风险等级决定执行、预批准或逐次确认。
 
@@ -127,10 +127,10 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 ### 多模型流式对话
 
-- 支持 DeepSeek V4 Pro / DeepSeek V4 Flash，深度推理模式可选。
-- MiniMax M3 负责多模态对话、图片 OCR 与 PDF 原生文档解析。
-- Qwen3.7-Plus 默认关闭，开启后可选；支持文本输出与图像/视频理解，由 DashScope 原生 `BailianQwenAdapter` 承接。
-- Provider 协议层默认为项目自有 legacy adapter；`AGENT_PROVIDER_ADAPTER=pi` 可切换为 `@earendil-works/pi-ai` 隔离适配（仅 DeepSeek / MiniMax）。
+- 聊天活跃模型为 DeepSeek V4 Flash Vision、MiniMax M3 和 Qwen3.8-Flash，支持文本与图片输入；Qwen 由独立开关控制可见性。
+- 三个聊天适配器使用 Responses，平台管理历史、工具审批和调用结果；原生图片在当前工具回合间保留。
+- 迁移仍在进行：PDF/Word 聊天输入替代、Qwen 视频兼容、持久恢复与内部非流式调用尚未完成，当前版本不可发布。既有独立文档解析链路保留。
+- `AGENT_PROVIDER_ADAPTER=responses` 为默认配置，`legacy` 为兼容别名；旧 Pi POC 不用于当前活跃模型。各供应商可独立暂停，暂停后请求返回 503。
 - SSE 流式输出，Markdown / KaTeX / Mermaid / 代码高亮实时渲染。
 - 集中式 API Key 管理：用户不需要自行申请 Key，由管理员通过注册码体系统一配置。
 
@@ -155,6 +155,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 ### 注册码与集中认证
 
+- 登录与注册采用响应式双栏界面：桌面端在表单旁提供可手动切换的产品能力介绍，移动端聚焦认证流程；注册密码步骤会实时展示强度等级与逐项安全建议。
 - 用户注册需要提供邮箱、邮箱验证和密码；注册码在注册后于设置「服务访问」页绑定，用于切换密钥组。
 - 注册码由独立管理端 course-ai-regadmin 生成和发布。
 - API Key 集中加密存储，用户无法查看明文。
@@ -223,7 +224,7 @@ src/
 │       ├── health/                     # 健康检查
 │       └── metrics/cache/              # 缓存指标
 ├── lib/
-│   ├── deepseek.ts                     # DeepSeek API 客户端 (Anthropic SDK 流式)
+│   ├── deepseek.ts                     # DeepSeek Responses 非流式兼容封装
 │   ├── agent/                          # Agent 模式核心
 │   │   ├── contracts.ts                # AgentRuntime / AgentRun 输入输出合同
 │   │   ├── runtime.ts                  # 唯一 Runtime 编排入口
@@ -433,8 +434,9 @@ cp .env.example .env
 | `AGENT_RUNTIME_MODE` | `legacy` / `shadow` / `new`，默认 `legacy` |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 持久 Agent Worker 与事件恢复开关，默认 `false` |
 | `LEARNING_LOOP_ROLLOUT` | `off` / `preview` / `default`，默认 `off`；`default` 要求持久执行开启 |
-| `AGENT_PROVIDER_ADAPTER` | `legacy` / `pi`，默认 `legacy`；`pi` 仅用于 DeepSeek / MiniMax POC |
-| `MODEL_QWEN_ENABLED` | Qwen3.7-Plus 灰度开关，默认 `false` |
+| `AGENT_PROVIDER_ADAPTER` | 默认 `responses`；兼容 `legacy` 别名，拒绝旧 `pi` / `pi-ai` 配置 |
+| `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_MINIMAX_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
+| `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 灰度开关，默认 `false` |
 | `BAILIAN_WORKSPACE_ID` | 启用 Qwen 聊天时必填 |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛云 Kodo 密钥（生产必填） |
 | `QINIU_BUCKET` | Kodo 空间名 |
@@ -452,7 +454,7 @@ npx prisma migrate deploy
 npm run dev
 ```
 
-打开 `http://localhost:3000`。中央模式使用有效注册码注册；自托管开发模式可先运行 `USER_API_KEYS_ENABLED=1 npm run seed:dev-access` 创建本地账号与凭据。
+打开 `http://localhost:3000`。中央模式使用邮箱 + 验证码注册；自托管开发模式可先运行 `USER_API_KEYS_ENABLED=1 npm run seed:dev-access` 创建本地账号与凭据。
 
 ## 使用指南
 
