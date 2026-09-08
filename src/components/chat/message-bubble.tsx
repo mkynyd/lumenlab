@@ -5,8 +5,6 @@ import { TaskList } from "iconoir-react";
 import {
   Archive,
   BookOpen,
-  ChevronDown,
-  ChevronRight,
   ExternalLink,
   FileText,
   GraduationCap,
@@ -17,11 +15,6 @@ import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
 import type { OrbState } from "thinking-orbs";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { Spinner } from "@/components/ui/spinner";
@@ -194,7 +187,6 @@ function MessageBubbleComponent({
   onSaveArtifact,
   onSkillFollowUp,
 }: MessageBubbleProps) {
-  const [showReasoning, setShowReasoning] = useState(false);
   const [showSave, setShowSave] = useState(false);
   const [title, setTitle] = useState(() => suggestArtifactTitle(content));
   const [type, setType] = useState("general");
@@ -202,11 +194,19 @@ function MessageBubbleComponent({
   const isUser = role === "user";
   const isAssistant = role === "assistant";
   const hasReasoning = Boolean(reasoningContent?.trim());
-  const shouldShowReasoning = isAssistant && (hasReasoning || isStreaming);
+  const processRunning = isStreaming || process?.status === "running";
+  const hasProcessDetails = Boolean(process?.plan || process?.tools.length);
+  // 单一过程区：有推理、有工具/计划细节，或本轮仍在运行时渲染。
+  // 无推理、无细节且不在流式等待时渲染空面板没有意义。
+  const showProcess =
+    isAssistant &&
+    (hasReasoning || hasProcessDetails || (Boolean(process) && processRunning));
   const canSaveArtifact =
     isAssistant && !isStreaming && isArtifactContentSavable(content);
   const toolStatus =
-    isStreaming && activeToolId && !process ? (TOOL_STATUS[activeToolId] ?? null) : null;
+    isStreaming && activeToolId && !showProcess
+      ? (TOOL_STATUS[activeToolId] ?? null)
+      : null;
   const summaryParts: string[] = [];
   if (!isStreaming) {
     if (toolsUsed) summaryParts.push(`使用 ${toolsUsed} 个工具`);
@@ -235,7 +235,7 @@ function MessageBubbleComponent({
         )}
       >
         <div className={cn("min-w-0", isUser ? "flex w-full flex-col items-end" : "w-full")}>
-        {isAssistant && (process || shouldShowReasoning) && (
+        {isAssistant && showProcess && (
           <AssistantProcess
             trace={process}
             reasoningContent={reasoningContent}
@@ -244,45 +244,6 @@ function MessageBubbleComponent({
             onApprove={onApproveTool}
             onDeny={onDenyTool}
           />
-        )}
-
-        {shouldShowReasoning && !process && (
-          <Collapsible
-            open={showReasoning}
-            onOpenChange={setShowReasoning}
-            className="mb-2 w-full"
-          >
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-[var(--radius-md)] px-1.5 py-1 text-xs text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-secondary)]"
-                aria-expanded={showReasoning}
-              >
-                {isStreaming && !hasReasoning ? (
-                  <Spinner className="size-3" />
-                ) : showReasoning ? (
-                  <ChevronDown size={12} />
-                ) : (
-                  <ChevronRight size={12} />
-                )}
-                {hasReasoning ? "思考过程" : "正在思考"}
-              </button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-1.5 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-3 py-2 text-xs leading-relaxed text-[var(--color-text-secondary)]">
-                {hasReasoning ? (
-                  <div className="whitespace-pre-wrap">{reasoningContent}</div>
-                ) : (
-                  <LoadingIndicator
-                    size="sm"
-                    orb="solving"
-                    label="正在推理"
-                    detail="思考过程会在返回后同步显示"
-                  />
-                )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
         )}
 
         {isUser && attachments && attachments.length > 0 && (
@@ -299,7 +260,7 @@ function MessageBubbleComponent({
         >
           {content ? (
             <MarkdownContent content={content} isStreaming={isStreaming} />
-          ) : isStreaming && !process ? (
+          ) : isStreaming && !showProcess ? (
             <div className="py-1">
               {toolStatus ? (
                 <LoadingIndicator size="sm" orb={toolStatus.orb} label={toolStatus.label} />

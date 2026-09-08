@@ -57,4 +57,132 @@ describe("AssistantProcess", () => {
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
+
+  it("等待首字时只显示准备状态，不显示空推理区", () => {
+    render(
+      <AssistantProcess
+        trace={{ status: "running", startedAt: Date.now(), tools: [] }}
+        isStreaming
+        hasResponse={false}
+      />
+    );
+
+    expect(screen.getByText("正在准备")).toBeTruthy();
+    expect(document.querySelector(".assistant-process-reasoning")).toBeNull();
+    expect(document.querySelector(".assistant-process-body")?.textContent).toBe("");
+  });
+
+  it("推理中展开显示推理并标记正在思考", () => {
+    render(
+      <AssistantProcess
+        trace={{ status: "running", startedAt: Date.now(), tools: [] }}
+        reasoningContent="先核对事实。"
+        isStreaming
+        hasResponse={false}
+      />
+    );
+
+    expect(screen.getByText("正在思考")).toBeTruthy();
+    expect(document.querySelector(".assistant-process")?.getAttribute("data-state")).toBe("running");
+    expect(screen.getByLabelText("思考过程").textContent).toBe("先核对事实。");
+  });
+
+  it("无 process 的历史推理复用同一过程区并默认折叠", () => {
+    render(
+      <AssistantProcess reasoningContent="历史推理内容" isStreaming={false} hasResponse />
+    );
+
+    expect(screen.getByText("思考过程")).toBeTruthy();
+    expect(document.querySelector(".assistant-process")?.getAttribute("data-state")).toBe("completed");
+    expect(document.querySelector(".assistant-process-reasoning")?.textContent).toBe("历史推理内容");
+  });
+
+  it("审批中默认展开并显示等待确认", () => {
+    const preview = {
+      toolId: "web.fetch",
+      toolName: "读取网页",
+      summary: "读取外部网页",
+      affectedResources: [],
+      sendsToExternal: true,
+      isReversible: true,
+      dataTypes: ["url"],
+    };
+    render(
+      <AssistantProcess
+        trace={{
+          status: "running",
+          startedAt: Date.now(),
+          tools: [
+            {
+              executionId: "approval-1",
+              toolId: "web.fetch",
+              label: "读取外部网页",
+              status: "awaiting_approval",
+              sources: [],
+              preview,
+              approval: { token: "token-1", expiresAt: Date.now() + 60_000, canApproveSession: false },
+            },
+          ],
+        }}
+        isStreaming
+        hasResponse={false}
+      />
+    );
+
+    expect(screen.getByText("等待你的确认")).toBeTruthy();
+    expect(screen.getByText("读取外部网页")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /等待你的确认/ }).getAttribute("aria-expanded")
+    ).toBe("true");
+  });
+
+  it("失败与取消使用明确终态标签", () => {
+    const { rerender } = render(
+      <AssistantProcess
+        trace={{ ...trace, status: "failed", completedAt: Date.now() }}
+        reasoningContent="推理内容"
+        isStreaming={false}
+        hasResponse
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /已中断/ })).toBeTruthy();
+
+    rerender(
+      <AssistantProcess
+        trace={{ ...trace, status: "cancelled", completedAt: Date.now() }}
+        reasoningContent="推理内容"
+        isStreaming={false}
+        hasResponse
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /已取消/ })).toBeTruthy();
+  });
+
+  it("流式期间手动展开后状态保持稳定", () => {
+    const { rerender } = render(
+      <AssistantProcess
+        trace={{ status: "running", startedAt: Date.now(), tools: [] }}
+        reasoningContent="推理内容"
+        isStreaming
+        hasResponse={false}
+      />
+    );
+
+    const trigger = screen.getByRole("button", { name: /思考/ });
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+    rerender(
+      <AssistantProcess
+        trace={{ status: "running", startedAt: Date.now(), tools: [] }}
+        reasoningContent="推理内容继续"
+        isStreaming
+        hasResponse={false}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /思考/ }).getAttribute("aria-expanded")).toBe("false");
+  });
 });

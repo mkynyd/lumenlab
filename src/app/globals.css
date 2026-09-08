@@ -561,6 +561,10 @@ html {
   color: var(--color-success);
 }
 
+.assistant-process-failed {
+  color: var(--color-error);
+}
+
 .assistant-process-collapsible,
 .assistant-process-sources {
   display: grid;
