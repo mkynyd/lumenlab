@@ -41,6 +41,7 @@ model User {
   conversations        Conversation[]
   projects             Project[]
   files                FileAsset[]
+  messageAttachments   MessageAttachment[]
   chunks               DocumentChunk[]
   artifacts            Artifact[]
   documentConversions  DocumentConversion[]
@@ -219,13 +220,48 @@ model Message {
   metadata         Json? // 压缩摘要的额外信息
   createdAt        DateTime @default(now())
 
-  conversation                      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation                      Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   artifacts                         Artifact[]
   tokenUsage                        TokenUsage?
-  agentExecutionsAsUserMessage      AgentExecution[] @relation("AgentExecutionUserMessage")
-  agentExecutionsAsAssistantMessage AgentExecution[] @relation("AgentExecutionAssistantMessage")
+  attachments                       MessageAttachment[]
+  agentExecutionsAsUserMessage      AgentExecution[]    @relation("AgentExecutionUserMessage")
+  agentExecutionsAsAssistantMessage AgentExecution[]    @relation("AgentExecutionAssistantMessage")
 
   @@index([conversationId])
+}
+
+// 任务 08：消息附件的持久化元数据。对象先落对象存储、行先以 pending 状态存在，
+// 用户消息落库后再绑定 messageId；未绑定的行由补偿清理回收，普通对话不会创建
+// 虚假 Project，也不依赖 FileAsset 的解析语义。
+model MessageAttachment {
+  id                String   @id @default(cuid())
+  userId            String
+  messageId         String?
+  clientRunKey      String?
+  kind              String   @default("image") // image
+  originalName      String
+  mimeType          String
+  size              Int // bytes
+  width             Int?
+  height            Int?
+  contentHash       String // sha256 of the stored bytes, version locator
+  storageProvider   String   @default("local")
+  storagePath       String
+  thumbnailProvider String?
+  thumbnailPath     String?
+  position          Int      @default(0)
+  status            String   @default("pending") // pending | bound
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientRunKey, position])
+  @@index([messageId])
+  @@index([userId, status])
+  @@index([createdAt])
+  @@index([contentHash])
 }
 
 model TokenUsage {

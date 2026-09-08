@@ -6,6 +6,11 @@ export interface FileAttachment {
   mimeType: string;
   size: number;
   data: File;
+  /**
+   * 任务 08：仅客户端使用的本地预览 URL（图片）。在事件处理器里创建，
+   * 随预览移除、发送成功或组件卸载回收，不在渲染期创建。
+   */
+  previewUrl?: string;
 }
 
 export interface ServerFileAttachment {

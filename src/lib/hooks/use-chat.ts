@@ -12,6 +12,7 @@ import {
   buildChatRequestBody,
 } from "@/lib/chat-request";
 import type { FileAttachment } from "@/lib/chat/router";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { queryKeys } from "@/lib/query-keys";
 import type { AgentEvent, ApprovalScope } from "@/lib/agent/types";
@@ -70,6 +71,11 @@ export interface ChatMessage {
   toolsUsed?: number;
   /** Persisted, replayable public process state for this assistant response. */
   process?: AssistantProcessTrace;
+  /**
+   * 任务 08：图片附件。上传期间是本地 blob 预览（status: "uploading"），
+   * 发送成功后替换为服务端持久化附件的同源鉴权 URL。
+   */
+  attachments?: ChatAttachmentDto[];
 }
 
 export interface SendMessageInput {
@@ -216,6 +222,13 @@ export function useChat(options: UseChatOptions = {}) {
     options.initialConversationId
   );
   const streamSessionRef = useRef(0);
+  /** 任务 08.4：上传期间的本地预览 URL，随预览退出或组件卸载回收。 */
+  const previewUrlsRef = useRef<Set<string>>(new Set());
+
+  const releasePreviewUrls = useCallback(() => {
+    for (const url of previewUrlsRef.current) URL.revokeObjectURL(url);
+    previewUrlsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -245,8 +258,9 @@ export function useChat(options: UseChatOptions = {}) {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      releasePreviewUrls();
     };
-  }, []);
+  }, [releasePreviewUrls]);
 
   const setThinkingEnabled = useCallback(() => {
     setThinkingEnabledState(true);
@@ -293,12 +307,46 @@ export function useChat(options: UseChatOptions = {}) {
       setError(null);
       setIsStreaming(true);
 
+      // 任务 08.4：图片用本地 blob 预览进入乐观消息，发送成功后替换为
+      // 服务端持久化附件；非图片附件仍以文本标记说明，避免重复展示。
+      const imageAttachments = attachments.filter((attachment) =>
+        attachment.mimeType.startsWith("image/")
+      );
+      const otherAttachments = attachments.filter(
+        (attachment) => !attachment.mimeType.startsWith("image/")
+      );
+      const previewUrls: string[] = [];
+      const optimisticAttachments: ChatAttachmentDto[] = imageAttachments.map(
+        (attachment) => {
+          const url = URL.createObjectURL(attachment.data);
+          previewUrls.push(url);
+          return {
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            size: attachment.size,
+            width: null,
+            height: null,
+            status: "uploading",
+            url,
+            thumbnailUrl: url,
+          };
+        }
+      );
+      for (const url of previewUrls) previewUrlsRef.current.add(url);
+
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         role: "user",
-        content: attachments.length > 0
-          ? `${content.trim()}\n\n${attachments.map((attachment) => `[附件] ${attachment.name}`).join("\n")}`
-          : content.trim(),
+        content:
+          otherAttachments.length > 0
+            ? `${content.trim()}\n\n${otherAttachments
+                .map((attachment) => `[附件] ${attachment.name}`)
+                .join("\n")}`
+            : content.trim(),
+        ...(optimisticAttachments.length > 0
+          ? { attachments: optimisticAttachments }
+          : {}),
       };
       let streamingId = `assistant-${Date.now()}`;
       const streamingStartedAt = Date.now();
@@ -399,6 +447,27 @@ export function useChat(options: UseChatOptions = {}) {
 
         if (!response.ok) {
           throw new Error(await readChatError(response));
+        }
+
+        // 任务 08.4：把乐观预览替换为服务端持久化附件（真实 messageId 绑定的
+        // 资源），随后回收本地 blob URL；缩略图与大图都走同源鉴权响应。
+        const persistedHeader = response.headers.get("X-Message-Attachments");
+        if (persistedHeader) {
+          try {
+            const persisted = JSON.parse(
+              persistedHeader
+            ) as ChatAttachmentDto[];
+            if (Array.isArray(persisted) && persisted.length > 0) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === userMessage.id ? { ...m, attachments: persisted } : m
+                )
+              );
+            }
+          } catch {
+            // 头部损坏时保留本地预览，不阻断对话。
+          }
+          releasePreviewUrls();
         }
 
         // Get conversation ID from header if new
@@ -754,6 +823,7 @@ export function useChat(options: UseChatOptions = {}) {
       options.selectedFileIds,
       options.mode,
       queryClient,
+      releasePreviewUrls,
     ]
   );
   const sendMutation = useMutation({ mutationFn: performSend });

@@ -1,5 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
+const mediaMocks = vi.hoisted(() => ({
+  loadAttachmentRefsByIds: vi.fn(),
+  readStoredObject: vi.fn(),
+}));
+
+vi.mock("@/lib/chat/message-attachments", () => ({
+  loadAttachmentRefsByIds: mediaMocks.loadAttachmentRefsByIds,
+}));
+
+vi.mock("@/lib/storage/object-storage", () => ({
+  readStoredObject: mediaMocks.readStoredObject,
+}));
+
 import type { AgentRun, AgentRunInput } from "@/lib/agent/contracts";
 import type {
   AgentCheckpoint,
@@ -458,6 +471,154 @@ describe("durable Agent runtime bridge", () => {
       ],
     });
     expect(JSON.stringify(initial)).not.toContain("attachments");
+  });
+
+  it("stores attachment resource references in the checkpoint instead of bytes", () => {
+    const initial = buildInitialAgentCheckpoint({
+      user: { id: "user-1" },
+      conversation: { projectId: "project-1" },
+      prompt: {
+        message: "看看这张图",
+        attachments: [],
+        mediaRefs: [
+          {
+            source: "message-attachment",
+            id: "att-1",
+            originalName: "red.png",
+            mimeType: "image/png",
+            storageProvider: "local",
+            storagePath: "chat-attachments/user-1/run-1/0-abc.png",
+            contentHash: "hash-1",
+          },
+        ],
+      },
+      model: {
+        requestedModel: "qwen3.8-flash",
+        thinkingEnabled: true,
+        reasoningEffort: "high",
+      },
+      capabilities: {
+        webSearchActive: false,
+        skillOff: false,
+        selectedFileIds: [],
+        isQuickTask: false,
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(initial).toMatchObject({
+      items: [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "text", text: "看看这张图" },
+            {
+              type: "media_ref",
+              refId: "att-1",
+              source: "message-attachment",
+              contentHash: "hash-1",
+              mimeType: "image/png",
+              name: "red.png",
+            },
+          ],
+        },
+      ],
+    });
+    const serialized = JSON.stringify(initial);
+    expect(serialized).not.toContain("chat-attachments/user-1/run-1/0-abc.png");
+    expect(serialized).not.toContain("local");
+  });
+
+  it("re-reads checkpoint attachments by resource id on resume", async () => {
+    mediaMocks.loadAttachmentRefsByIds.mockResolvedValue([
+      {
+        source: "message-attachment",
+        id: "att-1",
+        originalName: "red.png",
+        mimeType: "image/png",
+        storageProvider: "local",
+        storagePath: "chat-attachments/user-1/run-1/0-abc.png",
+        contentHash: "hash-1",
+      },
+    ]);
+    mediaMocks.readStoredObject.mockResolvedValue(Buffer.from("image-bytes"));
+
+    const runMock = vi.fn(async (input: AgentRunInput) => {
+      expect(input.prompt.attachments).toEqual([
+        {
+          name: "red.png",
+          mimeType: "image/png",
+          size: 11,
+          data: Buffer.from("image-bytes"),
+        },
+      ]);
+      return run(
+        (async function* () {
+          yield {
+            type: "completed" as const,
+            conversationId: "conversation-1",
+            messageId: "message-assistant",
+          };
+        })(),
+        "completed"
+      );
+    });
+
+    const withMedia: AgentCheckpoint = {
+      version: 2,
+      round: 0,
+      model: { provider: "bailian", name: "qwen3.8-flash" },
+      skill: { id: null, version: null },
+      rag: { sourceIds: [], selectedFileIds: [] },
+      allowedToolIds: [],
+      request: {
+        message: "看看这张图",
+        model: "qwen3.8-flash",
+        thinkingEnabled: true,
+        reasoningEffort: "high",
+        webSearchActive: false,
+        skillOff: false,
+        isQuickTask: false,
+      },
+      items: [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "text", text: "看看这张图" },
+            {
+              type: "media_ref",
+              refId: "att-1",
+              source: "message-attachment",
+              contentHash: "hash-1",
+              mimeType: "image/png",
+              name: "red.png",
+            },
+          ],
+        },
+      ],
+    };
+
+    await createDurableAgentExecutionHandler({
+      run: runMock,
+      recordUsage: vi.fn(),
+    })({
+      execution: execution(withMedia),
+      signal: new AbortController().signal,
+      saveCheckpoint: vi.fn(),
+      appendEvent: vi.fn(),
+    });
+
+    expect(mediaMocks.loadAttachmentRefsByIds).toHaveBeenCalledWith({
+      userId: "user-1",
+      ids: ["att-1"],
+    });
+    expect(mediaMocks.readStoredObject).toHaveBeenCalledWith({
+      provider: "local",
+      key: "chat-attachments/user-1/run-1/0-abc.png",
+    });
+    expect(runMock).toHaveBeenCalledOnce();
   });
 
   it("upgrades a v1 checkpoint and its legacy model before a new round", () => {

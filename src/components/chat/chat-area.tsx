@@ -11,6 +11,7 @@ import { TokenUsageBar } from "@/components/chat/token-usage-bar";
 import { ContextBudgetWarning } from "@/components/chat/context-budget-warning";
 import { AlertCircle } from "lucide-react";
 import type { AgentSource } from "@/lib/agent/sources";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
 import type { SkillSelectorValue } from "@/components/chat/skill-selector";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ interface ChatAreaProps {
     cacheMissTokens?: number | null;
     sources?: AgentSource[] | null;
     process?: AssistantProcessTrace;
+    attachments?: ChatAttachmentDto[];
   }>;
 }
 

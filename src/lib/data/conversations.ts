@@ -3,6 +3,10 @@ import { cache } from "react";
 import { prisma } from "@/lib/db";
 import type { AgentSource } from "@/lib/agent/sources";
 import { hydrateAssistantProcess } from "@/lib/agent/assistant-process";
+import {
+  CHAT_ATTACHMENT_SELECT,
+  toChatAttachmentDtos,
+} from "@/lib/chat/message-attachments";
 
 function normalizeSources(value: unknown): AgentSource[] | null {
   return Array.isArray(value) ? (value as AgentSource[]) : null;
@@ -24,6 +28,7 @@ export const getConversation = cache(
             cacheHitTokens: true,
             cacheMissTokens: true,
             sources: true,
+            attachments: CHAT_ATTACHMENT_SELECT,
             agentExecutionsAsAssistantMessage: {
               take: 1,
               orderBy: { createdAt: "desc" },
@@ -44,6 +49,7 @@ export const getConversation = cache(
       messages: conversation.messages.map((message) => ({
         ...message,
         sources: normalizeSources(message.sources),
+        attachments: toChatAttachmentDtos(message.attachments),
         process: hydrateAssistantProcess(
           message.agentExecutionsAsAssistantMessage?.[0]?.events ?? []
         ),

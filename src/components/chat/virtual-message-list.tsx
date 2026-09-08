@@ -47,6 +47,7 @@ const Bubble = memo(function Bubble({
       reasoningContent={message.reasoningContent}
       tokenCount={message.tokenCount ?? undefined}
       sources={message.sources}
+      attachments={message.attachments}
       isStreaming={message.isStreaming}
       activeToolId={message.activeToolId}
       toolsUsed={message.toolsUsed}

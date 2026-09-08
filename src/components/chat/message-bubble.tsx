@@ -34,6 +34,8 @@ import type { AgentSource } from "@/lib/agent/sources";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
 import type { ApprovalScope } from "@/lib/agent/types";
 import { AssistantProcess } from "@/components/chat/assistant-process";
+import { MessageAttachments } from "@/components/chat/message-attachments";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 
 interface MessageBubbleProps {
   id?: string;
@@ -42,6 +44,8 @@ interface MessageBubbleProps {
   reasoningContent?: string | null;
   tokenCount?: number | null;
   sources?: AgentSource[] | null;
+  /** 任务 08：用户消息的图片附件（缩略图 + 查看器）。 */
+  attachments?: ChatAttachmentDto[];
   isStreaming?: boolean;
   /** 流式期间正在执行的工具 ID（映射为「正在搜索」等状态行） */
   activeToolId?: string | null;
@@ -180,6 +184,7 @@ function MessageBubbleComponent({
   reasoningContent,
   tokenCount,
   sources,
+  attachments,
   isStreaming = false,
   activeToolId,
   toolsUsed,
@@ -278,6 +283,10 @@ function MessageBubbleComponent({
               </div>
             </CollapsibleContent>
           </Collapsible>
+        )}
+
+        {isUser && attachments && attachments.length > 0 && (
+          <MessageAttachments attachments={attachments} />
         )}
 
         <div
@@ -402,6 +411,7 @@ export const MessageBubble = memo(
       previous.reasoningContent === next.reasoningContent &&
       previous.tokenCount === next.tokenCount &&
       previous.sources === next.sources &&
+      previous.attachments === next.attachments &&
       previous.toolsUsed === next.toolsUsed &&
       previous.process === next.process &&
       previous.onSaveArtifact === next.onSaveArtifact &&

@@ -119,6 +119,8 @@ export function createDurableReplayResponse(input: {
   signal?: AbortSignal;
   format?: "durable" | "chat";
   chatHeaders?: boolean;
+  /** 任务 08.3：本轮持久化附件元数据等附加响应头。 */
+  extraHeaders?: Record<string, string>;
 }): Response {
   const localAbort = new AbortController();
   const abort = () => localAbort.abort();
@@ -189,5 +191,5 @@ export function createDurableReplayResponse(input: {
     headers["X-Agent-Tool-Protocol"] = "native";
   }
 
-  return new Response(body, { headers });
+  return new Response(body, { headers: { ...headers, ...input.extraHeaders } });
 }

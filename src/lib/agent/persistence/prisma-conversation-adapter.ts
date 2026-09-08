@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { excludingSubtype } from "./message-subtype";
 import type {
   ConversationPersistence,
   ConversationState,
@@ -123,13 +124,31 @@ export class PrismaConversationAdapter implements ConversationPersistence {
         conversationId,
         // 已被压缩摘要替换的旧消息不再进入模型上下文,
         // 否则每次压缩都会让 prompt 只增不减。
-        subtype: { not: "compressed-replaced" },
+        // 注意:Prisma 的 `not` 不匹配 NULL,普通消息(subtype IS NULL)
+        // 必须显式包含,否则历史上下文会整体为空。
+        ...excludingSubtype("compressed-replaced"),
         ...(excludeMessageIds.length > 0
           ? { id: { notIn: excludeMessageIds } }
           : {}),
       },
       orderBy: { createdAt: "asc" },
-      select: { id: true, role: true, content: true },
+      select: {
+        id: true,
+        role: true,
+        content: true,
+        attachments: {
+          where: { status: "bound", mimeType: { startsWith: "image/" } },
+          orderBy: { position: "asc" },
+          select: {
+            id: true,
+            originalName: true,
+            mimeType: true,
+            storageProvider: true,
+            storagePath: true,
+            contentHash: true,
+          },
+        },
+      },
     });
   }
 
@@ -137,12 +156,13 @@ export class PrismaConversationAdapter implements ConversationPersistence {
     conversationId: string;
     content: string;
   }) {
-    await prisma.message.create({
+    return prisma.message.create({
       data: {
         conversationId: input.conversationId,
         role: "user",
         content: input.content,
       },
+      select: { id: true },
     });
   }
 
@@ -189,8 +209,8 @@ export class PrismaConversationAdapter implements ConversationPersistence {
       where: {
         conversationId: input.conversationId,
         id: { in: input.messageIds },
-        // 摘要消息与已替换消息本身不可再被标记。
-        subtype: { not: "context-summary" },
+        // 摘要消息本身不可再被标记;普通消息(subtype IS NULL)必须保留在候选内。
+        ...excludingSubtype("context-summary"),
       },
       data: {
         subtype: "compressed-replaced",

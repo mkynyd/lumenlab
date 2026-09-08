@@ -30,6 +30,18 @@ const checkpointContentPartSchema = z.discriminatedUnion("type", [
       contentFingerprint: z.string().min(1),
     })
     .strict(),
+  // 任务 08.7：消息附件（或显式引用的项目文件）资源引用。只保存平台资源 ID
+  // 与版本定位，不保存签名 URL 或字节；恢复时按当前用户重新鉴权读取。
+  z
+    .object({
+      type: z.literal("media_ref"),
+      refId: z.string().min(1),
+      source: z.enum(["message-attachment", "project-file"]),
+      contentHash: z.string().min(1),
+      mimeType: z.string().min(1),
+      name: z.string().min(1),
+    })
+    .strict(),
 ]);
 
 const checkpointItemSchema = z.discriminatedUnion("type", [

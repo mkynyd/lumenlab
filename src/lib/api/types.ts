@@ -1,5 +1,6 @@
 import type { AgentSource } from "@/lib/agent/sources";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import type {
   AssistanceLevel,
   ContentFreshness,
@@ -78,6 +79,8 @@ export interface ConversationMessage {
   cacheMissTokens?: number | null;
   sources?: AgentSource[] | null;
   process?: AssistantProcessTrace;
+  /** 任务 08：已持久化的图片附件（含同源鉴权 URL）。 */
+  attachments?: ChatAttachmentDto[];
   createdAt?: string;
 }
 

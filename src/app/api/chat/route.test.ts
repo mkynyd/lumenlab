@@ -528,6 +528,7 @@ describe("POST /api/chat", () => {
           role: "user",
           content: "今天有什么 AI 新闻",
         },
+        select: { id: true },
       });
 
       const body = await response.text();
@@ -604,6 +605,7 @@ describe("POST /api/chat", () => {
           role: "user",
           content: "今天有什么科技新闻？",
         },
+        select: { id: true },
       });
     } finally {
       if (originalFlag === undefined) {

@@ -1,21 +1,28 @@
 /**
- * 项目图片 → 最终多模态模型上下文（任务 05.3—05.5）。
+ * 项目图片 → 最终多模态模型上下文（任务 05.3—05.5，08.2 统一引用合同）。
  *
  * 全部活跃模型都能看图：项目图片不再经过独立 OCR/摘要，而是把原图作为
- * input_image 附件交给用户所选模型。媒体引用合同（05.1，与 01 消息合同
- * 共用）：平台 fileAssetId + contentFingerprint（版本定位）+ mimeType +
- * 所属消息/项目 + 原始顺序；图片 Buffer 仍只在请求内存在，持久化归 08。
+ * input_image 附件交给用户所选模型。媒体引用合同见 `media-ref.ts`：
+ * 平台资源 ID + 版本定位（contentHash/fingerprint）+ mimeType + 对象位置 +
+ * 原始顺序；字节读取与数量/字节预算由共享 loader 统一执行，项目图片与
+ * 消息附件（任务 08）共用同一条输入组装路径。
  */
 import { prisma } from "@/lib/db";
-import { readStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
 import type { ServerFileAttachment } from "@/lib/chat/router";
+import {
+  MAX_AUTO_MEDIA_IMAGES,
+  MAX_MEDIA_BYTES,
+  MAX_MEDIA_IMAGES,
+  loadMediaRefsWithinBudget,
+  type MediaRef,
+} from "@/lib/agent/context/media-ref";
 
 /** 显式选中的图片单次请求上限；超出部分在覆盖说明中指明。 */
-export const MAX_SELECTED_PROJECT_IMAGES = 6;
+export const MAX_SELECTED_PROJECT_IMAGES = MAX_MEDIA_IMAGES;
 /** 未显式选择时自动携带的候选上限；超出提示缩小范围，不恢复后台 OCR。 */
-export const MAX_AUTO_PROJECT_IMAGES = 4;
+export const MAX_AUTO_PROJECT_IMAGES = MAX_AUTO_MEDIA_IMAGES;
 /** 单次请求图片总字节预算。 */
-export const MAX_PROJECT_IMAGES_BYTES = 24 * 1024 * 1024;
+export const MAX_PROJECT_IMAGES_BYTES = MAX_MEDIA_BYTES;
 
 export interface ProjectImageAsset {
   id: string;
@@ -46,51 +53,25 @@ function promptMentionsAsset(prompt: string, assetName: string): boolean {
   );
 }
 
-async function loadImageAsset(
-  asset: ProjectImageAsset
-): Promise<ServerFileAttachment | null> {
-  try {
-    const data = await readStoredObject({
-      provider: asset.storageProvider as StorageProvider,
-      key: asset.storagePath,
-    });
-    return {
-      name: asset.originalName,
-      mimeType: asset.mimeType,
-      size: data.length,
-      data,
-    };
-  } catch {
-    // 单张图片读取失败不阻塞整次请求；缺失信息进入覆盖说明。
-    return null;
-  }
-}
-
 /** 按顺序加载图片资产，尊重字节预算；返回附件与未加载清单。 */
 async function loadWithinBudget(
   assets: ProjectImageAsset[]
 ): Promise<{ attachments: ServerFileAttachment[]; missed: string[] }> {
-  const attachments: ServerFileAttachment[] = [];
-  const missed: string[] = [];
-  let totalBytes = 0;
-  for (const asset of assets) {
-    if (totalBytes >= MAX_PROJECT_IMAGES_BYTES) {
-      missed.push(asset.originalName);
-      continue;
-    }
-    const loaded = await loadImageAsset(asset);
-    if (!loaded) {
-      missed.push(asset.originalName);
-      continue;
-    }
-    if (totalBytes + loaded.size > MAX_PROJECT_IMAGES_BYTES) {
-      missed.push(asset.originalName);
-      continue;
-    }
-    totalBytes += loaded.size;
-    attachments.push(loaded);
-  }
-  return { attachments, missed };
+  // 数量上限由调用方在挑选候选时应用，这里只负责字节预算与读取失败。
+  return loadMediaRefsWithinBudget(assets.map(toProjectMediaRef), {
+    maxCount: assets.length,
+  });
+}
+
+function toProjectMediaRef(asset: ProjectImageAsset): MediaRef {
+  return {
+    source: "project-file",
+    id: asset.id,
+    originalName: asset.originalName,
+    mimeType: asset.mimeType,
+    storageProvider: asset.storageProvider,
+    storagePath: asset.storagePath,
+  };
 }
 
 function buildCoverageNote(options: {

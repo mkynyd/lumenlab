@@ -1,4 +1,5 @@
 import type { ServerFileAttachment } from "@/lib/chat/router";
+import type { MediaRef } from "./context/media-ref";
 import type { DeepSeekMessage } from "@/lib/deepseek";
 import type { CatalogModelId } from "@/lib/chat/model-catalog";
 import type { ProjectType } from "@/lib/quick-actions";
@@ -25,6 +26,11 @@ export interface AgentRunInput {
     message: string;
     hiddenPrompt?: string;
     attachments: ServerFileAttachment[];
+    /**
+     * 任务 08.7：本轮附件的平台资源引用（不含字节）。进入 Checkpoint 后，
+     * Worker 恢复时按资源 ID 重新鉴权读取，不依赖浏览器 File 对象。
+     */
+    mediaRefs?: MediaRef[];
   };
   model: {
     requestedModel: AgentModel;
@@ -53,6 +59,11 @@ export interface AgentRunInput {
       arguments: Record<string, unknown>;
     }>;
   };
+  /**
+   * 任务 08.3：本轮幂等键。消息落库后据此把已上传的图片附件绑定到该消息；
+   * 重复提交（同一键）复用同一批附件行与对象，不重复用户消息或计费。
+   */
+  clientRunKey?: string;
   signal: AbortSignal;
 }
 

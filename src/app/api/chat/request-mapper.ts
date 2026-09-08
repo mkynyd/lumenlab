@@ -18,10 +18,12 @@ export function mapAgentRunInput(input: {
   userId: string;
   parsed: ParsedChatRequest;
   signal: AbortSignal;
+  clientRunKey?: string;
 }): AgentRunInput {
   const { body, attachments } = input.parsed;
   return {
     user: { id: input.userId },
+    ...(input.clientRunKey ? { clientRunKey: input.clientRunKey } : {}),
     conversation: {
       ...(body.conversationId ? { id: body.conversationId } : {}),
       ...(body.projectId ? { projectId: body.projectId } : {}),

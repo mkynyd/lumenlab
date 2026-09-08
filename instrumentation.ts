@@ -28,6 +28,22 @@ export async function register() {
     });
   }
 
+  // 任务 08.3：回收上传成功但从未绑定到消息的聊天附件（派发失败或客户端放弃）。
+  // 只按受限 TTL 清理自己的行与对象，不触碰已绑定附件。
+  try {
+    const { cleanupUnboundChatAttachments } = await import(
+      "@/lib/chat/message-attachments"
+    );
+    const cleaned = await cleanupUnboundChatAttachments();
+    if (cleaned.rows > 0) {
+      logger.info("Unbound chat attachments cleaned", cleaned);
+    }
+  } catch (error) {
+    logger.error("Failed to clean unbound chat attachments", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   if (process.env.AGENT_DURABLE_EXECUTION_ENABLED === "true") {
     try {
       const { startAgentExecutionWorker } = await import(

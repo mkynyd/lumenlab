@@ -15,6 +15,20 @@ export interface ConversationHistoryMessage {
   id: string;
   role: string;
   content: string;
+  /**
+   * 任务 08.6：该消息已绑定的图片附件引用（只含资源定位，不含字节）。
+   * 新回合按需重新鉴权读取，用于"接着上次那张图继续问"。
+   */
+  attachments?: HistoryAttachmentRef[];
+}
+
+export interface HistoryAttachmentRef {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  storageProvider: string;
+  storagePath: string;
+  contentHash: string | null;
 }
 
 export interface ConversationPersistence {
@@ -67,7 +81,7 @@ export interface ConversationPersistence {
   createUserMessage(input: {
     conversationId: string;
     content: string;
-  }): Promise<void>;
+  }): Promise<{ id: string }>;
   createContextSummary(input: {
     conversationId: string;
     content: string;
