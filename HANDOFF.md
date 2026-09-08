@@ -7,7 +7,7 @@
 - `search-engine.ts`：缓存键升级为 `websearch:v3:{maxResults}:{tag}:{zone}:{language}:{stableParams}:{normalizedQuery}`，不同 tag/区域不再互相命中；AnySearch 成功且有结果立即返回、空结果继续 fallback、无 key 完全跳过 AnySearch；Bing RSS 与 DuckDuckGo 保留原相关性闸门，AnySearch 因已自带 routing/fusion/rerank 只做结构/URL 校验与去重。summary 默认标题+snippet+原始 URL，snippet 缺失时才从 content 截取 200 字符。
 - `search.ts` 不再解析任何模型供应商密钥；`src/lib/agent/runtime.ts` 的 MiniMax 手动联网预取同样去掉 DeepSeek 密钥解析。Tool Registry 的 `web.search` description 改为“平台统一联网搜索”，input schema 扩展 `tag?/zone?/language?/params?` 且保持向后兼容；已注明 `code.doc` 需 `params.library`、`academic.citation` 需 `params.id`、`security.vuln` 需 `params.type/value`（实测这些 tag 缺参返回 `code:-1`）。
 - 真实联网验证：中文查询、`academic.search`+en（返回 DOI 论文）、`code.doc`（真实 400 → 自动回退 Bing 并返回 React 文档）、`maxResults:25` 被钳制到 10、无 key 时跳过 AnySearch 全部符合预期；本机 `localhost:3000` 真实对话（Qwen3.8-Flash + 联网开关）中 Agent 调用 5 次 AnySearch，答案引用原始 URL（10 个工具、89,669 tokens）。证据 `output/playwright/anysearch/`。
-- 门禁：333 文件 / 1869 测试、tsc、ESLint（0 问题）、Prisma validate、production build、diff check 全绿。**官方 Docs 与提示词差异**：提示词写 `max_results` 1–20，官方接口文档为 1–10 且实测服务端返回上限为 10，按“以最新官方 Docs 为准”实现 1–10。
+- 门禁：333 文件 / 1869 测试、tsc、ESLint（0 问题）、Prisma validate、production build、diff check 全绿；提交 `9d5c613` + `224049f` 已推送 main，CI run [34262988686](https://github.com/mkynyd/lumenlab/actions/runs/34262988686) 全绿。**官方 Docs 与提示词差异**：提示词写 `max_results` 1–20，官方接口文档为 1–10 且实测服务端返回上限为 10，按“以最新官方 Docs 为准”实现 1–10。
 - 未做（按要求）：AnySearch MCP/Skill、`/v1/deep-search`、替换 `web.fetch`、删除 Bing/DDG fallback、前端搜索 Provider 选择器、向用户暴露 AnySearch Key、完整 Deep Research。
 
 ## 2026-09-09 · 任务 11 完成：后台论文排版与旧编辑功能退场
