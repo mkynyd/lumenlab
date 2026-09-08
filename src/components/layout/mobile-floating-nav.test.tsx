@@ -8,6 +8,11 @@ vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
 }));
 
+// 通知入口由全局 Provider 驱动，本文件只验证导航本身。
+vi.mock("@/components/notifications/notification-bell", () => ({
+  NotificationBell: () => <span data-testid="notification-bell" />,
+}));
+
 describe("MobileFloatingNav", () => {
   it("announces the closed mobile navigation independently of desktop collapse", () => {
     navigation.pathname = "/chat";

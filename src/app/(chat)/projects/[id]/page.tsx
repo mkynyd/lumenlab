@@ -14,6 +14,7 @@ import {
 } from "@/components/chat/skill-selector";
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { ContextRing } from "@/components/chat/context-ring";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import {
   SidebarCollapse,
   SidebarExpand,
@@ -700,6 +701,9 @@ export default function ProjectDetailPage() {
                 <ContextRing used={usage.totalTokens} />
               </div>
             )}
+            <div className="shrink-0">
+              <NotificationBell size="sm" />
+            </div>
           </div>
         </header>
 

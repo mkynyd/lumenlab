@@ -466,4 +466,128 @@ describe("PrismaAgentExecutionStore PostgreSQL concurrency", () => {
       await prismaA.user.delete({ where: { id: user.id } });
     }
   });
+  it("projects one notification per terminal transition and stays idempotent", async () => {
+    const { user, conversation } = await fixture();
+    try {
+      const store = new PrismaAgentExecutionStore(prismaA);
+      const dispatched = await store.createOrGetByClientRunKey({
+        userId: user.id,
+        clientRunKey: `client-${randomUUID()}`,
+        requestHash: "sha256:notification-projection",
+        conversation: {
+          id: conversation.id,
+          title: "通知投影",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: true,
+        },
+        userMessageContent: "Run to completion",
+        checkpoint: checkpoint(),
+        scheduledAt: new Date("2026-07-31T00:00:00.000Z"),
+      });
+      const claimed = await store.claimNext({
+        workerId: "worker-notify",
+        now: new Date("2026-07-31T00:00:01.000Z"),
+        leaseMs: 30_000,
+      });
+      expect(claimed?.id).toBe(dispatched.execution.id);
+
+      await expect(
+        store.markCompleted({
+          executionId: dispatched.execution.id,
+          workerId: "worker-notify",
+          now: new Date("2026-07-31T00:00:02.000Z"),
+        })
+      ).resolves.toBe(true);
+
+      const rows = await prismaA.notification.findMany({
+        where: { userId: user.id },
+        select: {
+          eventKey: true,
+          kind: true,
+          title: true,
+          targetPath: true,
+          readAt: true,
+          toastAcknowledgedAt: true,
+          taskAttempt: true,
+        },
+      });
+      expect(rows).toEqual([
+        {
+          // claimNext 会把 attempt 递增到 1，幂等键按真实尝试次数记录。
+          eventKey: `agent_execution:${dispatched.execution.id}:1:completed`,
+          kind: "completed",
+          title: "Durable store integration fixture",
+          targetPath: `/chat/${conversation.id}`,
+          readAt: null,
+          toastAcknowledgedAt: null,
+          taskAttempt: 1,
+        },
+      ]);
+
+      // 同一转换重复执行：状态不再匹配，且唯一键不会产生第二条通知。
+      await expect(
+        store.markCompleted({
+          executionId: dispatched.execution.id,
+          workerId: "worker-notify",
+          now: new Date("2026-07-31T00:00:03.000Z"),
+        })
+      ).resolves.toBe(false);
+      await expect(
+        prismaA.notification.count({ where: { userId: user.id } })
+      ).resolves.toBe(1);
+
+      // 补齐扫描可重复执行，不新建也不覆盖已读状态。
+      const { reconcileAgentExecutionNotifications } = await import(
+        "@/lib/notifications/projection"
+      );
+      await expect(
+        reconcileAgentExecutionNotifications({ userId: user.id })
+      ).resolves.toEqual({ scanned: 1, created: 0 });
+      await expect(
+        prismaA.notification.count({ where: { userId: user.id } })
+      ).resolves.toBe(1);
+    } finally {
+      await prismaA.user.delete({ where: { id: user.id } });
+    }
+  });
+
+  it("records a user cancel without a toast but still lists it", async () => {
+    const { user, conversation } = await fixture();
+    try {
+      const store = new PrismaAgentExecutionStore(prismaA);
+      const dispatched = await store.createOrGetByClientRunKey({
+        userId: user.id,
+        clientRunKey: `client-${randomUUID()}`,
+        requestHash: "sha256:notification-cancel",
+        conversation: {
+          id: conversation.id,
+          title: "取消投影",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: true,
+        },
+        userMessageContent: "Cancel this run",
+        checkpoint: checkpoint(),
+      });
+
+      await expect(
+        store.cancelOwned({
+          executionId: dispatched.execution.id,
+          userId: user.id,
+          now: new Date("2026-07-31T00:00:05.000Z"),
+        })
+      ).resolves.toBe(true);
+
+      const row = await prismaA.notification.findFirstOrThrow({
+        where: { userId: user.id, kind: "cancelled" },
+        select: { eventKey: true, toastAcknowledgedAt: true, readAt: true },
+      });
+      expect(row.eventKey).toBe(
+        `agent_execution:${dispatched.execution.id}:0:cancelled`
+      );
+      expect(row.toastAcknowledgedAt).not.toBeNull();
+      expect(row.readAt).toBeNull();
+    } finally {
+      await prismaA.user.delete({ where: { id: user.id } });
+    }
+  });
 });

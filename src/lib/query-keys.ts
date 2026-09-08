@@ -90,6 +90,11 @@ export const queryKeys = {
         packId,
       ] as const,
   },
+  notifications: {
+    snapshot: ["notifications", "snapshot"] as const,
+    list: (filter: "all" | "unread") =>
+      ["notifications", "list", filter] as const,
+  },
   userProfile: ["user-profile"] as const,
   keys: ["api-keys"] as const,
   cacheMetrics: (range: { start: string; end: string } | number | "cycle") =>

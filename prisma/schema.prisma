@@ -47,6 +47,7 @@ model User {
   documentConversions  DocumentConversion[]
   tokenUsages          TokenUsage[]
   agentExecutions      AgentExecution[]
+  notifications        Notification[]
   learningGoals        LearningGoal[]
   learningSessions     LearningSession[]
   practiceAttempts     PracticeAttempt[]
@@ -1481,4 +1482,33 @@ model ErrorEvent {
 
   @@unique([digest])
   @@index([status, lastSeenAt])
+}
+
+/// 任务 10：站内通知投影。任务的实时状态来自任务源（AgentExecution 等），
+/// 本表只保存用户需要感知的变化与已读/已弹出状态，不作为任务事实来源。
+model Notification {
+  id                  String    @id @default(cuid())
+  userId              String
+  taskType            String // agent_execution | paper_compilation（后续任务接线）
+  taskId              String
+  taskAttempt         Int       @default(0)
+  /// 幂等键：taskType:taskId:attempt:kind，同一次尝试的同一种变化只落一行
+  eventKey            String
+  kind                String // waiting_user | completed | failed | cancelled
+  title               String
+  summary             String?
+  /// 服务器生成的站内允许路径，客户端不得提交
+  targetPath          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  readAt              DateTime?
+  toastAcknowledgedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventKey])
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([userId, toastAcknowledgedAt])
+  @@index([taskType, taskId])
 }

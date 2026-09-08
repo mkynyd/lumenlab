@@ -5,6 +5,8 @@ import {
   type PrismaClient,
 } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { notifyAgentExecutionTransition } from "@/lib/notifications/projection";
+import type { NotificationKind } from "@/lib/notifications/contracts";
 import type {
   CreateOrGetAgentExecutionInput,
   CreateOrGetAgentExecutionResult,
@@ -633,6 +635,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         type: "run_completed",
         payload: {},
       }),
+      notificationKind: "completed",
     });
   }
 
@@ -674,6 +677,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           },
         };
       },
+      notificationKind: "failed",
     });
   }
 
@@ -709,6 +713,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         type: "run_cancelled",
         payload: { failureCode: failureCode(input.failure) },
       }),
+      notificationKind: "cancelled",
     });
   }
 
@@ -765,6 +770,8 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
       type: string;
       payload: Prisma.InputJsonValue;
     };
+    /** 任务 10：终态转换在同一事务内写入站内通知投影。 */
+    notificationKind?: NotificationKind;
   }): Promise<boolean> {
     return this.client.$transaction(async (transaction) => {
       const [execution] =
@@ -798,6 +805,13 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           createdAt: input.now,
         },
       });
+      if (input.notificationKind) {
+        await notifyAgentExecutionTransition(transaction, {
+          executionId: input.executionId,
+          kind: input.notificationKind,
+          now: input.now,
+        });
+      }
       return true;
     });
   }
@@ -866,6 +880,11 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           payload: { toolExecutionId: input.toolExecutionId },
           createdAt: input.now,
         },
+      });
+      await notifyAgentExecutionTransition(transaction, {
+        executionId: input.executionId,
+        kind: "waiting_user",
+        now: input.now,
       });
       return true;
     });
@@ -1095,6 +1114,13 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           payload: { failureCode: "user_cancelled" },
           createdAt: input.now,
         },
+      });
+      // 用户自己点的取消：进列表但不弹窗。
+      await notifyAgentExecutionTransition(transaction, {
+        executionId: input.executionId,
+        kind: "cancelled",
+        now: input.now,
+        suppressToast: true,
       });
       return true;
     });

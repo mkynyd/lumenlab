@@ -44,6 +44,22 @@ export async function register() {
     });
   }
 
+  // 任务 10：启动时补齐可能缺失的站内通知投影（幂等，可重复执行）。
+  // 任务终态与通知在同一事务内提交，这里只兜底进程崩溃或历史数据。
+  try {
+    const { reconcileAgentExecutionNotifications } = await import(
+      "@/lib/notifications/projection"
+    );
+    const reconciled = await reconcileAgentExecutionNotifications();
+    if (reconciled.created > 0) {
+      logger.info("Agent execution notifications reconciled", reconciled);
+    }
+  } catch (error) {
+    logger.error("Failed to reconcile agent execution notifications", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   if (process.env.AGENT_DURABLE_EXECUTION_ENABLED === "true") {
     try {
       const { startAgentExecutionWorker } = await import(

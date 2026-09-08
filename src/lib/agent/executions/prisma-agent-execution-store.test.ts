@@ -1022,12 +1022,23 @@ describe("PrismaAgentExecutionStore", () => {
       id: "run-1",
       lastEventSequence: 5,
     };
+    const findUniqueExecution = vi.fn().mockResolvedValue({
+      id: "run-1",
+      userId: "user-1",
+      attempt: 1,
+      conversationId: "conversation-1",
+      projectId: null,
+      conversation: { title: "标题" },
+    });
+    const createNotification = vi.fn().mockResolvedValue({ count: 1 });
     mocks.transaction.mockImplementation(async (operation) =>
       operation({
         agentExecution: {
           updateManyAndReturn: mocks.updateManyAndReturn,
+          findUnique: findUniqueExecution,
         },
         agentExecutionEvent: { create: mocks.createEvent },
+        notification: { createMany: createNotification },
       })
     );
     mocks.updateManyAndReturn.mockResolvedValue([completed]);
@@ -1067,6 +1078,19 @@ describe("PrismaAgentExecutionStore", () => {
         payload: {},
         createdAt: now,
       },
+    });
+    // 任务 10：终态转换在同一事务内写入通知投影。
+    expect(createNotification).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          userId: "user-1",
+          eventKey: "agent_execution:run-1:1:completed",
+          kind: "completed",
+          targetPath: "/chat/conversation-1",
+          createdAt: now,
+        }),
+      ],
+      skipDuplicates: true,
     });
   });
 
