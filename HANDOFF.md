@@ -1,5 +1,13 @@
 # Research / Paper 测试版交接
 
+## 2026-09-08 · 本地 Turbopack 冲突标记错误恢复
+
+- 用户看到 `durable-agent-runtime.ts:732` 的 `>>>>>>> 25befed5...` build error。核对当前工作树、HEAD `faf5630a75a01bef324bd9eb9ebc358d1f69845b` 与 `origin/feature/research-paper` 后确认三者源码均无 `<<<<<<<`/`>>>>>>>`，Git index 也无未解决条目；正确语义是先派发 `executionKind === "research"`，随后处理 chat 的已完成 output，再升级旧 Checkpoint。
+- 错误只存在于 `.next/dev/logs/next-development.log` 和从合并前持续运行的 Next dev/Turbopack 进程中。该进程仍让 `GET /home` 返回 500，即使源码与 production build 已正常，根因是 dev 编译器保留了合并中间态的失败快照。
+- 仅对本仓库已核对的 dev 进程做 graceful restart，没有删除 `.next`、数据库、上传文件或其他缓存。重启后 `http://127.0.0.1:3000/home` 连续返回 200，首页/聊天与相关 API 重新编译成功；dev server 保持运行。
+- 回归：仓库 marker scan 无命中；durable runtime/store 定向 2 文件 50 项通过；Next.js production build 77 页面通过，仍只有既有 Paper compile-worker NFT tracing warning。
+- 手动 feature CI [34178694687](https://github.com/mkynyd/lumenlab/actions/runs/34178694687) 的 macOS lockfile、Linux lint/tsc 通过，但 Linux 全量测试再次命中已有注册页 5 秒偶发超时（306 文件 / 1679 项通过），后续仍需独立收口；它与本次 conflict-marker/Turbopack 500 无关。按用户要求，本子任务完成后停止，不继续任务 07。
+
 ## 2026-09-08 · 任务 06 Responses/Checkpoint 分支适配完成
 
 - 在 `feature/research-paper` 合入固定 main `25befed5bd4068dd1fb9570a7d317ac4f0a8795d`（合并前 feature `038e00ce9d751fe7acb39898ad9304f8f1020d49`）。四个冲突均语义整合：`.env.example`、本地保留但 Git 删除的 `docs/TODO.md`、Checkpoint store、durable runtime；未用整文件 ours/theirs。
