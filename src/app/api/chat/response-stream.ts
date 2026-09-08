@@ -15,7 +15,10 @@ function encodeData(payload: unknown) {
  * the only place that translates model deltas back into the OpenAI-compatible
  * chunks consumed by useChat while preserving the existing AgentEvent stream.
  */
-export function createChatResponse(run: AgentRun): Response {
+export function createChatResponse(
+  run: AgentRun,
+  extraHeaders?: Record<string, string>
+): Response {
   const iterator = run.events[Symbol.asyncIterator]();
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
@@ -94,6 +97,7 @@ export function createChatResponse(run: AgentRun): Response {
         run.metadata.runtimeMode === "new" ? "enabled" : "disabled",
       "X-Agent-Runtime-Version": run.metadata.runtimeVersion,
       "X-Agent-Tool-Protocol": run.metadata.toolProtocol,
+      ...extraHeaders,
     },
   });
 }

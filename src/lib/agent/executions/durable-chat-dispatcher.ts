@@ -1,4 +1,6 @@
 import type { AgentRunInput } from "@/lib/agent/contracts";
+import type { ServerFileAttachment } from "@/lib/chat/router";
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { AgentExecutionDispatcher } from "./agent-execution-dispatcher";
 import {
@@ -8,6 +10,20 @@ import {
 import { buildInitialAgentCheckpoint } from "./durable-agent-runtime";
 import { PrismaAgentExecutionStore } from "./prisma-agent-execution-store";
 import { buildAgentExecutionRequestHash } from "./request-hash";
+
+/**
+ * 任务 08.7：附件内容哈希进入 request hash，避免同一句文字配不同图片时
+ * 被当成重复请求返回上一次执行。哈希算法与持久化行一致（sha256 hex）。
+ */
+function attachmentFingerprints(attachments: ServerFileAttachment[]) {
+  return attachments.map((attachment) => ({
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    contentFingerprint: createHash("sha256")
+      .update(attachment.data)
+      .digest("hex"),
+  }));
+}
 
 async function materialFingerprints(input: {
   userId: string;
@@ -49,9 +65,9 @@ export async function dispatchDurableChat(input: {
   created: boolean;
   store: PrismaAgentExecutionStore;
 }> {
-  if (input.runInput.prompt.attachments.length > 0) {
-    throw new Error("Durable chat does not persist request attachments");
-  }
+  // 任务 08.7：带附件的请求同样可以进入 durable。附件已在 /api/chat 边界落库、
+  // 由 route 绑定到用户消息，Checkpoint 只保存资源引用，恢复时按资源 ID 重新
+  // 鉴权读取，因此 Worker 不需要浏览器 File 对象也能继续。
   // 每对话单执行护栏:同一对话存在未终态执行时拒绝新任务,
   // 防止双开/双击导致的并发写历史与重复计费(客户端发送前会先取消旧执行)。
   if (input.runInput.conversation.id) {
@@ -90,7 +106,7 @@ export async function dispatchDurableChat(input: {
       ? { projectId: input.runInput.conversation.projectId }
       : {}),
     selectedFiles,
-    attachments: [],
+    attachments: attachmentFingerprints(input.runInput.prompt.attachments),
     options: {
       webSearchActive: input.runInput.capabilities.webSearchActive,
       manualSkillId: input.runInput.capabilities.manualSkillId,

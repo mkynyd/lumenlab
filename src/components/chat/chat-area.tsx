@@ -11,12 +11,14 @@ import { TokenUsageBar } from "@/components/chat/token-usage-bar";
 import { ContextBudgetWarning } from "@/components/chat/context-budget-warning";
 import { AlertCircle } from "lucide-react";
 import type { AgentSource } from "@/lib/agent/sources";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
 import type { SkillSelectorValue } from "@/components/chat/skill-selector";
 import { cn } from "@/lib/utils";
 import { effectiveWebSearchActive, modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
 
 interface ChatAreaProps {
+  initialModel?: string;
   initialConversationId?: string;
   initialMessages?: Array<{
     id: string;
@@ -28,10 +30,12 @@ interface ChatAreaProps {
     cacheMissTokens?: number | null;
     sources?: AgentSource[] | null;
     process?: AssistantProcessTrace;
+    attachments?: ChatAttachmentDto[];
   }>;
 }
 
 export function ChatArea({
+  initialModel,
   initialConversationId,
   initialMessages,
 }: ChatAreaProps) {
@@ -42,6 +46,7 @@ export function ChatArea({
     usage,
     model,
     availableModels,
+    modelBlockedReason,
     reasoningEffort,
     setModel,
     setReasoningEffort,
@@ -54,12 +59,14 @@ export function ChatArea({
     contextBudget,
     newConversation,
   } = useChat({
+    model: initialModel,
     initialConversationId,
     initialMessages: initialMessages?.map((m) => ({
       ...m,
       role: m.role as "user" | "assistant" | "system",
     })),
   });
+  const [inputValue, setInputValue] = useState("");
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [userSkillValue, setUserSkillValue] = useState<SkillSelectorValue>("auto");
   const { webSearchActive, toggle: toggleWebSearch } = useWebSearch();
@@ -88,7 +95,7 @@ export function ChatArea({
     setUserSkillValue(value);
   };
 
-  const handleSend = (content: string, files: FileAttachment[]) => {
+  const handleSend = async (content: string, files: FileAttachment[]) => {
     const input: Parameters<typeof sendMessage>[0] = {
       content,
       attachments: files,
@@ -99,7 +106,12 @@ export function ChatArea({
     } else if (skillValue !== "auto") {
       input.manualSkillId = skillValue;
     }
-    void sendMessage(input);
+    const sent = await sendMessage(input);
+    if (sent !== false) {
+      setInputValue((current) => current === content ? "" : current);
+      setAttachments((current) => current === files ? [] : current);
+    }
+    return sent;
   };
 
   const handleSkillFollowUp = (skillId: string) => {
@@ -113,7 +125,10 @@ export function ChatArea({
 
   const composer = (
     <ChatInput
+      value={inputValue}
+      onValueChange={setInputValue}
       onSend={handleSend}
+      blockedReason={modelBlockedReason}
       onStop={abort}
       isStreaming={isStreaming}
       attachments={attachments}

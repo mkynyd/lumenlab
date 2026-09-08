@@ -1,3 +1,5 @@
+import { resolveStoredChatModel } from "@/lib/data/chat-model-preference";
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
@@ -16,6 +18,13 @@ import { dispatchDurableChat } from "@/lib/agent/executions/durable-chat-dispatc
 import { createDurableReplayResponse } from "@/lib/agent/executions/durable-response-stream";
 import { startAgentExecutionWorker } from "@/lib/agent/executions/durable-agent-runtime";
 import { AgentExecutionStoreError } from "@/lib/agent/executions/agent-execution-store";
+import {
+  bindChatAttachmentsToMessage,
+  encodeChatAttachmentsHeader,
+  persistChatAttachments,
+  toMediaRef,
+  type PersistedChatAttachment,
+} from "@/lib/chat/message-attachments";
 
 export { accumulateAndSave } from "@/lib/agent/runtime";
 
@@ -40,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     let parsed;
     try {
-      parsed = await parseChatRequest(request);
+      parsed = await parseChatRequest(request, (context) => resolveStoredChatModel(session.user.id!, context));
     } catch (error) {
       return NextResponse.json(
         {
@@ -51,15 +60,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 任务 08.3：附件先落对象存储并写入 pending 行；消息落库后再绑定。
+    // 幂等键沿用客户端的 clientRunKey，缺失时按本轮生成，重试不会重复计费。
+    const clientRunKey = parsed.body.clientRunKey ?? randomUUID();
+    let persistedAttachments: PersistedChatAttachment[] = [];
+    if (parsed.attachments.length > 0) {
+      try {
+        persistedAttachments = await persistChatAttachments({
+          userId: session.user.id,
+          clientRunKey,
+          attachments: parsed.attachments,
+        });
+      } catch (error) {
+        logger.error("chat attachment persistence failed", {
+          error: String(error),
+          userId: session.user.id,
+        });
+        return NextResponse.json(
+          { error: "图片附件保存失败，请重试；草稿与附件已保留" },
+          { status: 503 }
+        );
+      }
+    }
+    const attachmentHeaders: Record<string, string> =
+      persistedAttachments.length > 0
+        ? {
+            "X-Message-Attachments":
+              encodeChatAttachmentsHeader(persistedAttachments),
+          }
+        : {};
+
     const runInput = mapAgentRunInput({
       userId: session.user.id,
       parsed,
+      clientRunKey,
       signal: request.signal,
     });
-    if (
-      learningFeatureFlags.durableExecutionEnabled &&
-      parsed.attachments.length === 0
-    ) {
+    if (persistedAttachments.length > 0) {
+      // 任务 08.7：Checkpoint 只保存资源引用，Worker 恢复时按资源 ID 重新鉴权。
+      runInput.prompt.mediaRefs = persistedAttachments.map(toMediaRef);
+    }
+    if (learningFeatureFlags.durableExecutionEnabled) {
       if (!parsed.body.clientRunKey) {
         return NextResponse.json(
           { error: "启用持久执行时缺少 clientRunKey" },
@@ -71,6 +112,13 @@ export async function POST(request: NextRequest) {
         clientRunKey: parsed.body.clientRunKey,
         runInput,
       });
+      if (persistedAttachments.length > 0 && dispatched.execution.userMessageId) {
+        await bindChatAttachmentsToMessage({
+          userId: session.user.id,
+          clientRunKey,
+          messageId: dispatched.execution.userMessageId,
+        });
+      }
       startAgentExecutionWorker();
       return createDurableReplayResponse({
         store: dispatched.store,
@@ -79,11 +127,12 @@ export async function POST(request: NextRequest) {
         signal: request.signal,
         format: "chat",
         chatHeaders: true,
+        extraHeaders: attachmentHeaders,
       });
     }
 
     const run = await agentRuntime.run(runInput);
-    return createChatResponse(run);
+    return createChatResponse(run, attachmentHeaders);
   } catch (error) {
     if (error instanceof AgentExecutionStoreError) {
       return NextResponse.json(

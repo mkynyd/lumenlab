@@ -25,6 +25,7 @@ export default async function ConversationPage({
     <div className="h-full flex flex-col">
       <ChatArea
         key={conversation.id}
+        initialModel={conversation.model}
         initialConversationId={conversation.id}
         initialMessages={conversation.messages}
       />

@@ -14,6 +14,7 @@ import {
 } from "@/components/chat/skill-selector";
 import { VirtualMessageList } from "@/components/chat/virtual-message-list";
 import { ContextRing } from "@/components/chat/context-ring";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import {
   SidebarCollapse,
   SidebarExpand,
@@ -115,6 +116,7 @@ export default function ProjectDetailPage() {
     usage,
     model,
     availableModels,
+    modelBlockedReason,
     reasoningEffort,
     setModel,
     setReasoningEffort,
@@ -130,7 +132,8 @@ export default function ProjectDetailPage() {
   } = useChat({
     initialConversationId: undefined,
     initialMessages: [],
-    model: project?.defaultModel || "deepseek-v4-flash-vision-exp",
+    model: project?.defaultModel ?? undefined,
+    modelLoading: !project,
     thinkingEnabled: project?.thinkingEnabled ?? true,
     projectId,
     selectedFileIds: selectedFileIdList,
@@ -431,7 +434,8 @@ export default function ProjectDetailPage() {
       setFileMessage("文件解析中，请稍候...");
       return;
     }
-    await sendMessage(input);
+    const sent = await sendMessage(input);
+    if (sent === false) return false;
     await queryClient.invalidateQueries({
       queryKey: queryKeys.projects.detail(projectId),
     });
@@ -441,8 +445,7 @@ export default function ProjectDetailPage() {
   }
 
   async function handleSend(content: string, attachments: FileAttachment[]) {
-    setChatInputValue("");
-    await sendOrQueue(withSkillSelection({ content, attachments }));
+    return sendOrQueue(withSkillSelection({ content, attachments }));
   }
 
   async function handleQuickTaskSend(input: QuickTaskSendInput) {
@@ -698,6 +701,10 @@ export default function ProjectDetailPage() {
                 <ContextRing used={usage.totalTokens} />
               </div>
             )}
+            {/* 移动端不提供通知入口；md 以下由 CSS 直接隐藏，避免水合前后闪一下。 */}
+            <div className="hidden shrink-0 md:block">
+              <NotificationBell size="sm" />
+            </div>
           </div>
         </header>
 
@@ -789,6 +796,7 @@ export default function ProjectDetailPage() {
         </div>
 
         <ChatInput
+          blockedReason={modelBlockedReason}
           onSend={handleSend}
           onStop={abort}
           isStreaming={isStreaming}

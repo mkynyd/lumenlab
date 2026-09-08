@@ -127,9 +127,10 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 ### 多模型流式对话
 
-- 聊天活跃模型为 DeepSeek V4 Flash Vision、MiniMax M3 和 Qwen3.8-Flash，支持文本与图片输入；Qwen 由独立开关控制可见性。
+- 新普通会话和新项目默认使用 Qwen3.8-Flash。已有会话保留自身选择，已有项目的新对话继承项目默认；历史模型在发起新请求时升级到同供应商的活跃模型，历史账单不改写。
+- 活跃模型包括 Qwen3.8-Flash、DeepSeek V4 Flash Vision 和 MiniMax M3，均支持文本与图片输入。Qwen 需启用 `MODEL_QWEN_ENABLED`、配置百炼工作空间，并为目标账号提供有效聊天凭证。不可用或请求失败时显示原因，保留当前选择、草稿和附件，由用户手动选择其他模型。
 - 三个聊天适配器使用 Responses，平台管理历史、工具审批和调用结果；原生图片在当前工具回合间保留。
-- 迁移仍在进行：PDF/Word 聊天输入替代、Qwen 视频兼容、持久恢复与内部非流式调用尚未完成，当前版本不可发布。既有独立文档解析链路保留。
+- PDF/DOCX 聊天输入先提取正文，扫描 PDF 转为有数量上限的页图；Qwen 视频附件走独立的 DashScope 兼容路径。独立文档解析保留。聊天图片的跨历史回合留存与查看仍待后续迭代。
 - `AGENT_PROVIDER_ADAPTER=responses` 为默认配置，`legacy` 为兼容别名；旧 Pi POC 不用于当前活跃模型。各供应商可独立暂停，暂停后请求返回 503。
 - SSE 流式输出，Markdown / KaTeX / Mermaid / 代码高亮实时渲染。
 - 集中式 API Key 管理：用户不需要自行申请 Key，由管理员通过注册码体系统一配置。
@@ -436,7 +437,7 @@ cp .env.example .env
 | `LEARNING_LOOP_ROLLOUT` | `off` / `preview` / `default`，默认 `off`；`default` 要求持久执行开启 |
 | `AGENT_PROVIDER_ADAPTER` | 默认 `responses`；兼容 `legacy` 别名，拒绝旧 `pi` / `pi-ai` 配置 |
 | `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_MINIMAX_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
-| `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 灰度开关，默认 `false` |
+| `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 开放开关，示例默认 `false`；设为 `true` 前须验证目标账号的实际聊天权限，只有 Embedding 权限不足以开放默认聊天 |
 | `BAILIAN_WORKSPACE_ID` | 启用 Qwen 聊天时必填 |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛云 Kodo 密钥（生产必填） |
 | `QINIU_BUCKET` | Kodo 空间名 |

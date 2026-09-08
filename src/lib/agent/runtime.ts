@@ -19,6 +19,12 @@ import {
 import { providerForChatModel } from "@/lib/chat/model-catalog";
 import { resolveProjectMediaContext } from "@/lib/agent/context/media-context";
 import {
+  MAX_MEDIA_BYTES,
+  MAX_MEDIA_IMAGES,
+} from "@/lib/agent/context/media-ref";
+import { resolveConversationMediaContext } from "@/lib/agent/context/conversation-media";
+import { bindChatAttachmentsToMessage } from "@/lib/chat/message-attachments";
+import {
   DocumentExtractionError,
   resolveChatDocumentAttachments,
 } from "@/lib/files/document-extract";
@@ -874,10 +880,43 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
 
   // 9. 保存用户消息
   if (!input.durable) {
-    await conversationPersistence.createUserMessage({
+    const userMessage = await conversationPersistence.createUserMessage({
       conversationId: conversation.id,
       content: message,
     });
+    // 任务 08.3：本轮图片附件已在上传阶段落库（pending），这里绑定到用户消息。
+    if (input.clientRunKey && input.prompt.attachments.length > 0) {
+      await bindChatAttachmentsToMessage({
+        userId,
+        clientRunKey: input.clientRunKey,
+        messageId: userMessage.id,
+      });
+    }
+  }
+
+  // 任务 08.6：历史图片按资源 ID 重新鉴权，在剩余预算内随本次请求重新携带，
+  // 让"接着上次那张图继续问"不需要重新上传；不会无限回传全部历史图片。
+  const currentImageAttachments = effectiveAttachments.filter((attachment) =>
+    attachment.mimeType.startsWith("image/")
+  );
+  const historyMedia = await resolveConversationMediaContext({
+    history,
+    prompt: message,
+    maxCount: Math.max(0, MAX_MEDIA_IMAGES - currentImageAttachments.length),
+    maxBytes: Math.max(
+      0,
+      MAX_MEDIA_BYTES -
+        currentImageAttachments.reduce((total, item) => total + item.size, 0)
+    ),
+  });
+  if (historyMedia.attachments.length > 0) {
+    effectiveAttachments = [
+      ...effectiveAttachments,
+      ...historyMedia.attachments,
+    ];
+  }
+  if (historyMedia.note) {
+    effectivePrompt = `${effectivePrompt}\n\n【历史图片说明】${historyMedia.note}`;
   }
 
   let orchestratorToolContext = "";

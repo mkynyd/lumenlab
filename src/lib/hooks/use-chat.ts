@@ -1,5 +1,6 @@
 "use client";
 
+import { chatModelForPreference, chatModelLabel, DEFAULT_CHAT_MODELS } from "@/lib/chat/model-catalog";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -11,6 +12,7 @@ import {
   buildChatRequestBody,
 } from "@/lib/chat-request";
 import type { FileAttachment } from "@/lib/chat/router";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { queryKeys } from "@/lib/query-keys";
 import type { AgentEvent, ApprovalScope } from "@/lib/agent/types";
@@ -69,6 +71,11 @@ export interface ChatMessage {
   toolsUsed?: number;
   /** Persisted, replayable public process state for this assistant response. */
   process?: AssistantProcessTrace;
+  /**
+   * 任务 08：图片附件。上传期间是本地 blob 预览（status: "uploading"），
+   * 发送成功后替换为服务端持久化附件的同源鉴权 URL。
+   */
+  attachments?: ChatAttachmentDto[];
 }
 
 export interface SendMessageInput {
@@ -88,17 +95,13 @@ interface UseChatOptions {
   model?: string;
   thinkingEnabled?: boolean;
   reasoningEffort?: "high" | "max";
+  modelLoading?: boolean;
   projectId?: string;
   selectedFileIds?: string[];
   mode?: ProjectType;
 }
 
 type ReasoningEffort = NonNullable<UseChatOptions["reasoningEffort"]>;
-
-const FALLBACK_CHAT_MODELS = [
-  "deepseek-v4-flash-vision-exp",
-  "minimax-m3",
-] as const;
 
 function hasStreamingMessage(messages: ChatMessage[]) {
   return messages.some((message) => message.isStreaming);
@@ -192,8 +195,16 @@ export function useChat(options: UseChatOptions = {}) {
     tokens: number;
     ratio: number;
   } | null>(null);
-  const [model, setModel] = useState(options.model || "deepseek-v4-flash-vision-exp");
+  const [model, setModel] = useState(() => chatModelForPreference(options.model));
   const [availableModels, setAvailableModels] = useState<readonly string[] | null>(null);
+  const [modelUnavailableReasons, setModelUnavailableReasons] = useState<Record<string, string>>({});
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const modelBlockedReason = options.modelLoading
+    ? "正在加载项目模型设置，请稍候"
+    : catalogError ?? (availableModels === null
+      ? "正在检查模型可用性，请稍候"
+      : availableModels.includes(model) ? undefined
+        : modelUnavailableReasons[model] ?? `${chatModelLabel(model)} 当前不可用，请选择其他可用模型`);
   const [thinkingEnabled, setThinkingEnabledState] = useState(true);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
     options.reasoningEffort ?? "max"
@@ -211,6 +222,13 @@ export function useChat(options: UseChatOptions = {}) {
     options.initialConversationId
   );
   const streamSessionRef = useRef(0);
+  /** 任务 08.4：上传期间的本地预览 URL，随预览退出或组件卸载回收。 */
+  const previewUrlsRef = useRef<Set<string>>(new Set());
+
+  const releasePreviewUrls = useCallback(() => {
+    for (const url of previewUrlsRef.current) URL.revokeObjectURL(url);
+    previewUrlsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -220,29 +238,19 @@ export function useChat(options: UseChatOptions = {}) {
     })
       .then(async (response) => {
         if (!response.ok) throw new Error(`model catalog ${response.status}`);
-        const payload = await response.json() as { models?: unknown };
+        const payload = await response.json() as { models?: unknown; unavailableReasons?: Record<string, string> };
         if (!Array.isArray(payload.models) || !payload.models.every((model) => typeof model === "string")) {
           throw new Error("invalid model catalog");
         }
         const nextModels = payload.models as string[];
         setAvailableModels(nextModels);
-        setModel((current) =>
-          nextModels.includes(current)
-            ? current
-            : nextModels[0] ?? "deepseek-v4-flash-vision-exp"
-        );
+        setModelUnavailableReasons(payload.unavailableReasons ?? {});
       })
       .catch((catalogError: unknown) => {
         if (controller.signal.aborted) return;
         console.warn("Failed to load chat model catalog", catalogError);
-        setAvailableModels(FALLBACK_CHAT_MODELS);
-        setModel((current) =>
-          FALLBACK_CHAT_MODELS.includes(
-            current as (typeof FALLBACK_CHAT_MODELS)[number]
-          )
-            ? current
-            : FALLBACK_CHAT_MODELS[0]
-        );
+        setAvailableModels(DEFAULT_CHAT_MODELS);
+        setCatalogError("无法检查模型可用性，请刷新后重试；当前选择已保留");
       });
     return () => controller.abort();
   }, []);
@@ -250,8 +258,9 @@ export function useChat(options: UseChatOptions = {}) {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      releasePreviewUrls();
     };
-  }, []);
+  }, [releasePreviewUrls]);
 
   const setThinkingEnabled = useCallback(() => {
     setThinkingEnabledState(true);
@@ -259,19 +268,20 @@ export function useChat(options: UseChatOptions = {}) {
 
   useEffect(() => {
     if (conversationId || messages.length > 0) return;
-    const nextModel = options.model;
+    const nextModel = options.projectId ? options.model : undefined;
     const nextReasoningEffort = options.reasoningEffort;
     queueMicrotask(() => {
-      if (nextModel) setModel(nextModel);
+      if (nextModel) setModel(chatModelForPreference(nextModel));
       if (nextReasoningEffort) {
         setReasoningEffort(nextReasoningEffort);
       }
       setThinkingEnabledState(true);
     });
-  }, [conversationId, messages.length, options.model, options.reasoningEffort]);
+  }, [conversationId, messages.length, options.projectId, options.model, options.reasoningEffort]);
 
   const performSend = useCallback(
     async (input: SendMessageInput) => {
+      if (modelBlockedReason) { setError(modelBlockedReason); return false; }
       const attachments = input.attachments || [];
       const content = input.content.trim() || (attachments.length > 0 ? "请阅读附件。" : "");
       if (!content.trim() && attachments.length === 0) return;
@@ -297,12 +307,46 @@ export function useChat(options: UseChatOptions = {}) {
       setError(null);
       setIsStreaming(true);
 
+      // 任务 08.4：图片用本地 blob 预览进入乐观消息，发送成功后替换为
+      // 服务端持久化附件；非图片附件仍以文本标记说明，避免重复展示。
+      const imageAttachments = attachments.filter((attachment) =>
+        attachment.mimeType.startsWith("image/")
+      );
+      const otherAttachments = attachments.filter(
+        (attachment) => !attachment.mimeType.startsWith("image/")
+      );
+      const previewUrls: string[] = [];
+      const optimisticAttachments: ChatAttachmentDto[] = imageAttachments.map(
+        (attachment) => {
+          const url = URL.createObjectURL(attachment.data);
+          previewUrls.push(url);
+          return {
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            size: attachment.size,
+            width: null,
+            height: null,
+            status: "uploading",
+            url,
+            thumbnailUrl: url,
+          };
+        }
+      );
+      for (const url of previewUrls) previewUrlsRef.current.add(url);
+
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         role: "user",
-        content: attachments.length > 0
-          ? `${content.trim()}\n\n${attachments.map((attachment) => `[附件] ${attachment.name}`).join("\n")}`
-          : content.trim(),
+        content:
+          otherAttachments.length > 0
+            ? `${content.trim()}\n\n${otherAttachments
+                .map((attachment) => `[附件] ${attachment.name}`)
+                .join("\n")}`
+            : content.trim(),
+        ...(optimisticAttachments.length > 0
+          ? { attachments: optimisticAttachments }
+          : {}),
       };
       let streamingId = `assistant-${Date.now()}`;
       const streamingStartedAt = Date.now();
@@ -403,6 +447,27 @@ export function useChat(options: UseChatOptions = {}) {
 
         if (!response.ok) {
           throw new Error(await readChatError(response));
+        }
+
+        // 任务 08.4：把乐观预览替换为服务端持久化附件（真实 messageId 绑定的
+        // 资源），随后回收本地 blob URL；缩略图与大图都走同源鉴权响应。
+        const persistedHeader = response.headers.get("X-Message-Attachments");
+        if (persistedHeader) {
+          try {
+            const persisted = JSON.parse(
+              persistedHeader
+            ) as ChatAttachmentDto[];
+            if (Array.isArray(persisted) && persisted.length > 0) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === userMessage.id ? { ...m, attachments: persisted } : m
+                )
+              );
+            }
+          } catch {
+            // 头部损坏时保留本地预览，不阻断对话。
+          }
+          releasePreviewUrls();
         }
 
         // Get conversation ID from header if new
@@ -735,6 +800,7 @@ export function useChat(options: UseChatOptions = {}) {
             );
             // Remove the streaming placeholder on foreground error.
             setMessages((prev) => prev.filter((m) => m.id !== streamingId));
+            return false;
           }
         }
       } finally {
@@ -746,8 +812,10 @@ export function useChat(options: UseChatOptions = {}) {
           abortRef.current = null;
         }
       }
+      return true;
     },
     [
+      modelBlockedReason,
       conversationId,
       model,
       reasoningEffort,
@@ -755,6 +823,7 @@ export function useChat(options: UseChatOptions = {}) {
       options.selectedFileIds,
       options.mode,
       queryClient,
+      releasePreviewUrls,
     ]
   );
   const sendMutation = useMutation({ mutationFn: performSend });
@@ -787,6 +856,7 @@ export function useChat(options: UseChatOptions = {}) {
     abortRef.current = null;
     agentExecutionIdRef.current = null;
     conversationIdRef.current = undefined;
+    setModel(chatModelForPreference(options.projectId ? options.model : undefined));
     setMessages([]);
     setConversationId(undefined);
     setUsage(null);
@@ -795,7 +865,7 @@ export function useChat(options: UseChatOptions = {}) {
     setIsStreaming(false);
     setAgentTimeline({});
     setAgentSession({ suggestions: [] });
-  }, []);
+  }, [options.projectId, options.model]);
 
   const loadConversation = useCallback(
     (
@@ -808,7 +878,7 @@ export function useChat(options: UseChatOptions = {}) {
       conversationIdRef.current = nextConversationId;
       setConversationId(nextConversationId);
       setMessages(nextMessages);
-      if (settings?.model) setModel(settings.model);
+      if (settings?.model) setModel(chatModelForPreference(settings.model));
       setThinkingEnabledState(true);
       setUsage(null);
       setContextBudget(null);
@@ -935,7 +1005,8 @@ export function useChat(options: UseChatOptions = {}) {
     conversationId,
     usage,
     model,
-    availableModels: availableModels ?? FALLBACK_CHAT_MODELS,
+    availableModels: availableModels ?? [],
+    modelBlockedReason,
     thinkingEnabled,
     reasoningEffort,
     setModel,

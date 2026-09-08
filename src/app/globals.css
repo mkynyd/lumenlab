@@ -510,8 +510,14 @@ html {
   0%, 50%  { opacity: 1; }
   51%, 100% { opacity: 0; }
 }
-.typing-cursor::after {
+/* 流式光标挂在最后一段的伪元素上：绝对定位让它不参与排版，
+   位置仍在最后一行末尾，因此收尾时移除不会改变消息高度或重新换行。 */
+.chat-message-text[data-cursor="true"] > .markdown-body > :last-child {
+  position: relative;
+}
+.chat-message-text[data-cursor="true"] > .markdown-body > :last-child::after {
   content: '▌';
+  position: absolute;
   animation: blink 1s infinite;
   color: var(--color-accent);
 }
@@ -559,6 +565,10 @@ html {
 
 .assistant-process-done {
   color: var(--color-success);
+}
+
+.assistant-process-failed {
+  color: var(--color-error);
 }
 
 .assistant-process-collapsible,
@@ -1194,7 +1204,7 @@ pre code {
   html,
   .workbench-ambient,
   .loading-indicator-spinner,
-  .typing-cursor::after,
+  .chat-message-text[data-cursor="true"] > .markdown-body > :last-child::after,
   .view-enter,
   .motion-safe\:animate-slide-up-fade {
     animation: none !important;

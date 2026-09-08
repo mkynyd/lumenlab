@@ -35,9 +35,9 @@ describe("chat model catalog", () => {
     ]);
     expect(QWEN_CHAT_MODEL).toBe("qwen3.8-flash");
     expect(ALL_CHAT_MODELS).toEqual([
+      "qwen3.8-flash",
       "deepseek-v4-flash-vision-exp",
       "minimax-m3",
-      "qwen3.8-flash",
     ]);
   });
 

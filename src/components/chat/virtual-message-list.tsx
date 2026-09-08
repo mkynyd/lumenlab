@@ -47,6 +47,7 @@ const Bubble = memo(function Bubble({
       reasoningContent={message.reasoningContent}
       tokenCount={message.tokenCount ?? undefined}
       sources={message.sources}
+      attachments={message.attachments}
       isStreaming={message.isStreaming}
       activeToolId={message.activeToolId}
       toolsUsed={message.toolsUsed}
@@ -63,8 +64,13 @@ const Bubble = memo(function Bubble({
   );
 });
 
-/** Threshold in px — user is "at bottom" if within this distance from the end. */
+/** 显示「滚动到底部」按钮的阈值：离底部超过这个距离就提示用户。 */
 const AT_BOTTOM_THRESHOLD = 64;
+/**
+ * 继续跟随流式输出的阈值：必须真正贴底（几像素以内）才跟随。
+ * 用户向上滚一点点就立刻停止跟随，不再被新内容拉回底部。
+ */
+const FOLLOW_BOTTOM_THRESHOLD = 4;
 
 export function VirtualMessageList({
   messages,
@@ -80,17 +86,12 @@ export function VirtualMessageList({
   onDenyTool?: (executionId: string) => Promise<void> | void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const { completed, streaming } = splitStreamingMessage(messages);
+  const lastMessage = messages.at(-1);
+  const lastContent = lastMessage?.content ?? "";
   const userAtBottomRef = useRef(true);
   const prevMsgCountRef = useRef(messages.length);
   const [pinned, setPinned] = useState(false);
   const pinnedRef = useRef(false);
-
-  const isNearBottom = useCallback(() => {
-    const el = parentRef.current;
-    if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_THRESHOLD;
-  }, []);
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = parentRef.current;
@@ -101,25 +102,38 @@ export function VirtualMessageList({
     });
   }, []);
 
-  // Handle scroll events from the user
+  // 用户主动滚动/触摸时立即解除跟随，不等 scroll 事件；重新贴底后才恢复跟随。
+  // 这样流式输出不会把用户刚滑上去的阅读位置一行一行推回底部。
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
+
+    const release = () => {
+      userAtBottomRef.current = false;
+    };
     const handleScroll = () => {
-      if (!el) return;
-      const atBottom = isNearBottom();
-      userAtBottomRef.current = atBottom;
-      const nextPinned = !atBottom;
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      userAtBottomRef.current = distance <= FOLLOW_BOTTOM_THRESHOLD;
+      const nextPinned = distance > AT_BOTTOM_THRESHOLD;
       if (pinnedRef.current !== nextPinned) {
         pinnedRef.current = nextPinned;
         setPinned(nextPinned);
       }
     };
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [isNearBottom]);
 
-  // Auto-scroll only when user is at the bottom
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    el.addEventListener("wheel", release, { passive: true });
+    el.addEventListener("touchmove", release, { passive: true });
+    el.addEventListener("keydown", release);
+    return () => {
+      el.removeEventListener("scroll", handleScroll);
+      el.removeEventListener("wheel", release);
+      el.removeEventListener("touchmove", release);
+      el.removeEventListener("keydown", release);
+    };
+  }, []);
+
+  // 只有用户仍贴着底部时才跟随内容增长；用户主动滚动后完全不干预位置。
   useLayoutEffect(() => {
     const msgCountChanged = messages.length !== prevMsgCountRef.current;
     prevMsgCountRef.current = messages.length;
@@ -127,20 +141,19 @@ export function VirtualMessageList({
     if (messages.length === 0) return;
 
     if (msgCountChanged) {
-      scrollToBottom(false);
       userAtBottomRef.current = true;
       if (pinnedRef.current) {
         pinnedRef.current = false;
         setPinned(false);
       }
+      scrollToBottom(false);
       return;
     }
 
-    // Streaming content update → only scroll if user hasn't scrolled up
-    if (streaming?.content && userAtBottomRef.current) {
+    if (userAtBottomRef.current) {
       scrollToBottom(false);
     }
-  }, [messages.length, streaming?.content, scrollToBottom]);
+  }, [lastContent, messages.length, scrollToBottom]);
 
   // Initial scroll to bottom on mount
   useLayoutEffect(() => {
@@ -164,7 +177,7 @@ export function VirtualMessageList({
         </div>
       ) : null}
       <div className="w-full">
-        {completed.map((message) => (
+        {messages.map((message) => (
           <Bubble
             key={message.id}
             message={message}
@@ -175,9 +188,6 @@ export function VirtualMessageList({
           />
         ))}
       </div>
-      {streaming ? (
-        <Bubble message={streaming} onSaveArtifact={onSaveArtifact} onSkillFollowUp={onSkillFollowUp} onApproveTool={onApproveTool} onDenyTool={onDenyTool} />
-      ) : null}
       {pinned && (
         <button
           onClick={() => {

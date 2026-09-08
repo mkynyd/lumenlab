@@ -81,6 +81,18 @@ describe("resetPasswordSchema", () => {
 });
 
 describe("sendMessageSchema", () => {
+  it("defaults an omitted model to Qwen and still enforces the rollout gate", () => {
+    const previous = process.env.MODEL_QWEN_ENABLED;
+    try {
+      process.env.MODEL_QWEN_ENABLED = "true";
+      expect(sendMessageSchema.parse({ message: "hello" }).model).toBe("qwen3.8-flash");
+      process.env.MODEL_QWEN_ENABLED = "false";
+      expect(() => sendMessageSchema.parse({ message: "hello" })).toThrow("Qwen 模型暂未开放");
+    } finally {
+      if (previous === undefined) delete process.env.MODEL_QWEN_ENABLED;
+      else process.env.MODEL_QWEN_ENABLED = previous;
+    }
+  });
   it("defaults project chat requests to thinking mode", () => {
     expect(
       sendMessageSchema.parse({

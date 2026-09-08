@@ -41,11 +41,13 @@ model User {
   conversations        Conversation[]
   projects             Project[]
   files                FileAsset[]
+  messageAttachments   MessageAttachment[]
   chunks               DocumentChunk[]
   artifacts            Artifact[]
   documentConversions  DocumentConversion[]
   tokenUsages          TokenUsage[]
   agentExecutions      AgentExecution[]
+  notifications        Notification[]
   learningGoals        LearningGoal[]
   learningSessions     LearningSession[]
   practiceAttempts     PracticeAttempt[]
@@ -190,7 +192,7 @@ model Conversation {
   userId             String
   projectId          String? // nullable — existing chats without project remain valid
   title              String   @default("New Chat")
-  model              String   @default("deepseek-v4-flash")
+  model              String   @default("qwen3.8-flash")
   modelLock          String?
   thinkingEnabled    Boolean  @default(true)
   activeSkillId      String?
@@ -230,13 +232,48 @@ model Message {
   metadata         Json? // 压缩摘要的额外信息
   createdAt        DateTime @default(now())
 
-  conversation                      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation                      Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   artifacts                         Artifact[]
   tokenUsage                        TokenUsage?
-  agentExecutionsAsUserMessage      AgentExecution[] @relation("AgentExecutionUserMessage")
-  agentExecutionsAsAssistantMessage AgentExecution[] @relation("AgentExecutionAssistantMessage")
+  attachments                       MessageAttachment[]
+  agentExecutionsAsUserMessage      AgentExecution[]    @relation("AgentExecutionUserMessage")
+  agentExecutionsAsAssistantMessage AgentExecution[]    @relation("AgentExecutionAssistantMessage")
 
   @@index([conversationId])
+}
+
+// 任务 08：消息附件的持久化元数据。对象先落对象存储、行先以 pending 状态存在，
+// 用户消息落库后再绑定 messageId；未绑定的行由补偿清理回收，普通对话不会创建
+// 虚假 Project，也不依赖 FileAsset 的解析语义。
+model MessageAttachment {
+  id                String   @id @default(cuid())
+  userId            String
+  messageId         String?
+  clientRunKey      String?
+  kind              String   @default("image") // image
+  originalName      String
+  mimeType          String
+  size              Int // bytes
+  width             Int?
+  height            Int?
+  contentHash       String // sha256 of the stored bytes, version locator
+  storageProvider   String   @default("local")
+  storagePath       String
+  thumbnailProvider String?
+  thumbnailPath     String?
+  position          Int      @default(0)
+  status            String   @default("pending") // pending | bound
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientRunKey, position])
+  @@index([messageId])
+  @@index([userId, status])
+  @@index([createdAt])
+  @@index([contentHash])
 }
 
 model TokenUsage {
@@ -272,7 +309,7 @@ model Project {
   name            String
   description     String?
   type            String   @default("general") // experiment, review, coding, general
-  defaultModel    String   @default("deepseek-v4-flash")
+  defaultModel    String   @default("qwen3.8-flash")
   thinkingEnabled Boolean  @default(true)
   systemPrompt    String?
   createdAt       DateTime @default(now())
@@ -2278,4 +2315,33 @@ model PaperResearchMaterial {
   @@index([sourceId])
   @@index([claimId])
   @@index([evidenceId])
+}
+
+/// 任务 10：站内通知投影。任务的实时状态来自任务源（AgentExecution 等），
+/// 本表只保存用户需要感知的变化与已读/已弹出状态，不作为任务事实来源。
+model Notification {
+  id                  String    @id @default(cuid())
+  userId              String
+  taskType            String // agent_execution | paper_compilation（后续任务接线）
+  taskId              String
+  taskAttempt         Int       @default(0)
+  /// 幂等键：taskType:taskId:attempt:kind，同一次尝试的同一种变化只落一行
+  eventKey            String
+  kind                String // waiting_user | completed | failed | cancelled
+  title               String
+  summary             String?
+  /// 服务器生成的站内允许路径，客户端不得提交
+  targetPath          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  readAt              DateTime?
+  toastAcknowledgedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventKey])
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([userId, toastAcknowledgedAt])
+  @@index([taskType, taskId])
 }

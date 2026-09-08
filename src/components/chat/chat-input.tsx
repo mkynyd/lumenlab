@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileText, Globe, Paperclip, Plus, Send, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/tooltip";
 
 interface ChatInputProps {
-  onSend: (message: string, attachments: FileAttachment[]) => void;
+  onSend: (message: string, attachments: FileAttachment[]) => void | boolean | Promise<void | boolean>;
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
@@ -59,6 +59,64 @@ const MOBILE_EFFORT_OPTIONS = [
   { value: "max", label: "深度" },
 ] as const;
 
+/**
+ * 任务 08：上传期间的本地预览。图片用 blob URL 显示缩略图（随预览退出回收），
+ * 其他附件保持文件名标签。
+ */
+function AttachmentPreviewChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: FileAttachment;
+  onRemove: () => void;
+}) {
+  const isImage = attachment.mimeType.startsWith("image/");
+
+  if (isImage) {
+    return (
+      <span
+        className="relative block size-16 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-panel-muted)]"
+        title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
+      >
+        {attachment.previewUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={attachment.previewUrl}
+            alt={attachment.name}
+            className="size-full object-cover"
+          />
+        )}
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`移除附件 ${attachment.name}`}
+          className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-[var(--color-overlay)]/70 text-[var(--color-surface)] transition-colors hover:bg-[var(--color-overlay)]"
+        >
+          <X size={12} />
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex h-7 max-w-56 items-center gap-1 px-1.5 text-xs text-[var(--color-text-secondary)]"
+      title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
+    >
+      <FileText size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
+      <span className="truncate">{attachment.name}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="text-[var(--color-text-tertiary)]"
+        aria-label={`移除附件 ${attachment.name}`}
+      >
+        <X size={12} />
+      </button>
+    </span>
+  );
+}
+
 export function ChatInput({
   onSend,
   onStop,
@@ -80,10 +138,30 @@ export function ChatInput({
   skillValue = "auto",
   onSkillChange,
 }: ChatInputProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const mounted = useRef(true);
+  const attachmentsRef = useRef(attachments);
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      // 组件卸载时回收尚未发送的本地预览 URL。
+      for (const attachment of attachmentsRef.current) {
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+      }
+    };
+  }, []);
+  const latestDraft = useRef({ value: "", attachments });
   const [internalValue, setInternalValue] = useState("");
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const currentValue = value ?? internalValue;
+  useEffect(() => {
+    latestDraft.current = { value: currentValue, attachments };
+  }, [currentValue, attachments]);
   const hasSendableContent = currentValue.trim().length > 0 || attachments.length > 0;
   const webSearchSupported = modelSupportsWebSearch(model);
   const { ref: textareaRef, style: textareaStyle } = useMeasuredTextareaHeight({
@@ -102,12 +180,22 @@ export function ChatInput({
     onValueChange?.(nextValue);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!hasSendableContent || isStreaming || disabled) return;
-    onSend(currentValue, attachments);
-    updateValue("");
-    onAttachmentsChange?.([]);
+    if (!hasSendableContent || isStreaming || isSubmitting || disabled || blockedReason) return;
+    setIsSubmitting(true);
+    try {
+      const sent = await onSend(currentValue, attachments);
+      if (sent === false || !mounted.current) return;
+      if (latestDraft.current.value === currentValue) updateValue("");
+      if (latestDraft.current.attachments === attachments) {
+        // 发送成功后本地预览退出：乐观消息使用自己的 blob 预览。
+        for (const attachment of attachments) releasePreview(attachment);
+        onAttachmentsChange?.([]);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -119,20 +207,37 @@ export function ChatInput({
 
   function addFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    const nextFiles = Array.from(files).map((file) => ({
-      id: globalThis.crypto?.randomUUID?.() || `attachment-${Date.now()}-${file.name}`,
-      name: file.name,
-      mimeType: file.type || "application/octet-stream",
-      size: file.size,
-      data: file,
-    }));
+    const nextFiles = Array.from(files).map((file) => {
+      const mimeType = file.type || "application/octet-stream";
+      const attachment: FileAttachment = {
+        id:
+          globalThis.crypto?.randomUUID?.() ||
+          `attachment-${Date.now()}-${file.name}`,
+        name: file.name,
+        mimeType,
+        size: file.size,
+        data: file,
+      };
+      // 任务 08：本地预览 URL 在事件期创建，避免渲染期副作用与过早回收。
+      if (mimeType.startsWith("image/")) {
+        attachment.previewUrl = URL.createObjectURL(file);
+      }
+      return attachment;
+    });
     onAttachmentsChange?.([...attachments, ...nextFiles]);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }
 
+  function releasePreview(attachment: FileAttachment) {
+    if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+  }
+
   function removeAttachment(id: string) {
+    for (const attachment of attachments) {
+      if (attachment.id === id) releasePreview(attachment);
+    }
     onAttachmentsChange?.(attachments.filter((attachment) => attachment.id !== id));
   }
 
@@ -172,22 +277,11 @@ export function ChatInput({
         {attachments.length > 0 && (
           <div className="mb-1.5 flex flex-wrap gap-1.5 px-1">
             {attachments.map((attachment) => (
-              <span
+              <AttachmentPreviewChip
                 key={attachment.id}
-                className="inline-flex h-7 max-w-56 items-center gap-1 px-1.5 text-xs text-[var(--color-text-secondary)]"
-                title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
-              >
-                <FileText size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
-                <span className="truncate">{attachment.name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(attachment.id)}
-                  className="text-[var(--color-text-tertiary)]"
-                  aria-label={`移除附件 ${attachment.name}`}
-                >
-                  <X size={12} />
-                </button>
-              </span>
+                attachment={attachment}
+                onRemove={() => removeAttachment(attachment.id)}
+              />
             ))}
           </div>
         )}
@@ -317,7 +411,7 @@ export function ChatInput({
               <TooltipTrigger asChild>
                 <Button
                   type="submit"
-                  disabled={!hasSendableContent || disabled}
+                  disabled={!hasSendableContent || disabled || Boolean(blockedReason)}
                   variant="primary"
                   size="icon-lg"
                   className="shrink-0 rounded-full"
@@ -346,7 +440,7 @@ export function ChatInput({
             ) : (
               <Button
                 type="submit"
-                disabled={!hasSendableContent || disabled}
+                disabled={!hasSendableContent || disabled || Boolean(blockedReason)}
                 variant="primary"
                 size="icon-lg"
                 className="size-11 rounded-full"

@@ -55,9 +55,11 @@ export const DEFAULT_CHAT_MODELS = [
 
 export const QWEN_CHAT_MODEL = "qwen3.8-flash" as const;
 
+export const DEFAULT_CHAT_MODEL = QWEN_CHAT_MODEL;
+
 export const ALL_CHAT_MODELS = [
-  ...DEFAULT_CHAT_MODELS,
   QWEN_CHAT_MODEL,
+  ...DEFAULT_CHAT_MODELS,
 ] as const;
 
 export type ChatModel = (typeof ALL_CHAT_MODELS)[number];
@@ -77,6 +79,25 @@ export type LegacyChatModel = (typeof LEGACY_CHAT_MODELS)[number];
 export type CatalogModelId = ChatModel | LegacyChatModel;
 
 export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
+  {
+    id: "qwen3.8-flash",
+    wireId: "qwen3.8-flash",
+    provider: "bailian",
+    displayName: "Qwen3.8-Flash",
+    vendor: "阿里云百炼",
+    // 简介与能力口径：模型更新列表 qwen3.8-flash 官方参数表；
+    // 音频输入 Responses/平台均未开放，不在此宣称。
+    description: "通义千问 Qwen3.8 系列的 Flash 档模型，支持 Function Calling、结构化输出、联网搜索与缓存加速，输入覆盖文本、图片与视频。",
+    inputLabel: "文本 · 图片 · 视频",
+    inputTypes: ["text", "image"],
+    contextWindowTokens: 1_000_000,
+    // 百炼模型列表未给出输出上限，沿用平台既有预算口径
+    maxOutputTokens: 64_000,
+    // Qwen reasoning.effort 默认 medium；内部 high/max 映射为 medium/high
+    reasoningEffort: { high: "medium", max: "high" },
+    enabled: true,
+    billingVersion: MODEL_BILLING_VERSION,
+  },
   {
     id: "deepseek-v4-flash-vision-exp",
     wireId: "deepseek-v4-flash-vision-exp",
@@ -108,25 +129,6 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     // MiniMax 文档未给出 M3 输出上限，沿用平台既有预算口径
     maxOutputTokens: 128_000,
     // MiniMax 接受 effort 但不调节深度；内部 high/max 映射为 medium/high
-    reasoningEffort: { high: "medium", max: "high" },
-    enabled: true,
-    billingVersion: MODEL_BILLING_VERSION,
-  },
-  {
-    id: "qwen3.8-flash",
-    wireId: "qwen3.8-flash",
-    provider: "bailian",
-    displayName: "Qwen3.8-Flash",
-    vendor: "阿里云百炼",
-    // 简介与能力口径：模型更新列表 qwen3.8-flash 官方参数表；
-    // 音频输入 Responses/平台均未开放，不在此宣称。
-    description: "通义千问 Qwen3.8 系列的 Flash 档模型，支持 Function Calling、结构化输出、联网搜索与缓存加速，输入覆盖文本、图片与视频。",
-    inputLabel: "文本 · 图片 · 视频",
-    inputTypes: ["text", "image"],
-    contextWindowTokens: 1_000_000,
-    // 百炼模型列表未给出输出上限，沿用平台既有预算口径
-    maxOutputTokens: 64_000,
-    // Qwen reasoning.effort 默认 medium；内部 high/max 映射为 medium/high
     reasoningEffort: { high: "medium", max: "high" },
     enabled: true,
     billingVersion: MODEL_BILLING_VERSION,
@@ -232,4 +234,12 @@ export function isChatModelEnabled(
   qwenEnabled = process.env.MODEL_QWEN_ENABLED
 ): model is ChatModel {
   return availableChatModels(qwenEnabled).includes(model as ChatModel);
+}
+
+/** Upgrade a saved preference without silently replacing unknown or unavailable choices. */
+export function chatModelForPreference(model?: string | null): string {
+  if (!model) return DEFAULT_CHAT_MODEL;
+  return isKnownChatModel(model)
+    ? activeModelForStoredModel(model as CatalogModelId)
+    : model;
 }

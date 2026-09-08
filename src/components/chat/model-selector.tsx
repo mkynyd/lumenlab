@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, ChevronDown, Layers, Paperclip, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MODEL_CATALOG_ENTRIES, type ModelCatalogEntry } from "@/lib/chat/model-catalog";
+import { DEFAULT_CHAT_MODELS, MODEL_CATALOG_ENTRIES, type ModelCatalogEntry } from "@/lib/chat/model-catalog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -142,10 +142,10 @@ export function ModelSelector({
   disabled = false,
   compact = false,
   className,
-  availableModels = ["deepseek-v4-flash-vision-exp", "minimax-m3"],
+  availableModels = DEFAULT_CHAT_MODELS,
 }: ModelSelectorProps) {
   const models = MODELS.filter((item) => availableModels.includes(item.value));
-  const current = models.find((item) => item.value === model) ?? models[0];
+  const current = models.find((item) => item.value === model) ?? MODELS.find((item) => item.value === model);
   const triggerLabel = current?.label ?? model;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [previewed, setPreviewed] = useState<string | null>(null);

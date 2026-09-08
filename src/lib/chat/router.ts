@@ -1,4 +1,4 @@
-import { providerForChatModel } from "./model-catalog";
+import { DEFAULT_CHAT_MODEL, providerForChatModel } from "./model-catalog";
 
 export interface FileAttachment {
   id: string;
@@ -6,6 +6,11 @@ export interface FileAttachment {
   mimeType: string;
   size: number;
   data: File;
+  /**
+   * 任务 08：仅客户端使用的本地预览 URL（图片）。在事件处理器里创建，
+   * 随预览移除、发送成功或组件卸载回收，不在渲染期创建。
+   */
+  previewUrl?: string;
 }
 
 export interface ServerFileAttachment {
@@ -86,7 +91,7 @@ export function hasMultimodalContent(
 
 /**
  * 任务 05：全部活跃模型都能看图，附件不再触发强制模型路由或模型锁。
- * 优先级：显式选择 > 旧会话 modelLock（只读兼容，不再新写）> 默认 DeepSeek。
+ * 优先级：显式选择 > 旧会话 modelLock（只读兼容，不再新写）> 默认 Qwen。
  */
 export function routeModel(
   conversation: { modelLock: string | null } | null,
@@ -108,5 +113,5 @@ export function routeModel(
   if (conversation?.modelLock === "minimax") {
     return { provider: "minimax", shouldLock: false };
   }
-  return { provider: "deepseek", shouldLock: false };
+  return { provider: providerForChatModel(DEFAULT_CHAT_MODEL)!, shouldLock: false };
 }

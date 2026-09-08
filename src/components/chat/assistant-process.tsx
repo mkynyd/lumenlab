@@ -155,6 +155,8 @@ export function AssistantProcess({
   const hasReasoning = Boolean(reasoningContent?.trim());
   const needsApproval = trace?.tools.some((tool) => tool.status === "awaiting_approval") ?? false;
   const running = isStreaming || trace?.status === "running";
+  const failed = trace?.status === "failed";
+  const cancelled = trace?.status === "cancelled";
   const [openOverride, setOpenOverride] = useState<boolean | null>(null);
   const open = openOverride ?? (needsApproval || (running && !hasResponse));
 
@@ -166,8 +168,11 @@ export function AssistantProcess({
     const elapsed = elapsedLabel(trace);
     if (elapsed) parts.push(`思考 ${elapsed}`);
     if (trace?.tools.length) parts.push(`使用 ${trace.tools.length} 个工具`);
-    return parts.join(" · ") || "思考过程";
-  }, [hasReasoning, hasResponse, needsApproval, running, trace]);
+    const label = parts.join(" · ") || "思考过程";
+    if (failed) return `${label} · 已中断`;
+    if (cancelled) return `${label} · 已取消`;
+    return label;
+  }, [cancelled, failed, hasReasoning, hasResponse, needsApproval, running, trace]);
 
   const hasDetails = hasReasoning || Boolean(trace?.plan) || Boolean(trace?.tools.length);
 
@@ -187,6 +192,11 @@ export function AssistantProcess({
             label={summary}
             className="assistant-process-loading"
           />
+        ) : failed || cancelled ? (
+          <>
+            <X size={14} className="assistant-process-failed" aria-hidden />
+            <span>{summary}</span>
+          </>
         ) : (
           <>
             <Check size={14} className="assistant-process-done" aria-hidden />

@@ -18,10 +18,11 @@ vi.mock("@/lib/storage/object-storage", () => ({
   readStoredObject: vi.fn(),
 }));
 
-function asset(id: string, name: string) {
+function asset(id: string, name: string, size = 1024) {
   return {
     id,
     originalName: name,
+    size,
     mimeType: "image/png",
     storageProvider: "local",
     storagePath: `files/${id}.png`,
@@ -71,16 +72,15 @@ describe("resolveProjectMediaContext", () => {
   });
 
   it("选中图片超出上限时只带前 N 张并说明截断", async () => {
+    vi.mocked(prisma.fileAsset.findMany).mockImplementation((args) => {
+      const ids = (args?.where as { id: { in: string[] } }).id.in;
+      return Promise.resolve(ids.map((id) => asset(id, `${id}.png`))) as never;
+    });
     const selected = Array.from({ length: MAX_SELECTED_PROJECT_IMAGES + 2 }, (_, i) => ({
       id: `f${i}`,
       originalName: `f${i}.png`,
       mimeType: "image/png",
     }));
-    vi.mocked(prisma.fileAsset.findMany).mockResolvedValue(
-      selected
-        .slice(0, MAX_SELECTED_PROJECT_IMAGES)
-        .map((item) => asset(item.id, item.originalName)) as never
-    );
 
     const result = await resolveProjectMediaContext({
       userId: "u1",

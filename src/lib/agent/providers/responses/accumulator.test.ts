@@ -117,6 +117,72 @@ describe("ResponsesStreamAccumulator text channels", () => {
     expect(acc.rawReasoning).toBe("先想再想");
   });
 
+  it("emits each reasoning slice once across delta, done, item.done and terminal", () => {
+    const acc = new ResponsesStreamAccumulator();
+    const events: NormalizedResponsesEvent[] = [
+      ...acc.push({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { id: "r1", type: "reasoning" },
+      }),
+      ...acc.push({
+        type: "response.reasoning_text.delta",
+        item_id: "r1",
+        output_index: 0,
+        delta: "先核对",
+      }),
+      ...acc.push({
+        type: "response.reasoning_text.delta",
+        item_id: "r1",
+        output_index: 0,
+        delta: "再回答",
+      }),
+      ...acc.push({
+        type: "response.reasoning_text.done",
+        item_id: "r1",
+        output_index: 0,
+        text: "先核对再回答",
+      }),
+      ...acc.push({
+        type: "response.output_item.done",
+        output_index: 0,
+        item: {
+          id: "r1",
+          type: "reasoning",
+          content: [{ type: "reasoning_text", text: "先核对再回答" }],
+        },
+      }),
+      ...acc.push({
+        type: "response.completed",
+        response: {
+          id: "resp-1",
+          status: "completed",
+          output: [
+            {
+              id: "r1",
+              type: "reasoning",
+              content: [{ type: "reasoning_text", text: "先核对再回答" }],
+            },
+            {
+              id: "m1",
+              type: "message",
+              content: [{ type: "output_text", text: "答案" }],
+            },
+          ],
+        },
+      }),
+    ];
+
+    const reasoning = events
+      .filter((event) => event.type === "reasoning_delta")
+      .map((event) => (event as { text: string }).text)
+      .join("");
+    expect(reasoning).toBe("先核对再回答");
+    expect(acc.rawReasoning).toBe("先核对再回答");
+    expect(textOf(events)).toBe("答案");
+    expect(acc.rawText).toBe("答案");
+  });
+
   it("streams text through the same sanitization the legacy adapters use", async () => {
     const raw =
       "好的<tool_calls><invoke name=\"web.search\"></invoke></tool_calls>后续";

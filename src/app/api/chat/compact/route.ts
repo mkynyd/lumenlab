@@ -11,6 +11,7 @@ import {
 import { checkContextBudget } from "@/lib/tokens";
 import { logger } from "@/lib/logger";
 import type { Prisma } from "@/generated/prisma/client";
+import { excludingSubtype } from "@/lib/agent/persistence/message-subtype";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
   const history = await prisma.message.findMany({
     where: {
       conversationId: conversation.id,
-      subtype: { not: "compressed-replaced" },
+      ...excludingSubtype("compressed-replaced"),
     },
     orderBy: { createdAt: "asc" },
     select: { id: true, role: true, content: true },

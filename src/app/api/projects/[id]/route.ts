@@ -1,3 +1,4 @@
+import { ALL_CHAT_MODELS, LEGACY_CHAT_MODELS, activeModelForStoredModel } from "@/lib/chat/model-catalog";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -9,7 +10,7 @@ const updateProjectSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(2000).optional(),
   type: z.enum(["experiment", "review", "coding", "general"]).optional(),
-  defaultModel: z.string().optional(),
+  defaultModel: z.enum([...ALL_CHAT_MODELS, ...LEGACY_CHAT_MODELS]).transform(activeModelForStoredModel).optional(),
   thinkingEnabled: z.boolean().optional(),
   systemPrompt: z.string().optional(),
 });
