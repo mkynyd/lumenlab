@@ -701,7 +701,8 @@ export default function ProjectDetailPage() {
                 <ContextRing used={usage.totalTokens} />
               </div>
             )}
-            <div className="shrink-0">
+            {/* 移动端不提供通知入口；md 以下由 CSS 直接隐藏，避免水合前后闪一下。 */}
+            <div className="hidden shrink-0 md:block">
               <NotificationBell size="sm" />
             </div>
           </div>
