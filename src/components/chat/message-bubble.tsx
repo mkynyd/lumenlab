@@ -257,6 +257,9 @@ function MessageBubbleComponent({
               ? "w-fit max-w-[85%] rounded-[22px] bg-[var(--color-interaction-active)] px-4 py-2.5 sm:max-w-[70%]"
               : "w-full"
           )}
+          data-cursor={
+            isAssistant && isStreaming && content && !toolStatus ? "true" : undefined
+          }
         >
           {content ? (
             <MarkdownContent content={content} isStreaming={isStreaming} />
@@ -279,7 +282,6 @@ function MessageBubbleComponent({
               <LoadingIndicator size="sm" orb={toolStatus.orb} label={toolStatus.label} />
             </div>
           )}
-          {isStreaming && content && !toolStatus && <span className="typing-cursor" />}
         </div>
 
         {isAssistant && !isStreaming && <MessageSources sources={sources} />}
