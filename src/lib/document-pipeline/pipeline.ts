@@ -1,7 +1,6 @@
 import type {
   DocumentBlock,
   DocumentParser,
-  ImageBlock,
   ParseInput,
   ParseResult,
   ParsedAsset,

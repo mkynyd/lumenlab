@@ -72,7 +72,7 @@ describe("POST /api/projects", () => {
       name: "电路实验",
       description: null,
       type: "review",
-      defaultModel: "deepseek-v4-flash",
+      defaultModel: "qwen3.8-flash",
       thinkingEnabled: true,
       createdAt: "2026-07-31T08:00:00.000Z",
       updatedAt: "2026-07-31T08:00:00.000Z",
@@ -114,7 +114,7 @@ describe("POST /api/projects", () => {
         name: "电路实验",
         description: null,
         type: "review",
-        defaultModel: "deepseek-v4-flash",
+        defaultModel: "qwen3.8-flash",
         thinkingEnabled: true,
       },
     });

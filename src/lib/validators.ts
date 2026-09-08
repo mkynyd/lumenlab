@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ALL_CHAT_MODELS, isChatModelEnabled } from "@/lib/chat/model-catalog";
+import { ALL_CHAT_MODELS, DEFAULT_CHAT_MODEL, isChatModelEnabled } from "@/lib/chat/model-catalog";
 
 export const sendMessageSchema = z.object({
   clientRunKey: z.string().uuid().optional(),
@@ -8,6 +8,7 @@ export const sendMessageSchema = z.object({
   hiddenPrompt: z.string().min(1).max(200000).optional(),
   model: z
     .enum(ALL_CHAT_MODELS)
+    .prefault(DEFAULT_CHAT_MODEL)
     .refine((model) => isChatModelEnabled(model), {
       message: "Qwen 模型暂未开放",
     }),

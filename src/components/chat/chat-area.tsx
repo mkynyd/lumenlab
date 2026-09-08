@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { effectiveWebSearchActive, modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
 
 interface ChatAreaProps {
+  initialModel?: string;
   initialConversationId?: string;
   initialMessages?: Array<{
     id: string;
@@ -32,6 +33,7 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({
+  initialModel,
   initialConversationId,
   initialMessages,
 }: ChatAreaProps) {
@@ -42,6 +44,7 @@ export function ChatArea({
     usage,
     model,
     availableModels,
+    modelBlockedReason,
     reasoningEffort,
     setModel,
     setReasoningEffort,
@@ -54,12 +57,14 @@ export function ChatArea({
     contextBudget,
     newConversation,
   } = useChat({
+    model: initialModel,
     initialConversationId,
     initialMessages: initialMessages?.map((m) => ({
       ...m,
       role: m.role as "user" | "assistant" | "system",
     })),
   });
+  const [inputValue, setInputValue] = useState("");
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [userSkillValue, setUserSkillValue] = useState<SkillSelectorValue>("auto");
   const { webSearchActive, toggle: toggleWebSearch } = useWebSearch();
@@ -88,7 +93,7 @@ export function ChatArea({
     setUserSkillValue(value);
   };
 
-  const handleSend = (content: string, files: FileAttachment[]) => {
+  const handleSend = async (content: string, files: FileAttachment[]) => {
     const input: Parameters<typeof sendMessage>[0] = {
       content,
       attachments: files,
@@ -99,7 +104,12 @@ export function ChatArea({
     } else if (skillValue !== "auto") {
       input.manualSkillId = skillValue;
     }
-    void sendMessage(input);
+    const sent = await sendMessage(input);
+    if (sent !== false) {
+      setInputValue((current) => current === content ? "" : current);
+      setAttachments((current) => current === files ? [] : current);
+    }
+    return sent;
   };
 
   const handleSkillFollowUp = (skillId: string) => {
@@ -113,7 +123,10 @@ export function ChatArea({
 
   const composer = (
     <ChatInput
+      value={inputValue}
+      onValueChange={setInputValue}
       onSend={handleSend}
+      blockedReason={modelBlockedReason}
       onStop={abort}
       isStreaming={isStreaming}
       attachments={attachments}

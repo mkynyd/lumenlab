@@ -115,6 +115,7 @@ export default function ProjectDetailPage() {
     usage,
     model,
     availableModels,
+    modelBlockedReason,
     reasoningEffort,
     setModel,
     setReasoningEffort,
@@ -130,7 +131,8 @@ export default function ProjectDetailPage() {
   } = useChat({
     initialConversationId: undefined,
     initialMessages: [],
-    model: project?.defaultModel || "deepseek-v4-flash-vision-exp",
+    model: project?.defaultModel ?? undefined,
+    modelLoading: !project,
     thinkingEnabled: project?.thinkingEnabled ?? true,
     projectId,
     selectedFileIds: selectedFileIdList,
@@ -431,7 +433,8 @@ export default function ProjectDetailPage() {
       setFileMessage("文件解析中，请稍候...");
       return;
     }
-    await sendMessage(input);
+    const sent = await sendMessage(input);
+    if (sent === false) return false;
     await queryClient.invalidateQueries({
       queryKey: queryKeys.projects.detail(projectId),
     });
@@ -441,8 +444,7 @@ export default function ProjectDetailPage() {
   }
 
   async function handleSend(content: string, attachments: FileAttachment[]) {
-    setChatInputValue("");
-    await sendOrQueue(withSkillSelection({ content, attachments }));
+    return sendOrQueue(withSkillSelection({ content, attachments }));
   }
 
   async function handleQuickTaskSend(input: QuickTaskSendInput) {
@@ -789,6 +791,7 @@ export default function ProjectDetailPage() {
         </div>
 
         <ChatInput
+          blockedReason={modelBlockedReason}
           onSend={handleSend}
           onStop={abort}
           isStreaming={isStreaming}

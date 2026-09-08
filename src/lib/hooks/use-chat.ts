@@ -1,5 +1,6 @@
 "use client";
 
+import { chatModelForPreference, chatModelLabel, DEFAULT_CHAT_MODELS } from "@/lib/chat/model-catalog";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -88,17 +89,13 @@ interface UseChatOptions {
   model?: string;
   thinkingEnabled?: boolean;
   reasoningEffort?: "high" | "max";
+  modelLoading?: boolean;
   projectId?: string;
   selectedFileIds?: string[];
   mode?: ProjectType;
 }
 
 type ReasoningEffort = NonNullable<UseChatOptions["reasoningEffort"]>;
-
-const FALLBACK_CHAT_MODELS = [
-  "deepseek-v4-flash-vision-exp",
-  "minimax-m3",
-] as const;
 
 function hasStreamingMessage(messages: ChatMessage[]) {
   return messages.some((message) => message.isStreaming);
@@ -192,8 +189,16 @@ export function useChat(options: UseChatOptions = {}) {
     tokens: number;
     ratio: number;
   } | null>(null);
-  const [model, setModel] = useState(options.model || "deepseek-v4-flash-vision-exp");
+  const [model, setModel] = useState(() => chatModelForPreference(options.model));
   const [availableModels, setAvailableModels] = useState<readonly string[] | null>(null);
+  const [modelUnavailableReasons, setModelUnavailableReasons] = useState<Record<string, string>>({});
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const modelBlockedReason = options.modelLoading
+    ? "正在加载项目模型设置，请稍候"
+    : catalogError ?? (availableModels === null
+      ? "正在检查模型可用性，请稍候"
+      : availableModels.includes(model) ? undefined
+        : modelUnavailableReasons[model] ?? `${chatModelLabel(model)} 当前不可用，请选择其他可用模型`);
   const [thinkingEnabled, setThinkingEnabledState] = useState(true);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
     options.reasoningEffort ?? "max"
@@ -220,29 +225,19 @@ export function useChat(options: UseChatOptions = {}) {
     })
       .then(async (response) => {
         if (!response.ok) throw new Error(`model catalog ${response.status}`);
-        const payload = await response.json() as { models?: unknown };
+        const payload = await response.json() as { models?: unknown; unavailableReasons?: Record<string, string> };
         if (!Array.isArray(payload.models) || !payload.models.every((model) => typeof model === "string")) {
           throw new Error("invalid model catalog");
         }
         const nextModels = payload.models as string[];
         setAvailableModels(nextModels);
-        setModel((current) =>
-          nextModels.includes(current)
-            ? current
-            : nextModels[0] ?? "deepseek-v4-flash-vision-exp"
-        );
+        setModelUnavailableReasons(payload.unavailableReasons ?? {});
       })
       .catch((catalogError: unknown) => {
         if (controller.signal.aborted) return;
         console.warn("Failed to load chat model catalog", catalogError);
-        setAvailableModels(FALLBACK_CHAT_MODELS);
-        setModel((current) =>
-          FALLBACK_CHAT_MODELS.includes(
-            current as (typeof FALLBACK_CHAT_MODELS)[number]
-          )
-            ? current
-            : FALLBACK_CHAT_MODELS[0]
-        );
+        setAvailableModels(DEFAULT_CHAT_MODELS);
+        setCatalogError("无法检查模型可用性，请刷新后重试；当前选择已保留");
       });
     return () => controller.abort();
   }, []);
@@ -259,19 +254,20 @@ export function useChat(options: UseChatOptions = {}) {
 
   useEffect(() => {
     if (conversationId || messages.length > 0) return;
-    const nextModel = options.model;
+    const nextModel = options.projectId ? options.model : undefined;
     const nextReasoningEffort = options.reasoningEffort;
     queueMicrotask(() => {
-      if (nextModel) setModel(nextModel);
+      if (nextModel) setModel(chatModelForPreference(nextModel));
       if (nextReasoningEffort) {
         setReasoningEffort(nextReasoningEffort);
       }
       setThinkingEnabledState(true);
     });
-  }, [conversationId, messages.length, options.model, options.reasoningEffort]);
+  }, [conversationId, messages.length, options.projectId, options.model, options.reasoningEffort]);
 
   const performSend = useCallback(
     async (input: SendMessageInput) => {
+      if (modelBlockedReason) { setError(modelBlockedReason); return false; }
       const attachments = input.attachments || [];
       const content = input.content.trim() || (attachments.length > 0 ? "请阅读附件。" : "");
       if (!content.trim() && attachments.length === 0) return;
@@ -735,6 +731,7 @@ export function useChat(options: UseChatOptions = {}) {
             );
             // Remove the streaming placeholder on foreground error.
             setMessages((prev) => prev.filter((m) => m.id !== streamingId));
+            return false;
           }
         }
       } finally {
@@ -746,8 +743,10 @@ export function useChat(options: UseChatOptions = {}) {
           abortRef.current = null;
         }
       }
+      return true;
     },
     [
+      modelBlockedReason,
       conversationId,
       model,
       reasoningEffort,
@@ -787,6 +786,7 @@ export function useChat(options: UseChatOptions = {}) {
     abortRef.current = null;
     agentExecutionIdRef.current = null;
     conversationIdRef.current = undefined;
+    setModel(chatModelForPreference(options.projectId ? options.model : undefined));
     setMessages([]);
     setConversationId(undefined);
     setUsage(null);
@@ -795,7 +795,7 @@ export function useChat(options: UseChatOptions = {}) {
     setIsStreaming(false);
     setAgentTimeline({});
     setAgentSession({ suggestions: [] });
-  }, []);
+  }, [options.projectId, options.model]);
 
   const loadConversation = useCallback(
     (
@@ -808,7 +808,7 @@ export function useChat(options: UseChatOptions = {}) {
       conversationIdRef.current = nextConversationId;
       setConversationId(nextConversationId);
       setMessages(nextMessages);
-      if (settings?.model) setModel(settings.model);
+      if (settings?.model) setModel(chatModelForPreference(settings.model));
       setThinkingEnabledState(true);
       setUsage(null);
       setContextBudget(null);
@@ -935,7 +935,8 @@ export function useChat(options: UseChatOptions = {}) {
     conversationId,
     usage,
     model,
-    availableModels: availableModels ?? FALLBACK_CHAT_MODELS,
+    availableModels: availableModels ?? [],
+    modelBlockedReason,
     thinkingEnabled,
     reasoningEffort,
     setModel,

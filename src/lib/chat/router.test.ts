@@ -3,9 +3,9 @@ import { routeModel } from "@/lib/chat/router";
 
 describe("routeModel", () => {
   it("no longer force-locks a provider for vision-requiring attachments", () => {
-    // 任务 05：图片能力通用，无显式选择时不写锁，默认 DeepSeek Vision。
+    // 任务 05：图片能力通用，无显式选择时不写锁，默认 Qwen。
     expect(routeModel(null, [{ name: "photo.png", mimeType: "image/png" }])).toEqual({
-      provider: "deepseek",
+      provider: "bailian",
       shouldLock: false,
     });
   });

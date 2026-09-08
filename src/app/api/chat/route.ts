@@ -1,3 +1,4 @@
+import { resolveStoredChatModel } from "@/lib/data/chat-model-preference";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     let parsed;
     try {
-      parsed = await parseChatRequest(request);
+      parsed = await parseChatRequest(request, (context) => resolveStoredChatModel(session.user.id!, context));
     } catch (error) {
       return NextResponse.json(
         {

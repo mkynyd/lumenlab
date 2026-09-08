@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileText, Globe, Paperclip, Plus, Send, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/tooltip";
 
 interface ChatInputProps {
-  onSend: (message: string, attachments: FileAttachment[]) => void;
+  onSend: (message: string, attachments: FileAttachment[]) => void | boolean | Promise<void | boolean>;
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
@@ -80,10 +80,20 @@ export function ChatInput({
   skillValue = "auto",
   onSkillChange,
 }: ChatInputProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const latestDraft = useRef({ value: "", attachments });
   const [internalValue, setInternalValue] = useState("");
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const currentValue = value ?? internalValue;
+  useEffect(() => {
+    latestDraft.current = { value: currentValue, attachments };
+  }, [currentValue, attachments]);
   const hasSendableContent = currentValue.trim().length > 0 || attachments.length > 0;
   const webSearchSupported = modelSupportsWebSearch(model);
   const { ref: textareaRef, style: textareaStyle } = useMeasuredTextareaHeight({
@@ -102,12 +112,18 @@ export function ChatInput({
     onValueChange?.(nextValue);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!hasSendableContent || isStreaming || disabled) return;
-    onSend(currentValue, attachments);
-    updateValue("");
-    onAttachmentsChange?.([]);
+    if (!hasSendableContent || isStreaming || isSubmitting || disabled || blockedReason) return;
+    setIsSubmitting(true);
+    try {
+      const sent = await onSend(currentValue, attachments);
+      if (sent === false || !mounted.current) return;
+      if (latestDraft.current.value === currentValue) updateValue("");
+      if (latestDraft.current.attachments === attachments) onAttachmentsChange?.([]);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -317,7 +333,7 @@ export function ChatInput({
               <TooltipTrigger asChild>
                 <Button
                   type="submit"
-                  disabled={!hasSendableContent || disabled}
+                  disabled={!hasSendableContent || disabled || Boolean(blockedReason)}
                   variant="primary"
                   size="icon-lg"
                   className="shrink-0 rounded-full"
@@ -346,7 +362,7 @@ export function ChatInput({
             ) : (
               <Button
                 type="submit"
-                disabled={!hasSendableContent || disabled}
+                disabled={!hasSendableContent || disabled || Boolean(blockedReason)}
                 variant="primary"
                 size="icon-lg"
                 className="size-11 rounded-full"

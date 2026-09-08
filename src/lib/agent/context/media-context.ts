@@ -197,7 +197,7 @@ export async function resolveProjectMediaContext(input: {
   }
 
   let candidates = projectImages;
-  let autoMode = true;
+  const autoMode = true;
   if (!input.wholeCorpus && projectImages.length > MAX_AUTO_PROJECT_IMAGES) {
     const mentioned = projectImages.filter((asset) =>
       promptMentionsAsset(input.prompt, asset.originalName)

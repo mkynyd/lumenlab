@@ -1,9 +1,34 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ChatInput } from "@/components/chat/chat-input";
 
 describe("ChatInput", () => {
+  it("preserves draft and attachments on a failed send", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(false);
+    const onAttachmentsChange = vi.fn();
+    render(<ChatInput onSend={onSend} onAttachmentsChange={onAttachmentsChange} />);
+    await user.type(screen.getByRole("textbox"), "保留草稿{Enter}");
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    expect(screen.getByRole("textbox")).toHaveValue("保留草稿");
+    expect(onAttachmentsChange).not.toHaveBeenCalled();
+  });
+
+  it("blocks submission for unavailable models while leaving the selector usable", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const onModelChange = vi.fn();
+    render(<ChatInput onSend={onSend} model="qwen3.8-flash" onModelChange={onModelChange}
+      availableModels={["minimax-m3"]} blockedReason="Qwen 暂未开放" />);
+    await user.type(screen.getByRole("textbox"), "草稿{Enter}");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveValue("草稿");
+    expect(screen.getByText("Qwen 暂未开放")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "选择模型" })[0]).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "选择模型" })[0]).toHaveTextContent("Qwen3.8-Flash");
+  });
+
   it("shows an externally filled prompt and lets the user edit it", async () => {
     const user = userEvent.setup();
     const onValueChange = vi.fn();

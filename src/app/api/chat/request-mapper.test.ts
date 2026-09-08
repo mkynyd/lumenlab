@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mapAgentRunInput, parseChatRequest } from "./request-mapper";
 
 const validBody = {
@@ -7,6 +7,21 @@ const validBody = {
 };
 
 describe("parseChatRequest", () => {
+  it("resolves an omitted model after validating context and leaves explicit models alone", async () => {
+    const resolveModel = vi.fn().mockResolvedValue("minimax-m3");
+    const request = (body: unknown) => new Request("http://localhost/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const parsed = await parseChatRequest(request({ message: "hello", projectId: "project" }), resolveModel);
+    expect(parsed.body.model).toBe("minimax-m3");
+    expect(resolveModel).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project" }));
+    resolveModel.mockClear();
+    expect((await parseChatRequest(request({ message: "hello", model: "deepseek-v4-flash-vision-exp" }), resolveModel)).body.model).toBe("deepseek-v4-flash-vision-exp");
+    expect(resolveModel).not.toHaveBeenCalled();
+    await expect(parseChatRequest(request({ message: "hello", projectId: {} }), resolveModel)).rejects.toThrow();
+    expect(resolveModel).not.toHaveBeenCalled();
+  });
+
   it("maps the existing JSON body and applies validator defaults", async () => {
     const request = new Request("http://localhost/api/chat", {
       method: "POST",

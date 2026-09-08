@@ -49,7 +49,13 @@ export function mapAgentRunInput(input: {
   };
 }
 
-function parseMessageBody(value: unknown): SendMessageInput {
+export type ResolveChatModel = (context: { conversationId?: string; projectId?: string }) => Promise<string>;
+
+async function parseMessageBody(value: unknown, resolveModel?: ResolveChatModel): Promise<SendMessageInput> {
+  if (resolveModel && value && typeof value === "object" && !("model" in value)) {
+    const context = sendMessageSchema.omit({ model: true }).parse(value);
+    value = { ...context, model: await resolveModel(context) };
+  }
   const parsed = sendMessageSchema.safeParse(value);
   if (!parsed.success) {
     throw new Error(JSON.stringify(parsed.error.flatten().fieldErrors));
@@ -70,11 +76,11 @@ function isUploadFile(value: FormDataEntryValue): value is File {
   );
 }
 
-export async function parseChatRequest(request: Request): Promise<ParsedChatRequest> {
+export async function parseChatRequest(request: Request, resolveModel?: ResolveChatModel): Promise<ParsedChatRequest> {
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.includes("multipart/form-data")) {
     return {
-      body: parseMessageBody(await request.json()),
+      body: await parseMessageBody(await request.json(), resolveModel),
       attachments: [],
     };
   }
@@ -85,7 +91,7 @@ export async function parseChatRequest(request: Request): Promise<ParsedChatRequ
     throw new Error("缺少消息字段");
   }
 
-  const body = parseMessageBody(JSON.parse(messageField));
+  const body = await parseMessageBody(JSON.parse(messageField), resolveModel);
   const attachments: ServerFileAttachment[] = [];
   for (const value of formData.getAll("attachments")) {
     if (!isUploadFile(value)) continue;
