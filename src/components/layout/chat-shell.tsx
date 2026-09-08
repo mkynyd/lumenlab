@@ -96,7 +96,8 @@ export function ChatShell({
                 )}
                 {!isInsideProject && (
                   // 移动端不提供通知入口（只保留顶部胶囊提示），从 md 起显示桌面铃铛。
-                  <div className="pointer-events-none fixed right-3 top-3 z-40 hidden md:block">
+                  // 右边距对齐反馈按钮与消息区 md:px-6 的节奏，不再贴页面边缘。
+                  <div className="pointer-events-none fixed right-6 top-3 z-40 hidden md:block">
                     <div className="pointer-events-auto">
                       <NotificationBell className="bg-[var(--color-panel)] shadow-[var(--shadow-pill)]" />
                     </div>
