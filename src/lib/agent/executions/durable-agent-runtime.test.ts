@@ -168,6 +168,48 @@ describe("durable Agent runtime bridge", () => {
     expect(result).toMatchObject({ kind: "completed" });
   });
 
+  it("dispatches old Research checkpoints without routing them through chat recovery", async () => {
+    const researchCheckpoint: Extract<AgentCheckpoint, { version: 1 }> = {
+      ...checkpoint(),
+      request: {
+        ...checkpoint().request!,
+        executionKind: "research",
+        researchRunId: "research-run-1",
+      },
+      researchState: {
+        stage: "researching",
+        modelCalls: 0,
+        searchCalls: 0,
+        fetchCalls: 0,
+        sourceCount: 0,
+        replanCount: 0,
+        verificationRepairs: 0,
+      },
+    };
+    const researchHandler = vi.fn(async (context) => ({
+      kind: "rescheduled" as const,
+      checkpoint: context.execution.checkpoint!,
+      scheduledAt: new Date("2026-09-08T00:00:00.000Z"),
+    }));
+    const runMock = vi.fn();
+    const context = {
+      execution: execution(researchCheckpoint),
+      signal: new AbortController().signal,
+      saveCheckpoint: vi.fn(),
+      appendEvent: vi.fn(),
+    };
+
+    const result = await createDurableAgentExecutionHandler({
+      run: runMock,
+      recordUsage: vi.fn(),
+      researchHandler,
+    })(context);
+
+    expect(researchHandler).toHaveBeenCalledWith(context);
+    expect(runMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ kind: "rescheduled" });
+  });
+
   it("flushes large text output as multiple live segments during the run", async () => {
     const bigDelta = "x".repeat(500);
     const runMock = vi.fn(async () =>
@@ -622,7 +664,16 @@ describe("durable Agent runtime bridge", () => {
   });
 
   it("upgrades a v1 checkpoint and its legacy model before a new round", () => {
-    const upgraded = upgradeAgentCheckpoint(checkpoint());
+    const researchState = {
+      stage: "researching" as const,
+      modelCalls: 1,
+      searchCalls: 2,
+      fetchCalls: 1,
+      sourceCount: 1,
+      replanCount: 0,
+      verificationRepairs: 0,
+    };
+    const upgraded = upgradeAgentCheckpoint({ ...checkpoint(), researchState });
     expect(upgraded).toMatchObject({
       version: 2,
       model: {
@@ -638,6 +689,7 @@ describe("durable Agent runtime bridge", () => {
         },
       ],
     });
+    expect(upgraded.researchState).toEqual(researchState);
   });
 
   it("maps new active models to providers through the catalog", () => {

@@ -88,6 +88,9 @@ const durableRequestSchema = z
       .optional(),
     isQuickTask: z.boolean(),
     materialScope: z.enum(["project-corpus", "none"]).optional(),
+    executionKind: z.enum(["chat", "research", "paper-formatting"]).optional(),
+    researchRunId: z.string().min(1).optional(),
+    formattingTaskId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -108,6 +111,7 @@ function isCheckpointUsageCounterKey(
 ): boolean {
   return (
     ((path.length === 1 && path[0] === "usage") ||
+      (path.length === 1 && path[0] === "researchState") ||
       (path.length === 2 &&
         (path[0] === "output" || path[0] === "partialOutput") &&
         path[1] === "usage")) &&
@@ -162,6 +166,30 @@ const checkpointUsageSchema = z
   })
   .strict();
 
+const researchStateSchema = z
+  .object({
+    stage: z.enum([
+      "planning",
+      "researching",
+      "evaluating",
+      "synthesizing",
+      "verifying",
+    ]),
+    modelCalls: z.number().int().nonnegative(),
+    searchCalls: z.number().int().nonnegative(),
+    fetchCalls: z.number().int().nonnegative(),
+    sourceCount: z.number().int().nonnegative(),
+    replanCount: z.number().int().nonnegative(),
+    verificationRepairs: z.number().int().nonnegative(),
+    promptTokens: z.number().int().nonnegative().optional(),
+    completionTokens: z.number().int().nonnegative().optional(),
+    totalTokens: z.number().int().nonnegative().optional(),
+    costCredits: z.number().int().nonnegative().optional(),
+    draftReport: z.string().max(200_000).optional(),
+    lastEvidenceCount: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
 const checkpointBaseSchema = z.object({
   round: z.number().int().nonnegative(),
   model: z
@@ -184,6 +212,7 @@ const checkpointBaseSchema = z.object({
     .strict(),
   allowedToolIds: z.array(z.string().min(1)),
   request: durableRequestSchema.optional(),
+  researchState: researchStateSchema.optional(),
   usage: checkpointUsageSchema.optional(),
   output: z
     .object({
@@ -307,6 +336,7 @@ export type CreateOrGetAgentExecutionInput = {
     title: string;
     model: string;
     thinkingEnabled: boolean;
+    kind?: "chat" | "research-system" | "paper-system";
   };
   userMessageContent: string;
   assistantMessageSources?: Prisma.InputJsonValue;
@@ -389,6 +419,19 @@ export interface AgentExecutionStore {
     scheduledAt: Date;
     now: Date;
     checkpoint?: AgentCheckpoint;
+  }): Promise<boolean>;
+  requeue(input: {
+    executionId: string;
+    workerId: string;
+    checkpoint: AgentCheckpoint;
+    scheduledAt: Date;
+    now: Date;
+  }): Promise<boolean>;
+  resumeOwned(input: {
+    executionId: string;
+    userId: string;
+    scheduledAt: Date;
+    now: Date;
   }): Promise<boolean>;
   markWaitingForApproval(input: {
     executionId: string;

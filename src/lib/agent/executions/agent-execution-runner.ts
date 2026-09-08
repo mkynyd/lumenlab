@@ -17,12 +17,17 @@ type RunnerStore = Pick<
   | "markFailed"
   | "markCancelled"
   | "scheduleRetry"
->;
+> & { requeue?: AgentExecutionStore["requeue"] };
 
 export type AgentExecutionHandlerResult =
   | {
       kind: "completed";
       checkpoint?: AgentCheckpoint;
+    }
+  | {
+      kind: "rescheduled";
+      checkpoint: AgentCheckpoint;
+      scheduledAt?: Date;
     }
   | {
       kind: "waiting_approval";
@@ -60,6 +65,7 @@ export type AgentExecutionHandler = (
 
 export type AgentExecutionRunnerResult =
   | { state: "completed" }
+  | { state: "rescheduled"; scheduledAt: Date }
   | { state: "waiting_approval" }
   | { state: "retry_scheduled"; scheduledAt: Date }
   | { state: "failed" }
@@ -231,6 +237,19 @@ export class AgentExecutionRunner {
         ...(result.checkpoint ? { checkpoint: result.checkpoint } : {}),
       });
       return completed ? { state: "completed" } : { state: "lease_lost" };
+    }
+
+    if (result.kind === "rescheduled") {
+      if (!this.store.requeue) return { state: "lease_lost" };
+      const scheduledAt = result.scheduledAt ?? new Date(now.getTime() + 1);
+      const requeued = await this.store.requeue({
+        executionId: input.execution.id,
+        workerId: input.workerId,
+        checkpoint: result.checkpoint,
+        scheduledAt,
+        now,
+      });
+      return requeued ? { state: "rescheduled", scheduledAt } : { state: "lease_lost" };
     }
 
     if (result.kind === "waiting_approval") {

@@ -7,8 +7,8 @@ export const getProject = cache(async (id: string, userId: string) =>
     where: { id, userId },
     include: {
       files: { orderBy: { createdAt: "desc" } },
-      conversations: { orderBy: { updatedAt: "desc" } },
-      _count: { select: { conversations: true, files: true } },
+      conversations: { where: { kind: "chat" }, orderBy: { updatedAt: "desc" } },
+      _count: { select: { conversations: { where: { kind: "chat" } }, files: true } },
     },
   })
 );
@@ -18,7 +18,7 @@ export const getProjects = cache(async (userId: string) =>
     where: { userId },
     orderBy: { updatedAt: "desc" },
     include: {
-      _count: { select: { conversations: true, files: true } },
+      _count: { select: { conversations: { where: { kind: "chat" } }, files: true } },
     },
   })
 );

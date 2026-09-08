@@ -1,11 +1,12 @@
 import { normalizeTaskLimit, type TaskSnapshot, type TaskSource } from "./contracts";
+import { PaperFormattingTaskSource } from "./paper-formatting-source";
 import { AgentExecutionTaskSource } from "./agent-execution-source";
 
 /**
  * 任务源注册表。main 只注册 AgentExecution；任务 11 在 feature 分支接入
  * Paper 编译任务时新增一个 source，不改动本文件之外的合同。
  */
-const TASK_SOURCES: readonly TaskSource[] = [new AgentExecutionTaskSource()];
+const TASK_SOURCES: readonly TaskSource[] = [new AgentExecutionTaskSource(), new PaperFormattingTaskSource()];
 
 export function getTaskSource(taskType: string): TaskSource | undefined {
   return TASK_SOURCES.find((source) => source.taskType === taskType);

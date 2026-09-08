@@ -65,6 +65,7 @@ const ALLOWED_PATH_SECTIONS = new Set([
   "usage",
   "home",
   "artifacts",
+  "papers",
 ]);
 
 export function safeNotificationTargetPath(

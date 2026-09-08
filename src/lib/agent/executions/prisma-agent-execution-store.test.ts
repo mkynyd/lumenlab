@@ -749,7 +749,32 @@ describe("PrismaAgentExecutionStore", () => {
         leaseOwner: null,
         leaseExpiresAt: null,
         scheduledAt: now,
+        leaseRecoveryCount: { increment: 1 },
       },
+    });
+  });
+
+  it("bounds paper-system lease recovery by recovery count, not stage attempts", async () => {
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    mocks.findMany.mockResolvedValue([{ id: "paper-1", attempt: 1, leaseRecoveryCount: 2, conversation: { kind: "paper-system" } }]);
+    mocks.transaction.mockImplementation(async (operation) =>
+      operation({
+        agentExecution: { updateMany: mocks.updateMany, update: mocks.update, findUnique: mocks.findExecutionUnique },
+        agentExecutionEvent: { create: mocks.createEvent },
+        toolExecution: { updateMany: mocks.updateToolExecution },
+      })
+    );
+    mocks.findExecutionUnique.mockResolvedValue(null);
+    mocks.updateMany.mockResolvedValue({ count: 1 });
+    mocks.update.mockResolvedValue({ lastEventSequence: 1 });
+    mocks.createEvent.mockResolvedValue({});
+    mocks.updateToolExecution.mockResolvedValue({ count: 0 });
+
+    await expect(new PrismaAgentExecutionStore().recoverExpired({ now, maxAttempts: 3 })).resolves.toBe(1);
+
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: { id: "paper-1", status: "running", leaseExpiresAt: { lt: now } },
+      data: expect.objectContaining({ status: "failed", leaseRecoveryCount: { increment: 1 } }),
     });
   });
 
@@ -761,6 +786,7 @@ describe("PrismaAgentExecutionStore", () => {
         agentExecution: {
           updateMany: mocks.updateMany,
           update: mocks.update,
+          findUnique: mocks.findExecutionUnique,
         },
         agentExecutionEvent: { create: mocks.createEvent },
         toolExecution: { updateMany: mocks.updateToolExecution },
@@ -788,6 +814,7 @@ describe("PrismaAgentExecutionStore", () => {
         status: "failed",
         leaseOwner: null,
         leaseExpiresAt: null,
+        leaseRecoveryCount: { increment: 1 },
         failure: {
           code: "max_attempts_exceeded",
           message: "Execution lease expired after the maximum number of attempts",
@@ -1428,6 +1455,46 @@ describe("PrismaAgentExecutionStore", () => {
           toolId: "artifact.save",
           arguments: { toolExecutionId: "call-1" },
         },
+      })
+    ).not.toThrow();
+  });
+
+  it("accepts Research state counters in both checkpoint generations", () => {
+    const researchState = {
+      stage: "researching" as const,
+      modelCalls: 1,
+      searchCalls: 2,
+      fetchCalls: 1,
+      sourceCount: 1,
+      replanCount: 0,
+      verificationRepairs: 0,
+      promptTokens: 120,
+      completionTokens: 30,
+      totalTokens: 150,
+      costCredits: 2,
+    };
+    expect(() =>
+      parseAgentCheckpoint({ ...checkpoint(), researchState })
+    ).not.toThrow();
+    expect(() =>
+      parseAgentCheckpoint({
+        version: 2,
+        items: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "text", text: "research question" }],
+          },
+        ],
+        round: 0,
+        model: {
+          provider: "deepseek",
+          name: "deepseek-v4-flash-vision-exp",
+        },
+        skill: { id: null, version: null },
+        rag: { sourceIds: [], selectedFileIds: [] },
+        allowedToolIds: [],
+        researchState,
       })
     ).not.toThrow();
   });

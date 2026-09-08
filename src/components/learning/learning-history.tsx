@@ -35,6 +35,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 export interface LearningHistoryProps {
   projectId: string;
@@ -438,8 +443,9 @@ function EvidenceItem({ evidence, projectId, goalId }: EvidenceItemProps) {
 
   return (
     <li className="min-w-0">
-      <details>
-        <summary className="cursor-pointer rounded-[var(--radius-sm)] text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
+      <Collapsible>
+        <CollapsibleTrigger asChild>
+          <button type="button" className="w-full cursor-pointer rounded-[var(--radius-sm)] text-left text-xs font-medium text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none hover:bg-[var(--color-surface-hover)]">
           {evidence.resetBefore && (
             <span className="mr-1.5 rounded-full bg-[var(--color-accent-muted)] px-2 py-0.5 text-[var(--color-accent)]">
               重置前记录
@@ -450,8 +456,10 @@ function EvidenceItem({ evidence, projectId, goalId }: EvidenceItemProps) {
           {activeEvaluation
             ? VERDICT_LABELS[activeEvaluation.verdict]
             : "暂无有效判定"}
-        </summary>
-        <div className="mt-1.5 flex min-w-0 flex-col gap-1.5">
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent forceMount className="mt-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
           <p className="text-sm break-words text-[var(--color-text-primary)]">
             {evidence.practiceItem.prompt}
           </p>
@@ -518,9 +526,10 @@ function EvidenceItem({ evidence, projectId, goalId }: EvidenceItemProps) {
               </div>
             </>
           )}
-        </div>
-      </details>
-    </li>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+      </li>
   );
 }
 

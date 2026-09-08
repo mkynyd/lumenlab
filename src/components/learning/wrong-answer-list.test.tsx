@@ -30,25 +30,23 @@ describe("WrongAnswerList", () => {
     expect(screen.getByText("二叉树遍历")).toBeInTheDocument();
   });
 
-  it("keeps resolved items inside a collapsed details section", async () => {
+  it("keeps resolved items inside a collapsed Collapsible section", async () => {
     const user = userEvent.setup();
     render(<WrongAnswerList items={fixtureWrongAnswerItems} />);
 
-    const summary = screen.getByText("已解决 1");
-    const details = summary.closest("details");
-    expect(details).not.toBeNull();
-    expect(details).not.toHaveAttribute("open");
+    const trigger = screen.getByRole("button", { name: "已解决 1" });
+    const collapsible = trigger.closest('[data-slot="collapsible"]');
+    expect(collapsible).not.toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(
-      within(details as HTMLElement).getByText(
-        resolvedItem.feedback.practiceItem.prompt
-      )
-    ).toBeInTheDocument();
+      screen.queryByText(resolvedItem.feedback.practiceItem.prompt)
+    ).not.toBeInTheDocument();
 
-    await user.click(summary);
-    expect(details).toHaveAttribute("open");
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
     // The resolved item's latest verdict is partial.
     expect(
-      within(details as HTMLElement).getAllByText("部分正确").length
+      within(collapsible as HTMLElement).getAllByText("部分正确").length
     ).toBeGreaterThan(0);
     // Its latest evaluation is correct with errorType null, so no error type.
     expect(screen.queryByText("计算或操作失误")).not.toBeInTheDocument();
@@ -92,7 +90,8 @@ describe("WrongAnswerList", () => {
     expect(screen.getByText("最近一次作答前查看过解析")).toBeInTheDocument();
   });
 
-  it("keeps the explanation behind a details toggle and never leaks criteria", () => {
+  it("keeps the explanation behind a Collapsible toggle and never leaks criteria", async () => {
+    const user = userEvent.setup();
     const { container } = render(
       <WrongAnswerList items={fixtureWrongAnswerItems} />
     );
@@ -100,11 +99,18 @@ describe("WrongAnswerList", () => {
     const unresolvedLi = screen
       .getByText(unresolvedItem.feedback.practiceItem.prompt)
       .closest("li") as HTMLElement;
-    const explanationSummary = within(unresolvedLi).getByText("解析");
-    const explanationDetails = explanationSummary.closest("details");
-    expect(explanationDetails).not.toBeNull();
+    const explanationTrigger = within(unresolvedLi).getByRole("button", {
+      name: "解析",
+    });
+    const explanationCollapsible = explanationTrigger.closest(
+      '[data-slot="collapsible"]'
+    );
+    expect(explanationCollapsible).not.toBeNull();
+    expect(explanationTrigger).toHaveAttribute("aria-expanded", "false");
+    await user.click(explanationTrigger);
+    expect(explanationTrigger).toHaveAttribute("aria-expanded", "true");
     expect(
-      within(explanationDetails as HTMLElement).getByText(
+      within(explanationCollapsible as HTMLElement).getByText(
         unresolvedItem.feedback.explanation!
       )
     ).toBeInTheDocument();
@@ -113,30 +119,41 @@ describe("WrongAnswerList", () => {
     expect(container.innerHTML).not.toContain("generationMetadata");
   });
 
-  it("lists each attempt with date, assistance and verdict in the history", () => {
+  it("lists each attempt with date, assistance and verdict in the history", async () => {
+    const user = userEvent.setup();
     render(<WrongAnswerList items={fixtureWrongAnswerItems} />);
 
     const unresolvedLi = screen
       .getByText(unresolvedItem.feedback.practiceItem.prompt)
       .closest("li") as HTMLElement;
-    const historySummary = within(unresolvedLi).getByText("作答历史");
-    const historyDetails = historySummary.closest("details") as HTMLElement;
-    expect(historyDetails).not.toBeNull();
+    const historyTrigger = within(unresolvedLi).getByRole("button", {
+      name: "作答历史",
+    });
+    const historyCollapsible = historyTrigger.closest(
+      '[data-slot="collapsible"]'
+    ) as HTMLElement;
+    expect(historyCollapsible).not.toBeNull();
+    await user.click(historyTrigger);
     const submittedDate = new Date(NOW).toLocaleDateString("zh-CN");
     expect(
-      within(historyDetails).getByText(submittedDate)
+      within(historyCollapsible).getByText(submittedDate)
     ).toBeInTheDocument();
-    expect(within(historyDetails).getByText("独立作答")).toBeInTheDocument();
-    expect(within(historyDetails).getByText("回答错误")).toBeInTheDocument();
+    expect(within(historyCollapsible).getByText("独立作答")).toBeInTheDocument();
+    expect(within(historyCollapsible).getByText("回答错误")).toBeInTheDocument();
 
     // The resolved item keeps both attempts visible in its history.
-    const resolvedDetails = screen
-      .getByText("已解决 1")
-      .closest("details") as HTMLElement;
-    const resolvedHistorySummary =
-      within(resolvedDetails).getByText("作答历史");
-    const resolvedHistory = resolvedHistorySummary.closest(
-      "details"
+    const resolvedTrigger = screen.getByRole("button", { name: "已解决 1" });
+    await user.click(resolvedTrigger);
+    const resolvedCollapsible = resolvedTrigger.closest(
+      '[data-slot="collapsible"]'
+    ) as HTMLElement;
+    const resolvedHistoryTrigger = within(resolvedCollapsible).getByRole(
+      "button",
+      { name: "作答历史" }
+    );
+    await user.click(resolvedHistoryTrigger);
+    const resolvedHistory = resolvedHistoryTrigger.closest(
+      '[data-slot="collapsible"]'
     ) as HTMLElement;
     expect(
       within(resolvedHistory).getByText(
@@ -196,7 +213,8 @@ describe("WrongAnswerList", () => {
     expect(screen.queryByText("boolean_mismatch")).not.toBeInTheDocument();
   });
 
-  it("renders a corrected wrong answer with a learner-facing verdict", () => {
+  it("renders a corrected wrong answer with a learner-facing verdict", async () => {
+    const user = userEvent.setup();
     const correctedItem: WrongAnswerItemDto = {
       ...resolvedItem,
       itemLineageId: "item-lineage-corrected",
@@ -205,9 +223,11 @@ describe("WrongAnswerList", () => {
 
     render(<WrongAnswerList items={[correctedItem]} />);
 
-    const resolvedDetails = screen
-      .getByText("已解决 1")
-      .closest("details") as HTMLElement;
+    const resolvedTrigger = screen.getByRole("button", { name: "已解决 1" });
+    await user.click(resolvedTrigger);
+    const resolvedDetails = resolvedTrigger.closest(
+      '[data-slot="collapsible"]'
+    ) as HTMLElement;
     expect(
       within(resolvedDetails).getAllByText("回答正确").length
     ).toBeGreaterThan(0);

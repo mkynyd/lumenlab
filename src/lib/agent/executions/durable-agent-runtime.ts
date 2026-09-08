@@ -47,6 +47,8 @@ import {
 import { AgentExecutionWorker } from "./agent-execution-worker";
 import { PrismaAgentExecutionStore } from "./prisma-agent-execution-store";
 import { AgentExecutionRetryPolicy } from "./retry-policy";
+import { createPaperFormattingHandler } from "@/lib/paper/formatting-handler";
+import { createDurableResearchExecutionHandler } from "@/lib/research/durable-handler";
 
 const OUTPUT_CHUNK_SIZE = 16_000;
 /** 增量落盘的分段阈值：攒够字符数或距上次写入超过该间隔即写入事件存储 */
@@ -171,6 +173,9 @@ export function upgradeAgentCheckpoint(
     allowedToolIds: checkpoint.allowedToolIds,
     ...(checkpoint.request
       ? { request: { ...checkpoint.request, model: activeModel } }
+      : {}),
+    ...(checkpoint.researchState
+      ? { researchState: checkpoint.researchState }
       : {}),
     ...(checkpoint.usage ? { usage: checkpoint.usage } : {}),
     ...(checkpoint.output ? { output: checkpoint.output } : {}),
@@ -747,6 +752,8 @@ function continuationFromItems(items: AgentCheckpointItem[]) {
 export function createDurableAgentExecutionHandler(input: {
   run?: (runInput: AgentRunInput) => ReturnType<typeof runAgentRuntime>;
   recordUsage?: DurableUsageRecorder;
+  researchHandler?: AgentExecutionHandler;
+  formattingHandler?: AgentExecutionHandler;
   loadApprovedToolOutcome?: (
     executionId: string
   ) => Promise<ApprovedToolOutcome | null>;
@@ -757,6 +764,9 @@ export function createDurableAgentExecutionHandler(input: {
   const run = input.run ?? runAgentRuntime;
   const recordUsage = input.recordUsage ?? recordTokenUsage;
   const loadOutcome = input.loadApprovedToolOutcome ?? loadApprovedToolOutcome;
+  const researchHandler =
+    input.researchHandler ?? createDurableResearchExecutionHandler();
+  const formattingHandler = input.formattingHandler ?? createPaperFormattingHandler();
   const loadToolSnapshot = input.loadToolSnapshot ?? loadDurableToolSnapshot;
 
   return async (context) => {
@@ -768,6 +778,12 @@ export function createDurableAgentExecutionHandler(input: {
         message: "Durable execution request checkpoint is missing",
         retryable: false,
       };
+    }
+    if (storedCheckpoint.request.executionKind === "paper-formatting") {
+      return formattingHandler(context);
+    }
+    if (storedCheckpoint.request.executionKind === "research") {
+      return researchHandler(context);
     }
     if (storedCheckpoint.output) {
       await persistCompletedUsage(

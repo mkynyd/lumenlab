@@ -38,7 +38,6 @@ const nextConfig: NextConfig = {
     ...(buildWorkerCount > 0 ? { cpus: buildWorkerCount } : {}),
   },
   serverExternalPackages: [
-    "pdfjs-dist",
     "@napi-rs/canvas",
     "pdfkit",
     "adm-zip",

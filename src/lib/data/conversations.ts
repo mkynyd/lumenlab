@@ -15,7 +15,7 @@ function normalizeSources(value: unknown): AgentSource[] | null {
 export const getConversation = cache(
   async (id: string, userId: string) => {
     const conversation = await prisma.conversation.findFirst({
-      where: { id, userId },
+    where: { id, userId, kind: "chat" },
       include: {
         messages: {
           orderBy: { createdAt: "asc" },
@@ -61,7 +61,7 @@ export const getConversation = cache(
 
 export const getConversations = cache(async (userId: string) =>
   prisma.conversation.findMany({
-    where: { userId },
+    where: { userId, kind: "chat" },
     orderBy: { updatedAt: "desc" },
     take: 100,
   })

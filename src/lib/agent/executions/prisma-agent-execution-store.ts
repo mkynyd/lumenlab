@@ -154,6 +154,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
                 title: input.conversation.title,
                 model: input.conversation.model,
                 thinkingEnabled: input.conversation.thinkingEnabled,
+                kind: input.conversation.kind ?? "chat",
               },
               select: { id: true, projectId: true },
             });
@@ -470,15 +471,18 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         status: "running",
         leaseExpiresAt: { lt: input.now },
       },
-      select: { id: true, attempt: true },
+      select: { id: true, attempt: true, leaseRecoveryCount: true, conversation: { select: { kind: true } } },
     });
     let recovered = 0;
 
     for (const candidate of candidates) {
-      const exhausted = candidate.attempt >= maxAttempts;
+      // Paper requeues after each bounded stage; claims are not failures.
+      const isPaper = candidate.conversation?.kind === "paper-system";
+      const recoveryAttempt = isPaper ? (candidate.leaseRecoveryCount ?? 0) + 1 : candidate.attempt;
+      const exhausted = recoveryAttempt >= maxAttempts;
       const delayMs = exhausted
         ? 0
-        : (input.retryDelayMs?.(candidate.attempt) ?? 0);
+        : (input.retryDelayMs?.(recoveryAttempt) ?? 0);
       if (!Number.isFinite(delayMs) || delayMs < 0) {
         throw new Error("retryDelayMs must return a non-negative finite number");
       }
@@ -492,6 +496,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           },
           data: exhausted
             ? {
+                leaseRecoveryCount: { increment: 1 },
                 status: "failed",
                 leaseOwner: null,
                 leaseExpiresAt: null,
@@ -504,6 +509,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
                 },
               }
             : {
+                leaseRecoveryCount: { increment: 1 },
                 status: "queued",
                 leaseOwner: null,
                 leaseExpiresAt: null,
@@ -555,6 +561,15 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
             createdAt: input.now,
           },
         });
+        // A poisoned lease is a terminal failure the user must see: without this
+        // projection a paper formatting task would stay "queued" forever.
+        if (exhausted) {
+          await notifyAgentExecutionTransition(transaction, {
+            executionId: candidate.id,
+            kind: "failed",
+            now: input.now,
+          });
+        }
         return true;
       });
       if (didRecover) recovered += 1;
@@ -754,6 +769,88 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           failureCode: failureCode(input.failure),
         },
       }),
+    });
+  }
+
+  async requeue(input: {
+    executionId: string;
+    workerId: string;
+    checkpoint: AgentCheckpoint;
+    scheduledAt: Date;
+    now: Date;
+  }): Promise<boolean> {
+    return this.transitionRunningExecution({
+      executionId: input.executionId,
+      workerId: input.workerId,
+      now: input.now,
+      data: {
+        status: "queued",
+        checkpoint: input.checkpoint as unknown as Prisma.InputJsonValue,
+        scheduledAt: input.scheduledAt,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
+      event: () => ({
+        key: `run_rescheduled:${input.scheduledAt.getTime()}`,
+        type: "run_rescheduled",
+        payload: { scheduledAt: input.scheduledAt.toISOString() },
+      }),
+      });
+  }
+
+  async resumeOwned(input: {
+    executionId: string;
+    userId: string;
+    scheduledAt: Date;
+    now: Date;
+  }): Promise<boolean> {
+    return this.client.$transaction(async (transaction) => {
+      const execution = await transaction.agentExecution.findFirst({
+        where: {
+          id: input.executionId,
+          userId: input.userId,
+          status: { in: ["queued", "completed"] },
+        },
+        select: { checkpoint: true, lastEventSequence: true },
+      });
+      if (!execution?.checkpoint) return false;
+
+      const checkpoint = parseAgentCheckpoint(execution.checkpoint);
+      if (checkpoint.request?.executionKind !== "research") return false;
+
+      const [updated] = await transaction.agentExecution.updateManyAndReturn({
+        where: {
+          id: input.executionId,
+          userId: input.userId,
+          status: { in: ["queued", "completed"] },
+        },
+        data: {
+          status: "queued",
+          scheduledAt: input.scheduledAt,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          waitingToolExecutionId: null,
+          failure: Prisma.JsonNull,
+          lastEventSequence: { increment: 1 },
+        },
+        select: { lastEventSequence: true },
+      });
+      if (!updated) return false;
+
+      await transaction.agentExecutionEvent.create({
+        data: {
+          executionId: input.executionId,
+          sequence: updated.lastEventSequence,
+          key: `run_resumed:${updated.lastEventSequence}`,
+          type: "run_resumed",
+          payload: {
+            scheduledAt: input.scheduledAt.toISOString(),
+            resumedAt: input.now.toISOString(),
+          },
+          createdAt: input.now,
+        },
+      });
+      return true;
     });
   }
 
