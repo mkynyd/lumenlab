@@ -16,7 +16,7 @@
 - Research 阶段不把 `projectId` 交给通用 Chat 媒体装配，避免任务 05 的文件名匹配自动注入未选择项目图片；Research 自身明确提供的资料、公开事件、Evidence/Claim、预算与报告引用保持不变。
 - 真实验证：provider 暂停→恢复在同一用例中完成（恢复调用 `totalTokens=3988`）；完整 Quick Research 经过计划确认、研究、评估、合成、验证并冻结报告，`modelCalls=7`、`totalTokens=46849`、Evidence/Source 各 11、content hash `74c0467ec06eb4be9578d4f21b50640f431aba5450a735b06a115fe42dc0a8f9`。Paper DOCX 模糊 drawing 分类返回 `completed / figure`。所有临时 Research 数据已清理。
 - 最终门禁：307 个测试文件 / 1680 项、TypeScript、ESLint、Prisma schema、37 个迁移状态、production build（77 页面）、diff check 全绿；Paper 模板/预览/编译定向 6 文件 27 项通过。构建仅保留既有 compile-worker NFT tracing warning。
-- 任务 06 不部署。14 条 A/B 模板来源和 Linux `texlive-full` 隔离全量验证仍是既有边界；进入任务 11 前需按方案再次同步届时最新 main。代码合并提交 `faf5630`、文档修复提交 `8ffb83e` 已推送；手动 CI `34178694687` 的注册页 5 秒偶发超时单独保留，不在本轮修复。任务 06 已封存，按用户要求不自动进入 07。
+- 任务 06 不部署。14 条 A/B 模板来源和 Linux `texlive-full` 隔离全量验证仍是既有边界；进入任务 11 前需按方案再次同步届时最新 main。代码合并提交 `faf5630`、Turbopack 恢复文档提交 `8ffb83e`、交接封存提交 `b02c402` 均已推送；手动 CI `34178694687` 的注册页 5 秒偶发超时单独保留，不在本轮修复。任务 06 已封存，按用户要求不自动进入 07。
 
 ## 2026-09-06 · GPT-6 / Codex
 
