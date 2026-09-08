@@ -34,6 +34,11 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+      # bwrap needs CLONE_NEWUSER, which the default Docker seccomp profile
+      # rejects for unprivileged containers (verified on Linux: without this the
+      # compiler fails with "No permissions to create new namespace").
+      # Capabilities stay dropped; only the seccomp filter is relaxed.
+      - seccomp=unconfined
     pids_limit: 256
     cpus: 2.0
     mem_limit: 4g

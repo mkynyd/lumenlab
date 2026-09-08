@@ -38,6 +38,9 @@ export const queryKeys = {
     workspace: (id: string) => ["papers", "workspaces", id] as const,
     references: (id: string) => ["papers", "workspaces", id, "references"] as const,
     templates: (query = "") => ["papers", "templates", query] as const,
+    formattingTasks: ["papers", "formatting", "tasks"] as const,
+    formattingTask: (id: string) => ["papers", "formatting", "tasks", id] as const,
+    formattingTemplates: (query = "") => ["papers", "formatting", "templates", query] as const,
   },
   learning: {
     all: learningAll,

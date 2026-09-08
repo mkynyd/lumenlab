@@ -15,6 +15,7 @@ datasource db {
 // ============================================================
 
 model User {
+  paperFormattingTasks PaperFormattingTask[]
   id                      String    @id @default(cuid())
   email                   String    @unique
   passwordHash            String
@@ -712,6 +713,8 @@ enum AgentExecutionStatus {
 }
 
 model AgentExecution {
+  leaseRecoveryCount Int @default(0)
+  paperFormattingTask PaperFormattingTask?
   id                     String               @id @default(cuid())
   userId                 String
   clientRunKey           String?
@@ -2035,6 +2038,7 @@ enum PaperCompilationStatus {
   running
   succeeded
   failed
+  cancelled
 }
 
 enum PaperResearchMaterialType {
@@ -2067,6 +2071,7 @@ model PaperWorkspace {
 }
 
 model PaperDocument {
+  formattingTask PaperFormattingTask?
   id               String   @id @default(cuid())
   paperWorkspaceId String   @unique
   userId           String
@@ -2165,6 +2170,7 @@ model TemplateRegistryEntry {
 }
 
 model TemplateVariant {
+  formattingTasks PaperFormattingTask[]
   id                     String   @id @default(cuid())
   registryEntryId        String
   variantKey             String   @unique
@@ -2213,6 +2219,9 @@ model TemplateBindingVersion {
 }
 
 model PaperCompilation {
+  leaseToken String?
+  leaseExpiresAt DateTime?
+  formattingTask PaperFormattingTask?
   id                    String                 @id @default(cuid())
   documentVersionId     String
   bindingVersionId      String?
@@ -2240,6 +2249,7 @@ model PaperCompilation {
 }
 
 model PaperImport {
+  formattingTask PaperFormattingTask?
   id                 String            @id @default(cuid())
   paperDocumentId    String
   userId             String
@@ -2344,4 +2354,66 @@ model Notification {
   @@index([userId, readAt])
   @@index([userId, toastAcknowledgedAt])
   @@index([taskType, taskId])
+}
+
+/// Durable paper domain state. Large parsed content lives in PaperDocumentVersion.
+model PaperFormattingTask {
+  id String @id @default(cuid())
+  userId String
+  requestKey String
+  requestHash String
+  originalName String
+  sourceType String
+  sourceHash String
+  sourceProvider String
+  sourceObjectKey String
+  templateVariantId String
+  templateSnapshot Json
+  actualModel String
+  billingVersion String
+  metadata Json
+  status String @default("queued")
+  attempt Int @default(1)
+  documentId String? @unique
+  importId String? @unique
+  executionId String? @unique
+  compilationId String? @unique
+  mappedVersionId String?
+  completedUnits Int @default(0)
+  totalUnits Int?
+  report Json?
+  errorCode String?
+  errorMessage String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  completedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateVariant TemplateVariant @relation(fields: [templateVariantId], references: [id], onDelete: Restrict)
+  document PaperDocument? @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  import PaperImport? @relation(fields: [importId], references: [id], onDelete: Restrict)
+  execution AgentExecution? @relation(fields: [executionId], references: [id], onDelete: Restrict)
+  compilation PaperCompilation? @relation(fields: [compilationId], references: [id], onDelete: Restrict)
+  mappingBatches PaperFormattingMappingBatch[]
+
+  @@unique([userId, requestKey])
+  @@index([userId, status, updatedAt])
+  @@index([status, updatedAt])
+}
+
+/// Idempotent bounded mapping, independent of worker lease/requeue attempts.
+model PaperFormattingMappingBatch {
+  id String @id @default(cuid())
+  taskId String
+  batchIndex Int
+  inputHash String
+  status String @default("pending")
+  conversationId String? @unique
+  response Json?
+  messageId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task PaperFormattingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@unique([taskId, batchIndex])
 }

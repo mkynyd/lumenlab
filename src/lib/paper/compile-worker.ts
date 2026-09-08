@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
@@ -163,7 +163,8 @@ export function buildCompileInvocation(input: {
   };
 }
 
-export async function runCompileCommand(input: { cwd: string; command: CompileCommand }): Promise<string> {
+export async function runCompileCommand(input: { cwd: string; command: CompileCommand; signal?: AbortSignal }): Promise<string> {
+  input.signal?.throwIfAborted();
   const output: string[] = [];
   const invocation = buildCompileInvocation(input);
   await new Promise<void>((resolve, reject) => {
@@ -173,6 +174,8 @@ export async function runCompileCommand(input: { cwd: string; command: CompileCo
       env: invocation.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const abort = () => { child.kill("SIGKILL"); reject(new Error("COMPILE_CANCELLED")); };
+    input.signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       const error = new Error("LaTeX 编译超时") as CompileProcessError;
@@ -183,6 +186,7 @@ export async function runCompileCommand(input: { cwd: string; command: CompileCo
     child.stderr.on("data", (chunk: Buffer) => output.push(chunk.toString()));
     child.once("error", (error) => {
       clearTimeout(timer);
+      input.signal?.removeEventListener("abort", abort);
       const processError = error as CompileProcessError;
       const systemCode = (error as NodeJS.ErrnoException).code;
       processError.code = systemCode === "ENOENT" ? "MISSING_EXECUTABLE" : "COMMAND_FAILED";
@@ -190,6 +194,7 @@ export async function runCompileCommand(input: { cwd: string; command: CompileCo
     });
     child.once("close", (code) => {
       clearTimeout(timer);
+      input.signal?.removeEventListener("abort", abort);
       const result = normalizeOutput(output.join(""));
       if (code === 0) {
         resolve();
@@ -204,12 +209,12 @@ export async function runCompileCommand(input: { cwd: string; command: CompileCo
   return normalizeOutput(output.join(""));
 }
 
-export async function runCompilePipeline(input: { cwd: string; engine?: string | null; bibliography?: string | null; entryFile?: string }): Promise<{ output: string; lastPhase: CompileCommand["phase"] }> {
+export async function runCompilePipeline(input: { cwd: string; engine?: string | null; bibliography?: string | null; entryFile?: string; signal?: AbortSignal }): Promise<{ output: string; lastPhase: CompileCommand["phase"] }> {
   const commands = buildCompileCommands({ engine: input.engine, bibliography: input.bibliography, entryFile: input.entryFile });
   const output: string[] = [];
   for (const command of commands) {
     try {
-      output.push(await runCompileCommand({ cwd: input.cwd, command }));
+      output.push(await runCompileCommand({ cwd: input.cwd, command, signal: input.signal }));
       if (command.phase === "latexmk") return { output: normalizeOutput(output.join("\n")), lastPhase: command.phase };
     } catch (error) {
       const processError = error as CompileProcessError;
@@ -223,10 +228,11 @@ export async function runCompilePipeline(input: { cwd: string; engine?: string |
   return { output: normalizeOutput(output.join("\n")), lastPhase: "engine" };
 }
 
-async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnType<typeof normalizeTemplateManifest> }): Promise<Array<{ path: string; buffer: Buffer }>> {
+async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnType<typeof normalizeTemplateManifest>; signal?: AbortSignal }): Promise<Array<{ path: string; buffer: Buffer }>> {
   const snapshot = input.manifest.upstreamSnapshot;
   if (!snapshot?.materialized || !snapshot.sourceArchive?.key) return [];
   const archiveBuffer = await readStoredObject({ provider: snapshot.sourceArchive.provider, key: snapshot.sourceArchive.key });
+  if (snapshot.sourceArchive.sha256 && createHash("sha256").update(archiveBuffer).digest("hex") !== snapshot.sourceArchive.sha256) throw new Error("TEMPLATE_SNAPSHOT_CHANGED");
   const archive = await JSZip.loadAsync(archiveBuffer);
   const files: Array<{ path: string; buffer: Buffer }> = [];
   for (const [rawPath, entry] of Object.entries(archive.files)) {
@@ -260,7 +266,7 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
       for (const file of installerDtx) await writeFile(join(input.cwd, basename(file.path)), file.buffer);
       await writeFile(join(input.cwd, bootstrapEntry), `\\input{${installer.path}}\n`, "utf8");
       try {
-        await runCompileCommand({ cwd: input.cwd, command: { command: "xelatex", args: [...LATEX_ARGS, bootstrapEntry], phase: "engine" } });
+        await runCompileCommand({ cwd: input.cwd, signal: input.signal, command: { command: "xelatex", args: [...LATEX_ARGS, bootstrapEntry], phase: "engine" } });
       } finally {
         await rm(join(input.cwd, bootstrapEntry), { force: true });
         for (const file of copiedDtx) await rm(join(input.cwd, file), { force: true });
@@ -283,7 +289,7 @@ async function materializeTemplateFiles(input: { cwd: string; manifest: ReturnTy
         await writeFile(join(input.cwd, dtxName), dtx.buffer ?? Buffer.alloc(0));
         await writeFile(join(input.cwd, installerName), bootstrap.installerSource, "utf8");
         try {
-          await runCompileCommand({ cwd: input.cwd, command: { command: "tex", args: ["-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", installerName], phase: "engine" } });
+          await runCompileCommand({ cwd: input.cwd, signal: input.signal, command: { command: "tex", args: ["-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", installerName], phase: "engine" } });
         } finally {
           await rm(join(input.cwd, installerName), { force: true });
           await rm(join(input.cwd, dtxName), { force: true });
@@ -326,7 +332,12 @@ export async function sourceBundle(input: {
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
-async function claimCompilation() {
+export async function claimCompilation() {
+  const now = new Date();
+  await prisma.paperCompilation.updateMany({
+    where: { status: "running", OR: [{ leaseExpiresAt: { lt: now } }, { leaseExpiresAt: null, startedAt: { lt: new Date(now.getTime() - compileResourceLimits().wallTimeMs * 6) } }] },
+    data: { status: "queued", leaseToken: null, leaseExpiresAt: null },
+  });
   const candidate = await prisma.paperCompilation.findFirst({
     where: { status: "queued" },
     orderBy: { createdAt: "asc" },
@@ -335,12 +346,14 @@ async function claimCompilation() {
   if (!candidate) return null;
   const claimed = await prisma.paperCompilation.updateMany({
     where: { id: candidate.id, status: "queued" },
-    data: { status: "running", startedAt: new Date(), completedAt: null },
+    data: { status: "running", startedAt: now, completedAt: null, leaseToken: randomUUID(), leaseExpiresAt: new Date(now.getTime() + 30_000) },
   });
   if (claimed.count !== 1) return null;
   return prisma.paperCompilation.findUnique({
     where: { id: candidate.id },
     include: {
+      bindingVersion: true,
+      formattingTask: { select: { id: true } },
       documentVersion: {
         include: {
           document: {
@@ -356,20 +369,25 @@ async function claimCompilation() {
   });
 }
 
-async function processCompilation(compilation: NonNullable<Awaited<ReturnType<typeof claimCompilation>>>) {
+export async function processCompilation(compilation: NonNullable<Awaited<ReturnType<typeof claimCompilation>>>) {
   const tempDirectory = await mkdtemp(join(tmpdir(), "lumenlab-paper-"));
+  const cancelled = new AbortController();
+  const heartbeat = setInterval(() => {
+    void prisma.paperCompilation.updateMany({ where: { id: compilation.id, status: "running", leaseToken: compilation.leaseToken, leaseExpiresAt: { gt: new Date() } }, data: { leaseExpiresAt: new Date(Date.now() + 30_000) } }).then((result) => { if (!result.count) cancelled.abort(); }).catch(() => cancelled.abort());
+  }, 2000);
   let engine = "xelatex";
   let nodeMap: Record<string, { line: number; kind: string }> = {};
   try {
+    if (compilation.formattingTask && (process.platform !== "linux" || !compileLinuxSandboxEnabled() || process.getuid?.() === 0)) throw new Error("ISOLATED_COMPILER_REQUIRED");
     const document = parseAcademicDocument(compilation.documentVersion.content);
-    const bindingVersion = compilation.documentVersion.document.bindings[0]?.versions[0];
+    const bindingVersion = compilation.bindingVersion;
     const manifest = bindingVersion ? normalizeTemplateManifest(bindingVersion.manifestSnapshot) : buildGeneralAcademicTemplateManifest();
     const figureIds = document.blocks.filter((block): block is Extract<typeof block, { kind: "figure" }> => block.kind === "figure").map((block) => block.assetId);
     const assets = await prisma.fileAsset.findMany({ where: { id: { in: figureIds }, userId: compilation.documentVersion.document.userId }, select: { id: true, originalName: true, storageProvider: true, storagePath: true } });
     if (assets.length !== new Set(figureIds).size) throw new Error("FIGURE_ASSET_MISSING：论文图片资源不存在或无权访问");
     const assetPaths = Object.fromEntries(assets.map((asset) => [asset.id, `assets/${asset.id}${extname(asset.originalName).toLowerCase() || ".bin"}`]));
     engine = compilerCommand(compilation.engine);
-    const upstreamFiles = await materializeTemplateFiles({ cwd: tempDirectory, manifest });
+    const upstreamFiles = await materializeTemplateFiles({ cwd: tempDirectory, manifest, signal: cancelled.signal });
     const resolvedClass = resolveTemplateDocumentClass(manifest, upstreamFiles);
     if (manifest.upstreamSnapshot?.materialized && !resolvedClass) {
       throw new Error("TEMPLATE_MANIFEST_INCOMPLETE：pinned Template Pack 没有可用 documentClass");
@@ -408,19 +426,19 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
     const source = await sourceBundle({ ...rendered, manifest: compileManifest, assets: assetFiles, files: upstreamFiles });
     assertCompileArtifactSize(source.byteLength);
 
-    await runCompilePipeline({ cwd: tempDirectory, engine, bibliography: compileManifest.bibliography });
+    await runCompilePipeline({ cwd: tempDirectory, engine, bibliography: compileManifest.bibliography, signal: cancelled.signal });
     const pdf = await readFile(join(tempDirectory, "main.pdf"));
     const syncTexBuffer = await readFile(join(tempDirectory, "main.synctex.gz")).catch(() => null);
     assertCompileArtifactSize(pdf.byteLength);
     if (syncTexBuffer) assertCompileArtifactSize(syncTexBuffer.byteLength);
-    const baseKey = `papers/${compilation.documentVersion.document.userId}/${compilation.documentVersionId}/${compilation.id}`;
+    const baseKey = `papers/${compilation.documentVersion.document.userId}/${compilation.documentVersionId}/${compilation.id}/${compilation.leaseToken}`;
     const [pdfObject, sourceObject, syncTexObject] = await Promise.all([
       uploadObjectBuffer({ key: `${baseKey}/main.pdf`, mimeType: "application/pdf", buffer: pdf }),
       uploadObjectBuffer({ key: `${baseKey}/source.zip`, mimeType: "application/zip", buffer: source }),
       syncTexBuffer ? uploadObjectBuffer({ key: `${baseKey}/main.synctex.gz`, mimeType: "application/gzip", buffer: syncTexBuffer }) : Promise.resolve(null),
     ]);
-    await prisma.paperCompilation.update({
-      where: { id: compilation.id },
+    await prisma.paperCompilation.updateMany({
+      where: { id: compilation.id, status: "running", leaseToken: compilation.leaseToken, leaseExpiresAt: { gt: new Date() } },
       data: {
         status: "succeeded",
         engine,
@@ -442,11 +460,12 @@ async function processCompilation(compilation: NonNullable<Awaited<ReturnType<ty
     };
     const mappedNode = mapCompileErrorToNode({ output: detail.output, nodeMap });
     if (mappedNode) detail.nodeId = mappedNode.nodeId;
-    await prisma.paperCompilation.update({
-      where: { id: compilation.id },
+    await prisma.paperCompilation.updateMany({
+      where: { id: compilation.id, status: "running", leaseToken: compilation.leaseToken, leaseExpiresAt: { gt: new Date() } },
       data: { status: "failed", engine, errorLog: detail, completedAt: new Date() },
     });
   } finally {
+    clearInterval(heartbeat);
     await rm(tempDirectory, { recursive: true, force: true });
   }
 }
@@ -460,7 +479,10 @@ export function startPaperCompilationWorker() {
   }
   globalWorker.__lumenPaperCompilationWorker = true;
   const workerId = `paper:${process.pid}:${randomUUID()}`;
+  let draining = false;
   const drain = async () => {
+    if (draining) return;
+    draining = true;
     try {
       const compilation = await claimCompilation();
       if (compilation) await processCompilation(compilation);
@@ -469,7 +491,7 @@ export function startPaperCompilationWorker() {
         workerId,
         error: error instanceof Error ? error.message : String(error),
       });
-    }
+    } finally { draining = false; }
   };
   void drain();
   setInterval(() => void drain(), POLL_INTERVAL_MS);

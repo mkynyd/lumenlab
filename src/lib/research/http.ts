@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { ResearchServiceError } from "./service";
 import { PaperServiceError } from "@/lib/paper/service";
+import { FormattingError } from "@/lib/paper/formatting-contracts";
 
 export function researchErrorResponse(error: unknown) {
+  if (error instanceof FormattingError) {
+    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+  }
   if (error instanceof ResearchServiceError) {
     const status = error.code === "NOT_FOUND" ? 404 : 400;
     return NextResponse.json({ error: error.message, code: error.code }, { status });

@@ -47,6 +47,7 @@ import {
 import { AgentExecutionWorker } from "./agent-execution-worker";
 import { PrismaAgentExecutionStore } from "./prisma-agent-execution-store";
 import { AgentExecutionRetryPolicy } from "./retry-policy";
+import { createPaperFormattingHandler } from "@/lib/paper/formatting-handler";
 import { createDurableResearchExecutionHandler } from "@/lib/research/durable-handler";
 
 const OUTPUT_CHUNK_SIZE = 16_000;
@@ -752,6 +753,7 @@ export function createDurableAgentExecutionHandler(input: {
   run?: (runInput: AgentRunInput) => ReturnType<typeof runAgentRuntime>;
   recordUsage?: DurableUsageRecorder;
   researchHandler?: AgentExecutionHandler;
+  formattingHandler?: AgentExecutionHandler;
   loadApprovedToolOutcome?: (
     executionId: string
   ) => Promise<ApprovedToolOutcome | null>;
@@ -764,6 +766,7 @@ export function createDurableAgentExecutionHandler(input: {
   const loadOutcome = input.loadApprovedToolOutcome ?? loadApprovedToolOutcome;
   const researchHandler =
     input.researchHandler ?? createDurableResearchExecutionHandler();
+  const formattingHandler = input.formattingHandler ?? createPaperFormattingHandler();
   const loadToolSnapshot = input.loadToolSnapshot ?? loadDurableToolSnapshot;
 
   return async (context) => {
@@ -775,6 +778,9 @@ export function createDurableAgentExecutionHandler(input: {
         message: "Durable execution request checkpoint is missing",
         retryable: false,
       };
+    }
+    if (storedCheckpoint.request.executionKind === "paper-formatting") {
+      return formattingHandler(context);
     }
     if (storedCheckpoint.request.executionKind === "research") {
       return researchHandler(context);

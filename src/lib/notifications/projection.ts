@@ -8,7 +8,7 @@ import {
 } from "./contracts";
 
 type NotificationClient = Pick<PrismaClient, "notification">;
-type ProjectionClient = Pick<Prisma.TransactionClient, "notification" | "agentExecution">;
+type ProjectionClient = Pick<Prisma.TransactionClient, "notification" | "agentExecution" | "paperFormattingTask">;
 
 export interface TaskNotificationInput {
   userId: string;
@@ -129,10 +129,19 @@ export async function notifyAgentExecutionTransition(
       attempt: true,
       conversationId: true,
       projectId: true,
-      conversation: { select: { title: true } },
+      conversation: { select: { title: true, kind: true } },
     },
   });
   if (!execution) return false;
+  if (execution.conversation?.kind === "paper-system") {
+    if (input.kind !== "failed" && input.kind !== "cancelled") return false;
+    const task = await client.paperFormattingTask.findUnique({ where: { executionId: execution.id } });
+    if (!task || ["completed", "cancelled", "failed"].includes(task.status)) return false;
+    const changed = await client.paperFormattingTask.updateMany({ where: { id: task.id, executionId: execution.id, status: task.status }, data: { status: input.kind, errorCode: "EXECUTION_INTERRUPTED", errorMessage: "后台执行已中断，原稿及已完成阶段已保留。", completedAt: input.now ?? new Date() } });
+    if (!changed.count) return false;
+    return upsertTaskNotification(client, { userId: task.userId, taskType: "paper_formatting", taskId: task.id, taskAttempt: task.attempt, kind: input.kind, title: (task.metadata as { title?: string }).title ?? task.originalName, summary: input.kind === "failed" ? "排版执行中断，可重试" : "排版已取消", targetPath: `/papers/formatting/${task.id}` });
+  }
+  if (execution.conversation?.kind && execution.conversation.kind !== "chat") return false;
   return upsertTaskNotification(client, {
     ...buildAgentExecutionNotification(execution, input.kind),
     createdAt: input.now,
@@ -158,6 +167,7 @@ export async function reconcileAgentExecutionNotifications(input?: {
       ...(input?.userId ? { userId: input.userId } : {}),
       status: { in: ["waiting_approval", "completed", "failed", "cancelled"] },
       updatedAt: { gte: since },
+      conversation: { kind: "chat" },
     },
     orderBy: { updatedAt: "desc" },
     take: limit,
@@ -168,7 +178,7 @@ export async function reconcileAgentExecutionNotifications(input?: {
       status: true,
       conversationId: true,
       projectId: true,
-      conversation: { select: { title: true } },
+      conversation: { select: { title: true, kind: true } },
     },
   });
 

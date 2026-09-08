@@ -233,7 +233,9 @@ function renderTemplateMetadataSetup(metadata: Extract<DocumentBlock, { kind: "p
     case "seuthesiy":
       return [`\\title{${title}}{${title}}{}{}{${title}}{${title}}`, `\\author{${templateAuthor}}{${templateAuthor}}`];
     case "scuthesis": {
-      const lines: string[] = [];
+      // The 2016 SCU class also renders through the base `\maketitle`, which
+      // errors with "No \title given." unless the standard title is set.
+      const lines: string[] = [`\\title{${title}}`, `\\author{${templateAuthor}}`];
       if (hasTemplateCommand(templateFiles, "CoverTitle")) lines.push(`\\CoverTitle{${title}}`);
       if (hasTemplateCommand(templateFiles, "ENGtitle")) lines.push(`\\ENGtitle{${title}}`);
       if (hasTemplateCommand(templateFiles, "ENGauthor")) lines.push(`\\ENGauthor{${templateAuthor}}`);
@@ -381,6 +383,13 @@ function renderTemplatePreamble(files: TemplateSourceFile[], manifest?: Academic
       lines.push(`\\usepackage${normalizedOptions ? `[${normalizedOptions}]` : ""}{${name}}`);
     }
   }
+  // Our generated main.tex replaces the upstream entry file, so a bibliography
+  // style declared only there (e.g. `\bibliographystyle{cqunumerical}`) must be
+  // carried over or BibTeX fails with "I found no \bibstyle command". Entry
+  // files that reference a style by relative path (e.g. `../Template/x`) are
+  // skipped: those paths only resolve from the upstream directory layout.
+  const bibliographyStyle = /\\bibliographystyle\s*\{([^{}]+)\}/i.exec(source);
+  if (bibliographyStyle && /^[A-Za-z0-9_-]+$/.test(bibliographyStyle[1].trim())) lines.push(`\\bibliographystyle{${bibliographyStyle[1].trim()}}`);
   return lines;
 }
 

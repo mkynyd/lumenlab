@@ -20,7 +20,7 @@ COPY src ./src
 COPY services/paper-compiler ./services/paper-compiler
 
 RUN npx prisma generate \
-  && mkdir -p /app/tmp /tmp/compiler-home \
+  && mkdir -p /app/tmp /tmp/compiler-home /compile-workspace \
   && chown -R compiler:compiler /app
 
 USER compiler

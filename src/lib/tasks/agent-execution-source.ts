@@ -70,7 +70,7 @@ export class AgentExecutionTaskSource implements TaskSource {
     limit?: number;
   }): Promise<TaskSnapshot[]> {
     const executions = await this.client.agentExecution.findMany({
-      where: { userId: input.userId, status: { in: ACTIVE_EXECUTION_STATUSES } },
+      where: { userId: input.userId, conversation: { kind: "chat" }, status: { in: ACTIVE_EXECUTION_STATUSES } },
       orderBy: { updatedAt: "desc" },
       take: normalizeTaskLimit(input.limit),
       select: {
@@ -139,7 +139,7 @@ export class AgentExecutionTaskSource implements TaskSource {
     taskId: string;
   }): Promise<TaskSnapshot | null> {
     const execution = await this.client.agentExecution.findFirst({
-      where: { id: input.taskId, userId: input.userId },
+      where: { id: input.taskId, userId: input.userId, conversation: { kind: "chat" } },
       select: {
         id: true,
         status: true,

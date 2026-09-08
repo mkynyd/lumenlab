@@ -88,8 +88,9 @@ const durableRequestSchema = z
       .optional(),
     isQuickTask: z.boolean(),
     materialScope: z.enum(["project-corpus", "none"]).optional(),
-    executionKind: z.enum(["chat", "research"]).optional(),
+    executionKind: z.enum(["chat", "research", "paper-formatting"]).optional(),
     researchRunId: z.string().min(1).optional(),
+    formattingTaskId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -335,7 +336,7 @@ export type CreateOrGetAgentExecutionInput = {
     title: string;
     model: string;
     thinkingEnabled: boolean;
-    kind?: "chat" | "research-system";
+    kind?: "chat" | "research-system" | "paper-system";
   };
   userMessageContent: string;
   assistantMessageSources?: Prisma.InputJsonValue;

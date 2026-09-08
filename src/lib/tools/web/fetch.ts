@@ -261,3 +261,28 @@ export async function webFetch(
     await activeDispatcher?.destroy().catch(() => {});
   }
 }
+
+/** Binary paper images reuse the same allowlist, DNS pinning and redirect policy. */
+export async function fetchPublicImage(url: string, signal: AbortSignal): Promise<{ buffer: Buffer; mimeType: string }> {
+  const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]);
+  const fetched = await safeFetchWithRedirects(url, boundedSignal);
+  if ("error" in fetched) throw new Error(fetched.error);
+  try {
+    const { response } = fetched;
+    if (!response.ok) throw new Error("IMAGE_FETCH_FAILED");
+    const mimeType = (response.headers.get("content-type") ?? "").split(";")[0];
+    if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(mimeType)) throw new Error("IMAGE_FORMAT_UNSUPPORTED");
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("IMAGE_EMPTY");
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 10 * 1024 * 1024) { await reader.cancel(); throw new Error("IMAGE_TOO_LARGE"); }
+      chunks.push(value);
+    }
+    return { buffer: Buffer.concat(chunks), mimeType };
+  } finally { await fetched.dispatcher.destroy(); }
+}

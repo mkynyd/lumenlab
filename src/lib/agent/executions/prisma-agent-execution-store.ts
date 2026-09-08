@@ -471,15 +471,18 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         status: "running",
         leaseExpiresAt: { lt: input.now },
       },
-      select: { id: true, attempt: true },
+      select: { id: true, attempt: true, leaseRecoveryCount: true, conversation: { select: { kind: true } } },
     });
     let recovered = 0;
 
     for (const candidate of candidates) {
-      const exhausted = candidate.attempt >= maxAttempts;
+      // Paper requeues after each bounded stage; claims are not failures.
+      const isPaper = candidate.conversation?.kind === "paper-system";
+      const recoveryAttempt = isPaper ? (candidate.leaseRecoveryCount ?? 0) + 1 : candidate.attempt;
+      const exhausted = recoveryAttempt >= maxAttempts;
       const delayMs = exhausted
         ? 0
-        : (input.retryDelayMs?.(candidate.attempt) ?? 0);
+        : (input.retryDelayMs?.(recoveryAttempt) ?? 0);
       if (!Number.isFinite(delayMs) || delayMs < 0) {
         throw new Error("retryDelayMs must return a non-negative finite number");
       }
@@ -493,6 +496,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           },
           data: exhausted
             ? {
+                leaseRecoveryCount: { increment: 1 },
                 status: "failed",
                 leaseOwner: null,
                 leaseExpiresAt: null,
@@ -505,6 +509,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
                 },
               }
             : {
+                leaseRecoveryCount: { increment: 1 },
                 status: "queued",
                 leaseOwner: null,
                 leaseExpiresAt: null,
@@ -556,6 +561,15 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
             createdAt: input.now,
           },
         });
+        // A poisoned lease is a terminal failure the user must see: without this
+        // projection a paper formatting task would stay "queued" forever.
+        if (exhausted) {
+          await notifyAgentExecutionTransition(transaction, {
+            executionId: candidate.id,
+            kind: "failed",
+            now: input.now,
+          });
+        }
         return true;
       });
       if (didRecover) recovered += 1;

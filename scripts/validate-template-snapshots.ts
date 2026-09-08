@@ -11,6 +11,9 @@ import { compileResourceLimits, safeCompilePath } from "@/lib/paper/compile-poli
 import { runCompileCommand, runCompilePipeline } from "@/lib/paper/compile-worker";
 import { normalizeTemplateManifest, readTemplateSamplePdf, templateSampleObjectKey } from "@/lib/paper/template-registry";
 import { renderAcademicDocumentToLatex } from "@/lib/paper/latex-renderer";
+import { FORMATTING_FIXTURE_METADATA, FORMATTING_MARKDOWN_FIXTURE, buildFormattingDocxFixture } from "@/lib/paper/formatting-fixtures";
+import { parseFormattingSource } from "@/lib/paper/formatting-import";
+import { formattingManifestHash } from "@/lib/paper/formatting-template";
 import { buildDtxBootstrapPlan, findTemplateInstaller, isLatexTemplateFormat, isSystemDocumentClass, normalizeTemplateRuntimeBuffer, resolveTemplateBibliography, resolveTemplateDocumentClass } from "@/lib/paper/template-snapshot";
 
 const ONE_PIXEL_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -97,6 +100,40 @@ async function materializeArchive(directory: string, archiveBuffer: Buffer) {
   return files;
 }
 
+async function compileFormattingFixture(input: {
+  directory: string;
+  manifest: ReturnType<typeof normalizeTemplateManifest>;
+  upstreamFiles: Array<{ path: string; buffer: Buffer }>;
+  filename: string;
+  buffer: Buffer;
+}): Promise<{ pdf: Buffer; blockCount: number; assetCount: number }> {
+  const parsed = await parseFormattingSource({ filename: input.filename, buffer: input.buffer, metadata: FORMATTING_FIXTURE_METADATA, signal: AbortSignal.timeout(120_000) });
+  const assetPaths: Record<string, string> = {};
+  for (const asset of parsed.assets) {
+    const target = `assets/${asset.placeholderId}.png`;
+    await writeFile(join(input.directory, target), asset.buffer);
+    assetPaths[asset.placeholderId] = target;
+  }
+  const rendered = renderAcademicDocumentToLatex(parsed.document, { manifest: input.manifest, references: [], assetPaths, templateFiles: input.upstreamFiles });
+  await writeFile(join(input.directory, "main.tex"), rendered.mainTex, "utf8");
+  await writeFile(join(input.directory, "generated-content.tex"), rendered.generatedContentTex, "utf8");
+  await writeFile(join(input.directory, "references.bib"), rendered.referencesBib, "utf8");
+  await runCompilePipeline({ cwd: input.directory, engine: compileEngine(input.manifest.engine), bibliography: input.manifest.bibliography });
+  const pdf = await readFile(join(input.directory, "main.pdf"));
+  if (pdf.byteLength === 0 || !pdf.subarray(0, 5).equals(Buffer.from("%PDF-"))) throw new Error(`${input.filename} 编译产物不是有效 PDF`);
+  return { pdf, blockCount: parsed.document.blocks.length, assetCount: parsed.assets.length };
+}
+
+/** Isolated Linux proof: the same snapshot must compile a DOCX and a Markdown original. */
+async function validateFormatting(input: { directory: string; manifest: ReturnType<typeof normalizeTemplateManifest>; upstreamFiles: Array<{ path: string; buffer: Buffer }> }) {
+  if (process.platform !== "linux" || process.env.PAPER_COMPILE_LINUX_SANDBOX !== "true") {
+    throw new Error("排版验证必须在启用 Linux 沙箱的隔离编译环境中运行");
+  }
+  const docx = await compileFormattingFixture({ ...input, filename: "fixture.docx", buffer: await buildFormattingDocxFixture() });
+  const markdown = await compileFormattingFixture({ ...input, filename: "fixture.md", buffer: Buffer.from(FORMATTING_MARKDOWN_FIXTURE, "utf8") });
+  return { docx, markdown };
+}
+
 async function validateVariant(row: { id: string; variantKey: string; manifest: unknown; pinnedUpstreamSnapshot: unknown; validation: unknown; sample: unknown }) {
   const snapshot = row.pinnedUpstreamSnapshot && typeof row.pinnedUpstreamSnapshot === "object" ? row.pinnedUpstreamSnapshot as Record<string, unknown> : {};
   const archive = snapshot.sourceArchive && typeof snapshot.sourceArchive === "object" ? snapshot.sourceArchive as Record<string, unknown> : null;
@@ -167,6 +204,9 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
     const result = await runCompilePipeline({ cwd: directory, engine: compileEngine(compileManifest.engine), bibliography: compileManifest.bibliography });
     const pdf = await readFile(join(directory, "main.pdf"));
     if (pdf.byteLength === 0 || !pdf.subarray(0, 5).equals(Buffer.from("%PDF-"))) throw new Error("PDF 产物无效");
+    const formattingProof = process.env.TEMPLATE_VALIDATE_FORMATTING === "1"
+      ? await validateFormatting({ directory, manifest: compileManifest, upstreamFiles })
+      : null;
     const validation = row.validation && typeof row.validation === "object" && !Array.isArray(row.validation) ? row.validation as Record<string, unknown> : {};
     const cleanValidation = { ...validation };
     delete cleanValidation.sampleCompileError;
@@ -176,7 +216,30 @@ async function validateVariant(row: { id: string; variantKey: string; manifest: 
     await prisma.templateVariant.update({
       where: { id: row.id },
       data: {
-        validation: JSON.parse(JSON.stringify({ ...cleanValidation, status: "Verified", sampleCompileAt: new Date().toISOString(), samplePdfSha256, sourceFiles: upstreamFiles.length, resolvedDocumentClass: documentClass, compileEngine: compileEngine(manifest.engine), lastPhase: result.lastPhase })),
+        validation: JSON.parse(JSON.stringify({
+          ...cleanValidation,
+          status: "Verified",
+          sampleCompileAt: new Date().toISOString(),
+          samplePdfSha256,
+          sourceFiles: upstreamFiles.length,
+          resolvedDocumentClass: documentClass,
+          compileEngine: compileEngine(manifest.engine),
+          lastPhase: result.lastPhase,
+          ...(formattingProof ? {
+            formattingValidation: {
+              snapshotId: snapshot.snapshotId,
+              sourceArchiveSha256: archive.sha256,
+              manifestHash: formattingManifestHash(manifest),
+              environment: "linux-isolated",
+              samplePassed: true,
+              docxPassed: true,
+              markdownPassed: true,
+              docxBlocks: formattingProof.docx.blockCount,
+              markdownBlocks: formattingProof.markdown.blockCount,
+              validatedAt: new Date().toISOString(),
+            },
+          } : {}),
+        })),
         sample: JSON.parse(JSON.stringify({ fixtureId: "sample-academic-v1", status: "verified", pdf: { provider: samplePdf.provider, key: samplePdf.key, sha256: samplePdfSha256, bytes: pdf.byteLength, mimeType: "application/pdf" } })),
       },
     });

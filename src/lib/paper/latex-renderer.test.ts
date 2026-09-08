@@ -170,6 +170,27 @@ describe("academic latex renderer", () => {
     expect(result.generatedContentTex).not.toContain("\\bibliographystyle{plain}");
   });
 
+  it("carries a bibliography style declared only in the replaced upstream entry file", () => {
+    const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
+      manifest: { id: "cqu", university: "重庆大学", format: "latex", bibliography: "bibtex", documentClass: "cquthesis", supportedBlocks: [] } as AcademicTemplateManifest,
+      templateFiles: [
+        { path: "main.tex", buffer: Buffer.from("\\documentclass{cquthesis}\n\\bibliographystyle{cqunumerical}\n\\begin{document}\\end{document}") },
+        { path: "cquthesis.cls", buffer: Buffer.from("\\ProvidesClass{cquthesis}") },
+      ],
+    });
+    expect(result.mainTex).toContain("\\bibliographystyle{cqunumerical}");
+    expect(result.generatedContentTex).not.toContain("\\bibliographystyle{plain}");
+  });
+
+  it("sets the standard title for the 2016 SCU class that still renders through maketitle", () => {
+    const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
+      manifest: { id: "scu-2016", university: "四川大学", format: "latex", bibliography: "bibtex", documentClass: "scuthesis", supportedBlocks: [] } as AcademicTemplateManifest,
+      templateFiles: [{ path: "scuthesis.cls", buffer: Buffer.from("\\ProvidesClass{Template/scuthesis}\n\\newcommand\\CoverTitle[1]{\\def\\@CoverTitle{#1}}") }],
+    });
+    expect(result.mainTex).toContain("\\title{");
+    expect(result.mainTex).toContain("\\CoverTitle{");
+  });
+
   it("does not confuse lowercase author definitions with a case-sensitive Author adapter", () => {
     const result = renderAcademicDocumentToLatex(buildSampleAcademicDocument(), {
       manifest: { id: "generic", university: "示例", format: "latex", documentClass: "book", supportedBlocks: [] } as AcademicTemplateManifest,

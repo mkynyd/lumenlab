@@ -67,6 +67,7 @@ describe("AgentExecutionTaskSource", () => {
       expect.objectContaining({
         where: {
           userId: "user-1",
+          conversation: { kind: "chat" },
           status: { in: ["queued", "running", "waiting_approval"] },
         },
         take: 5,
@@ -124,7 +125,7 @@ describe("AgentExecutionTaskSource", () => {
 
     expect(client.agentExecution.findFirst).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ where: { id: "exec-9", userId: "user-1" } })
+      expect.objectContaining({ where: { id: "exec-9", userId: "user-1", conversation: { kind: "chat" } } })
     );
     expect(task).toMatchObject({
       status: "failed",

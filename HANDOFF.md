@@ -1,5 +1,36 @@
 # Research / Paper 测试版交接
 
+## 2026-09-09 · 任务 11 完成：后台论文排版与旧编辑功能退场
+
+- 入口与向导：新增 `/api/papers/formatting`（提交/列表）、`/api/papers/formatting/templates`（学校搜索 + 逐 Variant 可用性与原因 + 计数）、`/[id]`（详情/取消/重试/确认/原稿下载）；`/papers` 改为任务与结果列表，`/papers/typesetting` 改为「选学校模板 → 填元数据 → 上传原稿」向导，`/papers/formatting/[id]` 展示阶段进度、结构确认与 PDF 预览/下载，`/papers/[id]` 改为只读历史论文（大纲 + 最近成功 PDF）。前端 hooks 与查询键集中在新 `use-formatting.ts`。
+- 模板准入改为当前快照 + 隔离 Linux 证明：`formattingTemplateAvailability` 要求 manifest 与 `pinnedUpstreamSnapshot` 一致、`validation.status=Verified`、样例 PDF 可读，且 `validation.formattingValidation` 记录 `environment=linux-isolated` 且 `samplePassed/docxPassed/markdownPassed` 全为真；引擎/文档类缺失时回落到隔离验证记录的 `compileEngine/resolvedDocumentClass`。
+- 隔离验证脚本：`scripts/validate-template-snapshots.ts` 在 `TEMPLATE_VALIDATE_FORMATTING=1` 时于同一隔离工作目录追加 DOCX 与 Markdown 两轮真实编译（`src/lib/paper/formatting-fixtures.ts` 提供确定性中英双语夹具），三者全过才写入 `formattingValidation`。**重庆大学 `cquthesis` 与四川大学 `scuthesis`（2016 cuiao 模板）已产出证明，PDF 78,570 / 121,531 字节**。
+- 修复两处真实模板缺陷：① 生成 main.tex 时未携带只在上游入口文件声明的 `\bibliographystyle`（CQU 报 “I found no \bibstyle command”），现从入口源提取纯标识符样式名；② 2016 版 `scuthesis` 仍走基类 `\maketitle`（报 “No \title given.”），现同时输出 `\title/\author`。
+- 修复租约围栏时区缺陷：Prisma 的 `DateTime` 在 PostgreSQL 是 `timestamp without time zone`，而围栏原生 SQL 用 `NOW()`（会话时区 Asia/Shanghai）比较，导致租约判定恒为过期、排版任务每次 30 秒被回收直至 `max_attempts_exceeded`。现改为绑定 JS 时间参数，并新增回归测试断言不使用 `NOW()`。另外，租约耗尽（poisoned）时补充终态通知投影，避免排版任务永久停留在“排队中”。
+- 编辑退场：删除 `paper-workspace.tsx`、`paper-template-binding-panel.tsx`、`paper-references-panel.tsx`、`document-editor-operations.ts`、`ai-assistant.ts` 与 assistant/patches/template/imports/assets/references 写路由；`workspaces`、`workspaces/[id]/document`、`documents/[id]/compile`、`documents/[id]/versions`、`imports/[id]` 只保留 GET，`src/lib/paper/editor-retirement.test.ts` 断言只读路由无写方法、已删除路由不可导入。
+- 隔离编译环境修复（真实 Linux 验证发现）：Docker 默认 seccomp 拒绝非特权容器创建用户命名空间，`docker-compose.paper-compiler.yml` 增加 `seccomp=unconfined`（能力仍全部丢弃）；bwrap 在 `--ro-bind / /` 后无法创建挂载点，镜像新增 `/compile-workspace`，README 记录裸机部署要求。
+- 真实验收（本机 `localhost:3000`、真实账号、真实 Qwen3.8-Flash、真实七牛、隔离 Linux 编译容器）：DOCX（重庆大学）与 Markdown（四川大学）各完成「上传→导入→分批映射→渲染→编译→完整性校验→完成通知」，PDF 39,473 / 88,966 字节、`contentIntegrity=passed`、`protectedDocumentHash` 一致；缺图注 DOCX 触发 `needs_input`，确认后完成；同 requestKey 重放返回同一任务、换原稿复用标识返回 409；取消后 5 秒仍为 cancelled 且重试被拒；不支持的原稿失败并可重试（attempt 递增）。PDF 文本抽取确认中文字体、摘要、图片题注、表格、公式、脚注均在。证据 `output/playwright/task-11/`。
+- 门禁：332 文件 / 1839 测试、`tsc --noEmit`、ESLint（0 问题）、Prisma validate、41 迁移、production build（161 页）、`git diff --check` 全绿。未提交、未推送、未部署。
+- 仍未完成：编译失败的模型自动修复轮次（当前明确失败并可人工重试，见 11-TODO 注释）。
+
+## 2026-09-09 · 任务 11 进行中：后台论文排版基础已落地，尚未收口
+
+- 二次同步 main 已完成并提交 `1ea4323`；当前分支为 `feature/research-paper`。Research/Paper 历史模型、main 的附件与通知模型均保留。
+- 新增排版领域合同与持久任务骨架：`PaperFormattingTask`、`PaperFormattingMappingBatch` 及迁移 `20260908234500_paper_formatting_tasks`；任务冻结 `sourceHash`、模板快照、实际模型、计费版本、attempt、阶段进度和结果引用，幂等键为 `userId + requestKey`。
+- 新增导入/映射安全边界：DOCX/Markdown 首版、`.doc` 明确拒绝；受限 OMML/Markdown 结构转换、图片私有保存、公共图片走既有 allowlist + DNS pinning；AI 只输出有 schema 的块角色映射，长文档按批覆盖，正文/公式/图表/引用保真 hash 校验，低置信度进入 `needs_input`。
+- 新增 `paper-formatting` durable execution 分派与 Paper 任务源；排版任务不再混入普通 Chat 列表/通知。导入、结构映射、模板渲染、编译等待、PDF/source 完整性验证与完成通知按阶段持久化；取消、租约失效和迟到结果均有 fence。
+- 模板准入新增当前快照、Linux 隔离样例、DOCX/Markdown 双输入验证条件；当前数据库盘点为 738 条 Registry、567 个 Variant、43 个历史样例 Verified，不能直接视作 43 个当前可提交模板。Docker 编译器镜像正在构建，Linux 隔离与两个学校的真实端到端仍未完成。
+- 当前验证：任务 10 合入后的基线全量 329 文件 / 1823 项测试通过；本轮新增映射定向测试尚未并入最终全量门禁。`npx tsc --noEmit`、`prisma validate`、`git diff --check` 通过；迁移 diff 识别到预期新增表/索引/外键。未运行 `migrate deploy`、未完成 production build、真实浏览器端到端、隔离编译或真实模型排版；未 commit/push/deploy 本轮代码。
+- 尚未完成：11A 模板页面替换、11B 上传向导接线、11C 映射确认 API/UI、11D 编译 Worker 任务锁定版本和完成回执的最终回归、11E 旧编辑 UI/assistant/patch/任意正文写 API 的逐路由关闭、11F 两校 DOCX/Markdown 与取消/重复/恢复矩阵。
+
+## 2026-09-08 · 任务 11 开始：二次同步 main 完成
+
+- 固定 main `0ed0c487a37c1022e91653bb7a7f699a6d3deea5`、feature `7292bad59d311b78a0f5759c6abba2ad04c1edd0`；工作树干净且与远端一致。合并提交 `1ea4323`。
+- 三处冲突按语义合并：`.env.example` 保留 Research 覆盖配置与 Qwen 新默认说明；Prisma 同时保留 Research/Paper 与 Notification；媒体测试保留新 loader 的大小和批次查询语义，修复自动合并漏掉 size 参数。
+- 合并候选：329 文件 / 1823 测试通过，TypeScript、ESLint、Prisma validate/generate、diff check 通过。尚未执行本轮 production build、数据库迁移和真实 E2E。
+- 正在继续 11A—11F；未把后台排版或编辑退场标记完成。Docker daemon 当前未启动，Linux 隔离编译验证仍需准备。
+
+
 ## 2026-09-08 · 本地 Turbopack 冲突标记错误恢复
 
 - 用户看到 `durable-agent-runtime.ts:732` 的 `>>>>>>> 25befed5...` build error。核对当前工作树、HEAD `faf5630a75a01bef324bd9eb9ebc358d1f69845b` 与 `origin/feature/research-paper` 后确认三者源码均无 `<<<<<<<`/`>>>>>>>`，Git index 也无未解决条目；正确语义是先派发 `executionKind === "research"`，随后处理 chat 的已完成 output，再升级旧 Checkpoint。
