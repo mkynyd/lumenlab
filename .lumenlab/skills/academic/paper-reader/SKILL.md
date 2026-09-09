@@ -9,12 +9,19 @@ description: 论文速读：三层深度阅读（裸读/引导/精读）+ 多论
 
 ## 反范围（不做的事）
 
-- 论文检索 → 用 arxiv.search 工具
+- 论文检索 → 开放式学术问题用 sciverse.semantic_search；精确标题/作者/年份/DOI 查找用 sciverse.search；用户明确给 arXiv ID/URL 时用 arxiv.search
 - 文献管理 → 用 reference.* 工具
 - 论文翻译 → 不做。如用户要翻译，请直接拒绝并引导到学术翻译 skill
 - 扫描件 OCR → 拒绝（建议先 OCR）
 - 论文写作 / 降重 → 不做
 - 批量下载 arxiv → 用户自行下载后喂入
+
+## 工具优先级（检索类任务）
+
+- 开放式学术问题：优先 `sciverse.semantic_search` 取正文级 evidence；严格限定范围时先 `sciverse.search` 拿 doc_id 集合再传入 `filters.docIds`（唯一硬约束，其余 filters 是软语义）
+- 精确标题 / 作者 / 年份 / DOI 查找：`sciverse.search`；需要更多上下文时 `sciverse.read(docId, offset)` 读证据附近原文
+- 用户明确提到 arXiv 或给出 arXiv ID / URL：`arxiv.*`
+- 普通互联网 / 官网 / 新闻 / Sciverse 未覆盖来源：`web.search` / `web.fetch`
 
 ## 设计哲学（5 条）
 

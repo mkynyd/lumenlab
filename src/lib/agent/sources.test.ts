@@ -90,4 +90,21 @@ describe("agent sources", () => {
       },
     ]);
   });
+
+  it("builds sciverse sources only from real titles and URLs", () => {
+    expect(
+      extractSourcesFromToolResult("sciverse.search", {
+        papers: [
+          { title: "OA paper", url: "https://oa.example.com/paper.pdf" },
+          { title: "DOI paper", url: "https://doi.org/10.1000/xyz" },
+          { title: "No location" },
+          { url: "https://example.com/no-title" },
+        ],
+      })
+    ).toEqual([
+      { type: "sciverse", title: "OA paper", url: "https://oa.example.com/paper.pdf" },
+      { type: "sciverse", title: "DOI paper", url: "https://doi.org/10.1000/xyz" },
+      { type: "sciverse", title: "No location" },
+    ]);
+  });
 });

@@ -192,6 +192,13 @@ describe("toResponsesFunctionTool", () => {
     expect(encoded.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true);
     expect(() => toResponsesToolName("x".repeat(65))).toThrow(/限制/);
   });
+  it("encodes sciverse tool ids and round-trips them", () => {
+    const names = ["sciverse.search", "sciverse.semantic_search", "sciverse.read"];
+    const encoded = names.map(toResponsesToolName);
+    expect(encoded).toEqual(["sciverse_dsearch", "sciverse_dsemantic_usearch", "sciverse_dread"]);
+    expect(encoded.map(fromResponsesToolName)).toEqual(names);
+    expect(encoded.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true);
+  });
   it("maps input_schema to parameters", () => {
     expect(
       toResponsesFunctionTool({

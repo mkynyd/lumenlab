@@ -132,6 +132,14 @@ describe("parseToolCalls", () => {
     ]);
   });
 
+  it("resolves sciverse underscore aliases to registered tools", () => {
+    const text =
+      '<tool_calls><invoke name="sciverse_semantic_search"><parameter name="query">q</parameter></invoke></tool_calls>';
+    expect(parseToolCalls(text)).toEqual([
+      { name: "sciverse.semantic_search", input: { query: "q" } },
+    ]);
+  });
+
   it("resolves known skill ids to skill.activate", () => {
     const text =
       '<tool_calls><invoke name="paper-writer"><parameter name="topic">x</parameter></invoke></tool_calls>';

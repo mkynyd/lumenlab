@@ -81,6 +81,18 @@ describe("dsml-parser", () => {
         { name: "project_files.read", input: { fileId: "f1" } },
       ]);
     });
+
+    it("maps sciverse underscore aliases to registered tools", () => {
+      expect(extractDsmlToolCalls('<tool_calls><invoke name="sciverse_search"><parameter name="query">q</parameter></invoke></tool_calls>')).toEqual([
+        { name: "sciverse.search", input: { query: "q" } },
+      ]);
+      expect(extractDsmlToolCalls('<tool_calls><invoke name="sciverse_semantic_search"><parameter name="query">q</parameter></invoke></tool_calls>')).toEqual([
+        { name: "sciverse.semantic_search", input: { query: "q" } },
+      ]);
+      expect(extractDsmlToolCalls('<tool_calls><invoke name="sciverse_read"><parameter name="docId">d1</parameter></invoke></tool_calls>')).toEqual([
+        { name: "sciverse.read", input: { docId: "d1" } },
+      ]);
+    });
   });
 
   describe("stripDsmlToolCalls", () => {

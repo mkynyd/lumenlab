@@ -439,6 +439,7 @@ cp .env.example .env
 | `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_MINIMAX_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
 | `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 开放开关，示例默认 `false`；设为 `true` 前须验证目标账号的实际聊天权限，只有 Embedding 权限不足以开放默认聊天 |
 | `ANYSEARCH_API_KEY` | 平台级联网搜索基础设施密钥（仅服务端读取）。`web.search` 优先走 AnySearch，再回退 Bing RSS 与 DuckDuckGo；留空则跳过 AnySearch，本地开发仍可搜索 |
+| `SCIVERSE_API_TOKEN` | 平台级学术检索基础设施密钥（仅服务端读取）。`sciverse.search` / `sciverse.semantic_search` / `sciverse.read` 直连 Sciverse API；留空则三个工具返回 `SCIVERSE_NOT_CONFIGURED`，不影响其他工具 |
 | `BAILIAN_WORKSPACE_ID` | 启用 Qwen 聊天时必填 |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛云 Kodo 密钥（生产必填） |
 | `QINIU_BUCKET` | Kodo 空间名 |

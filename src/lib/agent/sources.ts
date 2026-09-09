@@ -1,4 +1,4 @@
-export type AgentSourceType = "web" | "project_file" | "arxiv" | "artifact";
+export type AgentSourceType = "web" | "project_file" | "arxiv" | "sciverse" | "artifact";
 
 export interface AgentSource {
   type: AgentSourceType;
@@ -157,6 +157,24 @@ export function extractSourcesFromToolResult(
       arxivId,
       url: asString(result.url) ?? `https://arxiv.org/abs/${arxivId}`,
     }];
+  }
+
+  if (toolId === "sciverse.search") {
+    const papers = Array.isArray(result.papers) ? result.papers : [];
+    return papers.flatMap((paper) => {
+      const record = asRecord(paper);
+      if (!record) return [];
+      const title = asString(record.title);
+      if (!title) return [];
+      // URLs only appear when the handler produced one from real data
+      // (access_oa_url or a DOI resolver link); never synthesize one here.
+      const url = asString(record.url);
+      return [{
+        type: "sciverse" as const,
+        title,
+        ...(url ? { url } : {}),
+      }];
+    });
   }
 
   return [];

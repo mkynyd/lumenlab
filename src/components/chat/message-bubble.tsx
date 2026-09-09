@@ -70,6 +70,9 @@ const TOOL_STATUS: Record<string, { label: string; orb: OrbState }> = {
   "arxiv.search": { label: "正在检索论文", orb: "searching" },
   "arxiv.read": { label: "正在读取论文", orb: "connecting" },
   "arxiv.fetch": { label: "正在读取论文", orb: "connecting" },
+  "sciverse.search": { label: "正在检索论文库", orb: "searching" },
+  "sciverse.semantic_search": { label: "正在查找论文证据", orb: "searching" },
+  "sciverse.read": { label: "正在阅读论文原文", orb: "connecting" },
 };
 
 const ARTIFACT_TYPES = [
@@ -91,6 +94,7 @@ function sourceIcon(type: AgentSource["type"]) {
   if (type === "web") return <ExternalLink size={12} />;
   if (type === "project_file") return <FileText size={12} />;
   if (type === "arxiv") return <BookOpen size={12} />;
+  if (type === "sciverse") return <BookOpen size={12} />;
   return <Archive size={12} />;
 }
 

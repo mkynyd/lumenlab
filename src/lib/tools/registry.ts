@@ -6,7 +6,8 @@
  *
  * 风险等级（与 plan 对齐）：
  *   L1 — project_files.list / read、artifact.list、web.search、web.fetch、
- *         arxiv.search、arxiv.read、arxiv.fetch、reference.list、reference.format
+ *         arxiv.search、arxiv.read、arxiv.fetch、sciverse.search、
+ *         sciverse.semantic_search、sciverse.read、reference.list、reference.format
  *   L2 — artifact.save、reference.add、reference.attach
  *   L3 — project_files.delete、artifact.export_docx
  */
@@ -25,6 +26,7 @@ import { ragSearch } from "./knowledge/project-rag";
 import { arxivSearch } from "./arxiv/search";
 import { arxivRead } from "./arxiv/abstract";
 import { arxivFetch } from "./arxiv/fetch";
+import { sciverseRead, sciverseSearch, sciverseSemanticSearch } from "./sciverse/handlers";
 import {
   addReference,
   listReferences,
@@ -505,6 +507,135 @@ const TOOLS: ToolMetadata[] = [
     requiredScopes: [],
   },
   {
+    toolId: "sciverse.search",
+    name: "Sciverse 论文元数据检索",
+    description: [
+      "Search the Sciverse academic paper corpus by structured metadata and BM25 keywords: DOI, title, author, journal, publication year, subjects. ",
+      "Every result carries a uniqueId (stable metadata identifier, always present) and optionally a docId (full-text content hash, present only when full text exists). ",
+      "Metadata in the result does not mean the full text is readable: only papers with isContentAccessible=true can be opened via sciverse.read with their docId. ",
+      "Use sciverse.semantic_search for natural-language research questions instead of keyword queries.",
+    ].join(""),
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "BM25 keyword query over title/abstract/venue; omit for pure structured filtering" },
+        titleContains: { type: "string", description: "Word that must appear in the title" },
+        abstractContains: { type: "string", description: "Word that must appear in the abstract" },
+        authors: { type: "array", items: { type: "string" }, description: "Author names; any match counts" },
+        journals: { type: "array", items: { type: "string" }, description: "Normalized venue names; any match counts" },
+        subjects: { type: "array", items: { type: "string" }, description: "Subject categories such as \"computer science\"" },
+        yearFrom: { type: "integer", description: "Earliest publication year (inclusive)" },
+        yearTo: { type: "integer", description: "Latest publication year (inclusive)" },
+        freshnessBoost: { type: "string", enum: ["NONE", "MILD", "STRONG"], description: "Recency soft-weighting; only effective with query" },
+        impactBoost: { type: "string", enum: ["NONE", "MILD", "STRONG"], description: "Citation-impact soft-weighting; only effective with query" },
+        languageAffinity: { type: "string", enum: ["NONE", "MILD", "STRONG"], description: "Language soft-weighting inferred from the query; only effective with query" },
+        sortByYear: { type: "string", enum: ["auto", "desc", "asc", "none"], description: "Year sorting; never combined with query (relevance ranking is kept)" },
+        page: { type: "integer", description: "Page number starting at 1" },
+        pageSize: { type: "integer", description: "Results per page, clamped to 1-25, default 10" },
+      },
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L1",
+    isReadOnly: true,
+    hasExternalSideEffect: true,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: true,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "minimal",
+    requiredScopes: [],
+  },
+  {
+    toolId: "sciverse.semantic_search",
+    name: "Sciverse 段落级证据检索",
+    description: [
+      "Retrieve passage-level evidence chunks for a natural-language research question from the Sciverse full-text corpus. ",
+      "Filters are SOFT semantics (except docIds): chunks whose metadata is missing may not be excluded, so never treat soft-filter results as an absolute coverage guarantee. ",
+      "To strictly scope the corpus, first call sciverse.search to collect doc_id values, then pass them as filters.docIds — docIds is the only hard constraint. ",
+      "An explicit empty docIds array means an empty corpus and returns zero hits; it does not fall back to a global search. ",
+      "Each hit carries docId and offset; call sciverse.read(docId, offset) to read the original text around the evidence.",
+    ].join(""),
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Natural-language research question, 1-4096 characters" },
+        topK: { type: "integer", description: "Max hits, clamped to 1-100, default 10" },
+        mode: { type: "string", enum: ["fast", "balanced", "quality"], description: "fast = keyword-only recall; balanced (default) = hybrid; quality = LLM query rewrite + hybrid (slower)" },
+        sourceTypes: { type: "array", items: { type: "string", enum: ["web", "pdf"] }, description: "Restrict chunk source types" },
+        filters: {
+          type: "object",
+          description: "Soft filters (except docIds, which is a hard scope). Missing chunk metadata is not excluded by soft filters.",
+          properties: {
+            lang: { type: "string", description: "Language code such as en or zh" },
+            author: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
+            venue: { type: "string", description: "Normalized venue name" },
+            venueType: { type: "string", description: "journal / conference / repository / ..." },
+            yearFrom: { type: "integer" },
+            yearTo: { type: "integer" },
+            dateFrom: { type: "string", description: "YYYY[-MM[-DD]]" },
+            dateTo: { type: "string", description: "YYYY[-MM[-DD]]" },
+            citationCountMin: { type: "integer" },
+            citationCountMax: { type: "integer" },
+            influentialCitationCountMin: { type: "integer" },
+            influentialCitationCountMax: { type: "integer" },
+            topicDomain: { type: "string", enum: ["Physical Sciences", "Social Sciences", "Health Sciences", "Life Sciences"] },
+            primaryTopic: { type: "string" },
+            docIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "HARD scope: restrict retrieval to these doc_id values (from sciverse.search). An explicit empty array returns zero hits.",
+            },
+          },
+        },
+      },
+      required: ["query"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L1",
+    isReadOnly: true,
+    hasExternalSideEffect: true,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: true,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "minimal",
+    requiredScopes: [],
+  },
+  {
+    toolId: "sciverse.read",
+    name: "Sciverse 原文片段读取",
+    description: [
+      "Read a bounded slice of a paper's full text by docId (from sciverse.search or sciverse.semantic_search). ",
+      "This is a bounded slice read (offset/limit in Unicode code points), not a whole-paper download: read around the evidence offset, then page forward with nextOffset while more is true. ",
+      "Only works for papers whose isContentAccessible is true; otherwise expect SCIVERSE_CONTENT_UNAVAILABLE.",
+    ].join(""),
+    inputSchema: {
+      type: "object",
+      properties: {
+        docId: { type: "string", description: "Full-text content hash from sciverse.search / sciverse.semantic_search" },
+        offset: { type: "integer", description: "Start position in Unicode code points, default 0" },
+        limit: { type: "integer", description: "Max code points to read, clamped to 1-4000, default 1200" },
+      },
+      required: ["docId"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L1",
+    isReadOnly: true,
+    hasExternalSideEffect: true,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: true,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "minimal",
+    requiredScopes: [],
+  },
+  {
     toolId: "reference.add",
     name: "新增参考文献",
     description: "把一条文献（DOI / arxivId / 手动字段）存入引用库。",
@@ -760,6 +891,15 @@ export function registerBuiltinTools(): void {
   });
   registerToolHandler("arxiv.fetch", async (_ctx, args) => {
     return arxivFetch(String(args.url ?? ""));
+  });
+  registerToolHandler("sciverse.search", async (ctx, args) => {
+    return sciverseSearch(ctx, args);
+  });
+  registerToolHandler("sciverse.semantic_search", async (ctx, args) => {
+    return sciverseSemanticSearch(ctx, args);
+  });
+  registerToolHandler("sciverse.read", async (ctx, args) => {
+    return sciverseRead(ctx, args);
   });
   registerToolHandler("reference.add", async (ctx, args) => {
     const projectId = (args.projectId as string | undefined) ?? ctx.projectId;

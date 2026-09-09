@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toolRegistry } from "../agent/tool-registry";
-import { executeTool } from "../agent/tool-executor";
+import { executeTool, hasToolHandler } from "../agent/tool-executor";
 import "./registry";
 
 describe("tool registry", () => {
@@ -11,6 +11,37 @@ describe("tool registry", () => {
       expect(tool.requiresNetwork).toBe(true);
       expect(tool.defaultApprovalMode).toBe("auto");
       expect(tool.hasExternalSideEffect).toBe(true);
+    }
+  });
+
+  it("registers sciverse tools at L1 read-only network auto with handlers", () => {
+    for (const id of ["sciverse.search", "sciverse.semantic_search", "sciverse.read"]) {
+      const tool = toolRegistry.require(id);
+      expect(tool.riskLevel).toBe("L1");
+      expect(tool.isReadOnly).toBe(true);
+      expect(tool.requiresNetwork).toBe(true);
+      expect(tool.hasExternalSideEffect).toBe(true);
+      expect(tool.defaultApprovalMode).toBe("auto");
+      expect(tool.auditLevel).toBe("minimal");
+      expect(hasToolHandler(id)).toBe(true);
+    }
+  });
+
+  it("sciverse handlers fail closed when SCIVERSE_API_TOKEN is missing", async () => {
+    const saved = process.env.SCIVERSE_API_TOKEN;
+    delete process.env.SCIVERSE_API_TOKEN;
+    try {
+      for (const id of ["sciverse.search", "sciverse.semantic_search", "sciverse.read"]) {
+        const result = await executeTool(
+          id,
+          { userId: "user-1", conversationId: "conversation-1" },
+          { query: "q", docId: "d" }
+        );
+        expect(result.ok).toBe(true);
+        expect(result.result).toMatchObject({ error: "SCIVERSE_NOT_CONFIGURED" });
+      }
+    } finally {
+      if (saved !== undefined) process.env.SCIVERSE_API_TOKEN = saved;
     }
   });
 

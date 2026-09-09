@@ -82,6 +82,16 @@ describe("skill allowlists align with registered tools (via discovery)", () => {
     expect(skill.allowedTools).toContain("reference.add");
   });
 
+  it("academic skills allow the three sciverse tools", () => {
+    for (const name of ["paper-reader", "literature-review"]) {
+      const skill = skillRegistry.require(name);
+      for (const toolId of ["sciverse.search", "sciverse.semantic_search", "sciverse.read"]) {
+        expect(skill.allowedTools).toContain(toolId);
+      }
+      assertAllToolsExist(skill, name);
+    }
+  });
+
   it("exam-extract Skill is registered with valid allowlist", () => {
     const skill = skillRegistry.require("exam-extract");
     assertAllToolsExist(skill, "exam-extract");

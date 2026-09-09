@@ -197,7 +197,8 @@ function buildAllowedTools(input: {
         tool.toolId.startsWith("learning.") ||
         tool.toolId.startsWith("artifact.") ||
         tool.toolId.startsWith("reference.") ||
-        tool.toolId.startsWith("arxiv.")
+        tool.toolId.startsWith("arxiv.") ||
+        tool.toolId.startsWith("sciverse.")
       ) {
         add(tool.toolId);
       }
