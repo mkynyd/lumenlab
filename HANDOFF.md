@@ -1,5 +1,11 @@
 # Research / Paper 测试版交接
 
+## 2026-09-09 · 修复应用内 PDF 预览中文丢失（main）
+
+- 用户反馈：在线预览只有数字与英文，下载后的 PDF 正常。复现确认控制台报 `translateFont failed: Ensure that the cMapUrl API parameter is provided`——`paper-pdf-viewer.tsx` 用 pdf.js 渲染但未提供 CID-keyed 中文字体的 CMap/标准字体表，字形无法映射；浏览器自带 PDF 引擎不受影响，所以下载后正常。
+- 修复：`getDocument` 传入 `cMapUrl: "/pdfjs/cmaps/"`、`cMapPacked: true`、`standardFontDataUrl: "/pdfjs/standard_fonts/"`；新增 `scripts/copy-pdfjs-assets.ts` 在 `predev`/`prebuild` 将 `node_modules/pdfjs-dist` 的 `cmaps` 与 `standard_fonts` 复制到 `public/pdfjs/`（写版本标记，重复运行跳过；目录已加入 `.gitignore`，不进仓库）。
+- 验证：真实浏览器打开 `/papers/formatting/a5a4068a-…` 控制台零警告，画布渲染出中文标题与作者，与下载 PDF 一致；新增 `paper-pdf-viewer.test.tsx` 断言 `getDocument` 携带 CMap 参数。334 文件 / 1870 测试、tsc、ESLint、production build、diff check 全绿；提交 `74de1d4` 已推送 main。
+
 ## 2026-09-09 · AnySearch 统一联网搜索接入（main）
 
 - 目标：`web.search` 从 Bing RSS → DuckDuckGo 原型搜索升级为平台自有搜索栈 **AnySearch → Bing RSS → DuckDuckGo**，并彻底解除联网搜索与 DeepSeek API Key 的耦合。上层 Agent 只调用统一 `web.search`，模型供应商不决定搜索 Provider；不引入 MCP、不替换 `web.fetch`、不改 SSRF/DNS pinning。
