@@ -1,5 +1,11 @@
 # Research / Paper 测试版交接
 
+## 2026-09-09 · 生产部署 319c922c（任务 11 + AnySearch + PDF 预览修复）
+
+- 部署 commit `319c922c52e090e71004d7ab0c78aace46a42413`（main，CI run 34304293777 全绿）到 `lab.mkynstudio.top`：`scripts/deploy.sh deploy` 全流程通过（CI 门禁 → 宿主依赖 → 数据库快照 → migrate → build → 组装 → 预检 → 原子切换 → HTTPS 健康检查），695s，release `319c922c`，上一版 `d12ffa9a` 保留可回滚。
+- 核验：服务 active、`/home` 与 `/papers` 200、匿名 `/api/papers/formatting` 401、`/pdfjs/cmaps/Adobe-GB1-UCS2.bcmap` 200（33,974 B）、`/pdfjs/standard_fonts/FoxitDingbats.pfb` 200、迁移 `20260908234500_paper_formatting_tasks` applied、近 10 分钟无 error 日志。
+- 生产开关：`AGENT_DURABLE_EXECUTION_ENABLED` 已开；`ANYSEARCH_API_KEY` 未配置（搜索自动回退 Bing/DDG）；`PAPER_FORMATTING_ENABLED` 未配置（排版入口关闭，开放前需另部署隔离编译服务）。
+
 ## 2026-09-09 · 修复应用内 PDF 预览中文丢失（main）
 
 - 用户反馈：在线预览只有数字与英文，下载后的 PDF 正常。复现确认控制台报 `translateFont failed: Ensure that the cMapUrl API parameter is provided`——`paper-pdf-viewer.tsx` 用 pdf.js 渲染但未提供 CID-keyed 中文字体的 CMap/标准字体表，字形无法映射；浏览器自带 PDF 引擎不受影响，所以下载后正常。
