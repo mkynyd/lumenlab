@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BookStack, Clock, NavArrowRight, Page, WarningTriangle } from "iconoir-react";
+import { BookStack, Clock, ClockRotateRight, NavArrowRight, Page } from "iconoir-react";
 import { useFormattingTasks, type FormattingTaskSummary } from "@/lib/hooks/use-formatting";
 
 const ACTIVE_STATUSES = new Set(["queued", "importing", "mapping", "needs_input", "rendering", "compiling", "validating"]);
@@ -65,7 +65,7 @@ export function PaperDashboard() {
         ) : (
           <div className="mt-8 space-y-8">
             {active.length ? <section><h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]"><Clock width={16} height={16} />进行中</h2><div className="mt-3 grid gap-2 md:grid-cols-2">{active.map((task) => <TaskCard key={task.id} task={task} />)}</div></section> : null}
-            {finished.length ? <section><h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]"><WarningTriangle width={16} height={16} />历史任务</h2><div className="mt-3 grid gap-2 md:grid-cols-2">{finished.map((task) => <TaskCard key={task.id} task={task} />)}</div></section> : null}
+            {finished.length ? <section><h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]"><ClockRotateRight width={16} height={16} />历史任务</h2><div className="mt-3 grid gap-2 md:grid-cols-2">{finished.map((task) => <TaskCard key={task.id} task={task} />)}</div></section> : null}
           </div>
         )}
       </div>
