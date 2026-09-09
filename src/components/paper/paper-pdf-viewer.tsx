@@ -30,7 +30,15 @@ export function PaperPdfViewer({ pdfUrl, mapUrl, selectedNodeId }: { pdfUrl: str
         ]);
         if (!response.ok) throw new Error("PDF 暂不可用");
         GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
-        const document = await getDocument({ data: new Uint8Array(await response.arrayBuffer()) }).promise;
+        // CID-keyed CJK fonts need pdf.js's own CMap/standard-font tables; without
+        // them the preview silently drops every Chinese glyph. `scripts/copy-pdfjs-assets.ts`
+        // copies them into public/pdfjs before dev/build.
+        const document = await getDocument({
+          data: new Uint8Array(await response.arrayBuffer()),
+          cMapUrl: "/pdfjs/cmaps/",
+          cMapPacked: true,
+          standardFontDataUrl: "/pdfjs/standard_fonts/",
+        }).promise;
         if (!active) {
           await document.destroy();
           return;
