@@ -110,3 +110,8 @@
 - 报告与质量：citationMap 由 `buildResearchCitationMap`（report-citations.ts）生成，Evidence→Snapshot→Source 可追溯（title/canonicalUrl/DOI/provider/locator，web 与 sciverse chunk 可区分）；quality 引入 citationCount/influentialCitationCount/FWCI 的有界（≤0.15）正向辅助信号，缺失中性；顺带修正 academic_paper 此前未命中 0.9 档的问题。
 - 门禁：341 文件 / 1958 测试、tsc、ESLint、Prisma validate、42 迁移 migrate deploy、production build、diff check 全绿。测试全部 mock ToolRunner/prisma/对象存储，未触真实 API。未部署。
 - 刻意未做：meta-paper-relations、resource/vision、catalog-aware filters_advanced、Claim Engine 重写、前端引用编辑器、新服务器部署。docs/adr/0008 已加 2026-09-10 addendum。
+## 2026-09-10 · Evidence Pipeline v1 部署到 LumenLab-Server（已完成）
+
+- `746d2808449a96e94a7a7f58ab55570430a29dd9` 已通过 `DEPLOY_SSH_HOST=LumenLab-Server DEPLOY_HTTPS_RESOLVE_IP=1.14.74.56 scripts/deploy.sh deploy` 发布：迁移 `20260910120000_add_evidence_idempotency_key` 已在生产应用，release `746d2808` 预检/HTTPS 健康检查通过，`c5c95955` 保留可回滚。
+- 部署脚本修复（本地 gitignored `scripts/deploy.sh`）：远端 heredoc 第四参为空时被 ssh 拼接丢弃触发 `set -u`，改为 `${4:-}`；新机直连 GitHub 超时，root gitconfig 增加 ghproxy.net insteadOf（public 仓库，无凭据经过代理）。
+- 生产核验：服务 enabled/active、journal 无 error、`/api/health` healthy、`/home` 200；生产 Sciverse smoke 三链路全绿（search/semantic_search/read，nextOffset=offset+600），输出无 Token。
