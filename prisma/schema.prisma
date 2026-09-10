@@ -1654,6 +1654,11 @@ enum ResearchEvidenceType {
   dataset_measurement
   project_context
   expert_assessment
+  /// 模型从论文图表资源（figure/table image）得出的受约束观察。与 direct_quote
+  /// 严格区分：原文 caption/正文仍是 direct_quote，模型对图像的解释是 derived
+  /// observation，必须携带 resource provenance，且仍要经过 Claim Extraction →
+  /// Relation → Verification 才能进入报告结论。
+  visual_observation
 }
 
 enum ResearchClaimStatus {

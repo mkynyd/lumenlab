@@ -155,3 +155,86 @@ export async function requestSciverse<T>(options: SciverseRequestOptions): Promi
   }
   return payload as T;
 }
+
+/**
+ * Binary variant of `requestSciverse` for `/resource`, which returns an image
+ * stream instead of JSON. Same auth, timeout, bounded retry and error
+ * normalization; the body is capped by `maxBytes` so a hostile or oversized
+ * asset can never be buffered without a bound.
+ */
+export async function requestSciverseBinary(options: {
+  path: string;
+  query: Record<string, string | number | boolean>;
+  token: string;
+  baseUrl?: string;
+  fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+  maxBytes: number;
+}): Promise<{ bytes: Buffer; mimeType: string | null }> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const baseUrl = resolveSciverseBaseUrl(options.baseUrl);
+  const url = new URL(`${baseUrl}${options.path}`);
+  for (const [key, value] of Object.entries(options.query)) {
+    url.searchParams.set(key, String(value));
+  }
+  const endpoint = url.toString();
+
+  const attempt = async (): Promise<Response> => {
+    const timeout = AbortSignal.timeout(SCIVERSE_TIMEOUT_MS);
+    const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+    try {
+      return await fetchImpl(endpoint, {
+        method: "GET",
+        headers: { authorization: `Bearer ${options.token}` },
+        signal,
+      });
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      throw new SciverseError("network", null, error instanceof Error ? error.message : "Sciverse 网络请求失败");
+    }
+  };
+
+  let response: Response;
+  try {
+    response = await attempt();
+  } catch (error) {
+    const failure = error instanceof SciverseError ? error : new SciverseError("network", null, "Sciverse 网络请求失败");
+    if (failure.kind !== "network") throw failure;
+    await sleep(SCIVERSE_RETRY_BACKOFF_MS);
+    try {
+      response = await attempt();
+    } catch (retryError) {
+      throw retryError instanceof SciverseError ? retryError : failure;
+    }
+  }
+
+  if (!response.ok && RETRYABLE_STATUSES.has(response.status)) {
+    await sleep(SCIVERSE_RETRY_BACKOFF_MS);
+    response = await attempt();
+  }
+
+  if (!response.ok) {
+    // The body is an error document, not an image; reuse the JSON error path.
+    const body = await parseErrorBody(response);
+    const kind = classifyStatus(response.status);
+    const label = `Sciverse HTTP ${response.status}${body.code ? ` ${body.code}` : ""}`;
+    throw new SciverseError(
+      kind,
+      response.status,
+      body.message ? `${label}: ${body.message}` : label,
+      body.code,
+      body.request_id,
+      kind === "rate_limit" ? retryAfterMs(response.headers, body.details) : null
+    );
+  }
+
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > options.maxBytes) {
+    throw new SciverseError("response", response.status, "Sciverse 资源超过大小上限");
+  }
+  const raw = Buffer.from(await response.arrayBuffer());
+  if (raw.length > options.maxBytes) {
+    throw new SciverseError("response", response.status, "Sciverse 资源超过大小上限");
+  }
+  return { bytes: raw, mimeType: response.headers.get("content-type") };
+}

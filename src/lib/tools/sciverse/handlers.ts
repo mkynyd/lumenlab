@@ -12,8 +12,15 @@
 import { logger } from "@/lib/logger";
 import type { ToolExecutionContext } from "@/lib/agent/tool-executor";
 import { SciverseError } from "./errors";
+import { getCachedCatalog } from "./catalog";
+import {
+  compileSciverseFilterIntent,
+  parseSciverseFilterIntent,
+  validateBasicSciverseFilters,
+} from "./filter-compiler";
 import {
   buildAgenticSearchRequest,
+  buildBasicMetaSearchFilters,
   buildMetaSearchRequest,
   buildPaperRelationsRequest,
   clampReadLimit,
@@ -23,15 +30,19 @@ import {
   isSciverseBoost,
   isSciversePaperRelation,
   isSciverseSemanticMode,
+  normalizeResourceFileName,
   parseAgenticSearchResponse,
   parseContentResponse,
   parseMetaSearchResponse,
   parsePaperRelationsResponse,
+  parseResourceResponse,
+  SCIVERSE_RESOURCE_MAX_BYTES,
   SCIVERSE_SEMANTIC_MAX_DOC_IDS,
   SCIVERSE_SEMANTIC_MAX_QUERY_CHARS,
 } from "./normalize";
-import { requestSciverse } from "./transport";
+import { requestSciverse, requestSciverseBinary } from "./transport";
 import type {
+  SciverseAdvancedFilterProvenance,
   SciversePaperRelationsInput,
   SciverseSearchInput,
   SciverseSemanticFiltersInput,
@@ -130,8 +141,14 @@ export async function sciverseSearch(_ctx: ToolExecutionContext, args: Record<st
     return invalidRequest("sortByYear 仅支持 auto / desc / asc / none");
   }
 
+  // High-level filter intent only: the model never supplies a field name, an
+  // operator, or raw wire JSON. Unknown intent keys are a contract mistake and
+  // are rejected; catalog-level mismatches degrade instead.
+  const intentParse = parseSciverseFilterIntent(args.filterIntent);
+  if (!intentParse.ok) return invalidRequest(intentParse.message);
+
   const pageSize = clampSearchPageSize(args.pageSize);
-  const input: SciverseSearchInput = {
+  const baseInput: SciverseSearchInput = {
     query: asTrimmedString(args.query),
     titleContains: asTrimmedString(args.titleContains),
     abstractContains: asTrimmedString(args.abstractContains),
@@ -149,7 +166,34 @@ export async function sciverseSearch(_ctx: ToolExecutionContext, args: Record<st
   };
 
   const startedAt = Date.now();
-  try {
+  let catalogSource: SciverseAdvancedFilterProvenance["catalog"] = "unavailable";
+  let compiledAdvanced: SciverseAdvancedFilterProvenance["applied"] = [];
+  let compiledDropped: SciverseAdvancedFilterProvenance["dropped"] = [];
+  let basicDroppedFields: string[] = [];
+  let advancedFilters: SciverseSearchInput["advancedFilters"] = [];
+
+  if (Object.keys(intentParse.intent).length > 0) {
+    const { catalog, source } = await getCachedCatalog({ token, collection: "papers", signal: _ctx.signal });
+    catalogSource = source;
+    const compiled = compileSciverseFilterIntent(intentParse.intent, catalog, source);
+    advancedFilters = compiled.filters;
+    compiledAdvanced = compiled.applied.map((entry) => ({ key: entry.key, field: entry.field, operator: entry.operator }));
+    compiledDropped = compiled.dropped.map((entry) => ({ key: entry.key, reason: entry.reason }));
+    if (catalog) {
+      const basicCheck = validateBasicSciverseFilters(buildBasicMetaSearchFilters(baseInput), catalog);
+      basicDroppedFields = basicCheck.dropped;
+    }
+  }
+
+  const provenance: SciverseAdvancedFilterProvenance = {
+    catalog: catalogSource,
+    applied: compiledAdvanced,
+    ...(compiledDropped.length > 0 ? { dropped: compiledDropped } : {}),
+    ...(basicDroppedFields.length > 0 ? { basicDroppedFields } : {}),
+  };
+  const hasProvenance = compiledAdvanced.length > 0 || compiledDropped.length > 0 || basicDroppedFields.length > 0;
+
+  const runQuery = async (input: SciverseSearchInput) => {
     const payload = await requestSciverse<SciverseWireMetaSearchResponse>({
       method: "POST",
       path: "/meta-search",
@@ -157,7 +201,25 @@ export async function sciverseSearch(_ctx: ToolExecutionContext, args: Record<st
       token,
       signal: _ctx.signal,
     });
-    const result = parseMetaSearchResponse(payload, pageSize);
+    return parseMetaSearchResponse(payload, pageSize, hasProvenance ? provenance : undefined);
+  };
+
+  try {
+    let result = await runQuery({ ...baseInput, advancedFilters });
+    // Relaxed retry: a complex advanced filter set can legitimately return
+    // nothing while the plain query still matches. One bounded retry without
+    // the advanced filters keeps recall from being locked out; it never
+    // loosens anything else and never loops.
+    if (result.papers.length === 0 && advancedFilters.length > 0 && baseInput.query) {
+      result = await runQuery({ ...baseInput, advancedFilters: [] });
+      provenance.relaxedRetry = true;
+      result.advancedFilters = { ...(result.advancedFilters ?? provenance), relaxedRetry: true };
+      logger.debug("sciverse meta-search relaxed retry without advanced filters", {
+        provider: "sciverse",
+        endpoint: "/meta-search",
+        durationMs: Date.now() - startedAt,
+      });
+    }
     logger.debug("sciverse meta-search ok", {
       provider: "sciverse",
       endpoint: "/meta-search",
@@ -345,6 +407,55 @@ export async function sciverseRead(_ctx: ToolExecutionContext, args: Record<stri
       return mapSciverseError("/content", error, durationMs);
     }
     logger.error("sciverse read unexpected failure", { provider: "sciverse", endpoint: "/content", durationMs });
+    return { error: "SCIVERSE_UNAVAILABLE", recoverable: true };
+  }
+}
+
+/**
+ * `/resource`：取论文正文 Markdown 中 `![alt](file_name)` 指向的图片字节。
+ *
+ * 只接受由 `sciverse.read` 回传的相对路径形态：禁止绝对路径、`..`、反斜杠、
+ * 协议前缀与任意 URL。L1 read-only，server-only token，不携带 user-facing
+ * skillId（由 Research 的系统编排调用）。
+ */
+export async function sciverseResource(_ctx: ToolExecutionContext, args: Record<string, unknown>): Promise<SciverseResult> {
+  const token = readToken();
+  if (!token) return NOT_CONFIGURED;
+
+  const fileName = normalizeResourceFileName(args.fileName);
+  if (!fileName) {
+    return invalidRequest("fileName 必须是 sciverse.read 返回的相对资源路径（禁止绝对路径、.. 与任意 URL）");
+  }
+  const docId = asTrimmedString(args.docId);
+
+  const startedAt = Date.now();
+  try {
+    const { bytes, mimeType } = await requestSciverseBinary({
+      path: "/resource",
+      query: { file_name: fileName },
+      token,
+      signal: _ctx.signal,
+      maxBytes: SCIVERSE_RESOURCE_MAX_BYTES,
+    });
+    const result = parseResourceResponse({ fileName, docId, mimeType, bytes });
+    logger.debug("sciverse resource ok", {
+      provider: "sciverse",
+      endpoint: "/resource",
+      status: 200,
+      byteLength: result.byteLength,
+      durationMs: Date.now() - startedAt,
+    });
+    return result as unknown as SciverseResult;
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    if (error instanceof SciverseError) {
+      if (error.kind === "not_found") {
+        logFailure("/resource", error, durationMs);
+        return { error: "SCIVERSE_RESOURCE_UNAVAILABLE", recoverable: true, fileName };
+      }
+      return mapSciverseError("/resource", error, durationMs);
+    }
+    logger.error("sciverse resource unexpected failure", { provider: "sciverse", endpoint: "/resource", durationMs });
     return { error: "SCIVERSE_UNAVAILABLE", recoverable: true };
   }
 }

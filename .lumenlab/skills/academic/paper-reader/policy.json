@@ -15,6 +15,7 @@
     "sciverse.semantic_search",
     "sciverse.read",
     "sciverse.paper_relations",
+    "sciverse.resource",
     "web.fetch",
     "reference.add",
     "reference.list",

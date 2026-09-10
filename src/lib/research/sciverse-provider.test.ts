@@ -289,3 +289,120 @@ function sciverseCandidateFixture(overrides: Record<string, unknown> = {}): Rese
     },
   };
 }
+
+describe("research source provider · catalog-aware scholarly filters", () => {
+  it("sends a derived filter intent and records its provenance", async () => {
+    const { runner, calls } = succeededToolRunner({
+      "sciverse.search": {
+        papers: [sciversePaper],
+        totalCount: 1,
+        page: 1,
+        pageSize: 10,
+        hasMore: false,
+        advancedFilters: {
+          catalog: "live",
+          applied: [{ key: "publicationTypes", field: "type", operator: "FILTER_OP_IN" }],
+          dropped: [{ key: "languages", reason: "unknown_field" }],
+          relaxedRetry: true,
+        },
+      },
+    });
+    const recorded: Array<Record<string, unknown>> = [];
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+
+    await provider.search(createContext({
+      domainProfileKey: "computer_science",
+      budgetProfile: "deep",
+      planTimeRange: "2024-2026",
+      recordScholarlyFilter: (record) => recorded.push(record as unknown as Record<string, unknown>),
+    }), "Summarize the systematic survey of MoE routing from 2024 to 2026");
+
+    const searchCall = calls.find((call) => call.toolId === "sciverse.search")!;
+    expect(searchCall.args.filterIntent).toMatchObject({ publicationTypes: ["review"] });
+    expect(searchCall.args).toMatchObject({ yearFrom: 2024, yearTo: 2026 });
+    expect(recorded).toEqual([{
+      question: "Summarize the systematic survey of MoE routing from 2024 to 2026",
+      catalog: "live",
+      applied: ["publicationTypes"],
+      dropped: ["languages:unknown_field"],
+      relaxedRetry: true,
+      signals: expect.arrayContaining(["review_requested", "plan_time_range"]),
+    }]);
+  });
+
+  it("sends no filter intent when the question carries no structured signal", async () => {
+    const { runner, calls } = succeededToolRunner({
+      "sciverse.search": { papers: [sciversePaper], totalCount: 1, page: 1, pageSize: 10, hasMore: false },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+    await provider.search(createContext({ domainProfileKey: "general", budgetProfile: "deep" }), "How does self-attention work?");
+    const searchCall = calls.find((call) => call.toolId === "sciverse.search")!;
+    expect(searchCall.args.filterIntent).toBeUndefined();
+    expect(searchCall.args.yearFrom).toBeUndefined();
+  });
+});
+
+describe("research source provider · figure/table resource references", () => {
+  it("records only contract-shaped resource references in slice provenance", async () => {
+    const { runner } = succeededToolRunner({
+      "sciverse.search": { papers: [sciversePaper], totalCount: 1, page: 1, pageSize: 10, hasMore: false },
+      "sciverse.semantic_search": {
+        hits: [{ chunkId: "c1", docId: "a".repeat(64), title: "T", score: 0.9, offset: 100, chunk: "text" }],
+        count: 1,
+        query: "q",
+      },
+      "sciverse.read": {
+        docId: "a".repeat(64),
+        offset: 100,
+        text: "body text",
+        more: false,
+        totalLength: 50_000,
+        resources: [
+          { fileName: "dt=2025-08-07/ht=09/fig3.png", kind: "figure", alt: "Figure 3", context: "Figure 3: throughput" },
+          { fileName: "/etc/passwd", kind: "figure" },
+          { fileName: "../../secret.png", kind: "image" },
+          { fileName: "https://evil.test/x.png", kind: "image" },
+          { fileName: "bare.png", kind: "image" },
+        ],
+      },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+    const read = await provider.read(createContext(), {
+      provider: "sciverse",
+      kind: "academic_paper",
+      externalId: "paper:1",
+      title: sciversePaper.title,
+      url: sciversePaper.url,
+      metadata: { docId: "a".repeat(64), uniqueId: "paper:1", isContentAccessible: true, provider: "sciverse" },
+    });
+
+    expect(read?.slices?.[0].provenance).toMatchObject({
+      documentLength: 50_000,
+      resourceRefs: [{ fileName: "dt=2025-08-07/ht=09/fig3.png", kind: "figure", alt: "Figure 3" }],
+    });
+  });
+
+  it("omits resourceRefs when the read slice has no safe image references", async () => {
+    const { runner } = succeededToolRunner({
+      "sciverse.search": { papers: [sciversePaper], totalCount: 1, page: 1, pageSize: 10, hasMore: false },
+      "sciverse.semantic_search": {
+        hits: [{ chunkId: "c1", docId: "a".repeat(64), title: "T", score: 0.9, offset: 0, chunk: "text" }],
+        count: 1,
+        query: "q",
+      },
+      "sciverse.read": { docId: "a".repeat(64), offset: 0, text: "plain body", more: false },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+    const read = await provider.read(createContext(), {
+      provider: "sciverse",
+      kind: "academic_paper",
+      externalId: "paper:1",
+      title: sciversePaper.title,
+      url: sciversePaper.url,
+      metadata: { docId: "a".repeat(64), uniqueId: "paper:1", isContentAccessible: true, provider: "sciverse" },
+    });
+    const provenance = read?.slices?.[0].provenance as Record<string, unknown>;
+    expect(provenance.resourceRefs).toBeUndefined();
+    expect(provenance.documentLength).toBeUndefined();
+  });
+});

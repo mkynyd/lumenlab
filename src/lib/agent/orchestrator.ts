@@ -75,6 +75,7 @@ export type ToolId =
   | "sciverse.semantic_search"
   | "sciverse.read"
   | "sciverse.paper_relations"
+  | "sciverse.resource"
   | "reference.add"
   | "reference.list"
   | "reference.attach"

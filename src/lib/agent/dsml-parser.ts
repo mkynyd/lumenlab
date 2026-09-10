@@ -44,6 +44,7 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   sciverse_semantic_search: "sciverse.semantic_search",
   sciverse_read: "sciverse.read",
   sciverse_paper_relations: "sciverse.paper_relations",
+  sciverse_resource: "sciverse.resource",
   add_reference: "reference.add",
   list_references: "reference.list",
   attach_reference: "reference.attach",

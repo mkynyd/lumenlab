@@ -18,15 +18,18 @@ const state = {
 };
 
 let runStatus = "researching";
+let workspaceBudgetProfile = "quick";
 
 const stageBehavior: {
   claimExtractor: unknown;
   synthesizer: string | null;
   verifier: unknown;
+  visualEvaluator: unknown;
 } = {
   claimExtractor: null,
   synthesizer: null,
   verifier: null,
+  visualEvaluator: null,
 };
 
 let idCounter = 0;
@@ -146,7 +149,11 @@ vi.mock("@/lib/db", () => ({
   prisma: {
     $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(txMock)),
     researchRun: {
-      findFirst: vi.fn(async () => ({ ...researchRunRow, status: runStatus })),
+      findFirst: vi.fn(async () => ({
+        ...researchRunRow,
+        status: runStatus,
+        workspace: { ...researchRunRow.workspace, budgetProfile: workspaceBudgetProfile },
+      })),
       findUnique: vi.fn(async () => ({ status: runStatus })),
       update: vi.fn(async () => ({})),
     },
@@ -290,6 +297,7 @@ vi.mock("./model-stage", async (importOriginal) => {
       if (input.role === "research.claim_extractor") return { value: stageBehavior.claimExtractor, usage: null, model: "deepseek-flash", attempted: true };
       if (input.role === "research.synthesizer") return { value: stageBehavior.synthesizer, usage: null, model: "deepseek-flash", attempted: stageBehavior.synthesizer !== null };
       if (input.role === "research.verifier") return { value: stageBehavior.verifier, usage: null, model: "deepseek-flash", attempted: true };
+      if (input.role === "research.visual_evaluator") return { value: stageBehavior.visualEvaluator, usage: null, model: "deepseek-flash", attempted: true };
       return { value: null, usage: null, model: "deepseek-flash", attempted: false };
     }),
   };
@@ -297,6 +305,11 @@ vi.mock("./model-stage", async (importOriginal) => {
 
 import { createDurableResearchExecutionHandler } from "./durable-handler";
 import { runResearchModelStage } from "./model-stage";
+import { prisma } from "@/lib/db";
+
+const prismaResearchQuestionFindMany = (prisma as unknown as {
+  researchQuestion: { findMany: (args?: unknown) => Promise<unknown> };
+}).researchQuestion.findMany;
 
 const sciverseCandidate: ResearchCandidate = {
   provider: "sciverse",
@@ -362,6 +375,8 @@ beforeEach(() => {
   stageBehavior.claimExtractor = null;
   stageBehavior.synthesizer = null;
   stageBehavior.verifier = null;
+  stageBehavior.visualEvaluator = null;
+  workspaceBudgetProfile = "quick";
   vi.clearAllMocks();
 });
 
@@ -597,14 +612,23 @@ describe("durable research handler · citation_expansion stage", () => {
     const firstState = (first as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
     expect(firstState.stage).toBe("citation_expansion");
 
-    // expansion 完成后回到 evaluating，随后进入 claim_extraction（不再次 expansion）。
+    // expansion 完成后回到 evaluating，随后进入有硬预算的 visual_evidence
+    // （不再次 expansion）；visual 阶段 done 之后才进入 claim_extraction。
     const second = await handler(createContext({ researchState: {
       ...firstState,
       stage: "evaluating",
       citationExpansion: { done: true, completedQuestionIds: ["q-1"], fingerprints: {}, graphToolCalls: 0, metrics: {} },
     } }));
     const secondState = (second as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
-    expect(secondState.stage).toBe("claim_extraction");
+    expect(secondState.stage).toBe("visual_evidence");
+
+    const third = await handler(createContext({ researchState: {
+      ...secondState,
+      stage: "evaluating",
+      visualEvidence: { done: true, completedQuestionIds: ["q-1"], fingerprints: {}, metrics: {} },
+    } }));
+    const thirdState = (third as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(thirdState.stage).toBe("claim_extraction");
   });
 });
 
@@ -768,5 +792,176 @@ describe("durable research handler · verifying stage", () => {
     const report = state.report as { claimSnapshots: Array<{ verificationStatus: string; reasonCode: string }>; citationMap: Record<string, Array<{ relation: string }>> };
     expect(report.claimSnapshots[0]).toMatchObject({ verificationStatus: "verified", reasonCode: "sufficient_support" });
     expect(report.citationMap["claim-1"][0].relation).toBe("supports");
+  });
+});
+
+describe("durable research handler · visual_evidence stage", () => {
+  const DOC_ID = "d".repeat(64);
+
+  function fullTextEvidence(overrides: Record<string, unknown> = {}) {
+    return evidenceRow({
+      id: "ev-fulltext",
+      excerpt: "Figure 3 reports the routing throughput.",
+      locator: { kind: "sciverse", docId: DOC_ID, chunkId: "chunk-1", offset: 1200 },
+      provenance: {
+        provider: "sciverse",
+        retrievalMethod: "sciverse.read",
+        documentLength: 40_000,
+        resourceRefs: [
+          { fileName: "dt=2025-08-07/ht=09/fig3.png", kind: "figure", alt: "Figure 3", context: "Figure 3: routing throughput by batch size" },
+        ],
+      },
+      sourceSnapshot: {
+        sourceId: "src-1",
+        contentHash: "hash-1",
+        metadata: { provider: "sciverse", scope: { type: "bounded_evidence_slices" }, docId: DOC_ID },
+        retrievedAt: new Date(),
+        source: { ...SOURCE_ROW, metadata: { provider: "sciverse", docId: DOC_ID } },
+      },
+      ...overrides,
+    });
+  }
+
+  function visualStageState(overrides: Record<string, unknown> = {}) {
+    return {
+      stage: "visual_evidence",
+      modelCalls: 0,
+      searchCalls: 0,
+      fetchCalls: 0,
+      sourceCount: 0,
+      replanCount: 0,
+      verificationRepairs: 0,
+      citationExpansion: { done: true, completedQuestionIds: ["q-1"], fingerprints: {}, graphToolCalls: 0, metrics: {} },
+      ...overrides,
+    };
+  }
+
+  function visualQuestion(overrides: Record<string, unknown> = {}) {
+    return {
+      ...questionRow,
+      status: "unresolved",
+      question: "Which routing strategy achieves the highest measured throughput in Figure 3?",
+      completionCriteria: ["给出图表中的实测吞吐量对比"],
+      evidence: [fullTextEvidence()],
+      ...overrides,
+    };
+  }
+
+  function imageToolResult() {
+    return {
+      fileName: "dt=2025-08-07/ht=09/fig3.png",
+      mimeType: "image/png",
+      byteLength: 4,
+      dataIncluded: true,
+      dataBase64: Buffer.from([1, 2, 3, 4]).toString("base64"),
+    };
+  }
+
+  it("persists visual observations as visual_observation evidence and advances to claim_extraction", async () => {
+    workspaceBudgetProfile = "deep";
+    questionRow.evidence = [fullTextEvidence()];
+    vi.mocked(prismaResearchQuestionFindMany).mockImplementation(async () => [visualQuestion()] as never);
+    stageBehavior.visualEvaluator = {
+      observations: [
+        { statement: "Sparse routing reaches 1.8x throughput", resourceId: "r1", figureNo: 3, metric: "throughput", value: "1.8", unit: "x", confidence: 0.7 },
+      ],
+    };
+    const toolInvoker = vi.fn(async (_ctx: unknown, toolId: string) => toolId === "sciverse.resource" ? imageToolResult() : null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    const result = await handler(createContext({ researchState: visualStageState() }));
+    const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(nextState.stage).toBe("claim_extraction");
+    expect(nextState.visualEvidence?.done).toBe(true);
+
+    expect(vi.mocked(runResearchModelStage)).toHaveBeenCalledWith(expect.objectContaining({
+      role: "research.visual_evaluator",
+      attachments: [expect.objectContaining({ mimeType: "image/png", size: 4 })],
+    }));
+    const visualEvidence = state.evidences.find((row) => (row as { evidenceType?: string }).evidenceType === "visual_observation");
+    expect(visualEvidence).toBeDefined();
+    expect((visualEvidence as unknown as { locator: Record<string, unknown> }).locator).toMatchObject({
+      kind: "sciverse_resource",
+      resourceId: "r1",
+      resourceKind: "figure",
+      figureNo: 3,
+    });
+    expect((visualEvidence as unknown as { provenance: Record<string, unknown> }).provenance).toMatchObject({
+      modality: "visual",
+      analysisModel: "deepseek-flash",
+      rawContentPersisted: true,
+    });
+    expect(nextState.visualEvidence?.metrics).toMatchObject({ observationsPersisted: 1, modelCalls: 1 });
+  });
+
+  it("does no visual work at all for the quick profile", async () => {
+    workspaceBudgetProfile = "quick";
+    questionRow.evidence = [fullTextEvidence()];
+    vi.mocked(prismaResearchQuestionFindMany).mockImplementation(async () => [visualQuestion()] as never);
+    stageBehavior.visualEvaluator = { observations: [{ statement: "x", resourceId: "r1", confidence: 0.5 }] };
+    const toolInvoker = vi.fn(async () => null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    const result = await handler(createContext({ researchState: visualStageState() }));
+    const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(nextState.stage).toBe("claim_extraction");
+    expect(toolInvoker).not.toHaveBeenCalled();
+    expect(vi.mocked(runResearchModelStage).mock.calls.some(([input]) => (input as { role: string }).role === "research.visual_evaluator")).toBe(false);
+    expect(nextState.visualEvidence?.metrics).toMatchObject({ questionsSelected: 0, modelCalls: 0 });
+  });
+
+  it("skips questions that do not ask for a figure/table measurement", async () => {
+    workspaceBudgetProfile = "deep";
+    questionRow.evidence = [fullTextEvidence()];
+    vi.mocked(prismaResearchQuestionFindMany).mockImplementation(async () => [
+      visualQuestion({ question: "What is the history of mixture-of-experts routing?", completionCriteria: [] }),
+    ] as never);
+    const toolInvoker = vi.fn(async () => null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+    const result = await handler(createContext({ researchState: visualStageState() }));
+    const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(nextState.visualEvidence?.metrics).toMatchObject({ questionsConsidered: 1, questionsSelected: 0, resourceFetches: 0 });
+  });
+
+  it("degrades without failing the run when the resource endpoint is unavailable", async () => {
+    workspaceBudgetProfile = "deep";
+    questionRow.evidence = [fullTextEvidence()];
+    vi.mocked(prismaResearchQuestionFindMany).mockImplementation(async () => [visualQuestion()] as never);
+    const toolInvoker = vi.fn(async (_ctx: unknown, toolId: string) =>
+      toolId === "sciverse.resource" ? { error: "SCIVERSE_RESOURCE_UNAVAILABLE", recoverable: true } : null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    const result = await handler(createContext({ researchState: visualStageState() }));
+    const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(nextState.stage).toBe("claim_extraction");
+    expect(nextState.visualEvidence?.metrics).toMatchObject({ resourceFetches: 1, modelCalls: 0, degradations: 1 });
+  });
+
+  it("drops observations that reference a resource the model never received", async () => {
+    workspaceBudgetProfile = "deep";
+    questionRow.evidence = [fullTextEvidence()];
+    vi.mocked(prismaResearchQuestionFindMany).mockImplementation(async () => [visualQuestion()] as never);
+    stageBehavior.visualEvaluator = { observations: [{ statement: "hallucinated", resourceId: "r7", confidence: 0.9 }] };
+    const toolInvoker = vi.fn(async (_ctx: unknown, toolId: string) => toolId === "sciverse.resource" ? imageToolResult() : null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    const result = await handler(createContext({ researchState: visualStageState() }));
+    const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(nextState.visualEvidence?.metrics).toMatchObject({ observationsPersisted: 0, observationsRejected: 1 });
+    expect(nextState.stage).toBe("claim_extraction");
+  });
+
+  it("resumes idempotently: a completed question is not analysed twice", async () => {
+    workspaceBudgetProfile = "deep";
+    questionRow.evidence = [fullTextEvidence()];
+    vi.mocked(prismaResearchQuestionFindMany).mockImplementation(async () => [visualQuestion()] as never);
+    stageBehavior.visualEvaluator = { observations: [{ statement: "x", resourceId: "r1", confidence: 0.5 }] };
+    const toolInvoker = vi.fn(async (_ctx: unknown, toolId: string) => toolId === "sciverse.resource" ? imageToolResult() : null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    const first = await handler(createContext({ researchState: visualStageState() }));
+    const firstState = (first as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    await handler(createContext({ researchState: { ...firstState, stage: "visual_evidence", visualEvidence: { ...firstState.visualEvidence!, done: false } } }));
+    expect(toolInvoker).toHaveBeenCalledTimes(1);
   });
 });

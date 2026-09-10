@@ -14,6 +14,31 @@ export const RESEARCH_RUN_STATUSES = [
 
 export type ResearchRunStatus = (typeof RESEARCH_RUN_STATUSES)[number];
 
+/**
+ * 用户可见的研究阶段。run.status 是有状态的粗粒度枚举（citation expansion /
+ * claim extraction / visual evidence 都在 evaluating 之下运行），因此 UI 需要
+ * 一个额外的、由 durable checkpoint 派生的细分阶段，避免把多个后台阶段显示成
+ * 一个模糊的永久「处理中」。
+ */
+export const RESEARCH_STAGE_KEYS = [
+  "planning",
+  "awaiting_confirmation",
+  "queued",
+  "awaiting_scope_confirmation",
+  "researching",
+  "evaluating",
+  "citation_expansion",
+  "visual_evidence",
+  "claim_extraction",
+  "synthesizing",
+  "verifying",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+export type ResearchStageKey = (typeof RESEARCH_STAGE_KEYS)[number];
+
 export const RESEARCH_BUDGET_PROFILES = ["quick", "deep", "comprehensive"] as const;
 export type ResearchBudgetProfile = (typeof RESEARCH_BUDGET_PROFILES)[number];
 
@@ -36,6 +61,7 @@ export type ResearchRole =
   | "research.worker"
   | "research.evaluator"
   | "research.claim_extractor"
+  | "research.visual_evaluator"
   | "research.synthesizer"
   | "research.verifier";
 

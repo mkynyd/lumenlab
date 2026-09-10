@@ -21,6 +21,8 @@ description: 论文速读：三层深度阅读（裸读/引导/精读）+ 多论
 - 开放式学术问题：优先 `sciverse.semantic_search` 取正文级 evidence；严格限定范围时先 `sciverse.search` 拿 doc_id 集合再传入 `filters.docIds`（唯一硬约束，其余 filters 是软语义）
 - 精确标题 / 作者 / 年份 / DOI 查找：`sciverse.search`；需要更多上下文时 `sciverse.read(docId, offset)` 读证据附近原文
 - 已锁定一篇核心论文后，可用 `sciverse.paper_relations(uniqueId, relation)` 沿引用（references=它引用的原始工作、citations=引用它的后续研究、related_works=相关主题）有界发现更多论文；返回的是论文标识而非证据，目标论文仍需经 sciverse.search/semantic_search/read 进入正文
+- 精确筛选（发表类型、语言、开放获取、引用分位等）通过 `sciverse.search` 的 `filterIntent` 表达，不要自己构造字段名或操作符
+- 正文读到的图表数值不足时，用 `sciverse.read` 的 `resources[].fileName` 调 `sciverse.resource` 取单张图；禁止任意 URL、绝对路径或批量抓取
 - 用户明确提到 arXiv 或给出 arXiv ID / URL：`arxiv.*`
 - 普通互联网 / 官网 / 新闻 / Sciverse 未覆盖来源：`web.search` / `web.fetch`
 

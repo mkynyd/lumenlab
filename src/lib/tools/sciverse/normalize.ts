@@ -15,6 +15,7 @@
  */
 
 import type {
+  SciverseAdvancedFilterProvenance,
   SciverseBoost,
   SciverseFieldFilter,
   SciversePaperRelationsInput,
@@ -23,6 +24,8 @@ import type {
   SciversePaperSummary,
   SciverseReadResult,
   SciverseRelationItem,
+  SciverseResourceRef,
+  SciverseResourceResult,
   SciverseSearchInput,
   SciverseSearchResult,
   SciverseSemanticFiltersInput,
@@ -38,6 +41,7 @@ import type {
   SciverseWireRelationType,
   SciverseWireRelationsResponse,
 } from "./types";
+import { SCIVERSE_MAX_TOTAL_FILTERS } from "./filter-compiler";
 
 export const SCIVERSE_SEARCH_DEFAULT_PAGE_SIZE = 10;
 export const SCIVERSE_SEARCH_MAX_PAGE_SIZE = 25;
@@ -131,19 +135,33 @@ function cleanStringList(value: unknown, maxItems = 50): string[] {
 
 // ─── /meta-search request builder ───────────────────────────
 
+/**
+ * Typed convenience fields → fixed wire filters.
+ *
+ * Every pair here is decided by this repository, never by a model, and every
+ * field is verified filterable against the live catalog. `abstractContains` is
+ * deliberately NOT a filter: the upstream catalog reports `abstract` as
+ * `filterable=false` and answers `400 字段 'abstract' 不支持筛选`, which used to
+ * kill the whole Sciverse channel. It is folded into the BM25 `query` instead.
+ */
 export function buildMetaSearchRequest(input: SciverseSearchInput): Record<string, unknown> {
   const filters: SciverseFieldFilter[] = [];
   const titleContains = input.titleContains?.trim();
   if (titleContains) filters.push({ field: "title", operator: "FILTER_OP_CONTAINS", value: titleContains });
-  const abstractContains = input.abstractContains?.trim();
-  if (abstractContains) filters.push({ field: "abstract", operator: "FILTER_OP_CONTAINS", value: abstractContains });
   if (input.authors?.length) filters.push({ field: "author", operator: "FILTER_OP_IN", value: input.authors });
   if (input.yearFrom !== undefined) filters.push({ field: "publication_published_year", operator: "FILTER_OP_GTE", value: input.yearFrom });
   if (input.yearTo !== undefined) filters.push({ field: "publication_published_year", operator: "FILTER_OP_LTE", value: input.yearTo });
   if (input.journals?.length) filters.push({ field: "publication_venue_name_unified", operator: "FILTER_OP_IN", value: input.journals });
   if (input.subjects?.length) filters.push({ field: "subjects", operator: "FILTER_OP_IN", value: input.subjects });
 
-  const query = input.query?.trim() || undefined;
+  const advanced = input.advancedFilters ?? [];
+  const merged = [...filters, ...advanced].slice(0, SCIVERSE_MAX_TOTAL_FILTERS);
+
+  // `abstract` cannot be filtered upstream; the term is folded into the BM25
+  // query so the intent survives without producing an INVALID_REQUEST.
+  const abstractContains = input.abstractContains?.trim();
+  const baseQuery = input.query?.trim();
+  const query = [baseQuery, abstractContains].filter((part): part is string => Boolean(part)).join(" ") || undefined;
   const page = clampSearchPage(input.page);
   const pageSize = clampSearchPageSize(input.pageSize);
 
@@ -154,7 +172,7 @@ export function buildMetaSearchRequest(input: SciverseSearchInput): Record<strin
     fields: [...SCIVERSE_SEARCH_FIELDS],
   };
   if (query) body.query = query;
-  if (filters.length) body.filters = filters;
+  if (merged.length) body.filters = merged;
 
   // Sort is conservative: never combined with a query. "auto" resolves to a
   // year-descending sort only for query-less structured scans, where the
@@ -172,6 +190,12 @@ export function buildMetaSearchRequest(input: SciverseSearchInput): Record<strin
   if (input.languageAffinity && input.languageAffinity !== "NONE") body.language_affinity = input.languageAffinity;
 
   return body;
+}
+
+/** 提取 typed basic filters（不含 advanced），供 catalog 校验。 */
+export function buildBasicMetaSearchFilters(input: SciverseSearchInput): SciverseFieldFilter[] {
+  const body = buildMetaSearchRequest({ ...input, advancedFilters: [] });
+  return Array.isArray(body.filters) ? (body.filters as SciverseFieldFilter[]) : [];
 }
 
 // ─── /meta-search response parser ───────────────────────────
@@ -199,7 +223,8 @@ function doiUrl(doi: string | undefined): string | undefined {
 
 export function parseMetaSearchResponse(
   payload: SciverseWireMetaSearchResponse,
-  pageSize: number
+  pageSize: number,
+  advancedFilters?: SciverseAdvancedFilterProvenance,
 ): SciverseSearchResult {
   const records = Array.isArray(payload.results) ? payload.results : [];
   const papers: SciversePaperSummary[] = [];
@@ -255,6 +280,7 @@ export function parseMetaSearchResponse(
     pageSize,
     ...(totalPages !== undefined ? { totalPages } : {}),
     hasMore,
+    ...(advancedFilters ? { advancedFilters } : {}),
   };
 }
 
@@ -370,6 +396,87 @@ export function parseAgenticSearchResponse(payload: SciverseWireAgenticResponse,
 
 // ─── /content response parser ───────────────────────────────
 
+/** 单次 read 最多回传的图片占位数量（模型/Research 都不允许无界枚举资源）。 */
+export const SCIVERSE_READ_MAX_RESOURCE_REFS = 6;
+/** 相对路径长度上限。 */
+export const SCIVERSE_RESOURCE_FILE_NAME_MAX_CHARS = 400;
+/** 图片占位符周围提取的上下文长度（作为有界图注上下文）。 */
+export const SCIVERSE_RESOURCE_CONTEXT_CHARS = 240;
+/** 判定 figure/table 时使用的紧邻窗口（越小越不容易被相邻段落干扰）。 */
+export const SCIVERSE_RESOURCE_KIND_WINDOW = 80;
+/** 单次 resource 拉取的字节上限；超出只回传元数据，不回传字节。 */
+export const SCIVERSE_RESOURCE_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * 校验 `![alt](file_name)` 里的相对路径。上游要求：禁止 `\` 与 `..`，
+ * 不能以 `/` 开头。这里额外拒绝协议前缀、控制字符与超长路径，避免把
+ * 任意 URL 或本地路径当作资源名送给上游。
+ */
+export function normalizeResourceFileName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
+  if (!trimmed || trimmed.length > SCIVERSE_RESOURCE_FILE_NAME_MAX_CHARS) return null;
+  if (trimmed.startsWith("/") || trimmed.includes("\\") || trimmed.includes("\u0000")) return null;
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+  const segments = trimmed.split("/");
+  if (segments.some((segment) => segment === ".." || segment === "." || segment === "")) return null;
+  // 真实资源路径至少包含一段目录前缀（上游 Markdown 里即如此）。
+  if (!trimmed.includes("/")) return null;
+  return trimmed;
+}
+
+/**
+ * 确定性资源分类：先看 Markdown alt，再看占位符紧邻文本（图注通常紧贴图片）。
+ * 不做语义猜测 —— 两个关键词都命中时按「离占位符更近」判定。
+ */
+function classifyResourceKind(alt: string, fileName: string, nearText: string): SciverseResourceRef["kind"] {
+  const altLower = alt.toLowerCase();
+  if (/\btable\b|表\s*\d|表格/.test(altLower)) return "table";
+  if (/\bfig(?:ure)?\b|图\s*\d|图表/.test(altLower)) return "figure";
+  const haystack = `${fileName} ${nearText}`.toLowerCase();
+  const tableIndex = haystack.search(/\btable\b|表\s*\d|表格/);
+  const figureIndex = haystack.search(/\bfig(?:ure)?\b|图\s*\d|图表/);
+  if (tableIndex >= 0 && (figureIndex < 0 || tableIndex < figureIndex)) return "table";
+  if (figureIndex >= 0) return "figure";
+  return "image";
+}
+
+/**
+ * 从 `/content` 返回的 Markdown 中提取图片占位。只做确定性解析：不做语义
+ * 猜测、不跟随外链、不枚举正文之外的任何资源。每张图额外记录一段有界上下文
+ * （Markdown 里图注通常紧邻占位符），供视觉模型判断图表含义。
+ */
+export function extractSciverseResourceRefs(
+  text: string,
+  maximum = SCIVERSE_READ_MAX_RESOURCE_REFS,
+): SciverseResourceRef[] {
+  if (!text) return [];
+  const refs: SciverseResourceRef[] = [];
+  const seen = new Set<string>();
+  const pattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const fileName = normalizeResourceFileName(match[2]);
+    if (!fileName || seen.has(fileName)) continue;
+    seen.add(fileName);
+    const alt = match[1].replace(/\s+/g, " ").trim().slice(0, 200);
+    const start = Math.max(0, match.index - SCIVERSE_RESOURCE_CONTEXT_CHARS);
+    const end = Math.min(text.length, match.index + match[0].length + SCIVERSE_RESOURCE_CONTEXT_CHARS);
+    const context = text.slice(start, end).replace(/\s+/g, " ").trim().slice(0, SCIVERSE_RESOURCE_CONTEXT_CHARS * 2);
+    const nearStart = Math.max(0, match.index - SCIVERSE_RESOURCE_KIND_WINDOW);
+    const nearEnd = Math.min(text.length, match.index + match[0].length + SCIVERSE_RESOURCE_KIND_WINDOW);
+    refs.push({
+      fileName,
+      ...(alt ? { alt } : {}),
+      ...(context ? { context } : {}),
+      kind: classifyResourceKind(alt, fileName, text.slice(nearStart, nearEnd).replace(/\s+/g, " ")),
+    });
+    if (refs.length >= maximum) break;
+  }
+  return refs;
+}
+
 export function parseContentResponse(
   payload: SciverseWireContentResponse,
   input: { docId: string; offset: number }
@@ -382,6 +489,7 @@ export function parseContentResponse(
     : typeof payload.bytes_returned === "number"
       ? payload.bytes_returned
       : undefined;
+  const resources = extractSciverseResourceRefs(text);
   return {
     docId: input.docId,
     offset: input.offset,
@@ -390,6 +498,48 @@ export function parseContentResponse(
     ...(typeof payload.text_length === "number" ? { totalLength: payload.text_length } : {}),
     ...(typeof payload.next_offset === "number" ? { nextOffset: payload.next_offset } : {}),
     more: payload.more === true,
+    ...(resources.length > 0 ? { resources } : {}),
+  };
+}
+
+// ─── /resource parser ───────────────────────────────────────
+
+const RESOURCE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+  "image/tiff",
+  "image/bmp",
+  "image/svg+xml",
+]);
+
+export function isSupportedResourceMimeType(value: string): boolean {
+  return RESOURCE_MIME_TYPES.has(value.trim().toLowerCase().split(";")[0]);
+}
+
+/**
+ * 归一化 `/resource` 的二进制响应。超过字节上限只回传元数据（不回传字节），
+ * 使调用方明确知道图片存在但本次不携带，避免无界内存与 prompt 膨胀。
+ */
+export function parseResourceResponse(input: {
+  fileName: string;
+  docId?: string;
+  mimeType: string | null;
+  bytes: Buffer;
+}): SciverseResourceResult {
+  const declared = (input.mimeType ?? "").trim().toLowerCase().split(";")[0];
+  const mimeType = isSupportedResourceMimeType(declared) ? declared : "application/octet-stream";
+  const tooLarge = input.bytes.length > SCIVERSE_RESOURCE_MAX_BYTES;
+  const dataIncluded = !tooLarge && isSupportedResourceMimeType(mimeType);
+  return {
+    fileName: input.fileName,
+    mimeType,
+    byteLength: input.bytes.length,
+    dataIncluded,
+    ...(dataIncluded ? { dataBase64: input.bytes.toString("base64") } : {}),
+    ...(input.docId ? { docId: input.docId } : {}),
   };
 }
 

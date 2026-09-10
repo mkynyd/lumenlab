@@ -26,7 +26,7 @@ import { ragSearch } from "./knowledge/project-rag";
 import { arxivSearch } from "./arxiv/search";
 import { arxivRead } from "./arxiv/abstract";
 import { arxivFetch } from "./arxiv/fetch";
-import { sciversePaperRelations, sciverseRead, sciverseSearch, sciverseSemanticSearch } from "./sciverse/handlers";
+import { sciversePaperRelations, sciverseRead, sciverseResource, sciverseSearch, sciverseSemanticSearch } from "./sciverse/handlers";
 import {
   addReference,
   listReferences,
@@ -532,6 +532,37 @@ const TOOLS: ToolMetadata[] = [
         sortByYear: { type: "string", enum: ["auto", "desc", "asc", "none"], description: "Year sorting; never combined with query (relevance ranking is kept)" },
         page: { type: "integer", description: "Page number starting at 1" },
         pageSize: { type: "integer", description: "Results per page, clamped to 1-25, default 10" },
+        filterIntent: {
+          type: "object",
+          description: [
+            "High-level structured filter intent resolved by the server against the live Sciverse field catalog. ",
+            "You never provide field names, operators or raw query JSON — only these semantic keys. ",
+            "Unknown keys are rejected; keys the current catalog cannot serve are dropped (never sent upstream) and reported back in advancedFilters.dropped. ",
+          ].join(""),
+          properties: {
+            openAccess: { type: "boolean", description: "Restrict to (or exclude) open-access records" },
+            oaStatus: { type: "array", items: { type: "string", enum: ["gold", "hybrid", "bronze", "green", "closed", "diamond"] }, description: "Open-access status" },
+            venueTypes: { type: "array", items: { type: "string", enum: ["journal", "conference", "repository", "book series", "ebook platform", "metadata", "other"] }, description: "Publication venue type" },
+            publicationTypes: { type: "array", items: { type: "string" }, description: "Work type such as article / review / preprint / conference" },
+            resourceTypes: { type: "array", items: { type: "string", enum: ["paper", "ebook"] }, description: "Metadata source type" },
+            languages: { type: "array", items: { type: "string" }, description: "Language codes such as en, zh" },
+            publishers: { type: "array", items: { type: "string" }, description: "Publisher names" },
+            keywords: { type: "array", items: { type: "string" }, description: "Fuzzy keyword match on the paper keyword list" },
+            doi: { type: "string", description: "Exact DOI match (server normalizes the value)" },
+            citedBy: { type: "string", description: "Reverse citation lookup: papers citing this unique_id (unbounded-citation escape hatch)" },
+            topPercentile: { type: "string", enum: ["top_1_percent", "top_10_percent"], description: "Citation percentile band" },
+            citationCountMin: { type: "integer" },
+            citationCountMax: { type: "integer" },
+            influentialCitationCountMin: { type: "integer" },
+            influentialCitationCountMax: { type: "integer" },
+            fwciMin: { type: "number", description: "Field-Weighted Citation Impact lower bound" },
+            fwciMax: { type: "number" },
+            referenceCountMin: { type: "integer" },
+            referenceCountMax: { type: "integer" },
+            publishedFrom: { type: "string", description: "Publication date lower bound, YYYY[-MM[-DD]]" },
+            publishedTo: { type: "string", description: "Publication date upper bound, YYYY[-MM[-DD]]" },
+          },
+        },
       },
     },
     outputSchema: { type: "object" },
@@ -654,6 +685,36 @@ const TOOLS: ToolMetadata[] = [
         pageSize: { type: "integer", description: "Items per page, clamped to 1-50, default 10" },
       },
       required: ["uniqueId", "relation"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L1",
+    isReadOnly: true,
+    hasExternalSideEffect: true,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: true,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "minimal",
+    requiredScopes: [],
+  },
+  {
+    toolId: "sciverse.resource",
+    name: "Sciverse 论文图表资源读取",
+    description: [
+      "Fetch one figure/table image embedded in a paper, by the relative path reported in sciverse.read's `resources[].fileName`. ",
+      "Use it only when the answer depends on a specific measurement or comparison that lives in a figure or table and the body text is not enough. ",
+      "Returns bounded image bytes (base64) plus mimeType/byteLength; oversized or non-image resources return metadata with dataIncluded=false. ",
+      "Arbitrary URLs, absolute paths and filesystem paths are rejected. ",
+    ].join(""),
+    inputSchema: {
+      type: "object",
+      properties: {
+        fileName: { type: "string", description: "Relative resource path from sciverse.read resources[].fileName (never an absolute path or URL)" },
+        docId: { type: "string", description: "Optional doc_id the resource was discovered in, for provenance" },
+      },
+      required: ["fileName"],
     },
     outputSchema: { type: "object" },
     riskLevel: "L1",
@@ -936,6 +997,9 @@ export function registerBuiltinTools(): void {
   });
   registerToolHandler("sciverse.paper_relations", async (ctx, args) => {
     return sciversePaperRelations(ctx, args);
+  });
+  registerToolHandler("sciverse.resource", async (ctx, args) => {
+    return sciverseResource(ctx, args);
   });
   registerToolHandler("reference.add", async (ctx, args) => {
     const projectId = (args.projectId as string | undefined) ?? ctx.projectId;

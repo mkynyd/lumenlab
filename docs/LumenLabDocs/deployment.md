@@ -107,16 +107,20 @@ git diff --check
 ```bash
 # 检索通道冒烟：web.search(AnySearch) + Sciverse search/semantic/read；可选 arXiv、
 # 论文引用关系（--with-paper-relations）与 Sciverse 全文证据链严格模式
-#（--require-sciverse-content；窗口内无可访问全文时记 WARN 跳过）
-LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts --with-arxiv --with-paper-relations --require-sciverse-content
+#（--with-advanced-filters 验证 catalog-aware filterIntent；--with-resource 在有限窗口内验证图表资源；
+#  --require-sciverse-content 验证全文 chunk 链路；窗口内无可访问全文或图表时记 WARN 跳过）
+LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts \
+  --with-arxiv --with-paper-relations --with-advanced-filters --with-resource --require-sciverse-content
 
 # 有界 E2E：以 quick 预算创建并执行一个 Research Run（消耗真实模型额度）。
 # 需在 package.json 为 "type":"module" 的运行树执行（生产 build 树）；
 # 本地等价入口：RESEARCH_FULL_RUN_E2E=1 RESEARCH_E2E_USER_ID=<id> npm run test:research-run
 LUMENLAB_LIVE_SMOKE=1 SMOKE_USER_ID=<existing user id> npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/research-e2e-smoke.ts
 
-# 只读结构验证：Run 状态、Evidence/Claim 幂等键、locator/provenance、citationMap、accounting
+# 只读结构验证：Run 状态与细分阶段、Evidence/Claim 幂等键、locator/provenance、Citation Graph 边、
+# visual observation（若发生）、advanced filter provenance、统一 metrics/accounting、citationMap、
+# canonical source 去重、durable lease 与残留 task
 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/research-e2e-verify.ts --run <runId>
 ```
 
-诊断脚本不打印 Token、完整研究 query、原始 Evidence 全文或隐藏推理。
+诊断脚本不打印 Token、完整研究 query、原始 Evidence 全文、用户 Prompt、模型隐藏推理或 raw provider response；detail 一律截断。

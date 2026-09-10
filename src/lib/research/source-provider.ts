@@ -3,6 +3,17 @@ import { createPrismaToolRunner } from "@/lib/agent/tools/tool-runner";
 import type { ToolRunner } from "@/lib/agent/tools/tool-runner";
 import { createAcademicSourceAdapters, type AcademicSourceAdapter } from "./academic-adapters";
 import { normalizeDoi } from "./source-identity";
+import { deriveScholarlyFilterIntent } from "./scholarly-filter";
+
+/** 一次 Sciverse 检索实际生效的 advanced filter provenance（有界）。 */
+export interface ScholarlyFilterRecord {
+  question: string;
+  catalog: string;
+  applied: string[];
+  dropped: string[];
+  relaxedRetry: boolean;
+  signals: string[];
+}
 
 export interface ResearchProviderContext {
   userId: string;
@@ -13,6 +24,18 @@ export interface ResearchProviderContext {
   signal: AbortSignal;
   /** 当前 Research Question 原文；Sciverse 语义证据检索按问题取 chunk。 */
   question?: string;
+  /** 领域 profile key 与预算档位：只影响 deterministic filter intent 的推导。 */
+  domainProfileKey?: string | null;
+  budgetProfile?: "quick" | "deep" | "comprehensive";
+  /** Research Plan 的时间范围文字。 */
+  planTimeRange?: string | null;
+  /** 记录本 Run 内 Sciverse advanced filter 的生效情况（诊断与指标用）。 */
+  recordScholarlyFilter?: (record: ScholarlyFilterRecord) => void;
+  /**
+   * 记录可向用户解释的 provider 降级（稳定代码，见 RESEARCH_DEGRADATION_MESSAGES）。
+   * 只记录「本应可用但失败/为空」的情况，不把正常空结果当成故障。
+   */
+  recordDegradation?: (code: string) => void;
 }
 
 export interface ResearchCandidate {
@@ -58,6 +81,48 @@ const SCIVERSE_SEARCH_PAGE_SIZE = 10;
 const SCIVERSE_SEMANTIC_TOP_K = 4;
 const SCIVERSE_READ_LIMIT = 1_600;
 const SCIVERSE_SLICE_MAX_CHARS = 2_000;
+/** 每条 slice 最多记录的图表引用数量（有界，避免正文里的图片列表无限增长）。 */
+const SCIVERSE_SLICE_MAX_RESOURCE_REFS = 4;
+
+/** slice provenance 中的图表引用（来自 sciverse.read 的确定性解析结果）。 */
+export interface ResearchResourceRef {
+  fileName: string;
+  kind: "figure" | "table" | "image";
+  alt?: string;
+  context?: string;
+}
+
+/**
+ * 只接受 sciverse.read 归一化后的资源引用形状：相对路径 + 受限 kind。
+ * 任何不符合契约的条目直接丢弃，绝不把任意 URL/路径带进 Evidence。
+ */
+export function parseResearchResourceRefs(value: unknown): ResearchResourceRef[] {
+  if (!Array.isArray(value)) return [];
+  const refs: ResearchResourceRef[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const record = raw as Record<string, unknown>;
+    const fileName = stringValue(record.fileName);
+    if (!fileName || seen.has(fileName)) continue;
+    if (fileName.startsWith("/") || fileName.includes("\\") || fileName.split("/").some((segment) => segment === ".." || segment === "." || segment === "")) continue;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(fileName)) continue;
+    // 上游真实资源路径至少包含一段目录前缀；没有 `/` 的名字不是资源引用。
+    if (!fileName.includes("/")) continue;
+    seen.add(fileName);
+    const kind = record.kind === "figure" || record.kind === "table" ? record.kind : "image";
+    const alt = stringValue(record.alt);
+    const context = stringValue(record.context);
+    refs.push({
+      fileName,
+      kind,
+      ...(alt ? { alt: alt.slice(0, 200) } : {}),
+      ...(context ? { context: context.slice(0, 500) } : {}),
+    });
+    if (refs.length >= SCIVERSE_SLICE_MAX_RESOURCE_REFS) break;
+  }
+  return refs;
+}
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -147,15 +212,69 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
   async function searchAcademic(context: ResearchProviderContext, question: string): Promise<ResearchCandidate[]> {
     // Sciverse 是学术检索主通道：返回有效结果时不再 fan-out 到 legacy adapters；
     // 未配置 / 明确不可用 / 空结果时才回退 OpenAlex/Crossref/Semantic Scholar/PubMed。
-    const sciverse = await runTool(context, "sciverse.search", { query: question, pageSize: SCIVERSE_SEARCH_PAGE_SIZE });
+    //
+    // 结构化收敛只走「高层 filter intent + 计划时间范围」：具体字段与操作符由
+    // sciverse.search 的 catalog compiler 决定，Research 不构造 wire filter。
+    const derived = deriveScholarlyFilterIntent({
+      question,
+      domainProfileKey: context.domainProfileKey,
+      budgetProfile: context.budgetProfile ?? "quick",
+      planTimeRange: context.planTimeRange ?? null,
+    });
+    const sciverse = await runTool(context, "sciverse.search", {
+      query: question,
+      pageSize: SCIVERSE_SEARCH_PAGE_SIZE,
+      ...(derived && Object.keys(derived.intent).length > 0 ? { filterIntent: derived.intent } : {}),
+      ...(derived?.yearFrom !== undefined ? { yearFrom: derived.yearFrom } : {}),
+      ...(derived?.yearTo !== undefined ? { yearTo: derived.yearTo } : {}),
+    });
     if (sciverse && typeof sciverse === "object" && !("error" in sciverse)) {
-      const papers = Array.isArray((sciverse as Record<string, unknown>).papers) ? (sciverse as Record<string, unknown>).papers as unknown[] : [];
+      const payload = sciverse as Record<string, unknown>;
+      if (derived) {
+        const provenance = payload.advancedFilters && typeof payload.advancedFilters === "object" && !Array.isArray(payload.advancedFilters)
+          ? payload.advancedFilters as Record<string, unknown>
+          : {};
+        const applied = Array.isArray(provenance.applied)
+          ? provenance.applied.flatMap((entry) => {
+              if (!entry || typeof entry !== "object") return [];
+              const key = (entry as Record<string, unknown>).key;
+              return typeof key === "string" ? [key] : [];
+            })
+          : [];
+        const dropped = Array.isArray(provenance.dropped)
+          ? provenance.dropped.flatMap((entry) => {
+              if (!entry || typeof entry !== "object") return [];
+              const record = entry as Record<string, unknown>;
+              return typeof record.key === "string" && typeof record.reason === "string"
+                ? [`${record.key}:${record.reason}`]
+                : [];
+            })
+          : [];
+        context.recordScholarlyFilter?.({
+          question,
+          catalog: typeof provenance.catalog === "string" ? provenance.catalog : "unavailable",
+          applied,
+          dropped,
+          relaxedRetry: provenance.relaxedRetry === true,
+          signals: derived.signals,
+        });
+        if (typeof provenance.catalog === "string" && provenance.catalog === "unavailable" && Object.keys(derived.intent).length > 0) {
+          context.recordDegradation?.("sciverse_catalog_unavailable");
+        } else if (dropped.length > 0) {
+          context.recordDegradation?.("sciverse_filters_dropped");
+        }
+      }
+      const papers = Array.isArray(payload.papers) ? payload.papers as unknown[] : [];
       const mapped = papers.flatMap((paper) => {
         if (!paper || typeof paper !== "object") return [];
         const candidate = sciverseCandidate(paper as Record<string, unknown>);
         return candidate ? [candidate] : [];
       });
       if (mapped.length > 0) return mapped;
+      context.recordDegradation?.("sciverse_empty");
+    } else if (sciverse && typeof sciverse === "object" && "error" in sciverse) {
+      const code = (sciverse as Record<string, unknown>).error;
+      if (code !== "SCIVERSE_NOT_CONFIGURED") context.recordDegradation?.("sciverse_error");
     }
     const academicResults = await Promise.all(academicAdapters.map(async (adapter) => {
       try {
@@ -195,6 +314,8 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
         const score = numberValue(hit.score);
         let text: string | null = null;
         let retrievalMethod = "sciverse.semantic_search";
+        let resourceRefs: ResearchResourceRef[] = [];
+        let documentLength: number | null = null;
         const slice = await runTool(context, "sciverse.read", { docId, offset, limit: SCIVERSE_READ_LIMIT });
         if (slice && typeof slice === "object" && !("error" in slice)) {
           const sliceText = stringValue((slice as Record<string, unknown>).text);
@@ -202,8 +323,9 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
             text = sliceText;
             retrievalMethod = "sciverse.read";
           }
-        }
-        if (!text) text = stringValue(hit.chunk);
+          resourceRefs = parseResearchResourceRefs((slice as Record<string, unknown>).resources);
+          documentLength = numberValue((slice as Record<string, unknown>).totalLength);
+        }        if (!text) text = stringValue(hit.chunk);
         if (!text) continue;
         slices.push({
           excerpt: text.slice(0, SCIVERSE_SLICE_MAX_CHARS),
@@ -224,6 +346,11 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
             queryHash: hashQuery(question),
             sourceType: stringValue(hit.sourceType),
             identifiers: { uniqueId, docId, doi },
+            // 图表资源只作为「本片段内确定性发现的引用」记录，抓取与视觉分析
+            // 由有预算上限的 visual_evidence 阶段决定。
+            ...(resourceRefs.length > 0 ? { resourceRefs } : {}),
+            // 文档总长度（Unicode 码点）：visual_evidence 用它做有界图表扫描定位。
+            ...(documentLength !== null ? { documentLength } : {}),
           },
         });
         if (slices.length >= SCIVERSE_SEMANTIC_TOP_K) break;
@@ -278,6 +405,7 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
     async search(context, question) {
       const candidates = new Map<string, ResearchCandidate>();
       const web = await runTool(context, "web.search", { query: question, maxResults: 5 });
+      if (web && typeof web === "object" && "error" in web) context.recordDegradation?.("web_error");
       const webSources = Array.isArray(web?.sources) ? web.sources : [];
       for (const item of webSources) {
         if (!item || typeof item !== "object") continue;
@@ -288,6 +416,7 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
       }
 
       const arxiv = await runTool(context, "arxiv.search", { query: question, maxResults: 5 });
+      if (arxiv && typeof arxiv === "object" && "error" in arxiv) context.recordDegradation?.("arxiv_error");
       const arxivResults = Array.isArray(arxiv?.results) ? arxiv.results : [];
       for (const item of arxivResults) {
         if (!item || typeof item !== "object") continue;

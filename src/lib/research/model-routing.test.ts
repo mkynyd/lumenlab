@@ -8,13 +8,16 @@ describe("research model routing", () => {
     expect(selectResearchModel("research.worker")).toMatchObject({ provider: "deepseek", model: "deepseek-flash", source: "default" });
     expect(selectResearchModel("research.synthesizer")).toMatchObject({ provider: "deepseek", model: "deepseek-flash", reasoningEffort: "max" });
     expect(selectResearchModel("research.claim_extractor")).toMatchObject({ provider: "deepseek", model: "deepseek-flash", reasoningEffort: "high" });
+    // 视觉证据复用同一活跃多模态模型，thinking 由 model-stage 统一关闭。
+    expect(selectResearchModel("research.visual_evaluator")).toMatchObject({ provider: "deepseek", model: "deepseek-flash", reasoningEffort: "high" });
   });
 
   it("exposes all role assignments as structured configuration", () => {
     const configuration = researchModelConfiguration();
-    expect(Object.keys(configuration)).toHaveLength(6);
+    expect(Object.keys(configuration)).toHaveLength(7);
     expect(configuration["research.verifier"].role).toBe("research.verifier");
     expect(configuration["research.claim_extractor"].role).toBe("research.claim_extractor");
+    expect(configuration["research.visual_evaluator"].role).toBe("research.visual_evaluator");
   });
 
   it("allows active overrides, upgrades legacy IDs, and rejects unknown models", () => {

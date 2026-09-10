@@ -64,7 +64,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 ### Deep Research
 
 - 研究运行按 Planner → 并行 Researcher → Evaluator/Replan → Synthesizer → Citation Verifier 的 durable 阶段执行，复用 AgentExecution 租约、checkpoint 与事件回放，报告冻结为不可变快照。
-- 检索分三条并列通道：Web（web.search/web.fetch）、学术（Sciverse 主通道，OpenAlex/Crossref/Semantic Scholar/PubMed 为回退，arXiv 为专项来源）、项目资料（project_rag/project_files）；评估发现证据缺口时，沿核心论文的引用关系（sciverse.paper_relations）做有界的 Citation Graph 扩展。
+- 检索分三条并列通道：Web（web.search/web.fetch）、学术（Sciverse 主通道，OpenAlex/Crossref/Semantic Scholar/PubMed 为回退，arXiv 为专项来源）、项目资料（project_rag/project_files）；评估发现证据缺口时，沿核心论文的引用关系（sciverse.paper_relations）做有界的 Citation Graph 扩展；学术检索支持 catalog-aware 高级筛选，图表视觉证据按需在硬预算内启用（sciverse.resource + research.visual_evaluator）。
 - Sciverse 证据按论文 docId 硬范围做段落级语义检索，再在命中位置读取有界原文切片；证据以 chunk 级 locator（docId/chunkId/offset/pageNo）和 provenance 落库，快照元数据明确记录读取范围，不冒充全文。
 - 系统证据带确定性幂等键，任务重跑或租约恢复不会产生重复 Evidence；对象存储短暂失败时保留有界摘录并标注 rawContentPersisted=false。
 - 报告引用表可从 Evidence 追溯到来源快照与 canonical source（标题、DOI、canonical URL、provider、locator）。
@@ -110,7 +110,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 | 风险 | Tool |
 |------|------|
-| L1 自动执行 | `project_files.list`、`project_files.read`、`artifact.list`、`project_rag.search`、`web.search`、`web.fetch`、`arxiv.search`、`arxiv.read`、`arxiv.fetch`、`sciverse.search`、`sciverse.semantic_search`、`sciverse.read`、`sciverse.paper_relations`、`reference.list`、`reference.format`、`skill.activate` |
+| L1 自动执行 | `project_files.list`、`project_files.read`、`artifact.list`、`project_rag.search`、`web.search`、`web.fetch`、`arxiv.search`、`arxiv.read`、`arxiv.fetch`、`sciverse.search`、`sciverse.semantic_search`、`sciverse.read`、`sciverse.paper_relations`、`sciverse.resource`、`reference.list`、`reference.format`、`skill.activate` |
 | L2 首次询问 | `artifact.save`、`reference.add`、`reference.attach` |
 | L3 每次询问 | `project_files.delete`、`artifact.export_docx` |
 
@@ -448,7 +448,7 @@ cp .env.example .env
 | `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_MINIMAX_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
 | `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 开放开关，示例默认 `false`；设为 `true` 前须验证目标账号的实际聊天权限，只有 Embedding 权限不足以开放默认聊天 |
 | `ANYSEARCH_API_KEY` | 平台级联网搜索基础设施密钥（仅服务端读取）。`web.search` 优先走 AnySearch，再回退 Bing RSS 与 DuckDuckGo；留空则跳过 AnySearch，本地开发仍可搜索 |
-| `SCIVERSE_API_TOKEN` | 平台级学术检索基础设施密钥（仅服务端读取）。`sciverse.search` / `sciverse.semantic_search` / `sciverse.read` / `sciverse.paper_relations` 直连 Sciverse API；留空则这些工具返回 `SCIVERSE_NOT_CONFIGURED`，不影响其他工具 |
+| `SCIVERSE_API_TOKEN` | 平台级学术检索基础设施密钥（仅服务端读取）。`sciverse.search` / `sciverse.semantic_search` / `sciverse.read` / `sciverse.paper_relations` / `sciverse.resource` 直连 Sciverse API（`sciverse.search` 的高层 filterIntent 由服务器按 `/meta-catalog` 校验后编译，目录不可用时降级为基础检索）；留空则这些工具返回 `SCIVERSE_NOT_CONFIGURED`，不影响其他工具 |
 | `BAILIAN_WORKSPACE_ID` | 启用 Qwen 聊天时必填 |
 | `QINIU_ACCESS_KEY` / `QINIU_SECRET_KEY` | 七牛云 Kodo 密钥（生产必填） |
 | `QINIU_BUCKET` | Kodo 空间名 |

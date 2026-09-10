@@ -7,7 +7,7 @@ import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import { evaluateResearchStop, getResearchBudget, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
-import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion } from "./claim-graph";
+import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion, snapshotScopeTypeOf } from "./claim-graph";
 import { prioritizeResearchCandidates } from "./candidate-priority";
 import {
   decideCitationExpansion,
@@ -18,7 +18,7 @@ import {
   selectGraphSeeds,
   type GraphSeedInput,
 } from "./citation-graph";
-import { createResearchToolInvoker, createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider, type ResearchToolInvoker } from "./source-provider";
+import { createResearchToolInvoker, createToolBackedResearchSourceProvider, parseResearchResourceRefs, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider, type ResearchToolInvoker, type ResearchResourceRef } from "./source-provider";
 import { academicCitationSignal, clampQuality, computeEvidenceRecency, computeResearchInformationGain, computeSourceDiversity, estimateSourceQuality, summarizeResearchQuality } from "./quality";
 import { assertResearchRunTransition } from "./state-machine";
 import type { ResearchPlanSnapshot, ResearchQuestionStatus, ResearchRunStatus } from "./contracts";
@@ -28,6 +28,18 @@ import { applyResearchPlannerDecision } from "./plan";
 import { appendVerificationQualification, selectVerificationRepairTargets, verificationRepairInstruction, type VerificationRepairTarget } from "./verification-repair";
 import { buildResearchReportStructure } from "./report-document";
 import { buildResearchCitationMap } from "./report-citations";
+import {
+  buildVisualEvidenceFingerprint,
+  buildVisualEvidencePrompt,
+  decideVisualEvidenceNeed,
+  emptyVisualEvidenceMetrics,
+  getResearchVisualPolicy,
+  normalizeVisualObservationOutput,
+  persistVisualObservations,
+  VISUAL_EVIDENCE_MAX_IMAGE_BYTES,
+  type VisualAnalysisResourceInput,
+  type VisualResourceForPersistence,
+} from "./visual-evidence";
 import {
   normalizeResearchEvaluatorDecision,
   normalizeResearchPlannerDecision,
@@ -41,6 +53,13 @@ import {
 } from "./model-stage";
 
 type ResearchState = NonNullable<AgentCheckpoint["researchState"]>;
+
+/** 图表扫描读取窗口（Unicode 码点）；只在预算内读一到两个窗口。 */
+const VISUAL_SCAN_WINDOW = 6_000;
+/** 传给视觉模型的正文上下文上限（有界）。 */
+const VISUAL_BODY_CONTEXT_CHARS = 4_000;
+/** checkpoint 中保留的 provider 降级代码上限。 */
+const MAX_RESEARCH_DEGRADATIONS = 12;
 
 function json(value: unknown) {
   return JSON.parse(JSON.stringify(value));
@@ -289,6 +308,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       };
     }
 
+    /** 最近一次评估得出的预算停止原因（进入 run.metrics.budgetStopReason）。 */
+    let lastBudgetStopReason = "continue";
     const existing = checkpoint.researchState;
     const state: ResearchState = existing ?? {
       stage: "researching",
@@ -302,6 +323,11 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     };
     const limits = getResearchBudget(run.workspace.budgetProfile);
     const domainProfile = (run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined)?.domainProfile;
+    const planSnapshot = run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined;
+    // 有界收集 Sciverse advanced filter 的生效情况（诊断与 run.metrics 用）。
+    const scholarlyFilterAccumulator = { applied: new Set<string>(), dropped: new Set<string>(), questions: 0, relaxedRetry: false };
+    // 有界、去重的 provider 降级代码（用户可读文案见 state-machine.ts）。
+    const degradationCodes = new Set<string>((state.degradations ?? []).slice(0, MAX_RESEARCH_DEGRADATIONS));
     const providerContext: ResearchProviderContext = {
       userId: context.execution.userId,
       conversationId: context.execution.conversationId,
@@ -309,6 +335,18 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       runId: run.id,
       projectId: run.workspace.projectId,
       signal: context.signal,
+      domainProfileKey: run.workspace.domainProfileKey,
+      budgetProfile: run.workspace.budgetProfile,
+      planTimeRange: typeof planSnapshot?.timeRange === "string" ? planSnapshot.timeRange : null,
+      recordScholarlyFilter: (record) => {
+        scholarlyFilterAccumulator.questions += 1;
+        for (const key of record.applied) scholarlyFilterAccumulator.applied.add(key);
+        for (const entry of record.dropped) scholarlyFilterAccumulator.dropped.add(entry);
+        if (record.relaxedRetry) scholarlyFilterAccumulator.relaxedRetry = true;
+      },
+      recordDegradation: (code) => {
+        if (degradationCodes.size < MAX_RESEARCH_DEGRADATIONS) degradationCodes.add(code);
+      },
     };
 
     if (state.stage === "planning") {
@@ -465,6 +503,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           await appendPublicEvent(context, { key: `research:task:failed:${task.id}:${attempt}`, kind: "task_completed", runId: run.id, message: `${task.question.title}：${status === "retrying" ? "本地重试" : "达到重试上限"}`, publicData: { questionId: task.question.id, status, attempt } });
         }
       }));
+      state.degradations = [...degradationCodes].slice(0, MAX_RESEARCH_DEGRADATIONS);
       const retryableTasks = await prisma.researchTask.count({ where: { runId: run.id, status: "retrying" } });
       if (retryableTasks > 0) {
         await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
@@ -548,6 +587,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       const informationGain = computeResearchInformationGain(state.lastEvidenceCount ?? 0, allEvidence.length);
       state.lastEvidenceCount = allEvidence.length;
       const stopDecision = evaluateResearchStop({ limits, modelCalls: state.modelCalls, totalTokens: state.totalTokens, costCredits: state.costCredits, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, elapsedMs: Date.now() - (run.startedAt ?? run.createdAt).getTime(), criticalQuestionsResolved: !unresolvedCritical, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain, hasPendingCriticalWork: Boolean(unresolvedCritical) });
+      lastBudgetStopReason = stopDecision.reason;
       await appendPublicEvent(context, { key: `research:budget:evaluated:${run.id}:${state.replanCount}`, kind: "budget_updated", runId: run.id, message: stopDecision.summary, publicData: { ...stopDecision, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain, counters: { modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount } } });
       if (!stopDecision.stop && unresolvedCritical && unresolvedCritical.replanAttempts < limits.maxQuestionReplans && state.replanCount < limits.maxReplans && state.searchCalls < limits.searchCalls) {
         state.replanCount += 1;
@@ -560,6 +600,11 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         // expansion（run.status 保持 evaluating）；完成后回到 evaluating 用扩充后
         // 的 Evidence 重新评估，再进入 Claim Extraction。
         state.stage = "citation_expansion";
+      } else if (!state.visualEvidence?.done) {
+        // Visual Evidence v1：只在问题确实指向图表定量结果时，做一次有硬预算的
+        // 图表读取与多模态观察；run.status 保持 evaluating，观察仍要走 Claim
+        // Extraction → Relation → Verification。
+        state.stage = "visual_evidence";
       } else {
         // Claim Graph v1：评估结束后先进入有界的 Claim Extraction 阶段，
         // run.status 保持 evaluating，Claim Graph 落库后再推进到 synthesizing。
@@ -711,6 +756,303 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
     }
 
+    if (state.stage === "visual_evidence") {
+      const policy = getResearchVisualPolicy(run.workspace.budgetProfile);
+      const visualState = state.visualEvidence ?? {
+        done: false,
+        completedQuestionIds: [] as string[],
+        fingerprints: {} as Record<string, string>,
+        metrics: emptyVisualEvidenceMetrics() as unknown as Record<string, number>,
+      };
+      const metrics = visualState.metrics as unknown as ReturnType<typeof emptyVisualEvidenceMetrics>;
+      const questions = await prisma.researchQuestion.findMany({
+        where: { runId: run.id },
+        include: {
+          evidence: { where: { status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } },
+        },
+        orderBy: [{ priority: "asc" }, { orderIndex: "asc" }],
+      });
+
+      interface SelectedVisualQuestion {
+        questionId: string;
+        questionText: string;
+        title: string;
+        fingerprint: string;
+        source: { canonicalKey: string; docId: string; contentHash: string; snapshotId: string; title: string };
+        refs: ResearchResourceRef[];
+        bodyContext: string;
+        evidenceIds: string[];
+      }
+      const selected: SelectedVisualQuestion[] = [];
+
+      for (const question of questions) {
+        if (context.signal.aborted) break;
+        if (visualState.completedQuestionIds.includes(question.id)) continue;
+        metrics.questionsConsidered += 1;
+        // 只有 sciverse 全文 chunk 证据才可能携带图表资源；metadata-only 证据
+        // 既不能支撑视觉分析，也不能被当成“已读全文”。
+        const fullTextEvidence = question.evidence.filter((evidence) => {
+          const scope = evidence.sourceSnapshot.metadata && typeof evidence.sourceSnapshot.metadata === "object"
+            ? (evidence.sourceSnapshot.metadata as Record<string, unknown>).scope
+            : null;
+          const scopeType = scope && typeof scope === "object" ? (scope as Record<string, unknown>).type : null;
+          return scopeType === "bounded_evidence_slices";
+        });
+        const need = decideVisualEvidenceNeed({
+          questionText: question.question,
+          completionCriteria: Array.isArray(question.completionCriteria)
+            ? question.completionCriteria.filter((item): item is string => typeof item === "string")
+            : [],
+          status: question.status,
+          fullTextEvidenceCount: fullTextEvidence.length,
+        });
+        if (!need.needed) {
+          visualState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        const evidenceIds = question.evidence.map((evidence) => evidence.id);
+        const fingerprint = buildVisualEvidenceFingerprint({ evidenceIds, status: question.status });
+        if (visualState.fingerprints[question.id] === fingerprint) {
+          visualState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        // 每个来源（canonical ResearchSource）最多取一次；多 chunk 不等于多来源。
+        const bySource = new Map<string, typeof fullTextEvidence[number]>();
+        for (const evidence of fullTextEvidence) {
+          if (!bySource.has(evidence.sourceSnapshot.sourceId)) bySource.set(evidence.sourceSnapshot.sourceId, evidence);
+        }
+        const primary = [...bySource.values()].find((evidence) => {
+          const metadata = evidence.sourceSnapshot.source.metadata;
+          const record = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : {};
+          return typeof record.docId === "string" && record.docId.length > 0;
+        });
+        if (!primary) {
+          visualState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        const sourceMetadata = primary.sourceSnapshot.source.metadata && typeof primary.sourceSnapshot.source.metadata === "object"
+          ? primary.sourceSnapshot.source.metadata as Record<string, unknown>
+          : {};
+        const docId = typeof sourceMetadata.docId === "string" ? sourceMetadata.docId : "";
+        if (!docId) {
+          visualState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        // 已发现的图表引用（来自正文读取时确定性解析）。
+        const refs: ResearchResourceRef[] = [];
+        const seenRefs = new Set<string>();
+        for (const evidence of fullTextEvidence) {
+          if (evidence.sourceSnapshot.sourceId !== primary.sourceSnapshot.sourceId) continue;
+          const provenance = evidence.provenance && typeof evidence.provenance === "object" && !Array.isArray(evidence.provenance)
+            ? evidence.provenance as Record<string, unknown>
+            : {};
+          for (const ref of parseResearchResourceRefs(provenance.resourceRefs)) {
+            if (seenRefs.has(ref.fileName)) continue;
+            seenRefs.add(ref.fileName);
+            refs.push(ref);
+          }
+        }
+        // 图表通常不在证据 chunk 附近：允许一次有界图表扫描读取（预算内）。
+        if (refs.length === 0 && policy.maxFigureScanReads > 0 && metrics.figureScanReads < policy.maxFigureScanReads) {
+          const documentLength = fullTextEvidence
+            .map((evidence) => {
+              const provenance = evidence.provenance && typeof evidence.provenance === "object" && !Array.isArray(evidence.provenance)
+                ? evidence.provenance as Record<string, unknown>
+                : {};
+              return typeof provenance.documentLength === "number" ? provenance.documentLength : null;
+            })
+            .find((value): value is number => value !== null) ?? null;
+          const offsets = documentLength && documentLength > VISUAL_SCAN_WINDOW
+            ? [0, Math.max(0, Math.floor(documentLength / 2) - Math.floor(VISUAL_SCAN_WINDOW / 2))]
+            : [0];
+          for (const offset of offsets) {
+            if (context.signal.aborted) break;
+            if (metrics.figureScanReads >= policy.maxFigureScanReads) break;
+            if (!tryReserveResearchBudgetCounter(state, limits, "fetchCalls")) {
+              metrics.budgetStops += 1;
+              break;
+            }
+            metrics.figureScanReads += 1;
+            const scan = await toolInvoker(providerContext, "sciverse.read", { docId, offset, limit: VISUAL_SCAN_WINDOW });
+            if (!scan || typeof scan !== "object" || "error" in scan) {
+              metrics.degradations += 1;
+              continue;
+            }
+            for (const ref of parseResearchResourceRefs((scan as Record<string, unknown>).resources)) {
+              if (seenRefs.has(ref.fileName)) continue;
+              seenRefs.add(ref.fileName);
+              refs.push(ref);
+            }
+            if (refs.length > 0) break;
+          }
+        }
+        if (refs.length === 0) {
+          visualState.completedQuestionIds.push(question.id);
+          visualState.fingerprints[question.id] = fingerprint;
+          continue;
+        }
+        if (selected.length >= policy.maxQuestions) {
+          metrics.budgetStops += 1;
+          visualState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        selected.push({
+          questionId: question.id,
+          questionText: question.question,
+          title: question.title,
+          fingerprint,
+          source: {
+            canonicalKey: primary.sourceSnapshot.source.canonicalKey,
+            docId,
+            contentHash: primary.sourceSnapshot.contentHash,
+            snapshotId: primary.sourceSnapshotId,
+            title: primary.sourceSnapshot.source.title ?? question.title,
+          },
+          refs: refs.slice(0, policy.maxResourcesPerQuestion),
+          bodyContext: fullTextEvidence.map((evidence) => evidence.excerpt).join("\n").slice(0, VISUAL_BODY_CONTEXT_CHARS),
+          evidenceIds,
+        });
+        metrics.questionsSelected += 1;
+      }
+
+      for (const item of selected) {
+        if (context.signal.aborted) break;
+        if (metrics.modelCalls >= policy.maxModelCalls) {
+          metrics.budgetStops += 1;
+          break;
+        }
+        const resources: VisualResourceForPersistence[] = [];
+        for (const [index, ref] of item.refs.entries()) {
+          if (metrics.resourceFetches >= policy.maxResourceFetches) {
+            metrics.budgetStops += 1;
+            break;
+          }
+          if (!tryReserveResearchBudgetCounter(state, limits, "fetchCalls")) {
+            metrics.budgetStops += 1;
+            break;
+          }
+          metrics.resourceFetches += 1;
+          const resource = await toolInvoker(providerContext, "sciverse.resource", { fileName: ref.fileName, docId: item.source.docId });
+          const payload = resource && typeof resource === "object" && !("error" in resource) ? resource as Record<string, unknown> : null;
+          const dataBase64 = payload && typeof payload.dataBase64 === "string" ? payload.dataBase64 : null;
+          const mimeType = payload && typeof payload.mimeType === "string" ? payload.mimeType : "";
+          if (!payload || payload.dataIncluded !== true || !dataBase64 || !mimeType.startsWith("image/")) {
+            // 资源不可得/非图片/超限：降级继续正文 Evidence，不失败整个 Run。
+            metrics.degradations += 1;
+            degradationCodes.add("visual_resources_unavailable");
+            continue;
+          }
+          const bytes = Buffer.from(dataBase64, "base64");
+          if (bytes.length === 0 || bytes.length > VISUAL_EVIDENCE_MAX_IMAGE_BYTES) {
+            metrics.degradations += 1;
+            continue;
+          }
+          resources.push({
+            resourceId: `r${index + 1}`,
+            fileName: ref.fileName,
+            kind: ref.kind,
+            mimeType,
+            bytes,
+            ...(ref.alt ? { alt: ref.alt } : {}),
+            ...(ref.context ? { caption: ref.context } : {}),
+          });
+        }
+        if (resources.length === 0) {
+          visualState.completedQuestionIds.push(item.questionId);
+          visualState.fingerprints[item.questionId] = item.fingerprint;
+          state.visualEvidence = visualState;
+          await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+          continue;
+        }
+
+        if (!tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+          metrics.budgetStops += 1;
+          break;
+        }
+        const promptResources: VisualAnalysisResourceInput[] = resources.map((resource) => ({
+          resourceId: resource.resourceId,
+          kind: resource.kind,
+          ...(resource.alt ? { alt: resource.alt } : {}),
+          ...(resource.caption ? { caption: resource.caption } : {}),
+        }));
+        const stage = await runResearchModelStage<{ observations?: unknown }>({
+          role: "research.visual_evaluator",
+          userId: context.execution.userId,
+          conversationId: context.execution.conversationId,
+          projectId: run.workspace.projectId,
+          signal: context.signal,
+          prompt: buildVisualEvidencePrompt({ question: item.questionText, resources: promptResources, bodyContext: item.bodyContext }),
+          attachments: resources.map((resource) => ({
+            name: resource.fileName.split("/").pop() || "figure",
+            mimeType: resource.mimeType,
+            size: resource.bytes.length,
+            data: resource.bytes,
+          })),
+        });
+        metrics.modelCalls += 1;
+        recordResearchModelStage(state, stage, { modelCallReserved: true });
+        if (!stage.value) {
+          metrics.degradations += 1;
+          degradationCodes.add("visual_model_unavailable");
+          visualState.completedQuestionIds.push(item.questionId);
+          visualState.fingerprints[item.questionId] = item.fingerprint;
+          state.visualEvidence = visualState;
+          await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+          continue;
+        }
+        const normalized = normalizeVisualObservationOutput(stage.value, new Set(resources.map((resource) => resource.resourceId)));
+        metrics.observationsRejected += normalized.rejected;
+        if (normalized.observations.length > 0) {
+          const persisted = await persistVisualObservations({
+            userId: context.execution.userId,
+            workspaceId: run.workspaceId,
+            runId: run.id,
+            questionId: item.questionId,
+            sourceSnapshotId: item.source.snapshotId,
+            canonicalKey: item.source.canonicalKey,
+            snapshotContentHash: item.source.contentHash,
+            analysisModel: stage.model,
+            resources,
+            observations: normalized.observations,
+          });
+          metrics.observationsPersisted += persisted.length;
+          metrics.resourcesPersisted += resources.length;
+        }
+        visualState.completedQuestionIds.push(item.questionId);
+        visualState.fingerprints[item.questionId] = item.fingerprint;
+        state.visualEvidence = visualState;
+        await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+        await appendPublicEvent(context, {
+          key: `research:visual:${item.questionId}`,
+          kind: "evidence_extracted",
+          runId: run.id,
+          message: `已从论文图表补充 ${normalized.observations.length} 条视觉观察：${item.title}`,
+          publicData: {
+            questionId: item.questionId,
+            resourceCount: resources.length,
+            observationCount: normalized.observations.length,
+            rejected: normalized.rejected,
+          },
+        });
+      }
+
+      visualState.done = true;
+      state.visualEvidence = visualState;
+      state.degradations = [...degradationCodes].slice(0, MAX_RESEARCH_DEGRADATIONS);
+      state.stage = "claim_extraction";
+      await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+      await appendPublicEvent(context, {
+        key: `research:stage:visual_evidence:${run.id}`,
+        kind: "stage_changed",
+        runId: run.id,
+        message: policy.enabled && metrics.observationsPersisted > 0
+          ? `图表视觉证据完成（${metrics.observationsPersisted} 条观察），进入命题提炼`
+          : "本轮未使用图表视觉证据，进入命题提炼",
+        publicData: { ...metrics, enabled: policy.enabled },
+      });
+      return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
+    }
+
     if (state.stage === "claim_extraction") {
       const questions = await prisma.researchQuestion.findMany({
         where: { runId: run.id },
@@ -788,14 +1130,19 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
       const synthesisClaims = await prisma.claim.findMany({
         where: { runId: run.id, status: { in: ["active", "disputed"] } },
-        include: { evidenceRelations: { include: { evidence: { select: { id: true, status: true, sourceSnapshot: { select: { sourceId: true } } } } } } },
+        include: { evidenceRelations: { include: { evidence: { select: { id: true, status: true, evidenceType: true, sourceSnapshot: { select: { sourceId: true, metadata: true } } } } } } },
         orderBy: { createdAt: "asc" },
       });
       const markerByEvidenceId = new Map(evidence.map((item, index) => [item.id, `E${index + 1}`]));
       const claimsInput: SynthesisClaimInput[] = synthesisClaims.map((claim) => {
         const precheck = computeDeterministicClaimVerification(claim.evidenceRelations.map((relation) => ({
           relation: relation.relation,
-          evidence: { status: relation.evidence.status, sourceSnapshot: { sourceId: relation.evidence.sourceSnapshot.sourceId } },
+          evidence: {
+            status: relation.evidence.status,
+            evidenceType: relation.evidence.evidenceType,
+            snapshotScopeType: snapshotScopeTypeOf(relation.evidence.sourceSnapshot.metadata),
+            sourceSnapshot: { sourceId: relation.evidence.sourceSnapshot.sourceId },
+          },
         })));
         const qualifiers = claim.quality && typeof claim.quality === "object" && !Array.isArray(claim.quality) && Array.isArray((claim.quality as Record<string, unknown>).qualifiers)
           ? ((claim.quality as Record<string, unknown>).qualifiers as unknown[]).filter((item): item is string => typeof item === "string")
@@ -824,7 +1171,12 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     // Claim Graph v1：先做 deterministic 证据结构下界，再让 model verifier 在下界之内审查。
     const deterministicByClaim = new Map(claims.map((claim) => [claim.id, computeDeterministicClaimVerification(claim.evidenceRelations.map((relation) => ({
       relation: relation.relation,
-      evidence: { status: relation.evidence.status, sourceSnapshot: { sourceId: relation.evidence.sourceSnapshot.sourceId } },
+      evidence: {
+        status: relation.evidence.status,
+        evidenceType: relation.evidence.evidenceType,
+        snapshotScopeType: snapshotScopeTypeOf(relation.evidence.sourceSnapshot.metadata),
+        sourceSnapshot: { sourceId: relation.evidence.sourceSnapshot.sourceId },
+      },
     })))]));
     let verifierDecision: ResearchVerifierDecision = { claims: {} };
     // Citation Graph：统计每个 Claim 的支持来源之间存在直接引用边的数量。
@@ -858,6 +1210,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           "每个 Claim 只给出它实际关联的 Evidence；不要引用其他 Claim 的证据，不要把只有 context 关系的证据当作支持。",
           "逐条检查：Evidence 是否直接支持 Claim（directness）、独立来源是否充足（同一 ResearchSource 的多个 chunk 只算一个来源）、是否存在反驳或混合证据、范围/日期/因果是否超出 Evidence 表达、Claim 措辞是否需要限定。",
           "citationLinkedSourceCount 表示该 Claim 的支持来源之间存在直接引用关系的成对数量：它是来源独立性的风险信号，但有引用关系不自动等于不独立，仍按 Evidence 内容判断。",
+          "evidenceType=visual_observation 表示这是模型从论文图表读出的派生观察，不等于原论文的直接陈述；只读到摘要级元数据（没有正文）的来源也不能作为正文事实引用。这两类证据已经由 deterministic 下界限制为最多 needs_qualification，你只能维持或继续下调。",
           "你只能确认或下调 deterministic 预检状态，不能把缺少直接支持或存在冲突的 Claim 升级为 verified。",
           `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
           `Claims 与关联 Evidence：${JSON.stringify(claims.map((claim) => ({
@@ -966,8 +1319,38 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const reportDocument = { schemaVersion: "1", citationFormat: "evidence-marker-v1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots, evidenceRefs: evidence.map((item) => item.id), ...reportStructure };
     const contentHash = createHash("sha256").update(JSON.stringify({ reportDocument, citationMap, verificationSummary })).digest("hex");
     const graphMetrics = state.citationExpansion?.metrics ?? {};
-    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, graph: graphMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
-    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, verificationRepairs: state.verificationRepairs, ...graphMetrics, verificationSummary }) } });
+    const visualMetrics = state.visualEvidence?.metrics ?? {};
+    // 统一 metrics：所有阶段只补充自己的计数，不重写含义重叠的字段。
+    const scholarlyFilterMetrics = {
+      applied: [...scholarlyFilterAccumulator.applied],
+      dropped: [...scholarlyFilterAccumulator.dropped],
+      questions: scholarlyFilterAccumulator.questions,
+      relaxedRetry: scholarlyFilterAccumulator.relaxedRetry,
+    };
+    const unifiedMetrics = {
+      evidenceCount: evidence.length,
+      sourceCount: sourceSnapshots.length,
+      claimCount: claims.length,
+      modelCalls: state.modelCalls,
+      searchCalls: state.searchCalls,
+      fetchCalls: state.fetchCalls,
+      candidateSourceCount: state.sourceCount,
+      promptTokens: state.promptTokens ?? 0,
+      completionTokens: state.completionTokens ?? 0,
+      totalTokens: state.totalTokens ?? 0,
+      costCredits: state.costCredits ?? 0,
+      elapsedMs: Date.now() - (run.startedAt ?? run.createdAt).getTime(),
+      verificationRepairs: state.verificationRepairs,
+      replanCount: state.replanCount,
+      visualResourceCount: typeof visualMetrics.resourcesPersisted === "number" ? visualMetrics.resourcesPersisted : 0,
+      visualObservationCount: typeof visualMetrics.observationsPersisted === "number" ? visualMetrics.observationsPersisted : 0,
+      budgetStopReason: lastBudgetStopReason,
+      degradationCount: degradationCodes.size,
+      ...graphMetrics,
+      verificationSummary,
+    };
+    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, graph: graphMetrics, visual: visualMetrics, scholarlyFilters: scholarlyFilterMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
+    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ ...unifiedMetrics, scholarlyFilters: scholarlyFilterMetrics, degradations: [...degradationCodes] }) } });
     await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: "研究报告已完成并冻结为不可修改快照", publicData: { reportId: report.id, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, verificationSummary } });
     return { kind: "completed", checkpoint };
   };

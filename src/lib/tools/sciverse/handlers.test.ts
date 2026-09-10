@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolExecutionContext } from "@/lib/agent/tool-executor";
-import { sciversePaperRelations, sciverseRead, sciverseSearch, sciverseSemanticSearch } from "./handlers";
+import { sciversePaperRelations, sciverseRead, sciverseResource, sciverseSearch, sciverseSemanticSearch } from "./handlers";
+import { invalidateSciverseCatalogCache } from "./catalog";
 
 const ctx: ToolExecutionContext = { userId: "user-1", conversationId: "conv-1" };
 
@@ -393,6 +394,200 @@ describe("sciverse.paper_relations handler", () => {
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
     await sciversePaperRelations({ ...ctx, signal: controller.signal }, { uniqueId: "paper:x", relation: "citations" });
+    const usedSignal = (fetchMock.mock.calls[0] as [string, RequestInit])[1].signal as AbortSignal;
+    controller.abort();
+    expect(usedSignal.aborted).toBe(true);
+  });
+});
+
+// ─── Catalog-aware advanced filters ─────────────────────────────────────────
+
+const papersCatalog = {
+  fields: [
+    { name: "language", type: "String", filterable: true, sortable: false, searchable: false, default_returned: false, operators: ["FILTER_OP_EQ", "FILTER_OP_IN"] },
+    { name: "type", type: "List[string]", filterable: true, sortable: false, searchable: false, default_returned: false, operators: ["FILTER_OP_IN"] },
+    { name: "citation_count", type: "Integer", filterable: true, sortable: true, searchable: false, default_returned: false, operators: ["FILTER_OP_GTE", "FILTER_OP_LTE"] },
+    { name: "abstract", type: "String", filterable: false, sortable: false, searchable: true, default_returned: true },
+    { name: "title", type: "String", filterable: true, sortable: false, searchable: true, default_returned: true, operators: ["FILTER_OP_CONTAINS"] },
+    { name: "author", type: "List[object]", filterable: true, sortable: false, searchable: true, default_returned: true, operators: ["FILTER_OP_IN"] },
+    { name: "publication_published_year", type: "Integer", filterable: true, sortable: true, searchable: false, default_returned: true, operators: ["FILTER_OP_GTE", "FILTER_OP_LTE"] },
+    { name: "publication_venue_name_unified", type: "String", filterable: true, sortable: false, searchable: true, default_returned: true, operators: ["FILTER_OP_IN"] },
+    { name: "subjects", type: "List[string]", filterable: true, sortable: false, searchable: false, default_returned: false, operators: ["FILTER_OP_IN"] },
+  ],
+  default_fields: ["unique_id", "title"],
+  filter_operators: ["FILTER_OP_EQ", "FILTER_OP_IN", "FILTER_OP_GTE"],
+};
+
+function catalogAwareFetch(body: unknown = metaSearchPayload) {
+  return vi.fn().mockImplementation((url: string) => {
+    if (String(url).includes("/meta-catalog")) return Promise.resolve(jsonResponse(papersCatalog));
+    return Promise.resolve(jsonResponse(body));
+  });
+}
+
+function searchBodyOf(fetchMock: ReturnType<typeof vi.fn>, index = -1): Record<string, unknown> {
+  const calls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/meta-search"));
+  const call = index < 0 ? calls[calls.length + index] : calls[index];
+  return JSON.parse((call[1] as RequestInit).body as string) as Record<string, unknown>;
+}
+
+describe("sciverse.search · catalog-aware filterIntent", () => {
+  beforeEach(() => invalidateSciverseCatalogCache());
+
+  it("compiles a high-level intent into validated wire filters and reports provenance", async () => {
+    const fetchMock = catalogAwareFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await sciverseSearch(ctx, {
+      query: "moe routing",
+      filterIntent: { languages: ["en"], publicationTypes: ["review"], citationCountMin: 10 },
+    }) as { advancedFilters: Record<string, unknown> };
+    const body = searchBodyOf(fetchMock);
+    expect(body.filters).toEqual([
+      { field: "type", operator: "FILTER_OP_IN", value: ["review"] },
+      { field: "language", operator: "FILTER_OP_IN", value: ["en"] },
+      { field: "citation_count", operator: "FILTER_OP_GTE", value: 10 },
+    ]);
+    expect(result.advancedFilters).toMatchObject({
+      catalog: "live",
+      applied: [
+        { key: "publicationTypes", field: "type", operator: "FILTER_OP_IN" },
+        { key: "languages", field: "language", operator: "FILTER_OP_IN" },
+        { key: "citationCountMin", field: "citation_count", operator: "FILTER_OP_GTE" },
+      ],
+    });
+  });
+
+  it("never lets a model supply a raw field name or operator", async () => {
+    const fetchMock = catalogAwareFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await sciverseSearch(ctx, {
+      query: "q",
+      filterIntent: { field: "secret_field", operator: "FILTER_OP_MATCH", value: "x" },
+    });
+    expect(result).toMatchObject({ error: "SCIVERSE_INVALID_REQUEST" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("drops a filter whose field the live catalog does not expose and still searches", async () => {
+    const fetchMock = catalogAwareFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await sciverseSearch(ctx, { query: "q", filterIntent: { oaStatus: ["gold"] } }) as { advancedFilters: Record<string, unknown> };
+    expect(searchBodyOf(fetchMock).filters).toBeUndefined();
+    expect(result.advancedFilters).toMatchObject({ catalog: "live", applied: [], dropped: [{ key: "oaStatus", reason: "unknown_field" }] });
+  });
+
+  it("degrades to the plain query when /meta-catalog is unavailable", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes("/meta-catalog")) return Promise.resolve(jsonResponse({ code: "UPSTREAM", message: "down" }, 502));
+      return Promise.resolve(jsonResponse(metaSearchPayload));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    // 502 is retried once by the transport, so the catalog failure costs two bounded calls.
+    const result = await sciverseSearch(ctx, { query: "q", filterIntent: { languages: ["en"] } }) as { papers: unknown[]; advancedFilters: Record<string, unknown> };
+    expect(result.papers).toHaveLength(1);
+    expect(searchBodyOf(fetchMock).filters).toBeUndefined();
+    expect(result.advancedFilters).toMatchObject({ catalog: "unavailable", applied: [], dropped: [{ key: "languages", reason: "catalog_unavailable" }] });
+  });
+
+  it("caches the catalog across calls instead of refetching it", async () => {
+    const fetchMock = catalogAwareFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    await sciverseSearch(ctx, { query: "a", filterIntent: { languages: ["en"] } });
+    await sciverseSearch(ctx, { query: "b", filterIntent: { languages: ["en"] } });
+    const catalogCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/meta-catalog"));
+    expect(catalogCalls).toHaveLength(1);
+  });
+
+  it("retries once without advanced filters when the filtered query returns nothing", async () => {
+    const empty = { results: [], total_count: 0, page: 1, page_size: 10, total_pages: 0 };
+    let searchCount = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes("/meta-catalog")) return Promise.resolve(jsonResponse(papersCatalog));
+      searchCount += 1;
+      return Promise.resolve(jsonResponse(searchCount === 1 ? empty : metaSearchPayload));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await sciverseSearch(ctx, { query: "q", filterIntent: { languages: ["en"] } }) as { papers: unknown[]; advancedFilters: Record<string, unknown> };
+    expect(searchCount).toBe(2);
+    expect(result.papers).toHaveLength(1);
+    expect(result.advancedFilters).toMatchObject({ relaxedRetry: true });
+    expect(searchBodyOf(fetchMock, -1).filters).toBeUndefined();
+  });
+
+  it("does not relax-retry a plain query without advanced filters", async () => {
+    const empty = { results: [], total_count: 0, page: 1, page_size: 10, total_pages: 0 };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(empty));
+    vi.stubGlobal("fetch", fetchMock);
+    await sciverseSearch(ctx, { query: "q" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps basic filters working unchanged when no intent is given", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(metaSearchPayload));
+    vi.stubGlobal("fetch", fetchMock);
+    await sciverseSearch(ctx, { query: "attention", authors: ["Vaswani"], yearFrom: 2017, abstractContains: "transformer" });
+    const body = searchBodyOf(fetchMock);
+    expect(body.query).toBe("attention transformer");
+    expect(body.filters).toEqual([
+      { field: "author", operator: "FILTER_OP_IN", value: ["Vaswani"] },
+      { field: "publication_published_year", operator: "FILTER_OP_GTE", value: 2017 },
+    ]);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/meta-catalog"))).toBe(true);
+  });
+});
+
+describe("sciverse.resource handler", () => {
+  const imageBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  it("fetches bounded image bytes by relative file name", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(imageBytes, { status: 200, headers: { "content-type": "image/png" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await sciverseResource(ctx, { fileName: "dt=2025-08-07/ht=09/abc.jpg", docId: "d".repeat(64) }) as Record<string, unknown>;
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(String(url)).toContain("/resource?file_name=dt%3D2025-08-07%2Fht%3D09%2Fabc.jpg");
+    expect(result).toMatchObject({ mimeType: "image/png", byteLength: imageBytes.length, dataIncluded: true });
+    expect(Buffer.from(String(result.dataBase64), "base64").equals(imageBytes)).toBe(true);
+  });
+
+  it("rejects absolute paths, traversal, backslashes, URLs and bare names", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    for (const fileName of ["/etc/passwd", "../../secret.png", "a\\b.png", "https://evil.test/x.png", "figure1.png", "a//b.png", ""]) {
+      expect(await sciverseResource(ctx, { fileName })).toMatchObject({ error: "SCIVERSE_INVALID_REQUEST" });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns metadata only for oversized or non-image resources", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(Buffer.from("not an image"), { status: 200, headers: { "content-type": "text/html" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await sciverseResource(ctx, { fileName: "figures/f1.png" }) as Record<string, unknown>;
+    expect(result).toMatchObject({ dataIncluded: false });
+    expect(result.dataBase64).toBeUndefined();
+  });
+
+  it("maps 404 to a recoverable resource-unavailable state", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ code: "NOT_FOUND", message: "no such file" }, 404));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await sciverseResource(ctx, { fileName: "figures/missing.png" })).toMatchObject({
+      error: "SCIVERSE_RESOURCE_UNAVAILABLE",
+      recoverable: true,
+    });
+  });
+
+  it("returns SCIVERSE_NOT_CONFIGURED without a token", async () => {
+    delete process.env.SCIVERSE_API_TOKEN;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await sciverseResource(ctx, { fileName: "figures/f1.png" })).toMatchObject({ error: "SCIVERSE_NOT_CONFIGURED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("passes the caller abort signal into fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(imageBytes, { status: 200, headers: { "content-type": "image/png" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    await sciverseResource({ ...ctx, signal: controller.signal }, { fileName: "figures/f1.png" });
     const usedSignal = (fetchMock.mock.calls[0] as [string, RequestInit])[1].signal as AbortSignal;
     controller.abort();
     expect(usedSignal.aborted).toBe(true);

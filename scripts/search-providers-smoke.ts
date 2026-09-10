@@ -6,18 +6,27 @@
  * 直接执行的 ToolRunner，不持久化 ToolExecution）。
  *
  * 用法（服务器或本地均可，env 从 .env 注入，绝不打印任何 Token）：
- *   LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts [--with-arxiv] [--with-paper-relations] [--require-sciverse-content]
+ *   LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts \
+ *     [--with-arxiv] [--with-paper-relations] [--with-advanced-filters] [--with-resource] [--require-sciverse-content]
  *
  * --require-sciverse-content（严格模式）：在有限的搜索窗口内优先选择
  * isContentAccessible=true 的论文，走 Research source provider 的完整
  * semantic_search(docIds scope) → read 链路，验证 chunk 级 locator/provenance。
  * 窗口内找不到可访问全文时输出 [WARN] 并跳过，不把 metadata 冒充正文。
+ *
+ * --with-advanced-filters：验证 catalog-aware compiler 的 live 行为
+ * （/meta-catalog → 受控 filterIntent → /meta-search），并确认未校验的字段
+ * 永远不会被转发。
+ * --with-resource：在有全文的论文正文里定位图表引用并拉取一张图片，验证
+ * /resource 的受限相对路径与图片 bytes 合同。找不到图表记 WARN，不伪造通过。
+ * 所有检查都在有限窗口内完成，禁止为了 PASS 无限搜索。
  */
 import type { ToolRunner } from "@/lib/agent/tools/tool-runner";
 import { executeTool, registerToolHandler } from "@/lib/agent/tool-executor";
 import { webSearch } from "@/lib/tools/web/search";
 import { arxivSearch } from "@/lib/tools/arxiv/search";
-import { sciversePaperRelations, sciverseRead, sciverseSearch, sciverseSemanticSearch } from "@/lib/tools/sciverse/handlers";
+import { sciversePaperRelations, sciverseRead, sciverseResource, sciverseSearch, sciverseSemanticSearch } from "@/lib/tools/sciverse/handlers";
+import { invalidateSciverseCatalogCache } from "@/lib/tools/sciverse/catalog";
 import { createToolBackedResearchSourceProvider, type ResearchCandidate } from "@/lib/research/source-provider";
 import { createDiagnosticsReporter, parseCliArgs, requireLiveSmoke } from "./lib/live-diagnostics";
 
@@ -33,6 +42,7 @@ function createDirectToolRunner(signal: AbortSignal): ToolRunner {
   registerToolHandler("sciverse.search", sciverseSearch);
   registerToolHandler("sciverse.semantic_search", sciverseSemanticSearch);
   registerToolHandler("sciverse.read", sciverseRead);
+  registerToolHandler("sciverse.resource", sciverseResource);
   return {
     run: async (request: { call: { toolId: string; arguments: Record<string, unknown> } }) => {
       const executed = await executeTool(request.call.toolId, { userId: "smoke", conversationId: "smoke", signal }, request.call.arguments);
@@ -41,6 +51,53 @@ function createDirectToolRunner(signal: AbortSignal): ToolRunner {
         : { status: "failed" as const, error: { code: executed.errorCode ?? "ERROR", message: executed.errorMessage ?? "tool failed" } };
     },
   } as unknown as ToolRunner;
+}
+
+
+interface ResourceProbe {
+  status: "pass" | "warn" | "fail";
+  label: string;
+  detail?: unknown;
+}
+
+/**
+ * 有界图表探测：最多 2 次 semantic_search + 2 次 read，找到图片占位就拉一张。
+ * 窗口内没有全文或没有图表一律 WARN，不无限搜索、不伪造通过。
+ */
+async function probeSciverseResource(): Promise<ResourceProbe> {
+  const semantic = await sciverseSemanticSearch(ctx, { query: "results figure table experiment", topK: 5 });
+  const hits = !isErrorResult(semantic) && Array.isArray((semantic as { hits?: unknown[] }).hits)
+    ? (semantic as { hits: Array<Record<string, unknown>> }).hits
+    : [];
+  const docIds = [...new Set(hits.flatMap((hit) => (typeof hit.docId === "string" ? [hit.docId] : [])))].slice(0, 2);
+  if (docIds.length === 0) return { status: "warn", label: "no readable document in the search window; skipping resource check" };
+
+  for (const docId of docIds) {
+    for (const offset of [0, 6_000]) {
+      const read = await sciverseRead(ctx, { docId, offset, limit: 6_000 });
+      if (isErrorResult(read)) continue;
+      const refs = Array.isArray((read as { resources?: unknown[] }).resources) ? (read as { resources: Array<Record<string, unknown>> }).resources : [];
+      const reference = refs.find((ref) => typeof ref.fileName === "string");
+      if (!reference) continue;
+      const fetched = await sciverseResource(ctx, { fileName: reference.fileName as string, docId });
+      if (isErrorResult(fetched)) {
+        if (fetched.error === "SCIVERSE_RESOURCE_UNAVAILABLE" || fetched.error === "SCIVERSE_RATE_LIMITED") {
+          return { status: "warn", label: "sciverse.resource degraded for the discovered figure", detail: { error: fetched.error } };
+        }
+        return { status: "fail", label: "sciverse.resource failed", detail: { error: fetched.error } };
+      }
+      const payload = fetched as { mimeType?: unknown; byteLength?: unknown; dataIncluded?: unknown };
+      if (typeof payload.mimeType === "string" && payload.mimeType.startsWith("image/") && Number(payload.byteLength) > 0) {
+        return {
+          status: "pass",
+          label: "sciverse.resource returned bounded image bytes for a discovered figure",
+          detail: { mimeType: payload.mimeType, byteLength: payload.byteLength, dataIncluded: payload.dataIncluded === true, kind: reference.kind },
+        };
+      }
+      return { status: "fail", label: "sciverse.resource returned a non-image or empty payload", detail: { mimeType: payload.mimeType, byteLength: payload.byteLength } };
+    }
+  }
+  return { status: "warn", label: "no figure/table reference inside the bounded read window; skipping resource check" };
 }
 
 async function main() {
@@ -144,6 +201,54 @@ async function main() {
         }
       }
     }
+  }
+
+  // 5c. catalog-aware advanced filters（可选；live catalog → 受控 filterIntent）
+  if (flags.has("with-advanced-filters")) {
+    invalidateSciverseCatalogCache();
+    const filtered = await sciverseSearch(ctx, {
+      query: "mixture of experts routing",
+      pageSize: 5,
+      filterIntent: { languages: ["en"], citationCountMin: 1 },
+    });
+    if (isErrorResult(filtered)) {
+      report.fail("sciverse.search with catalog-aware filterIntent failed", { error: filtered.error });
+    } else {
+      const provenance = (filtered as { advancedFilters?: Record<string, unknown> }).advancedFilters ?? {};
+      const applied = Array.isArray(provenance.applied) ? provenance.applied : [];
+      const catalog = String(provenance.catalog ?? "unavailable");
+      if (catalog === "unavailable") {
+        // 上游 catalog 瞬时不可用属受支持降级：高级条件被整体丢弃，基础检索仍可用。
+        report.warn("sciverse field catalog unavailable; advanced filters degraded to basic search", { catalog });
+      } else if (applied.length > 0) {
+        report.pass("catalog-aware advanced filters compiled and executed", {
+          catalog,
+          applied: applied.map((entry) => (entry as { field?: string }).field).filter(Boolean),
+          dropped: Array.isArray(provenance.dropped) ? (provenance.dropped as unknown[]).length : 0,
+          relaxedRetry: provenance.relaxedRetry === true,
+        });
+      } else {
+        report.fail("catalog-aware filterIntent produced no applied filter despite a live catalog", { catalog });
+      }
+    }
+    // 未校验的原始 field/operator 必须被拒绝，绝不能作为 wire filter 转发。
+    const rawPassthrough = await sciverseSearch(ctx, {
+      query: "mixture of experts routing",
+      filterIntent: { field: "access_is_oa", operator: "FILTER_OP_EQ", value: "true" },
+    });
+    if (isErrorResult(rawPassthrough) && rawPassthrough.error === "SCIVERSE_INVALID_REQUEST") {
+      report.pass("raw field/operator passthrough rejected by the intent contract");
+    } else {
+      report.fail("raw field/operator passthrough was not rejected");
+    }
+  }
+
+  // 5d. 图表资源（可选；在有限窗口内定位一张图并验证受限路径 + 图片 bytes）
+  if (flags.has("with-resource")) {
+    const resource = await probeSciverseResource();
+    if (resource.status === "pass") report.pass(resource.label, resource.detail);
+    else if (resource.status === "warn") report.warn(resource.label, resource.detail);
+    else report.fail(resource.label, resource.detail);
   }
 
   // 6. 严格模式：验证 Sciverse 全文可访问论文的 chunk 级 Research 读取链路

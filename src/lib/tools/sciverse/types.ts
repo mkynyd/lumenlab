@@ -181,6 +181,11 @@ export interface SciverseSearchInput {
   sortByYear?: SciverseSortByYear;
   page?: number;
   pageSize?: number;
+  /**
+   * 服务器编译出的 advanced filters（catalog 校验后）。模型永远不提供字段名或
+   * 操作符，只提供高层 filter intent。
+   */
+  advancedFilters?: SciverseFieldFilter[];
 }
 
 export type SciverseSemanticMode = "fast" | "balanced" | "quality";
@@ -216,6 +221,38 @@ export interface SciverseReadInput {
   docId: string;
   offset?: number;
   limit?: number;
+}
+
+// ─── Agent-facing: paper resources (figures / tables) ───────
+
+/** 正文 Markdown 中 `![alt](file_name)` 形式的图片占位。 */
+export interface SciverseResourceRef {
+  /** 上游相对路径（来自 Markdown url 段）。 */
+  fileName: string;
+  /** Markdown alt 文本；上游常为空。 */
+  alt?: string;
+  /** 占位符周围的有界正文上下文（图注通常紧邻图片）。 */
+  context?: string;
+  /** 由 alt/周围文本确定性推断的资源类型，不做语义猜测。 */
+  kind: "figure" | "table" | "image";
+}
+
+export interface SciverseResourceInput {
+  /** 文献 doc_id；仅用于 provenance 与归属校验，不是上游参数。 */
+  docId?: string;
+  /** 相对路径，来自 sciverse.read 返回的 resources[].fileName。 */
+  fileName: string;
+}
+
+export interface SciverseResourceResult {
+  fileName: string;
+  mimeType: string;
+  byteLength: number;
+  /** base64 编码的图片字节（有界，超出上限时省略）。 */
+  dataBase64?: string;
+  /** 二进制持久化/交付状态；超限或被截断时为 false。 */
+  dataIncluded: boolean;
+  docId?: string;
 }
 
 // ─── Agent-facing: paper relations ──────────────────────────
@@ -260,6 +297,21 @@ export interface SciverseSearchResult {
   pageSize: number;
   totalPages?: number;
   hasMore: boolean;
+  /**
+   * 服务器编译出的 advanced filter provenance（catalog 校验结果）。
+   * 模型只看到摘要，不看到 catalog 原文；Research 会把它写进 Evidence provenance。
+   */
+  advancedFilters?: SciverseAdvancedFilterProvenance;
+}
+
+export interface SciverseAdvancedFilterProvenance {
+  catalog: "live" | "cache" | "unavailable";
+  applied: Array<{ key: string; field: string; operator: string }>;
+  dropped?: Array<{ key: string; reason: string }>;
+  /** 被 catalog 判定为不可筛选而剔除的 typed basic filter 字段。 */
+  basicDroppedFields?: string[];
+  /** advanced filters 返回空结果后是否发生了一次受控 relaxed retry。 */
+  relaxedRetry?: boolean;
 }
 
 export interface SciverseSemanticHit {
@@ -290,6 +342,8 @@ export interface SciverseReadResult {
   totalLength?: number;
   nextOffset?: number;
   more: boolean;
+  /** 本片段 Markdown 中出现的图片占位（有界），供 sciverse.resource 使用。 */
+  resources?: SciverseResourceRef[];
 }
 
 export interface SciverseRelationItem {

@@ -23,11 +23,15 @@ const DEFAULTS: Record<ResearchRole, Omit<ResearchModelSelection, "role" | "sour
   "research.worker": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
   "research.evaluator": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
   "research.claim_extractor": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
+  // 视觉证据只做「受约束的图表读数」，不做自由推理：复用同一活跃 DeepSeek 多模态
+  // 模型，thinking 关闭（runResearchModelStage 统一设置），每次 Run 的调用次数由
+  // visual budget 硬上限控制。
+  "research.visual_evaluator": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
   "research.synthesizer": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "max" },
   "research.verifier": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
 };
 
-const ROLES: ResearchRole[] = ["research.planner", "research.worker", "research.evaluator", "research.claim_extractor", "research.synthesizer", "research.verifier"];
+const ROLES: ResearchRole[] = ["research.planner", "research.worker", "research.evaluator", "research.claim_extractor", "research.visual_evaluator", "research.synthesizer", "research.verifier"];
 
 export function isResearchRole(value: string): value is ResearchRole {
   return ROLES.includes(value as ResearchRole);

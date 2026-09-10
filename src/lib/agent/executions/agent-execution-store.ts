@@ -173,6 +173,7 @@ const researchStateSchema = z
       "researching",
       "evaluating",
       "citation_expansion",
+      "visual_evidence",
       "claim_extraction",
       "synthesizing",
       "verifying",
@@ -205,6 +206,25 @@ const researchStateSchema = z
       })
       .strict()
       .optional(),
+    visualEvidence: z
+      .object({
+        done: z.boolean(),
+        completedQuestionIds: z.array(z.string()),
+        fingerprints: z.record(z.string(), z.string()),
+        metrics: z.record(z.string(), z.number().int().nonnegative()),
+      })
+      .strict()
+      .optional(),
+    scholarlyFilters: z
+      .object({
+        applied: z.array(z.string()),
+        dropped: z.array(z.string()),
+        questions: z.number().int().nonnegative(),
+        relaxedRetry: z.boolean(),
+      })
+      .strict()
+      .optional(),
+    degradations: z.array(z.string().max(64)).max(12).optional(),
   })
   .strict();
 

@@ -1,0 +1,16 @@
+-- Deep Research v1 finalization — minimal additive enum value.
+--
+-- Production safety:
+--   * Additive only: no column, table, index or constraint is added, renamed,
+--     dropped or rewritten. Historical Evidence rows keep their existing
+--     evidenceType; no old Run has to be re-executed or re-read.
+--   * PostgreSQL 12+ (production is 16.15) allows ALTER TYPE ... ADD VALUE
+--     inside a transaction block as long as the new label is not *used* in the
+--     same transaction. This migration only adds the label, so Prisma's
+--     transactional `migrate deploy` is safe.
+--   * Rollback compatibility: rolling the application back to the previous
+--     release leaves the extra enum label in place. The old code never writes
+--     or selects it, so old ReportSnapshot/Evidence data stays readable and no
+--     `DROP TYPE` / value removal is required (and none is performed). Do NOT
+--     drop the column or the type to "undo" this migration.
+ALTER TYPE "ResearchEvidenceType" ADD VALUE 'visual_observation';

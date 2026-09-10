@@ -1,6 +1,13 @@
 "use client";
 
 import { Check, Link as LinkIcon, NavArrowRight, WarningTriangle } from "iconoir-react";
+import {
+  researchRelationLabel,
+  researchVerificationLabel,
+  researchVerificationTone,
+  type ResearchCitationMap,
+  type ResearchCitationMapEntry,
+} from "@/lib/research/research-view-model";
 
 interface EvidenceItem {
   id: string;
@@ -15,13 +22,16 @@ interface EvidenceItem {
     id: string;
     retrievedAt: string;
     source?: {
+      id?: string;
       title?: string | null;
+      kind?: string;
       canonicalKey: string;
       canonicalUrl?: string | null;
       doi?: string | null;
       arxivId?: string | null;
       pmid?: string | null;
-    };
+      metadata?: unknown;
+    } | null;
   } | null;
 }
 
@@ -35,22 +45,11 @@ interface ClaimItem {
   }>;
 }
 
-export interface ReportCitationMap {
-  [claimId: string]: Array<{ evidenceId: string; sourceSnapshotId: string; relation: string }>;
-}
-
-const relationLabels: Record<string, string> = {
-  supports: "支持",
-  contradicts: "反驳",
-  qualifies: "限定",
-  context: "背景",
-};
-
-const verificationLabels: Record<string, string> = {
-  verified: "已核验",
-  needs_qualification: "需限定",
-  unsupported: "证据不足",
-  conflicted: "存在争议",
+const verificationToneClass: Record<string, string> = {
+  verified: "text-[var(--color-success)]",
+  needs_qualification: "text-[var(--color-warning)]",
+  conflicted: "text-[var(--color-danger)]",
+  unsupported: "text-[var(--color-text-tertiary)]",
 };
 
 function sourceLink(source: NonNullable<EvidenceItem["sourceSnapshot"]>["source"] | undefined) {
@@ -62,10 +61,47 @@ function sourceLink(source: NonNullable<EvidenceItem["sourceSnapshot"]>["source"
   return null;
 }
 
-function locatorLabel(locator: Record<string, unknown>) {
+function locatorLabel(locator: Record<string, unknown> | null) {
+  if (!locator) return "";
   return Object.entries(locator)
+    .filter(([, value]) => value !== null && value !== undefined)
     .map(([key, value]) => `${key}：${typeof value === "string" ? value : JSON.stringify(value)}`)
     .join(" · ");
+}
+
+/** 引用卡片：来源标题、作者/年份、DOI/URL、Evidence 摘录、定位与关系类型。 */
+export function ResearchCitationCard({
+  entry,
+  evidence,
+  marker,
+  className,
+}: {
+  entry: ResearchCitationMapEntry;
+  evidence?: Pick<EvidenceItem, "excerpt" | "evidenceType" | "sourceSnapshot">;
+  marker?: string;
+  className?: string;
+}) {
+  const link = sourceLink(evidence?.sourceSnapshot?.source) ?? entry.source.canonicalUrl ?? (entry.source.doi ? `https://doi.org/${entry.source.doi}` : null);
+  const authors = (entry.source.authors ?? []).length > 0 ? (entry.source.authors ?? []).join(", ") : null;
+  return (
+    <div className={className ?? "rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4"}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-mono text-xs text-[var(--color-accent)]">{marker ?? "E"}</span>
+        <span className="text-[11px] text-[var(--color-text-tertiary)]">{researchRelationLabel(entry.relation)}</span>
+      </div>
+      <p className="mt-2 text-sm font-medium leading-6 text-[var(--color-text-primary)]">{entry.source.title ?? entry.source.id}</p>
+      {authors || entry.source.year !== null ? (
+        <p className="mt-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">{[authors, entry.source.year ?? undefined].filter(Boolean).join(" · ")}</p>
+      ) : null}
+      {evidence ? <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">“{evidence.excerpt}”</p> : null}
+      <div className="mt-3 space-y-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">
+        {entry.source.doi ? <p>DOI：{entry.source.doi}</p> : null}
+        <p>定位：{locatorLabel(entry.locator) || "未提供"}</p>
+        <p>类型：{evidence?.evidenceType ?? "unknown"} · 来源种类：{entry.source.kind}{entry.source.provider ? ` · ${entry.source.provider}` : ""}</p>
+      </div>
+      {link ? <a href={link} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline">打开来源 <NavArrowRight width={13} height={13} /></a> : null}
+    </div>
+  );
 }
 
 export function ResearchReportEvidencePanel({
@@ -78,23 +114,33 @@ export function ResearchReportEvidencePanel({
 }: {
   claims: ClaimItem[];
   evidence: EvidenceItem[];
-  citationMap?: ReportCitationMap;
+  citationMap?: ResearchCitationMap;
   evidenceRefs: string[];
   selectedEvidenceId: string | null;
   onSelectEvidence: (evidenceId: string) => void;
 }) {
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
   const markerByEvidenceId = new Map(evidenceRefs.map((id, index) => [id, `E${index + 1}`]));
+
+  // citationMap 是 source of truth：Evidence → Snapshot → Source。缺失时才回退到
+  // Claim 的 relation（历史 Run 的兼容路径），不从报告正文重新猜来源。
+  const citationIndex = new Map<string, ResearchCitationMapEntry>();
+  const mappedEvidenceIds: string[] = [];
+  for (const entries of Object.values(citationMap ?? {})) {
+    for (const entry of entries) {
+      if (!citationIndex.has(entry.evidenceId)) citationIndex.set(entry.evidenceId, entry);
+      if (!mappedEvidenceIds.includes(entry.evidenceId)) mappedEvidenceIds.push(entry.evidenceId);
+    }
+  }
   const relationByEvidenceId = new Map<string, string[]>();
   for (const claim of claims) {
     for (const relation of claim.evidenceRelations) {
       const current = relationByEvidenceId.get(relation.evidence.id) ?? [];
-      current.push(`${relationLabels[relation.relation] ?? relation.relation}：${claim.statement}`);
+      current.push(`${researchRelationLabel(relation.relation)}：${claim.statement}`);
       relationByEvidenceId.set(relation.evidence.id, current);
     }
   }
 
-  const mappedEvidenceIds = Object.values(citationMap ?? {}).flatMap((relations) => relations.map((relation) => relation.evidenceId));
   const linkedEvidenceIds = [...new Set([
     ...evidenceRefs,
     ...mappedEvidenceIds,
@@ -103,11 +149,11 @@ export function ResearchReportEvidencePanel({
   const selectedEvidence = selectedEvidenceId ? evidenceById.get(selectedEvidenceId) : undefined;
 
   return (
-    <aside aria-label="报告来源与证据" className="min-w-0 border-l border-[var(--color-border)] pl-0 xl:pl-5">
+    <aside aria-label="报告来源与证据" className="min-w-0">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">来源与证据</h3>
-          <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">点击正文中的 E 编号，查看本次 Run 实际读取的 Snapshot、摘录与定位。</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">点击或聚焦正文中的 E 编号，查看本次 Run 实际读取的 Snapshot、摘录与定位。</p>
         </div>
         <LinkIcon width={16} height={16} className="shrink-0 text-[var(--color-accent)]" />
       </div>
@@ -116,7 +162,7 @@ export function ResearchReportEvidencePanel({
         <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">报告断言</p>
         {claims.length > 0 ? claims.map((claim) => {
           const firstEvidenceId = claim.evidenceRelations[0]?.evidence.id;
-          const statusLabel = verificationLabels[claim.verificationStatus] ?? claim.verificationStatus;
+          const tone = researchVerificationTone(claim.verificationStatus);
           return (
             <button
               key={claim.id}
@@ -124,8 +170,15 @@ export function ResearchReportEvidencePanel({
               onClick={() => { if (firstEvidenceId) onSelectEvidence(firstEvidenceId); }}
               className="flex w-full items-start gap-2 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-2 text-left hover:bg-[var(--color-surface-hover)]"
             >
-              {claim.verificationStatus === "verified" ? <Check width={14} height={14} className="mt-0.5 shrink-0 text-[var(--color-success)]" /> : <WarningTriangle width={14} height={14} className="mt-0.5 shrink-0 text-[var(--color-warning)]" />}
-              <span className="min-w-0 flex-1 text-xs leading-5 text-[var(--color-text-secondary)]">{claim.statement}<span className="mt-1 block text-[11px] text-[var(--color-text-tertiary)]">{statusLabel} · {claim.evidenceRelations.length} 条关系</span></span>
+              {tone === "positive"
+                ? <Check width={14} height={14} className={`mt-0.5 shrink-0 ${verificationToneClass[claim.verificationStatus] ?? ""}`} />
+                : <WarningTriangle width={14} height={14} className={`mt-0.5 shrink-0 ${verificationToneClass[claim.verificationStatus] ?? ""}`} />}
+              <span className="min-w-0 flex-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+                {claim.statement}
+                <span className={`mt-1 block text-[11px] ${verificationToneClass[claim.verificationStatus] ?? "text-[var(--color-text-tertiary)]"}`}>
+                  {researchVerificationLabel(claim.verificationStatus)} · {claim.evidenceRelations.length} 条关系
+                </span>
+              </span>
               <NavArrowRight width={14} height={14} className="mt-0.5 shrink-0 text-[var(--color-text-tertiary)]" />
             </button>
           );
@@ -142,13 +195,32 @@ export function ResearchReportEvidencePanel({
         }) : <p className="text-xs text-[var(--color-text-tertiary)]">暂无可打开的 Evidence。</p>}
       </div>
 
-      {selectedEvidence ? <div className="mt-5 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4">
-        <div className="flex items-start justify-between gap-2"><span className="font-mono text-xs text-[var(--color-accent)]">{markerByEvidenceId.get(selectedEvidence.id) ?? "Evidence"}</span><span className="text-[11px] text-[var(--color-text-tertiary)]">{selectedEvidence.status}</span></div>
-        <p className="mt-3 text-sm font-medium leading-6 text-[var(--color-text-primary)]">{selectedEvidence.statement}</p>
-        <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">“{selectedEvidence.excerpt}”</p>
-        <div className="mt-3 space-y-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]"><p>来源：{selectedEvidence.sourceSnapshot?.source?.title ?? selectedEvidence.sourceSnapshot?.source?.canonicalKey ?? "未知来源"}</p><p>定位：{locatorLabel(selectedEvidence.locator) || "未提供"}</p><p>类型：{selectedEvidence.evidenceType} · Snapshot：{selectedEvidence.sourceSnapshotId.slice(0, 12)}</p>{(relationByEvidenceId.get(selectedEvidence.id) ?? []).map((relation) => <p key={relation}>关系：{relation}</p>)}</div>
-        {sourceLink(selectedEvidence.sourceSnapshot?.source) ? <a href={sourceLink(selectedEvidence.sourceSnapshot?.source) ?? undefined} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline">打开来源 <NavArrowRight width={13} height={13} /></a> : null}
-      </div> : null}
+      {selectedEvidence ? (() => {
+        const entry = citationIndex.get(selectedEvidence.id);
+        return entry ? (
+          <ResearchCitationCard
+            className="mt-5 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4"
+            entry={entry}
+            evidence={selectedEvidence}
+            marker={markerByEvidenceId.get(selectedEvidence.id)}
+          />
+        ) : (
+          <div className="mt-5 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4">
+            <span className="font-mono text-xs text-[var(--color-accent)]">{markerByEvidenceId.get(selectedEvidence.id) ?? "Evidence"}</span>
+            <p className="mt-3 text-sm font-medium leading-6 text-[var(--color-text-primary)]">{selectedEvidence.statement}</p>
+            <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">“{selectedEvidence.excerpt}”</p>
+            <div className="mt-3 space-y-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">
+              <p>来源：{selectedEvidence.sourceSnapshot?.source?.title ?? selectedEvidence.sourceSnapshot?.source?.canonicalKey ?? "未知来源"}</p>
+              <p>定位：{locatorLabel(selectedEvidence.locator) || "未提供"}</p>
+              <p>类型：{selectedEvidence.evidenceType}</p>
+              {(relationByEvidenceId.get(selectedEvidence.id) ?? []).map((relation) => <p key={relation}>关系：{relation}</p>)}
+              {/* citationMap 缺失表示该 Evidence 只作为背景证据；不伪造来源信息。 */}
+              <p>该 Evidence 没有进入 citationMap（可能只作为背景证据），未伪造来源信息。</p>
+            </div>
+            {sourceLink(selectedEvidence.sourceSnapshot?.source) ? <a href={sourceLink(selectedEvidence.sourceSnapshot?.source) ?? undefined} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline">打开来源 <NavArrowRight width={13} height={13} /></a> : null}
+          </div>
+        );
+      })() : null}
     </aside>
   );
 }

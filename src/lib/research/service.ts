@@ -8,7 +8,7 @@ import {
 } from "@/generated/prisma/client";
 import { getResearchBudget } from "./budget";
 import { buildResearchPlan, applyResearchDirective, classifyResearchDirective } from "./plan";
-import { assertResearchRunTransition } from "./state-machine";
+import { assertResearchRunTransition, describeResearchDegradation, resolveResearchPublicStage } from "./state-machine";
 import { createResearchAgentExecution, resumeResearchAgentExecution } from "./durable-dispatcher";
 import type { ResearchBudgetProfile, ResearchPlanSnapshot, ResearchRunStatus } from "./contracts";
 import { applyConfirmedScopeDirectives, assertBudgetExpansion } from "./scope-confirmation";
@@ -776,17 +776,93 @@ export async function getResearchRun(userId: string, runId: string) {
       workspace: { select: { id: true, name: true, projectId: true } },
       activePlanVersion: true,
       questions: { orderBy: { orderIndex: "asc" }, select: { id: true, key: true, title: true, question: true, priority: true, status: true, completionCriteria: true, sourceStrategy: true, qualitySummary: true, researchAttempts: true, evaluateAttempts: true, replanAttempts: true } },
-      tasks: { orderBy: { createdAt: "asc" }, select: { id: true, questionId: true, kind: true, status: true, priority: true, title: true, instructions: true, attempt: true, maxAttempts: true, startedAt: true, completedAt: true, createdAt: true, updatedAt: true } },
+      tasks: { orderBy: { createdAt: "asc" }, select: { id: true, questionId: true, kind: true, status: true, priority: true, title: true, instructions: true, attempt: true, maxAttempts: true, lastError: true, startedAt: true, completedAt: true, createdAt: true, updatedAt: true } },
+      sourceRelations: { orderBy: { createdAt: "asc" }, take: 200, select: { id: true, sourceId: true, targetSourceId: true, targetCanonicalKey: true, relation: true, provider: true, hop: true, externalTargetId: true, externalTargetIdType: true, metadata: true } },
       directives: { orderBy: { createdAt: "asc" }, select: { id: true, text: true, impact: true, status: true, appliedAt: true, createdAt: true } },
-      agentExecution: { select: { id: true, status: true, scheduledAt: true } },
-      evidence: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, questionId: true, sourceSnapshotId: true, statement: true, excerpt: true, locator: true, evidenceType: true, origin: true, status: true, tags: true, createdAt: true, sourceSnapshot: { select: { id: true, retrievedAt: true, excerpt: true, source: { select: { id: true, title: true, canonicalKey: true, canonicalUrl: true, doi: true, arxivId: true, pmid: true } } } } } },
+      agentExecution: { select: { id: true, status: true, scheduledAt: true, checkpoint: true, failure: true } },
+      evidence: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, questionId: true, sourceSnapshotId: true, statement: true, excerpt: true, locator: true, evidenceType: true, origin: true, status: true, tags: true, provenance: true, createdAt: true, sourceSnapshot: { select: { id: true, retrievedAt: true, excerpt: true, metadata: true, source: { select: { id: true, title: true, canonicalKey: true, canonicalUrl: true, doi: true, arxivId: true, pmid: true, kind: true, metadata: true } } } } } },
       claims: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 100, select: { id: true, questionId: true, statement: true, status: true, userEdited: true, verificationStatus: true, quality: true, createdAt: true, updatedAt: true, evidenceRelations: { select: { evidenceId: true, relation: true, confidence: true, rationale: true, evidence: { select: { id: true, statement: true, status: true, sourceSnapshotId: true } } } } } },
       reportSnapshot: { select: { id: true, reportDocument: true, claimSnapshots: true, evidenceIds: true, sourceSnapshotIds: true, citationMap: true, coverageSummary: true, verificationSummary: true, modelConfiguration: true, generatedAt: true } },
       _count: { select: { sourceSnapshots: true, evidence: true, claims: true } },
     },
   });
   if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
-  return run;
+  const { agentExecution, tasks, ...rest } = run;
+  const checkpointStage = agentExecution?.checkpoint && typeof agentExecution.checkpoint === "object" && !Array.isArray(agentExecution.checkpoint)
+    ? ((agentExecution.checkpoint as Record<string, unknown>).researchState as Record<string, unknown> | undefined)?.stage
+    : null;
+  const stage = resolveResearchPublicStage(
+    run.status as ResearchRunStatus,
+    typeof checkpointStage === "string" ? checkpointStage : null,
+  );
+  const degradations = resolveRunDegradations(run);
+  const failureReason = resolveRunFailureReason(run, tasks);
+  return {
+    ...rest,
+    // 细分阶段：run.status 之外的 durable checkpoint stage（citation expansion /
+    // visual evidence / claim extraction 都在 evaluating 之下运行）。
+    stage,
+    degradations,
+    failureReason,
+    agentExecution: agentExecution ? { id: agentExecution.id, status: agentExecution.status, scheduledAt: agentExecution.scheduledAt } : null,
+    tasks,
+    visualEvidence: resolveVisualEvidenceSummary(run),
+  };
+}
+
+/** 从 checkpoint stage 派生的细分阶段：run.status 之外补充内部阶段。 */
+export interface ResearchRunPublicStage {
+  key: string;
+  label: string;
+}
+
+function resolveRunDegradations(run: { metrics: unknown; agentExecution?: { checkpoint?: unknown } | null }): Array<{ code: string; message: string }> {
+  const codes = new Set<string>();
+  const metrics = run.metrics && typeof run.metrics === "object" && !Array.isArray(run.metrics) ? run.metrics as Record<string, unknown> : {};
+  if (Array.isArray(metrics.degradations)) {
+    for (const code of metrics.degradations) if (typeof code === "string") codes.add(code);
+  }
+  const checkpoint = run.agentExecution?.checkpoint;
+  if (checkpoint && typeof checkpoint === "object" && !Array.isArray(checkpoint)) {
+    const researchState = (checkpoint as Record<string, unknown>).researchState;
+    if (researchState && typeof researchState === "object" && !Array.isArray(researchState)) {
+      const list = (researchState as Record<string, unknown>).degradations;
+      if (Array.isArray(list)) for (const code of list) if (typeof code === "string") codes.add(code);
+    }
+  }
+  return [...codes].flatMap((code) => {
+    const message = describeResearchDegradation(code);
+    return message ? [{ code, message }] : [];
+  });
+}
+
+function resolveRunFailureReason(
+  run: { status: string; agentExecution?: { failure?: unknown } | null },
+  tasks: Array<{ status: string; lastError: unknown }>,
+): string | null {
+  if (run.status !== "failed") return null;
+  const failure = run.agentExecution?.failure;
+  if (failure && typeof failure === "object" && !Array.isArray(failure)) {
+    const message = (failure as Record<string, unknown>).message;
+    if (typeof message === "string" && message.trim()) return message.trim().slice(0, 300);
+    const code = (failure as Record<string, unknown>).code;
+    if (typeof code === "string" && code.trim()) return code.trim().slice(0, 300);
+  }
+  const failedTask = [...tasks].reverse().find((task) => task.status === "failed");
+  const lastError = failedTask?.lastError;
+  if (lastError && typeof lastError === "object" && !Array.isArray(lastError)) {
+    const message = (lastError as Record<string, unknown>).message ?? (lastError as Record<string, unknown>).code;
+    if (typeof message === "string" && message.trim()) return message.trim().slice(0, 300);
+  }
+  return null;
+}
+
+/** 视觉证据摘要（是否发生、分析了多少资源与观察）。 */
+function resolveVisualEvidenceSummary(run: { metrics: unknown }): { enabled: boolean; observations: number; resources: number } {
+  const metrics = run.metrics && typeof run.metrics === "object" && !Array.isArray(run.metrics) ? run.metrics as Record<string, unknown> : {};
+  const observations = typeof metrics.visualObservationCount === "number" ? metrics.visualObservationCount : 0;
+  const resources = typeof metrics.visualResourceCount === "number" ? metrics.visualResourceCount : 0;
+  return { enabled: observations > 0 || resources > 0, observations, resources };
 }
 
 export async function getResearchRunStatus(userId: string, runId: string): Promise<ResearchRunStatus> {

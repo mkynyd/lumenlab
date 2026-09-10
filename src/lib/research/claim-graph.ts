@@ -18,7 +18,27 @@ export interface ClaimRelationEvidenceShape {
   evidence: {
     status: string;
     sourceSnapshot: { sourceId: string };
+    /**
+     * Evidence 类型（可选）。用于区分「原论文直接陈述」与「模型从图表得出的
+     * 受约束观察」：visual_observation 是 derived observation，本身不能把
+     * Claim 抬到 verified。缺失时按直接证据处理，保持历史行为。
+     */
+    evidenceType?: string;
+    /**
+     * Snapshot 读取范围（可选）：metadata_only 表示只读到摘要级元数据，
+     * 没有读到正文，因此不能单独把 Claim 抬到 verified。
+     */
+    snapshotScopeType?: string | null;
   };
+}
+
+/** 从 ResearchSourceSnapshot.metadata.scope.type 读取读取范围。 */
+export function snapshotScopeTypeOf(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const scope = (metadata as Record<string, unknown>).scope;
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) return null;
+  const type = (scope as Record<string, unknown>).type;
+  return typeof type === "string" ? type : null;
 }
 
 export interface ClaimQualitySummary {
@@ -30,6 +50,10 @@ export interface ClaimQualitySummary {
   contextCount: number;
   disputedEvidenceCount: number;
   sourceDiversity: number;
+  /** supports 中属于 visual_observation（模型读图）的数量。 */
+  visualObservationSupportCount: number;
+  /** supports 中只读到摘要级元数据（没有正文）的数量。 */
+  metadataOnlySupportCount: number;
 }
 
 export interface DeterministicClaimVerification {
@@ -44,7 +68,11 @@ export interface DeterministicClaimVerification {
  * - 没有任何有效 supports/qualifies（含只有 context）不能 verified；
  * - supports 与 contradicts 并存至少进入 conflicted；
  * - 仅 qualifies 不能以原始强措辞 verified；
- * - 独立来源按 canonical ResearchSource 去重，同一论文的多个 chunk 只算一个来源。
+ * - 独立来源按 canonical ResearchSource 去重，同一论文的多个 chunk 只算一个来源；
+ * - 只有 visual_observation（模型读图得出的 derived observation）支撑时，Claim
+ *   最多 needs_qualification：模型对图表的解释不等于原论文的直接陈述；
+ * - 只有 metadata_only（只读到摘要级元数据、没有正文）来源支撑时，Claim 同样
+ *   最多 needs_qualification。
  */
 export function computeDeterministicClaimVerification(relations: ClaimRelationEvidenceShape[]): DeterministicClaimVerification {
   const valid = relations.filter((relation) => relation.evidence.status === "active");
@@ -54,6 +82,12 @@ export function computeDeterministicClaimVerification(relations: ClaimRelationEv
   const contradictionCount = count("contradicts");
   const qualificationCount = count("qualifies");
   const contextCount = count("context");
+  const visualObservationSupportCount = valid.filter(
+    (relation) => relation.relation === "supports" && relation.evidence.evidenceType === "visual_observation"
+  ).length;
+  const metadataOnlySupportCount = valid.filter(
+    (relation) => relation.relation === "supports" && relation.evidence.snapshotScopeType === "metadata_only"
+  ).length;
   const uniqueSourceCount = new Set(valid.map((relation) => relation.evidence.sourceSnapshot.sourceId)).size;
   const quality: ClaimQualitySummary = {
     evidenceCount: valid.length,
@@ -64,6 +98,8 @@ export function computeDeterministicClaimVerification(relations: ClaimRelationEv
     contextCount,
     disputedEvidenceCount,
     sourceDiversity: Math.min(1, uniqueSourceCount / 2),
+    visualObservationSupportCount,
+    metadataOnlySupportCount,
   };
 
   if (directSupportCount > 0 && contradictionCount > 0) {
@@ -72,6 +108,14 @@ export function computeDeterministicClaimVerification(relations: ClaimRelationEv
   if (directSupportCount > 0) {
     if (disputedEvidenceCount > 0) {
       return { status: "needs_qualification", reasonCode: "invalid_evidence", quality };
+    }
+    if (visualObservationSupportCount === directSupportCount) {
+      // 支撑全部来自模型读图：保留为可追溯的限定结论。
+      return { status: "needs_qualification", reasonCode: "indirect_support", quality };
+    }
+    if (metadataOnlySupportCount === directSupportCount) {
+      // 支撑全部来自只读到摘要级元数据的来源：不能当作正文事实 citation。
+      return { status: "needs_qualification", reasonCode: "indirect_support", quality };
     }
     return {
       status: "verified",

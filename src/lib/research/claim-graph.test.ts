@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion } from "./claim-graph";
 import { buildClaimKey } from "./claim-extraction";
 
-function relation(type: string, sourceId: string, status = "active") {
-  return { relation: type, evidence: { status, sourceSnapshot: { sourceId } } };
+function relation(type: string, sourceId: string, status = "active", evidenceType?: string) {
+  return { relation: type, evidence: { status, evidenceType, sourceSnapshot: { sourceId } } };
 }
 
 describe("claim graph · deterministic verification floor", () => {
@@ -15,6 +15,29 @@ describe("claim graph · deterministic verification floor", () => {
   it("does not verify claims backed only by qualifies relations", () => {
     const result = computeDeterministicClaimVerification([relation("qualifies", "s1"), relation("context", "s2")]);
     expect(result).toMatchObject({ status: "needs_qualification", reasonCode: "indirect_support" });
+  });
+
+  it("never verifies a claim supported only by visual observations", () => {
+    const visualOnly = computeDeterministicClaimVerification([
+      relation("supports", "s1", "active", "visual_observation"),
+      relation("supports", "s2", "active", "visual_observation"),
+    ]);
+    expect(visualOnly).toMatchObject({ status: "needs_qualification", reasonCode: "indirect_support" });
+    expect(visualOnly.quality.visualObservationSupportCount).toBe(2);
+
+    // 一旦有原论文正文的直接陈述支撑，仍然可以 verified。
+    const mixed = computeDeterministicClaimVerification([
+      relation("supports", "s1", "active", "visual_observation"),
+      relation("supports", "s2", "active", "direct_quote"),
+    ]);
+    expect(mixed).toMatchObject({ status: "verified", reasonCode: "sufficient_support" });
+    expect(mixed.quality.visualObservationSupportCount).toBe(1);
+  });
+
+  it("keeps historical behaviour when an evidence type is not supplied", () => {
+    expect(computeDeterministicClaimVerification([relation("supports", "s1"), relation("supports", "s2")]))
+      .toMatchObject({ status: "verified" });
+    expect(computeDeterministicClaimVerification([relation("supports", "s1")]).quality.visualObservationSupportCount).toBe(0);
   });
 
   it("marks supports+contradicts as conflicted without model involvement", () => {

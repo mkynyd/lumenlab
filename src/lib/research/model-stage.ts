@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { runAgentRuntime } from "@/lib/agent/runtime";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
+import type { ServerFileAttachment } from "@/lib/chat/router";
 import { logger } from "@/lib/logger";
 import type { ResearchPriority, ResearchRole } from "./contracts";
 import { selectResearchModel } from "./model-routing";
@@ -13,6 +14,11 @@ export interface ResearchModelStageInput {
   signal: AbortSignal;
   prompt: string;
   parse?: (content: string) => unknown;
+  /**
+   * 显式选中的多模态附件（视觉证据阶段专用）。只有调用方明确传入的字节会被
+   * 附带；Research 阶段不会触发通用 Project 媒体自动匹配。默认空数组。
+   */
+  attachments?: ServerFileAttachment[];
 }
 
 export interface ResearchModelStageResult<T> {
@@ -38,7 +44,7 @@ export async function runResearchModelStage<T>(input: ResearchModelStageInput): 
       // Do not enable generic project context here: task 05 may otherwise attach
       // unselected project images merely because their names match the stage prompt.
       conversation: { id: input.conversationId },
-      prompt: { message: input.prompt, attachments: [] },
+      prompt: { message: input.prompt, attachments: input.attachments ?? [] },
       model: { requestedModel: selection.model, thinkingEnabled: false, reasoningEffort: selection.reasoningEffort },
       capabilities: { webSearchActive: false, skillOff: true, selectedFileIds: [], isQuickTask: false, mode: "general" },
       signal: input.signal,

@@ -9,9 +9,14 @@ import {
   clampSearchPage,
   clampSearchPageSize,
   clampSemanticTopK,
+  extractSciverseResourceRefs,
+  normalizeResourceFileName,
   parseAgenticSearchResponse,
   parseContentResponse,
   parseMetaSearchResponse,
+  parseResourceResponse,
+  SCIVERSE_READ_MAX_RESOURCE_REFS,
+  SCIVERSE_RESOURCE_MAX_BYTES,
   SCIVERSE_SEARCH_FIELDS,
 } from "./normalize";
 
@@ -30,13 +35,15 @@ describe("meta-search wire mapping", () => {
       pageSize: 15,
     });
     expect(body.collection).toBe("papers");
-    expect(body.query).toBe("agent");
+    // `abstract` is not filterable upstream (the live catalog reports
+    // filterable=false and the API answers 400), so the term is folded into the
+    // BM25 query instead of producing an INVALID_REQUEST.
+    expect(body.query).toBe("agent attention");
     expect(body.page).toBe(2);
     expect(body.page_size).toBe(15);
     expect(body.fields).toEqual([...SCIVERSE_SEARCH_FIELDS]);
     expect(body.filters).toEqual([
       { field: "title", operator: "FILTER_OP_CONTAINS", value: "Transformer" },
-      { field: "abstract", operator: "FILTER_OP_CONTAINS", value: "attention" },
       { field: "author", operator: "FILTER_OP_IN", value: ["Hinton", "LeCun"] },
       { field: "publication_published_year", operator: "FILTER_OP_GTE", value: 2020 },
       { field: "publication_published_year", operator: "FILTER_OP_LTE", value: 2025 },
@@ -286,5 +293,89 @@ describe("content read parsing", () => {
       { docId: "d", offset: 40 }
     );
     expect(withBytes).toEqual({ docId: "d", offset: 40, text: "hi", returnedChars: 2, more: false });
+  });
+});
+
+describe("content resource reference extraction", () => {
+  it("extracts relative image placeholders with bounded context and kind", () => {
+    const text = [
+      "## Results",
+      "Figure 2 shows the routing throughput.",
+      "![Figure 2](dt=2025-08-07/ht=09/abcdef.jpg)",
+      "As the table below shows, latency drops.",
+      "![Table 1](dt=2025-08-07/ht=09/table1.png)",
+    ].join("\n");
+    const refs = extractSciverseResourceRefs(text);
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toMatchObject({ fileName: "dt=2025-08-07/ht=09/abcdef.jpg", kind: "figure" });
+    expect(refs[0].context).toContain("routing throughput");
+    expect(refs[1]).toMatchObject({ fileName: "dt=2025-08-07/ht=09/table1.png", kind: "table" });
+  });
+
+  it("rejects unsafe or non-relative file names", () => {
+    const text = [
+      "![a](../../etc/passwd)",
+      "![b](/absolute/path.png)",
+      "![c](https://evil.test/x.png)",
+      "![d](figure1.png)",
+      "![e](a\\\\b.png)",
+      "![f](dt=1/ht=2/ok.png)",
+    ].join("\n");
+    const refs = extractSciverseResourceRefs(text);
+    expect(refs.map((ref) => ref.fileName)).toEqual(["dt=1/ht=2/ok.png"]);
+  });
+
+  it("deduplicates repeated placeholders and honours the bound", () => {
+    const text = Array.from({ length: 12 }, (_, index) => `![x](dir/f${index}.png)\n![x](dir/f${index}.png)`).join("\n");
+    const refs = extractSciverseResourceRefs(text);
+    expect(refs).toHaveLength(SCIVERSE_READ_MAX_RESOURCE_REFS);
+    expect(new Set(refs.map((ref) => ref.fileName)).size).toBe(refs.length);
+  });
+
+  it("attaches resources to the parsed content response", () => {
+    const parsed = parseContentResponse(
+      { text: "![Fig 1](dir/f1.png) body", next_offset: 10, more: true },
+      { docId: "d", offset: 0 },
+    );
+    expect(parsed.resources).toEqual([
+      expect.objectContaining({ fileName: "dir/f1.png", kind: "figure" }),
+    ]);
+  });
+
+  it("omits the resources field when the slice has no image placeholders", () => {
+    const parsed = parseContentResponse({ text: "no images here", more: false }, { docId: "d", offset: 0 });
+    expect(parsed.resources).toBeUndefined();
+  });
+});
+
+describe("resource response normalization", () => {
+  const bytes = Buffer.from([1, 2, 3, 4]);
+
+  it("keeps bounded image bytes and reports the declared mime type", () => {
+    const result = parseResourceResponse({ fileName: "dir/f1.png", docId: "d", mimeType: "image/png", bytes });
+    expect(result).toMatchObject({ fileName: "dir/f1.png", mimeType: "image/png", byteLength: 4, dataIncluded: true });
+    expect(Buffer.from(result.dataBase64!, "base64").equals(bytes)).toBe(true);
+  });
+
+  it("drops the payload for unsupported mime types", () => {
+    const result = parseResourceResponse({ fileName: "dir/f1.bin", mimeType: "application/octet-stream", bytes });
+    expect(result.dataIncluded).toBe(false);
+    expect(result.dataBase64).toBeUndefined();
+  });
+
+  it("drops the payload above the byte ceiling", () => {
+    const oversized = Buffer.alloc(SCIVERSE_RESOURCE_MAX_BYTES + 1);
+    const result = parseResourceResponse({ fileName: "dir/big.png", mimeType: "image/png", bytes: oversized });
+    expect(result.dataIncluded).toBe(false);
+    expect(result.byteLength).toBe(oversized.length);
+  });
+
+  it("normalizes resource file names", () => {
+    expect(normalizeResourceFileName(" dir/f1.png ")).toBe("dir/f1.png");
+    expect(normalizeResourceFileName("'dir/f1.png'")).toBe("dir/f1.png");
+    expect(normalizeResourceFileName("dir/../f1.png")).toBeNull();
+    expect(normalizeResourceFileName("dir//f1.png")).toBeNull();
+    expect(normalizeResourceFileName("C:/x/f1.png")).toBeNull();
+    expect(normalizeResourceFileName("dir/f1.png\u0000")).toBeNull();
   });
 });
