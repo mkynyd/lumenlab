@@ -21,10 +21,10 @@ describe("ModelSelector", () => {
 
     expect(screen.getByRole("dialog")).toHaveTextContent("配置");
     const deepseekOption = screen.getByRole("button", {
-      name: /DeepSeek V4 Flash/,
+      name: /DeepSeek V4\.1 Flash/,
     });
     // 模型名下方带一行官方口径小字介绍
-    expect(deepseekOption).toHaveTextContent("视觉模型");
+    expect(deepseekOption).toHaveTextContent("多模态视觉理解");
     expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "快速" })).toHaveClass("h-8");
   });

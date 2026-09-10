@@ -42,7 +42,7 @@ describe("real Paper DOCX classification", () => {
     });
 
     expect(result.status).toBe("completed");
-    expect(result.model).toBe("deepseek-v4-flash-vision-exp");
+    expect(result.model).toBe("deepseek-flash");
     expect(result.suggestions).toEqual([
       expect.objectContaining({ index: 1, kind: "figure" }),
     ]);

@@ -156,7 +156,7 @@ describe("useChat conversation URL sync", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url === "/api/chat/models") {
-          return Response.json({ models: ["qwen3.8-flash", "deepseek-v4-flash-vision-exp", "minimax-m3"] });
+          return Response.json({ models: ["qwen3.8-flash", "deepseek-flash", "minimax-m3"] });
         }
         if (url === "/api/chat") return sseChatResponse(conversationId);
         if (url.startsWith("/api/conversations/")) {
@@ -188,7 +188,7 @@ describe("useChat conversation URL sync", () => {
 
   it.each([
     ["minimax-m3", "minimax-m3"],
-    ["deepseek-v4-pro", "deepseek-v4-flash-vision-exp"],
+    ["deepseek-v4-pro", "deepseek-flash"],
     ["qwen3.7-plus", "qwen3.8-flash"],
   ])("restores %s and resets an ordinary new chat to Qwen", async (saved, expected) => {
     stubChatFetch();
@@ -271,7 +271,7 @@ describe("useChat conversation URL sync", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url === "/api/chat/models") {
-          return Response.json({ models: ["qwen3.8-flash", "deepseek-v4-flash-vision-exp", "minimax-m3"] });
+          return Response.json({ models: ["qwen3.8-flash", "deepseek-flash", "minimax-m3"] });
         }
         if (url === "/api/chat") {
           const headers = new Headers({

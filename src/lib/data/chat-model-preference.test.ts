@@ -18,9 +18,10 @@ describe("request model inheritance", () => {
 
   it.each([
     ["minimax-m3", "minimax-m3"],
-    ["deepseek-v4-flash-vision-exp", "deepseek-v4-flash-vision-exp"],
-    ["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"],
-    ["deepseek-v4-pro", "deepseek-v4-flash-vision-exp"],
+    ["deepseek-v4-flash-vision-exp", "deepseek-flash"],
+    ["deepseek-v4-flash", "deepseek-flash"],
+    ["deepseek-v4-pro", "deepseek-flash"],
+    ["deepseek-flash", "deepseek-flash"],
     ["qwen3.7-plus", "qwen3.8-flash"],
     ["unknown", "unknown"],
   ])("preserves or upgrades saved conversation %s", async (saved, expected) => {
