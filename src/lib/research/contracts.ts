@@ -35,6 +35,7 @@ export type ResearchRole =
   | "research.planner"
   | "research.worker"
   | "research.evaluator"
+  | "research.claim_extractor"
   | "research.synthesizer"
   | "research.verifier";
 

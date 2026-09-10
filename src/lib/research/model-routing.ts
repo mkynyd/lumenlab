@@ -22,11 +22,12 @@ const DEFAULTS: Record<ResearchRole, Omit<ResearchModelSelection, "role" | "sour
   "research.planner": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
   "research.worker": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
   "research.evaluator": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
+  "research.claim_extractor": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
   "research.synthesizer": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "max" },
   "research.verifier": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
 };
 
-const ROLES: ResearchRole[] = ["research.planner", "research.worker", "research.evaluator", "research.synthesizer", "research.verifier"];
+const ROLES: ResearchRole[] = ["research.planner", "research.worker", "research.evaluator", "research.claim_extractor", "research.synthesizer", "research.verifier"];
 
 export function isResearchRole(value: string): value is ResearchRole {
   return ROLES.includes(value as ResearchRole);

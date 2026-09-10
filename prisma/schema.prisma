@@ -15,28 +15,28 @@ datasource db {
 // ============================================================
 
 model User {
-  paperFormattingTasks PaperFormattingTask[]
-  id                      String    @id @default(cuid())
-  email                   String    @unique
+  paperFormattingTasks    PaperFormattingTask[]
+  id                      String                @id @default(cuid())
+  email                   String                @unique
   passwordHash            String
   name                    String?
-  avatarPreset            String    @default("lumen")
+  avatarPreset            String                @default("lumen")
   avatarStorageProvider   String?
   avatarObjectKey         String?
   avatarMimeType          String?
   avatarUpdatedAt         DateTime?
-  accessStatus            String    @default("active")
+  accessStatus            String                @default("active")
   emailVerifiedAt         DateTime? // 邮箱验证完成时间；老用户迁移时 backfill 为 createdAt
-  emailVerificationSource String    @default("none") // none | legacy | code | link
+  emailVerificationSource String                @default("none") // none | legacy | code | link
   passwordChangedAt       DateTime? // 密码最近变更时间；JWT 校验旧会话失效
   credentialProfileId     String?
-  planTier                String    @default("premium") // free | pro | premium
-  planCredits             Int       @default(0) // 当前周期总信用点额度；0 表示 A 测期间不限制
-  creditsUsed             Int       @default(0) // 当前周期已用信用点
-  cycleStartedAt          DateTime  @default(now()) // 当前 30 天周期开始时间
-  scopes                  String[]  @default(["project.read", "project.write", "artifact.read", "artifact.write"]) // Agent 工具权限作用域
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  planTier                String                @default("premium") // free | pro | premium
+  planCredits             Int                   @default(0) // 当前周期总信用点额度；0 表示 A 测期间不限制
+  creditsUsed             Int                   @default(0) // 当前周期已用信用点
+  cycleStartedAt          DateTime              @default(now()) // 当前 30 天周期开始时间
+  scopes                  String[]              @default(["project.read", "project.write", "artifact.read", "artifact.write"]) // Agent 工具权限作用域
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
 
   apiKeys              ApiKey[]
   conversations        Conversation[]
@@ -61,7 +61,7 @@ model User {
   researchRuns         ResearchRun[]
   researchDirectives   ResearchUserDirective[]
   researchSources      ResearchSource[]
-  evidenceCreated      Evidence[]             @relation("EvidenceCreatedBy")
+  evidenceCreated      Evidence[]                   @relation("EvidenceCreatedBy")
   paperWorkspaces      PaperWorkspace[]
   paperDocuments       PaperDocument[]
   documentVersions     PaperDocumentVersion[]
@@ -713,8 +713,8 @@ enum AgentExecutionStatus {
 }
 
 model AgentExecution {
-  leaseRecoveryCount Int @default(0)
-  paperFormattingTask PaperFormattingTask?
+  leaseRecoveryCount     Int                  @default(0)
+  paperFormattingTask    PaperFormattingTask?
   id                     String               @id @default(cuid())
   userId                 String
   clientRunKey           String?
@@ -1934,12 +1934,12 @@ model Evidence {
   claimRelations ClaimEvidenceRelation[]
   paperMaterials PaperResearchMaterial[]
 
+  @@unique([runId, evidenceKey])
   @@index([workspaceId, status, createdAt])
   @@index([runId, questionId])
   @@index([sourceSnapshotId])
   @@index([supersedesId])
   @@index([runId, origin, createdAt])
-  @@unique([runId, evidenceKey])
 }
 
 model Claim {
@@ -1948,6 +1948,7 @@ model Claim {
   runId              String
   questionId         String?
   statement          String
+  claimKey           String?
   status             ResearchClaimStatus        @default(active)
   userEdited         Boolean                    @default(false)
   verificationStatus ResearchVerificationStatus @default(pending)
@@ -1961,6 +1962,7 @@ model Claim {
   evidenceRelations ClaimEvidenceRelation[]
   paperMaterials    PaperResearchMaterial[]
 
+  @@unique([runId, claimKey])
   @@index([workspaceId, status, createdAt])
   @@index([runId, questionId])
   @@index([verificationStatus])
@@ -2073,14 +2075,14 @@ model PaperWorkspace {
 }
 
 model PaperDocument {
-  formattingTask PaperFormattingTask?
-  id               String   @id @default(cuid())
-  paperWorkspaceId String   @unique
+  formattingTask   PaperFormattingTask?
+  id               String               @id @default(cuid())
+  paperWorkspaceId String               @unique
   userId           String
-  title            String   @default("未命名论文")
-  currentVersionId String?  @unique
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  title            String               @default("未命名论文")
+  currentVersionId String?              @unique
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   workspace      PaperWorkspace         @relation(fields: [paperWorkspaceId], references: [id], onDelete: Cascade)
   user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2172,18 +2174,18 @@ model TemplateRegistryEntry {
 }
 
 model TemplateVariant {
-  formattingTasks PaperFormattingTask[]
-  id                     String   @id @default(cuid())
+  formattingTasks        PaperFormattingTask[]
+  id                     String                @id @default(cuid())
   registryEntryId        String
-  variantKey             String   @unique
+  variantKey             String                @unique
   manifest               Json
   pinnedUpstreamSnapshot Json
   adapterId              String
   validation             Json?
   sample                 Json?
-  status                 String   @default("Unverified")
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  status                 String                @default("Unverified")
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   registryEntry TemplateRegistryEntry @relation(fields: [registryEntryId], references: [id], onDelete: Cascade)
   bindings      TemplateBinding[]
@@ -2221,9 +2223,9 @@ model TemplateBindingVersion {
 }
 
 model PaperCompilation {
-  leaseToken String?
-  leaseExpiresAt DateTime?
-  formattingTask PaperFormattingTask?
+  leaseToken            String?
+  leaseExpiresAt        DateTime?
+  formattingTask        PaperFormattingTask?
   id                    String                 @id @default(cuid())
   documentVersionId     String
   bindingVersionId      String?
@@ -2251,20 +2253,20 @@ model PaperCompilation {
 }
 
 model PaperImport {
-  formattingTask PaperFormattingTask?
-  id                 String            @id @default(cuid())
+  formattingTask     PaperFormattingTask?
+  id                 String               @id @default(cuid())
   paperDocumentId    String
   userId             String
   originalName       String
   sourceType         String
-  status             PaperImportStatus @default(uploaded)
+  status             PaperImportStatus    @default(uploaded)
   originalProvider   String?
   originalObjectKey  String?
   sourceHash         String?
   importReport       Json?
   generatedVersionId String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   document         PaperDocument         @relation(fields: [paperDocumentId], references: [id], onDelete: Cascade)
   user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2360,43 +2362,43 @@ model Notification {
 
 /// Durable paper domain state. Large parsed content lives in PaperDocumentVersion.
 model PaperFormattingTask {
-  id String @id @default(cuid())
-  userId String
-  requestKey String
-  requestHash String
-  originalName String
-  sourceType String
-  sourceHash String
-  sourceProvider String
-  sourceObjectKey String
+  id                String    @id @default(cuid())
+  userId            String
+  requestKey        String
+  requestHash       String
+  originalName      String
+  sourceType        String
+  sourceHash        String
+  sourceProvider    String
+  sourceObjectKey   String
   templateVariantId String
-  templateSnapshot Json
-  actualModel String
-  billingVersion String
-  metadata Json
-  status String @default("queued")
-  attempt Int @default(1)
-  documentId String? @unique
-  importId String? @unique
-  executionId String? @unique
-  compilationId String? @unique
-  mappedVersionId String?
-  completedUnits Int @default(0)
-  totalUnits Int?
-  report Json?
-  errorCode String?
-  errorMessage String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  completedAt DateTime?
+  templateSnapshot  Json
+  actualModel       String
+  billingVersion    String
+  metadata          Json
+  status            String    @default("queued")
+  attempt           Int       @default(1)
+  documentId        String?   @unique
+  importId          String?   @unique
+  executionId       String?   @unique
+  compilationId     String?   @unique
+  mappedVersionId   String?
+  completedUnits    Int       @default(0)
+  totalUnits        Int?
+  report            Json?
+  errorCode         String?
+  errorMessage      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  completedAt       DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  templateVariant TemplateVariant @relation(fields: [templateVariantId], references: [id], onDelete: Restrict)
-  document PaperDocument? @relation(fields: [documentId], references: [id], onDelete: Restrict)
-  import PaperImport? @relation(fields: [importId], references: [id], onDelete: Restrict)
-  execution AgentExecution? @relation(fields: [executionId], references: [id], onDelete: Restrict)
-  compilation PaperCompilation? @relation(fields: [compilationId], references: [id], onDelete: Restrict)
-  mappingBatches PaperFormattingMappingBatch[]
+  user            User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateVariant TemplateVariant               @relation(fields: [templateVariantId], references: [id], onDelete: Restrict)
+  document        PaperDocument?                @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  import          PaperImport?                  @relation(fields: [importId], references: [id], onDelete: Restrict)
+  execution       AgentExecution?               @relation(fields: [executionId], references: [id], onDelete: Restrict)
+  compilation     PaperCompilation?             @relation(fields: [compilationId], references: [id], onDelete: Restrict)
+  mappingBatches  PaperFormattingMappingBatch[]
 
   @@unique([userId, requestKey])
   @@index([userId, status, updatedAt])
@@ -2405,17 +2407,18 @@ model PaperFormattingTask {
 
 /// Idempotent bounded mapping, independent of worker lease/requeue attempts.
 model PaperFormattingMappingBatch {
-  id String @id @default(cuid())
-  taskId String
-  batchIndex Int
-  inputHash String
-  status String @default("pending")
-  conversationId String? @unique
-  response Json?
-  messageId String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  taskId         String
+  batchIndex     Int
+  inputHash      String
+  status         String   @default("pending")
+  conversationId String?  @unique
+  response       Json?
+  messageId      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   task PaperFormattingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
   @@unique([taskId, batchIndex])
 }

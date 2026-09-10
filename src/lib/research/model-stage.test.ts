@@ -96,8 +96,13 @@ describe("research model stage contracts", () => {
   });
 
   it("drops verifier claims with unknown statuses", () => {
-    expect(normalizeResearchVerifierDecision({ claims: { a: { status: "verified", reasonCode: "direct" }, b: { status: "unknown" } } }))
-      .toEqual({ claims: { a: { status: "verified", reasonCode: "direct" } } });
+    expect(normalizeResearchVerifierDecision({ claims: { a: { status: "verified", reasonCode: "sufficient_support" }, b: { status: "unknown" } } }))
+      .toEqual({ claims: { a: { status: "verified", reasonCode: "sufficient_support" } } });
+  });
+
+  it("normalizes unknown verifier reason codes to model_review", () => {
+    expect(normalizeResearchVerifierDecision({ claims: { a: { status: "verified", reasonCode: "direct" }, b: { status: "conflicted" } } }))
+      .toEqual({ claims: { a: { status: "verified", reasonCode: "model_review" }, b: { status: "conflicted", reasonCode: "model_review" } } });
   });
 
   it("bounds planner output and applies only known question keys", () => {

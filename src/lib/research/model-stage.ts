@@ -179,8 +179,33 @@ export function normalizeResearchEvaluatorDecision(value: unknown, fallback: Res
 
 export type ResearchVerificationStatus = "verified" | "needs_qualification" | "unsupported" | "conflicted";
 
+/**
+ * 规范化后的稳定 reasonCode 集合。模型返回的未知 reason 一律归入 model_review，
+ * 不直接进入持久业务逻辑；deterministic 下界使用的 reasonCode 也属于本集合。
+ */
+export const RESEARCH_VERIFIER_REASON_CODES = [
+  "sufficient_support",
+  "single_source_only",
+  "indirect_support",
+  "scope_mismatch",
+  "temporal_mismatch",
+  "mixed_evidence",
+  "contradicted",
+  "no_support",
+  "invalid_evidence",
+  "model_review",
+] as const;
+
+export type ResearchVerifierReasonCode = (typeof RESEARCH_VERIFIER_REASON_CODES)[number];
+
+export function normalizeVerifierReasonCode(value: unknown): ResearchVerifierReasonCode {
+  return typeof value === "string" && (RESEARCH_VERIFIER_REASON_CODES as readonly string[]).includes(value)
+    ? value as ResearchVerifierReasonCode
+    : "model_review";
+}
+
 export interface ResearchVerifierDecision {
-  claims: Record<string, { status: ResearchVerificationStatus; reasonCode: string }>;
+  claims: Record<string, { status: ResearchVerificationStatus; reasonCode: ResearchVerifierReasonCode }>;
 }
 
 export function normalizeResearchVerifierDecision(value: unknown): ResearchVerifierDecision {
@@ -192,7 +217,7 @@ export function normalizeResearchVerifierDecision(value: unknown): ResearchVerif
     const item = raw as Record<string, unknown>;
     const status = item.status === "verified" || item.status === "needs_qualification" || item.status === "unsupported" || item.status === "conflicted" ? item.status : null;
     if (!status) continue;
-    claims[claimId] = { status, reasonCode: typeof item.reasonCode === "string" ? item.reasonCode.slice(0, 120) : "model_review" };
+    claims[claimId] = { status, reasonCode: normalizeVerifierReasonCode(item.reasonCode) };
   }
   return { claims };
 }

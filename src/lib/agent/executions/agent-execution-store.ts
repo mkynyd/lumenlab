@@ -172,6 +172,7 @@ const researchStateSchema = z
       "planning",
       "researching",
       "evaluating",
+      "claim_extraction",
       "synthesizing",
       "verifying",
     ]),
@@ -187,6 +188,12 @@ const researchStateSchema = z
     costCredits: z.number().int().nonnegative().optional(),
     draftReport: z.string().max(200_000).optional(),
     lastEvidenceCount: z.number().int().nonnegative().optional(),
+    claimExtraction: z
+      .object({
+        fingerprints: z.record(z.string(), z.string()),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

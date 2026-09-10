@@ -1,0 +1,195 @@
+import { prisma } from "@/lib/db";
+import { buildClaimKey, CLAIM_EXTRACTOR_VERSION, type NormalizedExtractedClaim } from "./claim-extraction";
+
+/**
+ * Deep Research Claim Graph v1 — Claim/Relation 持久化与 deterministic 核验下界。
+ * 模型只负责提出候选 Claim 与 relation；能否 verified 由这里的证据结构下界
+ * 与 research.verifier 的进一步降级共同决定。
+ */
+
+function json(value: unknown) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+export type ClaimVerificationStatus = "verified" | "needs_qualification" | "unsupported" | "conflicted";
+
+export interface ClaimRelationEvidenceShape {
+  relation: string;
+  evidence: {
+    status: string;
+    sourceSnapshot: { sourceId: string };
+  };
+}
+
+export interface ClaimQualitySummary {
+  evidenceCount: number;
+  uniqueSourceCount: number;
+  directSupportCount: number;
+  contradictionCount: number;
+  qualificationCount: number;
+  contextCount: number;
+  disputedEvidenceCount: number;
+  sourceDiversity: number;
+}
+
+export interface DeterministicClaimVerification {
+  status: ClaimVerificationStatus;
+  reasonCode: string;
+  quality: ClaimQualitySummary;
+}
+
+/**
+ * Verifier 前的 deterministic 安全下界：
+ * - superseded/invalidated Evidence 不再是有效依据；disputed Evidence 使 Claim 进入重新评估；
+ * - 没有任何有效 supports/qualifies（含只有 context）不能 verified；
+ * - supports 与 contradicts 并存至少进入 conflicted；
+ * - 仅 qualifies 不能以原始强措辞 verified；
+ * - 独立来源按 canonical ResearchSource 去重，同一论文的多个 chunk 只算一个来源。
+ */
+export function computeDeterministicClaimVerification(relations: ClaimRelationEvidenceShape[]): DeterministicClaimVerification {
+  const valid = relations.filter((relation) => relation.evidence.status === "active");
+  const disputedEvidenceCount = relations.filter((relation) => relation.evidence.status === "disputed").length;
+  const count = (type: string) => valid.filter((relation) => relation.relation === type).length;
+  const directSupportCount = count("supports");
+  const contradictionCount = count("contradicts");
+  const qualificationCount = count("qualifies");
+  const contextCount = count("context");
+  const uniqueSourceCount = new Set(valid.map((relation) => relation.evidence.sourceSnapshot.sourceId)).size;
+  const quality: ClaimQualitySummary = {
+    evidenceCount: valid.length,
+    uniqueSourceCount,
+    directSupportCount,
+    contradictionCount,
+    qualificationCount,
+    contextCount,
+    disputedEvidenceCount,
+    sourceDiversity: Math.min(1, uniqueSourceCount / 2),
+  };
+
+  if (directSupportCount > 0 && contradictionCount > 0) {
+    return { status: "conflicted", reasonCode: "mixed_evidence", quality };
+  }
+  if (directSupportCount > 0) {
+    if (disputedEvidenceCount > 0) {
+      return { status: "needs_qualification", reasonCode: "invalid_evidence", quality };
+    }
+    return {
+      status: "verified",
+      reasonCode: uniqueSourceCount >= 2 ? "sufficient_support" : "single_source_only",
+      quality,
+    };
+  }
+  if (contradictionCount > 0) {
+    return { status: "conflicted", reasonCode: "contradicted", quality };
+  }
+  if (qualificationCount > 0) {
+    return { status: "needs_qualification", reasonCode: "indirect_support", quality };
+  }
+  return { status: "unsupported", reasonCode: "no_support", quality };
+}
+
+/**
+ * model verifier 只能在 deterministic 下界之内调整：不允许把 unsupported/conflicted
+ * 升级成 verified，也不允许把 needs_qualification 升级成 verified。
+ */
+const STATUS_RANK: Record<ClaimVerificationStatus, number> = {
+  unsupported: 0,
+  conflicted: 1,
+  needs_qualification: 2,
+  verified: 3,
+};
+
+export function mergeClaimVerification(input: {
+  deterministic: DeterministicClaimVerification;
+  model: { status: ClaimVerificationStatus; reasonCode: string } | null | undefined;
+}): { status: ClaimVerificationStatus; reasonCode: string } {
+  const model = input.model;
+  if (model && STATUS_RANK[model.status] <= STATUS_RANK[input.deterministic.status]) {
+    return { status: model.status, reasonCode: model.reasonCode };
+  }
+  return { status: input.deterministic.status, reasonCode: input.deterministic.reasonCode };
+}
+
+export interface PersistExtractedClaimsResult {
+  created: number;
+  updated: number;
+  superseded: number;
+  skippedUserEdited: number;
+}
+
+/**
+ * 一个 Question 的 system Claim + ClaimEvidenceRelation 在单个 transaction 内落库。
+ * - claimKey upsert 保证 durable retry / lease 恢复不重复建 Claim；
+ * - userEdited=true 的 Claim 完全不动；
+ * - 未被本轮输出覆盖、且已不再有任何 active Evidence 依据的 system Claim 进入
+ *   superseded 生命周期，绝不物理删除；
+ * - relation 只 upsert（relation/confidence/rationale），不删除用户手工关系。
+ */
+export async function persistExtractedClaimsForQuestion(input: {
+  workspaceId: string;
+  runId: string;
+  question: { id: string; key: string };
+  claims: NormalizedExtractedClaim[];
+  /** evidenceId → canonical ResearchSource id（仅当前 active Evidence）。 */
+  evidenceSourceById: ReadonlyMap<string, string>;
+}): Promise<PersistExtractedClaimsResult> {
+  const result: PersistExtractedClaimsResult = { created: 0, updated: 0, superseded: 0, skippedUserEdited: 0 };
+  const outputKeys = new Set(input.claims.map((claim) => buildClaimKey(input.question.key, claim.key)));
+
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.claim.findMany({
+      where: { runId: input.runId, questionId: input.question.id, claimKey: { not: null } },
+      include: { evidenceRelations: { select: { evidenceId: true, evidence: { select: { status: true } } } } },
+    });
+    const byClaimKey = new Map(existing.map((claim) => [claim.claimKey as string, claim]));
+
+    for (const extracted of input.claims) {
+      const claimKey = buildClaimKey(input.question.key, extracted.key);
+      const current = byClaimKey.get(claimKey);
+      if (current?.userEdited) {
+        result.skippedUserEdited += 1;
+        continue;
+      }
+      const qualityBase = {
+        extractor: CLAIM_EXTRACTOR_VERSION,
+        qualifiers: extracted.qualifiers,
+      };
+      const claim = current
+        ? await tx.claim.update({
+            where: { id: current.id },
+            data: { statement: extracted.statement, status: "active", quality: json(qualityBase) },
+          })
+        : await tx.claim.create({
+            data: {
+              workspaceId: input.workspaceId,
+              runId: input.runId,
+              questionId: input.question.id,
+              statement: extracted.statement,
+              claimKey,
+              quality: json(qualityBase),
+            },
+          });
+      if (current) result.updated += 1;
+      else result.created += 1;
+
+      for (const relation of extracted.relations) {
+        if (!input.evidenceSourceById.has(relation.evidenceId)) continue;
+        await tx.claimEvidenceRelation.upsert({
+          where: { claimId_evidenceId: { claimId: claim.id, evidenceId: relation.evidenceId } },
+          create: { claimId: claim.id, evidenceId: relation.evidenceId, relation: relation.relation, confidence: relation.confidence, rationale: relation.rationale },
+          update: { relation: relation.relation, confidence: relation.confidence, rationale: relation.rationale },
+        });
+      }
+    }
+
+    for (const stale of existing) {
+      if (stale.userEdited || stale.status !== "active") continue;
+      if (outputKeys.has(stale.claimKey as string)) continue;
+      const hasActiveBasis = stale.evidenceRelations.some((relation) => relation.evidence.status === "active");
+      if (hasActiveBasis) continue;
+      await tx.claim.update({ where: { id: stale.id }, data: { status: "superseded" } });
+      result.superseded += 1;
+    }
+  });
+  return result;
+}
