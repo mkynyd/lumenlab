@@ -15,11 +15,11 @@ function createContext(overrides: Partial<ResearchProviderContext> = {}): Resear
   };
 }
 
-function succeededToolRunner(responses: Record<string, unknown>): { runner: ToolRunner; calls: Array<{ toolId: string; args: Record<string, unknown> }> } {
-  const calls: Array<{ toolId: string; args: Record<string, unknown> }> = [];
+function succeededToolRunner(responses: Record<string, unknown>): { runner: ToolRunner; calls: Array<{ toolId: string; args: Record<string, unknown>; context: Record<string, unknown> }> } {
+  const calls: Array<{ toolId: string; args: Record<string, unknown>; context: Record<string, unknown> }> = [];
   const runner = {
-    run: vi.fn(async (request: { call: { toolId: string; arguments: Record<string, unknown> } }) => {
-      calls.push({ toolId: request.call.toolId, args: request.call.arguments });
+    run: vi.fn(async (request: { call: { toolId: string; arguments: Record<string, unknown> }; context: Record<string, unknown> }) => {
+      calls.push({ toolId: request.call.toolId, args: request.call.arguments, context: request.context });
       const summary = responses[request.call.toolId];
       if (summary === undefined) return { status: "failed" as const, error: { code: "not_mocked", message: "not mocked" } };
       return { status: "succeeded" as const, executionId: "tool-exec-1", summary };
@@ -68,6 +68,22 @@ const sciversePaper = {
 };
 
 describe("research source provider · sciverse channel", () => {
+  it("invokes tools as a system orchestrator without a user-facing skill approval policy", async () => {
+    const { runner, calls } = succeededToolRunner({
+      "sciverse.search": { papers: [sciversePaper], totalCount: 1, page: 1, pageSize: 10, hasMore: false },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+
+    await provider.search(createContext(), "attention is all you need");
+
+    // 回归：Research durable Run 没有人工审批路径；若 context 带 skillId，
+    // literature-review 的 ask_first 策略会让全部工具通道 pending_approval 并静默回退。
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call.context).not.toHaveProperty("skillId");
+    }
+  });
+
   it("uses sciverse as primary academic discovery and skips legacy adapters", async () => {
     const { runner } = succeededToolRunner({
       "sciverse.search": { papers: [sciversePaper], totalCount: 1, page: 1, pageSize: 10, hasMore: false },

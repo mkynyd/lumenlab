@@ -120,7 +120,11 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
           projectId: context.projectId ?? undefined,
           runId: context.runId,
           agentExecutionId: context.executionId,
-          skillId: "literature-review",
+          // Research 是系统编排方，不是用户驱动的 Skill 会话：不带 skillId，
+          // 避免继承 literature-review 等 Skill 的 ask_first 审批策略——durable
+          // Run 没有人工审批路径，pending_approval 会让 web/arxiv/sciverse 通道
+          // 全部静默回退。Research 的工具面由 durable checkpoint 的
+          // allowedToolIds 与 L1 auto 策略共同约束。
           signal: context.signal,
           sessionApprovals: new Map(),
         },
