@@ -1,6 +1,7 @@
 import type { ProviderName } from "@/lib/agent/contracts";
 import {
   activeModelForStoredModel,
+  DEEPSEEK_CHAT_MODEL,
   isActiveChatModel,
   isKnownChatModel,
   providerForChatModel,
@@ -18,11 +19,11 @@ export interface ResearchModelSelection {
 }
 
 const DEFAULTS: Record<ResearchRole, Omit<ResearchModelSelection, "role" | "source">> = {
-  "research.planner": { provider: "deepseek", model: "deepseek-v4-flash-vision-exp", reasoningEffort: "high" },
-  "research.worker": { provider: "deepseek", model: "deepseek-v4-flash-vision-exp", reasoningEffort: "high" },
-  "research.evaluator": { provider: "deepseek", model: "deepseek-v4-flash-vision-exp", reasoningEffort: "high" },
-  "research.synthesizer": { provider: "deepseek", model: "deepseek-v4-flash-vision-exp", reasoningEffort: "max" },
-  "research.verifier": { provider: "deepseek", model: "deepseek-v4-flash-vision-exp", reasoningEffort: "high" },
+  "research.planner": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
+  "research.worker": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
+  "research.evaluator": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
+  "research.synthesizer": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "max" },
+  "research.verifier": { provider: "deepseek", model: DEEPSEEK_CHAT_MODEL, reasoningEffort: "high" },
 };
 
 const ROLES: ResearchRole[] = ["research.planner", "research.worker", "research.evaluator", "research.synthesizer", "research.verifier"];

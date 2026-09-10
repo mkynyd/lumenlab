@@ -13,7 +13,7 @@ describe("real Research provider stage", () => {
       data: {
         userId,
         title: "Research Provider E2E",
-        model: process.env.RESEARCH_MODEL_RESEARCH_EVALUATOR ?? "deepseek-v4-flash-vision-exp",
+        model: process.env.RESEARCH_MODEL_RESEARCH_EVALUATOR ?? "deepseek-flash",
         thinkingEnabled: false,
         kind: "research-system",
       },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createTextMessage, DeepSeekError } from "@/lib/deepseek";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import type { Prisma } from "@/generated/prisma/client";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import { ProviderAccessError } from "@/lib/provider-access";
@@ -87,7 +88,7 @@ export async function POST(
     const enhancedContent = await createTextMessage(
       apiKey,
       {
-        model: "deepseek-v4-flash",
+        model: DEEPSEEK_CHAT_MODEL,
         system: ENHANCE_PROMPT,
         prompt: file.textContent,
         maxTokens: 8192,
@@ -104,7 +105,7 @@ export async function POST(
         contentFingerprint: currentFingerprint,
         processingMetadata: metadataWith(file.processingMetadata, {
           enhancedAt,
-          enhancedByModel: "deepseek-v4-flash",
+          enhancedByModel: DEEPSEEK_CHAT_MODEL,
           enhanceWarnings: [],
         }),
       },

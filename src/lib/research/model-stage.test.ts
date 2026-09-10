@@ -41,7 +41,7 @@ describe("research model stage contracts", () => {
         conversationId: "conversation-1",
         messageId: "message-1",
         provider: "deepseek",
-        model: "deepseek-v4-flash-vision-exp",
+        model: "deepseek-flash",
         usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
         sources: [],
       }),
@@ -73,7 +73,7 @@ describe("research model stage contracts", () => {
     expect(result).toMatchObject({
       value: null,
       attempted: true,
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
     });
     expect(prisma.message.findUnique).not.toHaveBeenCalled();
   });

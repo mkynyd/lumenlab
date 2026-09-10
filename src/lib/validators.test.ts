@@ -97,7 +97,7 @@ describe("sendMessageSchema", () => {
     expect(
       sendMessageSchema.parse({
         message: "总结资料",
-        model: "deepseek-v4-flash-vision-exp",
+        model: "deepseek-flash",
       })
     ).toMatchObject({
       thinkingEnabled: true,

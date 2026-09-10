@@ -37,7 +37,7 @@ describe("DeepSeek learning model gateway", () => {
     expect(createMessage).toHaveBeenCalledWith(
       "key",
       expect.objectContaining({
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         prompt: expect.not.stringContaining("user-1"),
       })
     );

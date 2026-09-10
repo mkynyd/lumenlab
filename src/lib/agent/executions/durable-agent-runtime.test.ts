@@ -441,7 +441,7 @@ describe("durable Agent runtime bridge", () => {
     expect(recordUsage).toHaveBeenCalledWith(
       expect.objectContaining({
         messageId: "message-assistant",
-        model: "deepseek-v4-flash-vision-exp",
+        model: "deepseek-flash",
         inputCacheMissTokens: 30,
         outputTokens: 12,
         totalTokens: 42,
@@ -678,9 +678,9 @@ describe("durable Agent runtime bridge", () => {
       version: 2,
       model: {
         provider: "deepseek",
-        name: "deepseek-v4-flash-vision-exp",
+        name: "deepseek-flash",
       },
-      request: { model: "deepseek-v4-flash-vision-exp" },
+      request: { model: "deepseek-flash" },
       items: [
         {
           type: "message",
@@ -694,7 +694,7 @@ describe("durable Agent runtime bridge", () => {
 
   it("maps new active models to providers through the catalog", () => {
     const cases = [
-      ["deepseek-v4-flash-vision-exp", "deepseek"],
+      ["deepseek-flash", "deepseek"],
       ["minimax-m3", "minimax"],
       ["qwen3.8-flash", "bailian"],
     ] as const;

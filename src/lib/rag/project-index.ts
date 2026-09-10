@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { createTextMessage } from "@/lib/deepseek";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 export { FILE_CATEGORIES, type FileCategory } from "@/lib/file-categories";
 import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
@@ -247,7 +248,7 @@ export async function generateFileIndexMetadata(input: {
 
   try {
     const output = await createTextMessage(apiKey, {
-      model: "deepseek-v4-flash",
+      model: DEEPSEEK_CHAT_MODEL,
       maxTokens: 500,
       temperature: 0,
       system: "你是课程资料索引器。只能输出 JSON，不要输出解释。",

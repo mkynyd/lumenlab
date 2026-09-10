@@ -210,7 +210,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       modelLock: null,
       thinkingEnabled: false,
       activeSkillId: null,
@@ -245,7 +245,7 @@ describe("POST /api/chat", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "生成实验报告",
-        model: "deepseek-v4-flash-vision-exp",
+        model: "deepseek-flash",
         thinkingEnabled: false,
         reasoningEffort: "high",
         projectId: "project-1",
@@ -275,7 +275,7 @@ describe("POST /api/chat", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "hello",
-          model: "deepseek-v4-flash-vision-exp",
+          model: "deepseek-flash",
           thinkingEnabled: false,
           reasoningEffort: "high",
           selectedFileIds: [],
@@ -296,7 +296,7 @@ describe("POST /api/chat", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "你好，帮我解释一下动态规划是什么",
-        model: "deepseek-v4-flash-vision-exp",
+        model: "deepseek-flash",
         thinkingEnabled: false,
         reasoningEffort: "high",
         projectId: "project-1",
@@ -321,7 +321,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       modelLock: null,
       thinkingEnabled: false,
       activeSkillId: null,
@@ -344,7 +344,7 @@ describe("POST /api/chat", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "你好，帮我解释一下动态规划是什么",
-          model: "deepseek-v4-flash-vision-exp",
+          model: "deepseek-flash",
           thinkingEnabled: false,
           reasoningEffort: "high",
           projectId: "project-1",
@@ -393,7 +393,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: "code-reader",
@@ -413,7 +413,7 @@ describe("POST /api/chat", () => {
         body: JSON.stringify({
           message: "快捷任务：生成 Mermaid 逻辑图",
           hiddenPrompt: "请基于项目资料生成 Mermaid flowchart LR",
-          model: "deepseek-v4-flash-vision-exp",
+          model: "deepseek-flash",
           thinkingEnabled: true,
           reasoningEffort: "max",
           projectId: "project-1",
@@ -560,7 +560,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: null,
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       modelLock: null,
       thinkingEnabled: false,
       activeSkillId: null,
@@ -579,7 +579,7 @@ describe("POST /api/chat", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "今天有什么科技新闻？",
-          model: "deepseek-v4-flash-vision-exp",
+          model: "deepseek-flash",
           thinkingEnabled: false,
           reasoningEffort: "high",
           webSearchActive: true,
@@ -643,7 +643,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: null,
@@ -686,7 +686,7 @@ describe("POST /api/chat", () => {
         body: JSON.stringify({
           message: "基于项目资料写一篇关于等级保护的论文提纲",
           skillOff: true,
-          model: "deepseek-v4-flash-vision-exp",
+          model: "deepseek-flash",
           thinkingEnabled: true,
           reasoningEffort: "max",
           projectId: "project-1",
@@ -792,7 +792,7 @@ describe("accumulateAndSave", () => {
       "conversation-1",
       "message-1",
       "user-1",
-      "deepseek-v4-flash-vision-exp",
+      "deepseek-flash",
       "deepseek",
       () => ({
         prompt_tokens: 1377,
@@ -838,7 +838,7 @@ describe("accumulateAndSave", () => {
       "conversation-1",
       "message-1",
       "user-1",
-      "deepseek-v4-flash-vision-exp",
+      "deepseek-flash",
       "deepseek",
       () => ({
         prompt_tokens: 20,
@@ -896,7 +896,7 @@ describe("accumulateAndSave", () => {
         "conversation-1",
         "message-1",
         "user-1",
-        "deepseek-v4-flash-vision-exp",
+        "deepseek-flash",
         "deepseek",
         () => null
       )
@@ -926,7 +926,7 @@ describe("accumulateAndSave", () => {
         "conversation-1",
         "message-1",
         "user-1",
-        "deepseek-v4-flash-vision-exp",
+        "deepseek-flash",
         "deepseek",
         () => null
       )
@@ -1015,7 +1015,7 @@ describe("Streaming tool loop", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: null,
@@ -1025,7 +1025,7 @@ describe("Streaming tool loop", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: "project-1",
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: null,
@@ -1075,7 +1075,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             skillOff: true,
             thinkingEnabled: true,
             reasoningEffort: "max",
@@ -1138,7 +1138,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1193,7 +1193,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "列出项目资料",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1240,7 +1240,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1286,7 +1286,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "测试",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1358,7 +1358,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "详细分析资料",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1436,7 +1436,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "列出项目资料",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1514,7 +1514,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "列出项目资料",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1574,7 +1574,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "deepseek-v4-flash-vision-exp",
+            model: "deepseek-flash",
             thinkingEnabled: true,
             reasoningEffort: "max",
             projectId: "project-1",
@@ -1703,7 +1703,7 @@ describe("accumulateAndSave sanitization", () => {
       "conversation-1",
       "message-1",
       "user-1",
-      "deepseek-v4-flash-vision-exp",
+      "deepseek-flash",
       "deepseek",
       () => ({
         prompt_tokens: 10,

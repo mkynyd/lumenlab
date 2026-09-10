@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import { createTextMessage } from "@/lib/deepseek";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import {
   NEW_CONVERSATION_TITLE,
   conversationTitleFallback,
@@ -51,8 +52,8 @@ export async function POST(
   try {
     const apiKey = await getProviderApiKey(session.user.id, "deepseek");
     const output = await createTextMessage(apiKey, {
-      // `deepseek-v4-flash` is the application's DeepSeek V4 Light lane.
-      model: "deepseek-v4-flash",
+      // DeepSeek 全部新请求统一走活跃的 V4.1 Flash 线路。
+      model: DEEPSEEK_CHAT_MODEL,
       maxTokens: 48,
       temperature: 0.1,
       system:

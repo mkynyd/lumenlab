@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeepSeekAdapter } from "./deepseek-adapter";
 import { call, collect, completed, mockSse, params, tool } from "./responses-test-helpers";
 afterEach(() => vi.unstubAllGlobals());
-const model = "deepseek-v4-flash-vision-exp";
+const model = "deepseek-flash";
 
 describe("DeepSeek Responses adapter", () => {
   it("uses native function calls for every platform tool and replays outputs by call id", async () => {

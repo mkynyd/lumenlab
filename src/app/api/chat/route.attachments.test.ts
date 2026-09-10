@@ -70,7 +70,7 @@ function chatRequest() {
     JSON.stringify({
       clientRunKey: "3f1e6b1c-9f4e-4c2a-8f2f-6b8b0f0c1d2e",
       message: "这张图里是什么",
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       thinkingEnabled: true,
       reasoningEffort: "high",
     })
@@ -90,7 +90,7 @@ function streamResponse() {
       conversationId: "conversation-1",
       messageId: "message-assistant",
       provider: "deepseek",
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       runtimeMode: "new",
       runtimeVersion: "1",
       toolProtocol: "native",
@@ -101,7 +101,7 @@ function streamResponse() {
       conversationId: "conversation-1",
       messageId: "message-assistant",
       provider: "deepseek" as const,
-      model: "deepseek-v4-flash-vision-exp" as const,
+      model: "deepseek-flash" as const,
       usage: null,
       sources: [],
     }),
@@ -130,7 +130,7 @@ describe("POST /api/chat attachment persistence", () => {
     vi.clearAllMocks();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
     mocks.checkRateLimit.mockResolvedValue({ allowed: true });
-    mocks.resolveStoredChatModel.mockResolvedValue("deepseek-v4-flash-vision-exp");
+    mocks.resolveStoredChatModel.mockResolvedValue("deepseek-flash");
     mocks.persistChatAttachments.mockResolvedValue([persistedRow()]);
     mocks.toMediaRef.mockReturnValue({
       source: "message-attachment",
@@ -193,7 +193,7 @@ describe("POST /api/chat attachment persistence", () => {
       body: JSON.stringify({
         clientRunKey: "3f1e6b1c-9f4e-4c2a-8f2f-6b8b0f0c1d2e",
         message: "只发文字",
-        model: "deepseek-v4-flash-vision-exp",
+        model: "deepseek-flash",
         thinkingEnabled: true,
         reasoningEffort: "high",
       }),

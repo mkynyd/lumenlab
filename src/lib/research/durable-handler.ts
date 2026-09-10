@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import type { AgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { AgentExecutionHandler, AgentExecutionHandlerContext, AgentExecutionHandlerResult } from "@/lib/agent/executions/agent-execution-runner";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import { evaluateResearchStop, getResearchBudget, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider } from "./source-provider";
@@ -128,7 +129,7 @@ async function synthesizeWithExistingRuntime(input: {
     signal: input.signal,
     prompt,
     parse: (content) => content.trim() || null,
-  }) : { value: null, usage: null, model: "deepseek-v4-flash-vision-exp" as const, attempted: false };
+  }) : { value: null, usage: null, model: DEEPSEEK_CHAT_MODEL, attempted: false };
   if (stage.value) return { content: stage.value, usage: stage.usage, model: stage.model, attempted: stage.attempted };
   return {
     content: evidenceText
@@ -174,7 +175,7 @@ async function repairReportWithExistingRuntime(input: {
     signal: input.signal,
     prompt,
     parse: (content) => content.trim() || null,
-  }) : { value: null, usage: null, model: "deepseek-v4-flash-vision-exp" as const, attempted: false };
+  }) : { value: null, usage: null, model: DEEPSEEK_CHAT_MODEL, attempted: false };
   return {
     content: stage.value ?? appendVerificationQualification({ draft: input.draft, unsupportedClaims: input.unsupportedClaims, conflictedClaims: input.conflictedClaims, qualifiedClaims: input.qualifiedClaims }),
     usage: stage.usage,

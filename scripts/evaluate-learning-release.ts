@@ -173,7 +173,7 @@ async function runProviderEvaluation(
   // schema/handle failure above rejects the run instead.
   return runLearningReleaseGates({
     environment: "manual-provider",
-    model: `${provider}-deepseek-v4-flash`,
+    model: `${provider}-deepseek-flash`,
     commitSha,
   });
 }

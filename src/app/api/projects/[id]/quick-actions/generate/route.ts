@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createTextMessage } from "@/lib/deepseek";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 
 const generateQuickActionSchema = z.object({
@@ -63,7 +64,7 @@ export async function POST(
   try {
     const apiKey = await getProviderApiKey(session.user.id, "deepseek");
     const output = await createTextMessage(apiKey, {
-      model: "deepseek-v4-flash",
+      model: DEEPSEEK_CHAT_MODEL,
       temperature: 0.2,
       maxTokens: 1000,
       system:

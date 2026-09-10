@@ -7,7 +7,7 @@ import type { ResponsesStreamEvent } from "../providers/responses/types";
 import { runAgentLoop } from "../loop/agent-loop";
 afterEach(() => vi.unstubAllGlobals());
 const cases = [
-  { model: "deepseek-v4-flash-vision-exp", adapter: () => new DeepSeekAdapter("sk-test"), url: "https://api.deepseek.com/responses", nativeName: "web_search", toolId: "web.search" },
+  { model: "deepseek-flash", adapter: () => new DeepSeekAdapter("sk-test"), url: "https://api.deepseek.com/responses", nativeName: "web_search", toolId: "web.search" },
   { model: "minimax-m3", adapter: () => new MiniMaxAdapter("sk-test"), url: "https://api.minimax.cn/v1/responses", nativeName: "project_ufiles_dlist", toolId: "project_files.list" },
   { model: "qwen3.8-flash", adapter: () => new BailianQwenAdapter("ba-test", "https://workspace.example/compatible-mode/v1"), url: "https://workspace.example/compatible-mode/v1/responses", nativeName: "project_ufiles_dlist", toolId: "project_files.list" },
 ];

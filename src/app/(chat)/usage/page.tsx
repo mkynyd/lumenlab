@@ -127,6 +127,7 @@ export default function UsagePage() {
     });
   const tierLabel = data.tier === "premium" ? "A 测用户" : data.tier;
   const modelLabel = (model: string) => {
+    if (model === "deepseek-flash") return "DeepSeek · 快速";
     if (model === "deepseek-v4-flash-vision-exp") return "DeepSeek · 快速";
     if (model === "deepseek-v4-flash") return "DeepSeek · 快速";
     if (model === "deepseek-v4-pro") return "DeepSeek · 深度";

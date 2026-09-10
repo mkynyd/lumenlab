@@ -126,7 +126,7 @@ vi.mock("./model-stage", async (importOriginal) => {
     runResearchModelStage: vi.fn(async () => ({
       value: { queries: ["transformer self-attention"], rationale: "test" },
       usage: null,
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       attempted: false,
     })),
   };

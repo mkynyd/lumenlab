@@ -19,6 +19,7 @@ describe("credits", () => {
     expect(getCreditWeights("minimax-m3")).toBeDefined();
     expect(getCreditWeights("qwen3.7-plus")).toBeDefined();
     expect(getCreditWeights("qwen3.8-flash")).toBeDefined();
+    expect(getCreditWeights("deepseek-flash")).toBeDefined();
     expect(getCreditWeights("deepseek-v4-flash-vision-exp")).toBeDefined();
     expect(getCreditWeights("unknown")).toBeUndefined();
   });
@@ -120,13 +121,13 @@ describe("credits", () => {
   });
 
   it("does not let binary float noise add an extra credit on round totals", () => {
-    // 1M 命中 + 1M 未命中 + 1M 输出（低谷）：0.05 + 1.5 + 4.5 = 6.05 元 = 6050 信用点
-    const credits = calculateCredits("deepseek-v4-flash-vision-exp", {
+    // 1M 命中 + 1M 未命中 + 1M 输出（低谷）：0.02 + 1 + 4 = 5.02 元 = 5020 信用点
+    const credits = calculateCredits("deepseek-flash", {
       inputCacheHitTokens: 1_000_000,
       inputCacheMissTokens: 1_000_000,
       outputTokens: 1_000_000,
     }, { requestStartedAt: SATURDAY("10:00") });
-    expect(credits).toBe(6_050);
+    expect(credits).toBe(5_020);
   });
 
   it("throws for unknown models instead of settling for free", () => {
@@ -192,48 +193,53 @@ describe("deepSeekBillingTier", () => {
   });
 });
 
-describe("deepseek-v4-flash-vision-exp peak/off-peak pricing", () => {
+describe("deepseek-flash peak/off-peak pricing", () => {
   const usage = {
     inputCacheHitTokens: 1_000,
     inputCacheMissTokens: 1_000,
     outputTokens: 1_000,
   };
 
-  it("charges off-peak weights outside peak windows", () => {
-    // 1000*0.05 + 1000*1.5 + 1000*4.5 = 6050 raw / 1000 = 6.05 → 7
+  it("uses the 2026-09-10 V4.1 Flash off-peak weights", () => {
+    expect(getCreditWeights("deepseek-flash", "off_peak")).toEqual({
+      hit: 0.02,
+      miss: 1,
+      out: 4,
+    });
+    // 1000*0.02 + 1000*1 + 1000*4 = 5020 raw / 1000 = 5.02 → 6
     expect(
-      calculateCredits("deepseek-v4-flash-vision-exp", usage, {
+      calculateCredits("deepseek-flash", usage, {
         requestStartedAt: MONDAY("08:00"),
       })
-    ).toBe(7);
+    ).toBe(6);
   });
 
   it("charges peak weights inside peak windows, frozen at request start", () => {
-    // 1000*0.1 + 1000*3 + 1000*9 = 12100 raw / 1000 = 12.1 → 13
+    // 高峰为低谷两倍：1000*0.04 + 1000*2 + 1000*8 = 10040 raw / 1000 = 10.04 → 11
     expect(
-      calculateCredits("deepseek-v4-flash-vision-exp", usage, {
+      calculateCredits("deepseek-flash", usage, {
         requestStartedAt: MONDAY("10:00"),
       })
-    ).toBe(13);
+    ).toBe(11);
   });
 
   it("freezes the tier at request start even across a boundary", () => {
     // 11:59 开始的请求按高峰结算，不按结算时刻重算
     expect(
-      calculateCredits("deepseek-v4-flash-vision-exp", usage, {
+      calculateCredits("deepseek-flash", usage, {
         requestStartedAt: MONDAY("11:59"),
       })
-    ).toBe(13);
+    ).toBe(11);
     // 12:00 开始的请求按低谷结算
     expect(
-      calculateCredits("deepseek-v4-flash-vision-exp", usage, {
+      calculateCredits("deepseek-flash", usage, {
         requestStartedAt: MONDAY("12:00"),
       })
-    ).toBe(7);
+    ).toBe(6);
   });
 
   it("falls back to off-peak when no start time is provided", () => {
-    expect(calculateCredits("deepseek-v4-flash-vision-exp", usage)).toBe(7);
+    expect(calculateCredits("deepseek-flash", usage)).toBe(6);
   });
 
   it("ignores the tier for non-DeepSeek models", () => {
@@ -247,17 +253,61 @@ describe("deepseek-v4-flash-vision-exp peak/off-peak pricing", () => {
   });
 
   it("estimates budget with the same frozen tier", () => {
-    // 高峰：2000*3 + 1000*9 = 15000 / 1000 = 15
+    // 高峰：2000*2 + 1000*8 = 12000 / 1000 = 12
     expect(
-      estimateCreditsForBudget("deepseek-v4-flash-vision-exp", 2000, 1000, {
+      estimateCreditsForBudget("deepseek-flash", 2000, 1000, {
         requestStartedAt: MONDAY("10:00"),
       })
-    ).toBe(15);
-    // 低谷：2000*1.5 + 1000*4.5 = 7500 / 1000 = 7.5 → 8
+    ).toBe(12);
+    // 低谷：2000*1 + 1000*4 = 6000 / 1000 = 6
     expect(
-      estimateCreditsForBudget("deepseek-v4-flash-vision-exp", 2000, 1000, {
+      estimateCreditsForBudget("deepseek-flash", 2000, 1000, {
         requestStartedAt: SATURDAY("10:00"),
       })
-    ).toBe(8);
+    ).toBe(6);
+  });
+});
+
+describe("historical DeepSeek pricing stays frozen", () => {
+  it("keeps V4 Flash Vision Exp on its original peak/off-peak rates", () => {
+    const usage = {
+      inputCacheHitTokens: 1_000,
+      inputCacheMissTokens: 1_000,
+      outputTokens: 1_000,
+    };
+    expect(getCreditWeights("deepseek-v4-flash-vision-exp", "off_peak")).toEqual({
+      hit: 0.05,
+      miss: 1.5,
+      out: 4.5,
+    });
+    expect(getCreditWeights("deepseek-v4-flash-vision-exp", "peak")).toEqual({
+      hit: 0.1,
+      miss: 3,
+      out: 9,
+    });
+    // 1000*0.05 + 1000*1.5 + 1000*4.5 = 6050 raw / 1000 = 6.05 → 7
+    expect(
+      calculateCredits("deepseek-v4-flash-vision-exp", usage, {
+        requestStartedAt: SATURDAY("10:00"),
+      })
+    ).toBe(7);
+    expect(
+      calculateCredits("deepseek-v4-flash-vision-exp", usage, {
+        requestStartedAt: MONDAY("10:00"),
+      })
+    ).toBe(13);
+  });
+
+  it("keeps legacy V4 Flash and V4 Pro on their flat rates", () => {
+    expect(calculateCredits("deepseek-v4-flash", {
+      inputCacheHitTokens: 0,
+      inputCacheMissTokens: 1000,
+      outputTokens: 1000,
+    })).toBe(3);
+    expect(calculateCredits("deepseek-v4-pro", {
+      inputCacheHitTokens: 0,
+      inputCacheMissTokens: 1000,
+      outputTokens: 1000,
+    })).toBe(9);
   });
 });

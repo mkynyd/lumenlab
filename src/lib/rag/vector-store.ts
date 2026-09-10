@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
 import crypto from "crypto";
 import { createTextMessage } from "@/lib/deepseek";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import {
   matchProjectIndex,
@@ -620,7 +621,7 @@ export async function selectFilesWithDeepSeek(params: {
 
   try {
     const output = await createTextMessage(apiKey, {
-      model: "deepseek-v4-flash",
+      model: DEEPSEEK_CHAT_MODEL,
       maxTokens: 1200,
       temperature: 0,
       system:

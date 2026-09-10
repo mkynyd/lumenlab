@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { createTextMessage } from "@/lib/deepseek";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import { ProviderAccessError } from "@/lib/provider-access";
 import {
@@ -149,7 +150,7 @@ export function createDeepSeekLearningModelGateway(
     const input = generationInputSchema.parse(rawInput);
     const apiKey = await apiKeyFor(input.userId, getApiKey);
     const text = await createMessage(apiKey, {
-      model: "deepseek-v4-flash",
+      model: DEEPSEEK_CHAT_MODEL,
       // DeepSeek 默认思考会消耗大部分输出 token，导致 JSON 被 max_tokens
       // 截断而无法解析；结构化生成必须禁用思考保证输出完整。
       thinking: { type: "disabled" },
@@ -172,7 +173,7 @@ export function createDeepSeekLearningModelGateway(
       const input = evaluationInputSchema.parse(rawInput);
       const apiKey = await apiKeyFor(input.userId, getApiKey);
       const text = await createMessage(apiKey, {
-        model: "deepseek-v4-flash",
+        model: DEEPSEEK_CHAT_MODEL,
         thinking: { type: "disabled" },
         system: EVALUATION_SYSTEM_PROMPT,
         prompt: modelPayload(input),

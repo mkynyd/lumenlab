@@ -1489,7 +1489,7 @@ describe("PrismaAgentExecutionStore", () => {
         round: 0,
         model: {
           provider: "deepseek",
-          name: "deepseek-v4-flash-vision-exp",
+          name: "deepseek-flash",
         },
         skill: { id: null, version: null },
         rag: { sourceIds: [], selectedFileIds: [] },

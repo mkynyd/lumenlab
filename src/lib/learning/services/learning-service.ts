@@ -17,6 +17,7 @@ import {
   type PracticeItemPublicDto,
 } from "@/lib/learning/contracts";
 import { gradeAttempt } from "@/lib/learning/grading";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 import {
   deriveFreshness,
   deriveWrongAnswer,
@@ -1223,7 +1224,7 @@ export function createLearningService(options: CreateLearningServiceOptions) {
       );
     return {
       content: parsed.content,
-      metadata: { model: "deepseek-v4-flash" },
+      metadata: { model: DEEPSEEK_CHAT_MODEL },
     };
   }
 

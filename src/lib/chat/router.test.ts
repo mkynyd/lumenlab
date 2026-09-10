@@ -28,7 +28,7 @@ describe("routeModel", () => {
       routeModel(
         { modelLock: "qwen" },
         [image],
-        { requestedModel: "deepseek-v4-flash-vision-exp" }
+        { requestedModel: "deepseek-flash" }
       )
     ).toEqual({
       provider: "deepseek",

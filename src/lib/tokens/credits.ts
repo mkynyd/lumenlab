@@ -1,8 +1,8 @@
 /**
  * 信用点换算。
  *
- * 以 DeepSeek V4 Flash 输入 token（缓存未命中）为基准：
- * 1 信用点 = 1000 个 Flash 输入 token。
+ * 以 DeepSeek V4.1 Flash（`deepseek-flash`）低谷输入 token（缓存未命中）
+ * 为基准：1 信用点 = 1000 个 Flash 输入 token，即 1 信用点 = 0.001 元。
  * 其他模型 / token 类型按人民币成本比例折算。
  *
  * DeepSeek 实行峰谷定价（Asia/Shanghai，周一至周五 9:00-12:00、
@@ -70,14 +70,23 @@ export const CREDIT_WEIGHTS: Record<string, CreditWeights> = {
   },
 };
 
-// DeepSeek V4 Flash Vision Exp 峰谷两档（元/百万 tokens）：
-// 低谷 命中 0.05 / 未命中 1.5 / 输出 4.5；高峰 命中 0.10 / 未命中 3.0 / 输出 9.0。
-const DEEPSEEK_V4_FLASH_VISION_EXP_WEIGHTS: Record<
-  DeepSeekBillingTier,
-  CreditWeights
+// DeepSeek 峰谷两档权重（元/百万 tokens，与信用点 1:1）。官方 2026-09-10
+// 随 DeepSeek-V4.1-Flash 发布下调价格：低谷 命中 0.02 / 未命中 1 / 输出 4，
+// 高峰为低谷的两倍（0.04 / 2 / 8）。
+const DEEPSEEK_TIERED_WEIGHTS: Record<
+  string,
+  Record<DeepSeekBillingTier, CreditWeights>
 > = {
-  off_peak: { hit: 0.05, miss: 1.5, out: 4.5 },
-  peak: { hit: 0.1, miss: 3, out: 9 },
+  "deepseek-flash": {
+    off_peak: { hit: 0.02, miss: 1, out: 4 },
+    peak: { hit: 0.04, miss: 2, out: 8 },
+  },
+  // 历史 V4 Flash Vision Exp 按当时的峰谷价（0.05/1.5/4.5 与 0.1/3/9）入账；
+  // 已结算账单与历史用量读取都不按新价格重算。
+  "deepseek-v4-flash-vision-exp": {
+    off_peak: { hit: 0.05, miss: 1.5, out: 4.5 },
+    peak: { hit: 0.1, miss: 3, out: 9 },
+  },
 };
 
 const QWEN_LONG_CONTEXT_WEIGHTS: CreditWeights = {
@@ -85,8 +94,6 @@ const QWEN_LONG_CONTEXT_WEIGHTS: CreditWeights = {
   miss: 6,
   out: 24,
 };
-
-const DEEPSEEK_TIERED_MODELS = new Set(["deepseek-v4-flash-vision-exp"]);
 
 const DEEPSEEK_BILLING_TIME_ZONE = "Asia/Shanghai";
 
@@ -119,9 +126,8 @@ export function getCreditWeights(
   model: string,
   deepSeekTier: DeepSeekBillingTier = "off_peak"
 ): CreditWeights | undefined {
-  if (DEEPSEEK_TIERED_MODELS.has(model)) {
-    return DEEPSEEK_V4_FLASH_VISION_EXP_WEIGHTS[deepSeekTier];
-  }
+  const tiered = DEEPSEEK_TIERED_WEIGHTS[model];
+  if (tiered) return tiered[deepSeekTier];
   return CREDIT_WEIGHTS[model];
 }
 

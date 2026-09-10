@@ -80,7 +80,7 @@ describe("compression", () => {
       expect(mockedCompleteChat).toHaveBeenCalledWith(
         "key",
         expect.objectContaining({
-          model: "deepseek-v4-flash",
+          model: "deepseek-flash",
           messages: expect.arrayContaining([
             expect.objectContaining({ role: "system" }),
             expect.objectContaining({ role: "user" }),

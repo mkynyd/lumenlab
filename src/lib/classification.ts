@@ -21,6 +21,7 @@ import {
 } from "@/lib/ai/profile-schemas";
 import { skillRegistry } from "@/lib/agent/skill-registry";
 import { createTextMessage } from "@/lib/deepseek";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 
 // ============================================================
 // LLM 生成项目级 Prompt
@@ -56,7 +57,7 @@ ${JSON.stringify(PROJECT_PROMPT_SCHEMA_JSON, null, 2)}
 - overrides: 仅当用户有明确的呈现偏好时提供，通常省略`;
 
   const text = await createTextMessage(apiKey, {
-    model: "deepseek-v4-flash-vision-exp",
+    model: DEEPSEEK_CHAT_MODEL,
     maxTokens: 800,
     temperature: 0.2,
     system: systemPrompt,
@@ -104,7 +105,7 @@ ${JSON.stringify(USER_PROFILE_SCHEMA_JSON, null, 2)}
 - constraints: 根据用户描述推断约束条件`;
 
   const text = await createTextMessage(apiKey, {
-    model: "deepseek-v4-flash-vision-exp",
+    model: DEEPSEEK_CHAT_MODEL,
     maxTokens: 400,
     temperature: 0.2,
     system: systemPrompt,
@@ -134,7 +135,7 @@ export async function generateQuickActions(
   apiKey: string
 ): Promise<Array<{ title: string; prompt: string }>> {
   const text = await createTextMessage(apiKey, {
-    model: "deepseek-v4-flash-vision-exp",
+    model: DEEPSEEK_CHAT_MODEL,
     maxTokens: 400,
     temperature: 0.3,
     system: `你是一个快捷任务推荐助手。根据用户描述和使用场景，推荐 3-5 个快捷任务。

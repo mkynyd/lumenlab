@@ -10,17 +10,11 @@ import {
 describe("mapDeepSeekModel", () => {
   it("upgrades legacy and unknown ids to the active Responses model", () => {
     expect(mapDeepSeekModel("deepseek-v4-flash-vision-exp")).toBe(
-      "deepseek-v4-flash-vision-exp"
+      "deepseek-flash"
     );
-    expect(mapDeepSeekModel("deepseek-v4-pro")).toBe(
-      "deepseek-v4-flash-vision-exp"
-    );
-    expect(mapDeepSeekModel("deepseek-v4-flash")).toBe(
-      "deepseek-v4-flash-vision-exp"
-    );
-    expect(mapDeepSeekModel("unknown-model")).toBe(
-      "deepseek-v4-flash-vision-exp"
-    );
+    expect(mapDeepSeekModel("deepseek-v4-pro")).toBe("deepseek-flash");
+    expect(mapDeepSeekModel("deepseek-v4-flash")).toBe("deepseek-flash");
+    expect(mapDeepSeekModel("unknown-model")).toBe("deepseek-flash");
   });
 });
 
@@ -67,7 +61,7 @@ describe("non-streaming Responses calls", () => {
       Accept: "application/json",
     });
     expect(JSON.parse(String(init?.body))).toEqual({
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       input: [{ role: "user", content: [{ type: "input_text", text: "生成标题" }] }],
       instructions: "系统提示",
       max_output_tokens: 128,
@@ -136,7 +130,7 @@ describe("non-streaming Responses calls", () => {
     });
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(body).toMatchObject({
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       max_output_tokens: 512,
       reasoning: { effort: "max" },
       tools: [{ type: "function", name: "web_search", parameters: { type: "object" } }],
@@ -172,7 +166,7 @@ describe("non-streaming Responses calls", () => {
       new Response(JSON.stringify(payload), { status: 200 })
     );
     const failure = await completeChat("sk-test", {
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       messages: [{ role: "user", content: "问题" }],
     }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(DeepSeekError);

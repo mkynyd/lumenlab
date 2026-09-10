@@ -45,12 +45,17 @@ export type ModelCatalogEntry = {
   billingVersion: string;
 };
 
-/** 当前计费规则版本（2026-09-07 模型与价格表） */
-export const MODEL_BILLING_VERSION = "2026-09-07" as const;
+/** 当前计费规则版本（2026-09-10 DeepSeek V4.1 Flash 模型与价格表） */
+export const MODEL_BILLING_VERSION = "2026-09-10" as const;
+
+/** 活跃 DeepSeek 模型：官方 2026-09-10 起统一为 deepseek-flash（DeepSeek-V4.1-Flash）。 */
+export const DEEPSEEK_CHAT_MODEL = "deepseek-flash" as const;
+
+export const MINIMAX_CHAT_MODEL = "minimax-m3" as const;
 
 export const DEFAULT_CHAT_MODELS = [
-  "deepseek-v4-flash-vision-exp",
-  "minimax-m3",
+  DEEPSEEK_CHAT_MODEL,
+  MINIMAX_CHAT_MODEL,
 ] as const;
 
 export const QWEN_CHAT_MODEL = "qwen3.8-flash" as const;
@@ -70,6 +75,7 @@ export type ChatModel = (typeof ALL_CHAT_MODELS)[number];
  */
 export const LEGACY_CHAT_MODELS = [
   "deepseek-v4-flash",
+  "deepseek-v4-flash-vision-exp",
   "deepseek-v4-pro",
   "qwen3.7-plus",
 ] as const;
@@ -99,14 +105,15 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     billingVersion: MODEL_BILLING_VERSION,
   },
   {
-    id: "deepseek-v4-flash-vision-exp",
-    wireId: "deepseek-v4-flash-vision-exp",
+    id: "deepseek-flash",
+    wireId: "deepseek-flash",
     provider: "deepseek",
-    displayName: "DeepSeek V4 Flash",
+    displayName: "DeepSeek V4.1 Flash",
     vendor: "DeepSeek",
-    detailName: "DeepSeek V4 Flash Vision",
-    // 简介与图片能力口径：api-docs.deepseek.com「图像理解」与模型更新列表
-    description: "DeepSeek V4 系列的快速视觉模型：除文本外支持输入图片，可描述图片、识别截图文字、分析图表；思考模式默认开启。",
+    detailName: "DeepSeek V4.1 Flash",
+    // 简介与图片能力口径：api-docs.deepseek.com 2026-09-10 更新日志
+    // 「DeepSeek-V4.1-Flash Release」与「Vision」指南
+    description: "DeepSeek 新架构家族的轻量模型，原生支持多模态视觉理解：除文本外可输入图片，可描述图片、识别截图文字、分析图表；思考模式默认开启。",
     inputLabel: "文本 · 图片",
     inputTypes: ["text", "image"],
     contextWindowTokens: 1_000_000,
@@ -140,8 +147,22 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     provider: "deepseek",
     displayName: "DeepSeek V4 Flash",
     vendor: "DeepSeek",
-    description: "历史 DeepSeek V4 Flash 模型，已被 vision-exp 视觉模型取代，仅用于历史消息与账单展示。",
+    description: "历史 DeepSeek V4 Flash 模型，官方已下线并路由到 V4.1 Flash，仅用于历史消息与账单展示。",
     inputTypes: ["text"],
+    contextWindowTokens: 1_000_000,
+    maxOutputTokens: 384_000,
+    reasoningEffort: { high: "high", max: "max" },
+    enabled: false,
+    billingVersion: "legacy",
+  },
+  {
+    id: "deepseek-v4-flash-vision-exp",
+    wireId: "deepseek-v4-flash-vision-exp",
+    provider: "deepseek",
+    displayName: "DeepSeek V4 Flash Vision",
+    vendor: "DeepSeek",
+    description: "历史 DeepSeek V4 Flash 视觉实验模型，官方已随 V4.1 Flash 发布下线，仅用于历史消息与账单展示。",
+    inputTypes: ["text", "image"],
     contextWindowTokens: 1_000_000,
     maxOutputTokens: 384_000,
     reasoningEffort: { high: "high", max: "max" },
@@ -154,7 +175,7 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     provider: "deepseek",
     displayName: "DeepSeek V4 Pro",
     vendor: "DeepSeek",
-    description: "历史 DeepSeek V4 Pro 模型，不支持多模态，已停止用于新请求，仅用于历史消息与账单展示。",
+    description: "历史 DeepSeek V4 Pro 模型，官方已公布下线计划并由 V4.1 Flash 接管，仅用于历史消息与账单展示。",
     inputTypes: ["text"],
     contextWindowTokens: 1_000_000,
     maxOutputTokens: 384_000,
@@ -205,8 +226,14 @@ export function providerForChatModel(
 
 /** Resolve a stored legacy model to the active model that will actually be called. */
 export function activeModelForStoredModel(model: CatalogModelId): ChatModel {
-  if (model === "deepseek-v4-flash" || model === "deepseek-v4-pro") {
-    return "deepseek-v4-flash-vision-exp";
+  // 官方已把 V4 Flash、V4 Flash Vision Exp 与 V4 Pro 全部路由到 V4.1 Flash；
+  // 平台侧同样把历史 ID 的新回合统一升级到 deepseek-flash。
+  if (
+    model === "deepseek-v4-flash" ||
+    model === "deepseek-v4-flash-vision-exp" ||
+    model === "deepseek-v4-pro"
+  ) {
+    return DEEPSEEK_CHAT_MODEL;
   }
   if (model === "qwen3.7-plus") return "qwen3.8-flash";
   return model;

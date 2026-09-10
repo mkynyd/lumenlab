@@ -1,4 +1,5 @@
 import { completeChat, type DeepSeekMessage } from "@/lib/deepseek";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 
 export type ChatMessage = {
   role: string;
@@ -81,7 +82,7 @@ export async function compressHistory(
     : DEFAULT_SUMMARY_PROMPT;
 
   const result = await completeChat(options.apiKey, {
-    model: "deepseek-v4-flash",
+    model: DEEPSEEK_CHAT_MODEL,
     messages: [
       { role: "system", content: system } as DeepSeekMessage,
       { role: "user", content: formatted } as DeepSeekMessage,

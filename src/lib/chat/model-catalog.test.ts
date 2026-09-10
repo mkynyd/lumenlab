@@ -29,14 +29,11 @@ describe("chat model catalog", () => {
   });
 
   it("activates exactly the three migration target models", () => {
-    expect(DEFAULT_CHAT_MODELS).toEqual([
-      "deepseek-v4-flash-vision-exp",
-      "minimax-m3",
-    ]);
+    expect(DEFAULT_CHAT_MODELS).toEqual(["deepseek-flash", "minimax-m3"]);
     expect(QWEN_CHAT_MODEL).toBe("qwen3.8-flash");
     expect(ALL_CHAT_MODELS).toEqual([
       "qwen3.8-flash",
-      "deepseek-v4-flash-vision-exp",
+      "deepseek-flash",
       "minimax-m3",
     ]);
   });
@@ -44,6 +41,7 @@ describe("chat model catalog", () => {
   it("keeps historical aliases mapped but disabled for new requests", () => {
     expect(LEGACY_CHAT_MODELS).toEqual([
       "deepseek-v4-flash",
+      "deepseek-v4-flash-vision-exp",
       "deepseek-v4-pro",
       "qwen3.7-plus",
     ]);
@@ -70,8 +68,8 @@ describe("chat model catalog", () => {
   });
 
   it("describes active models with wire IDs, modalities, limits and reasoning mapping", () => {
-    expect(getModelCatalogEntry("deepseek-v4-flash-vision-exp")).toMatchObject({
-      wireId: "deepseek-v4-flash-vision-exp",
+    expect(getModelCatalogEntry("deepseek-flash")).toMatchObject({
+      wireId: "deepseek-flash",
       provider: "deepseek",
       inputTypes: ["text", "image"],
       contextWindowTokens: 1_000_000,
@@ -97,6 +95,7 @@ describe("chat model catalog", () => {
   });
 
   it("resolves providers for both active and legacy models", () => {
+    expect(providerForChatModel("deepseek-flash")).toBe("deepseek");
     expect(providerForChatModel("deepseek-v4-flash-vision-exp")).toBe("deepseek");
     expect(providerForChatModel("minimax-m3")).toBe("minimax");
     expect(providerForChatModel("qwen3.8-flash")).toBe("bailian");
@@ -108,10 +107,13 @@ describe("chat model catalog", () => {
 
   it("upgrades stored legacy IDs only when starting a new request", () => {
     expect(activeModelForStoredModel("deepseek-v4-flash")).toBe(
-      "deepseek-v4-flash-vision-exp"
+      "deepseek-flash"
+    );
+    expect(activeModelForStoredModel("deepseek-v4-flash-vision-exp")).toBe(
+      "deepseek-flash"
     );
     expect(activeModelForStoredModel("deepseek-v4-pro")).toBe(
-      "deepseek-v4-flash-vision-exp"
+      "deepseek-flash"
     );
     expect(activeModelForStoredModel("qwen3.7-plus")).toBe("qwen3.8-flash");
     expect(activeModelForStoredModel("minimax-m3")).toBe("minimax-m3");
@@ -121,10 +123,11 @@ describe("chat model catalog", () => {
     expect(chatModelLabel("deepseek-v4-flash")).toBe("DeepSeek V4 Flash");
     expect(chatModelLabel("deepseek-v4-pro")).toBe("DeepSeek V4 Pro");
     expect(chatModelLabel("qwen3.7-plus")).toBe("Qwen3.7-Plus");
-    // 列表标签保持简短（Vision 属性移到详情栏），历史别名标签不变
+    // 活跃模型接管 "DeepSeek V4 Flash" 之外的新标签，历史 vision-exp 用完整名区分
     expect(chatModelLabel("deepseek-v4-flash-vision-exp")).toBe(
-      "DeepSeek V4 Flash"
+      "DeepSeek V4 Flash Vision"
     );
+    expect(chatModelLabel("deepseek-flash")).toBe("DeepSeek V4.1 Flash");
     expect(chatModelLabel("qwen3.8-flash")).toBe("Qwen3.8-Flash");
     expect(chatModelLabel("some-old-model")).toBe("some-old-model");
   });

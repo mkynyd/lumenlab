@@ -3,7 +3,7 @@ import { mapAgentRunInput, parseChatRequest } from "./request-mapper";
 
 const validBody = {
   message: "hello",
-  model: "deepseek-v4-flash-vision-exp",
+  model: "deepseek-flash",
 };
 
 describe("parseChatRequest", () => {
@@ -16,7 +16,7 @@ describe("parseChatRequest", () => {
     expect(parsed.body.model).toBe("minimax-m3");
     expect(resolveModel).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project" }));
     resolveModel.mockClear();
-    expect((await parseChatRequest(request({ message: "hello", model: "deepseek-v4-flash-vision-exp" }), resolveModel)).body.model).toBe("deepseek-v4-flash-vision-exp");
+    expect((await parseChatRequest(request({ message: "hello", model: "deepseek-flash" }), resolveModel)).body.model).toBe("deepseek-flash");
     expect(resolveModel).not.toHaveBeenCalled();
     await expect(parseChatRequest(request({ message: "hello", projectId: {} }), resolveModel)).rejects.toThrow();
     expect(resolveModel).not.toHaveBeenCalled();

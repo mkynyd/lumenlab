@@ -14,9 +14,10 @@ import type {
   ResponsesToolChoice,
 } from "@/lib/agent/providers/responses/types";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
+import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 
 const DEEPSEEK_RESPONSES_BASE_URL = "https://api.deepseek.com";
-const ACTIVE_DEEPSEEK_MODEL = "deepseek-v4-flash-vision-exp";
+const ACTIVE_DEEPSEEK_MODEL = DEEPSEEK_CHAT_MODEL;
 
 export type DeepSeekContentBlock =
   | { type: "text"; text: string }
