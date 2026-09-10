@@ -257,9 +257,12 @@ async function main() {
     const windowPapers = !isErrorResult(window) && Array.isArray((window as { papers?: unknown[] }).papers)
       ? (window as { papers: Array<Record<string, unknown>> }).papers
       : [];
-    const accessible = windowPapers.find((paper) => paper.isContentAccessible === true && typeof paper.docId === "string" && typeof paper.uniqueId === "string");
+    // doc_id 是全文 artifact 哈希：存在即代表可尝试有界正文读取。上游 meta-search
+    // 的 is_content_accessible 在生产恒为 false（即使 doc_id 存在且 /content 可读），
+    // 因此不能作为判定依据——与 Research source provider 使用同一门槛。
+    const accessible = windowPapers.find((paper) => typeof paper.docId === "string" && paper.docId.length > 0 && typeof paper.uniqueId === "string");
     if (!accessible) {
-      report.warn("no isContentAccessible paper in search window; skipping full-text evidence check", { window: windowPapers.length });
+      report.warn("no paper with a full-text doc_id in search window; skipping full-text evidence check", { window: windowPapers.length });
     } else {
       const provider = createToolBackedResearchSourceProvider({ toolRunner: createDirectToolRunner(new AbortController().signal), academicAdapters: [] });
       const candidate: ResearchCandidate = {
@@ -268,7 +271,7 @@ async function main() {
         externalId: typeof accessible.doi === "string" ? accessible.doi : String(accessible.docId),
         title: String(accessible.title ?? ""),
         url: typeof accessible.url === "string" ? accessible.url : null,
-        metadata: { doi: accessible.doi ?? null, docId: accessible.docId, uniqueId: accessible.uniqueId, isContentAccessible: true },
+        metadata: { doi: accessible.doi ?? null, docId: accessible.docId, uniqueId: accessible.uniqueId, isContentAccessible: accessible.isContentAccessible === true },
       };
       const readResult = await provider.read(
         { userId: "smoke", conversationId: "smoke", executionId: "smoke", runId: "smoke", signal: new AbortController().signal, question: "How do transformer models handle long-range dependencies?" },

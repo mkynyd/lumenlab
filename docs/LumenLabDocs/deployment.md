@@ -108,7 +108,9 @@ git diff --check
 # 检索通道冒烟：web.search(AnySearch) + Sciverse search/semantic/read；可选 arXiv、
 # 论文引用关系（--with-paper-relations）与 Sciverse 全文证据链严格模式
 #（--with-advanced-filters 验证 catalog-aware filterIntent；--with-resource 在有限窗口内验证图表资源；
-#  --require-sciverse-content 验证全文 chunk 链路；窗口内无可访问全文或图表时记 WARN 跳过）
+#  --require-sciverse-content 验证全文 chunk 链路（以 doc_id 存在为门槛，因为上游
+#  meta-search 的 is_content_accessible 在生产恒为 false）；窗口内没有带 doc_id 的论文
+#  或没有图表引用时记 WARN 跳过，不无限搜索）
 LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts \
   --with-arxiv --with-paper-relations --with-advanced-filters --with-resource --require-sciverse-content
 
