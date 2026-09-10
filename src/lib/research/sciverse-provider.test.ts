@@ -231,24 +231,57 @@ describe("research source provider · sciverse channel", () => {
     expect(read?.slices?.[0].provenance).toMatchObject({ retrievalMethod: "sciverse.semantic_search" });
   });
 
-  it("degrades to metadata-only evidence without fabricating full text", async () => {
+  it("degrades to metadata-only evidence when the paper has no doc_id", async () => {
     const { runner, calls } = succeededToolRunner({});
     const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
-    const candidate = sciverseCandidateFixture({ isContentAccessible: false });
+    const candidate = sciverseCandidateFixture({ docId: null, isContentAccessible: false });
 
     const read = await provider.read(createContext(), candidate);
 
     expect(calls.filter((call) => call.toolId === "sciverse.semantic_search")).toHaveLength(0);
     expect(calls.filter((call) => call.toolId === "sciverse.read")).toHaveLength(0);
     expect(read?.content).toBe("We propose the Transformer.");
-    expect(read?.locator).toMatchObject({ kind: "sciverse", docId: "a".repeat(64), uniqueId: "paper:1" });
     expect(read?.snapshotScope).toMatchObject({ type: "metadata_only", retrievalMethod: "sciverse.search" });
   });
 
-  it("returns null when the paper has neither accessible content nor abstract", async () => {
+  it("still degrades to metadata-only when the doc_id read yields nothing", async () => {
+    const { runner, calls } = succeededToolRunner({});
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+    const candidate = sciverseCandidateFixture({ isContentAccessible: false });
+
+    const read = await provider.read(createContext(), candidate);
+
+    expect(calls.filter((call) => call.toolId === "sciverse.semantic_search")).toHaveLength(1);
+    expect(read?.content).toBe("We propose the Transformer.");
+    expect(read?.snapshotScope).toMatchObject({ type: "metadata_only", retrievalMethod: "sciverse.search" });
+  });
+
+  it("attempts the full-text chain when the paper has a doc_id even if is_content_accessible is false", async () => {
+    // 生产回归（2026-09-11）：meta-search 对带 doc_id 且 /content 可读的论文同样返回
+    // is_content_accessible=false；旧实现因此把全部 Sciverse 证据降级为 metadata_only，
+    // 使 chunk 级证据与图表资源永远无法产生。
+    const { runner, calls } = succeededToolRunner({
+      "sciverse.semantic_search": {
+        hits: [{ chunkId: "c1", docId: "a".repeat(64), title: "T", score: 0.91, offset: 512, chunk: "chunk text" }],
+        count: 1,
+        query: "q",
+      },
+      "sciverse.read": { docId: "a".repeat(64), offset: 512, text: "full text slice", more: false, totalLength: 20_000 },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+    const candidate = sciverseCandidateFixture({ isContentAccessible: false });
+
+    const read = await provider.read(createContext(), candidate);
+
+    expect(calls.filter((call) => call.toolId === "sciverse.read")).toHaveLength(1);
+    expect(read?.snapshotScope).toMatchObject({ type: "bounded_evidence_slices" });
+    expect(read?.slices?.[0].locator).toMatchObject({ kind: "sciverse", docId: "a".repeat(64), offset: 512 });
+  });
+
+  it("returns null when the paper has neither doc_id content nor abstract", async () => {
     const { runner } = succeededToolRunner({});
     const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
-    const candidate = sciverseCandidateFixture({ isContentAccessible: false, abstractPreview: null });
+    const candidate = sciverseCandidateFixture({ docId: null, isContentAccessible: false, abstractPreview: null });
 
     await expect(provider.read(createContext(), candidate)).resolves.toBeNull();
   });

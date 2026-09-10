@@ -41,9 +41,9 @@ describe("research candidate priority", () => {
     expect(sorted.map((item) => item.provider)).toEqual(["web", "openalex"]);
   });
 
-  it("prefers content-accessible sciverse papers over metadata-only ones at the same rank", () => {
-    const metadataOnly = candidate({ provider: "sciverse", metadata: { isContentAccessible: false, citationCount: 999999 } });
-    const accessible = candidate({ provider: "sciverse", metadata: { isContentAccessible: true, citationCount: 1 } });
+  it("prefers sciverse papers with a doc_id over metadata-only ones at the same rank", () => {
+    const metadataOnly = candidate({ provider: "sciverse", metadata: { docId: null, isContentAccessible: false, citationCount: 999999 } });
+    const accessible = candidate({ provider: "sciverse", metadata: { docId: "a".repeat(64), citationCount: 1 } });
     const sorted = prioritizeResearchCandidates([metadataOnly, accessible], ["sciverse"]);
     // citationCount 不主导 fetch 顺序：可访问全文者优先。
     expect(sorted[0]).toBe(accessible);
@@ -74,8 +74,11 @@ describe("research candidate priority", () => {
   });
 
   it("classifies full-text capability by provider", () => {
-    expect(canProduceFullTextEvidence(candidate({ provider: "sciverse", metadata: { isContentAccessible: true } }))).toBe(true);
-    expect(canProduceFullTextEvidence(candidate({ provider: "sciverse", metadata: { isContentAccessible: false } }))).toBe(false);
+    // doc_id 是全文 artifact 哈希：存在即代表可尝试有界正文读取。
+    expect(canProduceFullTextEvidence(candidate({ provider: "sciverse", metadata: { docId: "a".repeat(64) } }))).toBe(true);
+    expect(canProduceFullTextEvidence(candidate({ provider: "sciverse", metadata: { docId: null } }))).toBe(false);
+    // 生产实测 is_content_accessible 恒为 false，但仍作为兼容信号保留。
+    expect(canProduceFullTextEvidence(candidate({ provider: "sciverse", metadata: { docId: null, isContentAccessible: true } }))).toBe(true);
     expect(canProduceFullTextEvidence(candidate({ provider: "arxiv", kind: "arxiv" }))).toBe(true);
     expect(canProduceFullTextEvidence(candidate({ provider: "openalex" }))).toBe(false);
     expect(canProduceFullTextEvidence(candidate({ provider: "pubmed", kind: "pmid" }))).toBe(false);

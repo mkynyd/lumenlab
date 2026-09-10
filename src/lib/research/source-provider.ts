@@ -295,7 +295,10 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
     const sourceVersion = year ? String(year) : null;
     const baseMetadata = { provider: "sciverse", ...metadata };
 
-    if (docId && metadata.isContentAccessible === true) {
+    // 生产实测：meta-search 的 `is_content_accessible` 即使对带 doc_id 且
+    // /content 可读的论文也返回 false，因此读取门槛改为「有 doc_id」；语义检索或
+    // read 失败时仍然安全回退到 metadata-only，不伪造全文。
+    if (docId) {
       const question = context.question?.trim() || candidate.title;
       const semantic = await runTool(context, "sciverse.semantic_search", {
         query: question,
