@@ -1684,6 +1684,12 @@ enum ResearchDirectiveStatus {
   rejected
 }
 
+enum ResearchSourceRelationType {
+  references
+  citations
+  related_work
+}
+
 model ResearchDomainProfile {
   id             String   @id @default(cuid())
   key            String   @unique
@@ -1721,6 +1727,7 @@ model ResearchWorkspace {
   sources          ResearchSource[]
   sourceCandidates ResearchSourceCandidate[]
   sourceSnapshots  ResearchSourceSnapshot[]
+  sourceRelations  ResearchSourceRelation[]
   evidence         Evidence[]
   claims           Claim[]
   reports          ResearchReportSnapshot[]
@@ -1762,6 +1769,7 @@ model ResearchRun {
   directives        ResearchUserDirective[]
   sourceCandidates  ResearchSourceCandidate[]
   sourceSnapshots   ResearchSourceSnapshot[]
+  sourceRelations   ResearchSourceRelation[]
   evidence          Evidence[]
   claims            Claim[]
   reportSnapshot    ResearchReportSnapshot?
@@ -1810,11 +1818,12 @@ model ResearchQuestion {
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
-  run        ResearchRun               @relation(fields: [runId], references: [id], onDelete: Cascade)
-  tasks      ResearchTask[]
-  candidates ResearchSourceCandidate[]
-  evidence   Evidence[]
-  claims     Claim[]
+  run             ResearchRun               @relation(fields: [runId], references: [id], onDelete: Cascade)
+  tasks           ResearchTask[]
+  candidates      ResearchSourceCandidate[]
+  sourceRelations ResearchSourceRelation[]
+  evidence        Evidence[]
+  claims          Claim[]
 
   @@unique([runId, key])
   @@unique([runId, orderIndex])
@@ -1892,6 +1901,8 @@ model ResearchSource {
   user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   candidates     ResearchSourceCandidate[]
   snapshots      ResearchSourceSnapshot[]
+  citationOut    ResearchSourceRelation[]  @relation("CitationGraphSeed")
+  citationIn     ResearchSourceRelation[]  @relation("CitationGraphTarget")
   paperMaterials PaperResearchMaterial[]
 
   @@unique([workspaceId, canonicalKey])
@@ -1924,6 +1935,43 @@ model ResearchSourceCandidate {
   @@index([workspaceId, discoveredAt])
   @@index([runId, status])
   @@index([questionId])
+}
+
+/// Citation Graph v1：论文 ↔ 论文的引用/被引/相关工作边。
+/// edge 只证明引用关系存在，不构成任何 Evidence；target 未归一化前只保留
+/// external identity/canonicalKey，归一化后链接 targetSourceId。
+/// 与 ClaimEvidenceRelation（Claim ↔ Evidence 语义支持）和 Paper Schema
+/// 内部 entity relation 是三种不同的“关系”。
+model ResearchSourceRelation {
+  id                   String                     @id @default(cuid())
+  workspaceId          String
+  runId                String
+  questionId           String?
+  sourceId             String
+  targetSourceId       String?
+  targetCanonicalKey   String?
+  relation             ResearchSourceRelationType
+  provider             String
+  externalTargetId     String
+  externalTargetIdType String?
+  hop                  Int                        @default(1)
+  /// deterministic 幂等键：sourceId + relation + 规范化 target identity 的 hash。
+  edgeKey              String
+  metadata             Json?
+  createdAt            DateTime                   @default(now())
+
+  workspace    ResearchWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run          ResearchRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  question     ResearchQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  source       ResearchSource    @relation("CitationGraphSeed", fields: [sourceId], references: [id], onDelete: Cascade)
+  targetSource ResearchSource?   @relation("CitationGraphTarget", fields: [targetSourceId], references: [id], onDelete: SetNull)
+
+  @@unique([runId, edgeKey])
+  @@index([workspaceId, createdAt])
+  @@index([runId, relation])
+  @@index([sourceId])
+  @@index([targetSourceId])
+  @@index([targetCanonicalKey])
 }
 
 model ResearchSourceSnapshot {

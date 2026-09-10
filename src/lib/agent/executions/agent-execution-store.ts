@@ -172,6 +172,7 @@ const researchStateSchema = z
       "planning",
       "researching",
       "evaluating",
+      "citation_expansion",
       "claim_extraction",
       "synthesizing",
       "verifying",
@@ -191,6 +192,16 @@ const researchStateSchema = z
     claimExtraction: z
       .object({
         fingerprints: z.record(z.string(), z.string()),
+      })
+      .strict()
+      .optional(),
+    citationExpansion: z
+      .object({
+        done: z.boolean(),
+        completedQuestionIds: z.array(z.string()),
+        fingerprints: z.record(z.string(), z.array(z.string())),
+        graphToolCalls: z.number().int().nonnegative(),
+        metrics: z.record(z.string(), z.number().int().nonnegative()),
       })
       .strict()
       .optional(),

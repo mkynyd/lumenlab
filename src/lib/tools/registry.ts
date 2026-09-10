@@ -26,7 +26,7 @@ import { ragSearch } from "./knowledge/project-rag";
 import { arxivSearch } from "./arxiv/search";
 import { arxivRead } from "./arxiv/abstract";
 import { arxivFetch } from "./arxiv/fetch";
-import { sciverseRead, sciverseSearch, sciverseSemanticSearch } from "./sciverse/handlers";
+import { sciversePaperRelations, sciverseRead, sciverseSearch, sciverseSemanticSearch } from "./sciverse/handlers";
 import {
   addReference,
   listReferences,
@@ -636,6 +636,39 @@ const TOOLS: ToolMetadata[] = [
     requiredScopes: [],
   },
   {
+    toolId: "sciverse.paper_relations",
+    name: "Sciverse 论文引用关系查询",
+    description: [
+      "List the paper-to-paper scholarly relations of ONE known paper (by its uniqueId from sciverse.search): ",
+      "references = works this paper cites (trace origins); citations = later works citing it (verification, follow-ups, corrections); related_works = thematic neighborhood (weakest signal). ",
+      "Results are paper identifiers (id + idType + title), NOT evidence: a relation only proves the citation link exists, never that the target supports any claim. ",
+      "To use a target as evidence, resolve it via sciverse.search / sciverse.semantic_search and read it with sciverse.read. ",
+      "Pagination is bounded: page 1-20, pageSize clamped to 1-50 (default 10); do not crawl all pages of highly-cited papers.",
+    ].join(""),
+    inputSchema: {
+      type: "object",
+      properties: {
+        uniqueId: { type: "string", description: "Seed paper unique_id (e.g. paper:10.1038/xxx); doc_id is NOT accepted" },
+        relation: { type: "string", enum: ["references", "citations", "related_works"], description: "references = cited by the paper; citations = later papers citing it; related_works = thematic neighbors" },
+        page: { type: "integer", description: "Page number starting at 1, clamped to 1-20" },
+        pageSize: { type: "integer", description: "Items per page, clamped to 1-50, default 10" },
+      },
+      required: ["uniqueId", "relation"],
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L1",
+    isReadOnly: true,
+    hasExternalSideEffect: true,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: true,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "minimal",
+    requiredScopes: [],
+  },
+  {
     toolId: "reference.add",
     name: "新增参考文献",
     description: "把一条文献（DOI / arxivId / 手动字段）存入引用库。",
@@ -900,6 +933,9 @@ export function registerBuiltinTools(): void {
   });
   registerToolHandler("sciverse.read", async (ctx, args) => {
     return sciverseRead(ctx, args);
+  });
+  registerToolHandler("sciverse.paper_relations", async (ctx, args) => {
+    return sciversePaperRelations(ctx, args);
   });
   registerToolHandler("reference.add", async (ctx, args) => {
     const projectId = (args.projectId as string | undefined) ?? ctx.projectId;

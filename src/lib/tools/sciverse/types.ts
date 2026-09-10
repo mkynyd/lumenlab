@@ -142,6 +142,26 @@ export interface SciverseCatalog {
   filter_operators: Array<string | { name?: string }>;
 }
 
+// ─── Wire: /meta-paper-relations ────────────────────────────
+
+/** Wire enum is UPPER_SNAKE; the Agent-facing contract uses lower_snake. */
+export type SciverseWireRelationType = "CITATIONS" | "REFERENCES" | "RELATED_WORKS";
+
+export interface SciverseWireRelationItem {
+  id?: string;
+  id_type?: string;
+  title?: string;
+}
+
+export interface SciverseWireRelationsResponse {
+  items?: SciverseWireRelationItem[];
+  /** int64 may arrive as a string in protobuf JSON. */
+  total_count?: number | string;
+  page?: number;
+  page_size?: number;
+  total_pages?: number;
+}
+
 // ─── Agent-facing input ─────────────────────────────────────
 
 export type SciverseSortByYear = "auto" | "desc" | "asc" | "none";
@@ -196,6 +216,22 @@ export interface SciverseReadInput {
   docId: string;
   offset?: number;
   limit?: number;
+}
+
+// ─── Agent-facing: paper relations ──────────────────────────
+
+/**
+ * 论文 ↔ 论文的 scholarly relation（与 Claim ↔ Evidence 的 ClaimEvidenceRelation、
+ * Paper Schema 内部 entity relation 是三种完全不同的“关系”）。
+ */
+export type SciversePaperRelation = "references" | "citations" | "related_works";
+
+export interface SciversePaperRelationsInput {
+  /** 论文 unique_id（如 paper:10.1038/xxx）；doc_id 无效。 */
+  uniqueId: string;
+  relation: SciversePaperRelation;
+  page?: number;
+  pageSize?: number;
 }
 
 // ─── Agent-facing normalized output ─────────────────────────
@@ -254,4 +290,21 @@ export interface SciverseReadResult {
   totalLength?: number;
   nextOffset?: number;
   more: boolean;
+}
+
+export interface SciverseRelationItem {
+  id: string;
+  idType: string;
+  title?: string;
+}
+
+export interface SciversePaperRelationsResult {
+  uniqueId: string;
+  relation: SciversePaperRelation;
+  items: SciverseRelationItem[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages?: number;
+  hasMore: boolean;
 }

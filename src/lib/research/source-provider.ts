@@ -106,12 +106,22 @@ function sciverseCandidate(paper: Record<string, unknown>): ResearchCandidate | 
   };
 }
 
-export function createToolBackedResearchSourceProvider(input: { toolRunner?: ToolRunner; academicAdapters?: AcademicSourceAdapter[] } = {}): ResearchSourceProvider {
-  const toolRunner = input.toolRunner ?? createPrismaToolRunner();
-  const academicAdapters = input.academicAdapters ?? createAcademicSourceAdapters();
+/**
+ * Research 系统编排方的统一工具调用入口：不带 skillId（Research durable Run
+ * 没有人工审批通道，skillId 会触发 user-facing Skill 的 ask_first 审批策略，
+ * 导致工具调用 pending_approval 并静默回退——289690f 修复的回归点）。
+ * 工具面由 durable checkpoint allowedToolIds 与 registry L1 auto 策略约束。
+ */
+export type ResearchToolInvoker = (
+  context: ResearchProviderContext,
+  toolId: string,
+  args: Record<string, unknown>,
+) => Promise<Record<string, unknown> | null>;
 
-  async function runTool(context: ResearchProviderContext, toolId: string, args: Record<string, unknown>) {
-    const result = await toolRunner.run(
+export function createResearchToolInvoker(toolRunner?: ToolRunner): ResearchToolInvoker {
+  const runner = toolRunner ?? createPrismaToolRunner();
+  return async (context, toolId, args) => {
+    const result = await runner.run(
       {
         call: { id: randomUUID(), toolId, arguments: args },
         context: {
@@ -120,19 +130,19 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
           projectId: context.projectId ?? undefined,
           runId: context.runId,
           agentExecutionId: context.executionId,
-          // Research 是系统编排方，不是用户驱动的 Skill 会话：不带 skillId，
-          // 避免继承 literature-review 等 Skill 的 ask_first 审批策略——durable
-          // Run 没有人工审批路径，pending_approval 会让 web/arxiv/sciverse 通道
-          // 全部静默回退。Research 的工具面由 durable checkpoint 的
-          // allowedToolIds 与 L1 auto 策略共同约束。
           signal: context.signal,
           sessionApprovals: new Map(),
         },
       },
       () => undefined
     );
-    return result.status === "succeeded" ? result.summary : null;
-  }
+    return result.status === "succeeded" ? (result.summary ?? null) : null;
+  };
+}
+
+export function createToolBackedResearchSourceProvider(input: { toolRunner?: ToolRunner; academicAdapters?: AcademicSourceAdapter[] } = {}): ResearchSourceProvider {
+  const academicAdapters = input.academicAdapters ?? createAcademicSourceAdapters();
+  const runTool = createResearchToolInvoker(input.toolRunner);
 
   async function searchAcademic(context: ResearchProviderContext, question: string): Promise<ResearchCandidate[]> {
     // Sciverse 是学术检索主通道：返回有效结果时不再 fan-out 到 legacy adapters；

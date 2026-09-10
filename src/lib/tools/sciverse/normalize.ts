@@ -17,8 +17,12 @@
 import type {
   SciverseBoost,
   SciverseFieldFilter,
+  SciversePaperRelationsInput,
+  SciversePaperRelationsResult,
+  SciversePaperRelation,
   SciversePaperSummary,
   SciverseReadResult,
+  SciverseRelationItem,
   SciverseSearchInput,
   SciverseSearchResult,
   SciverseSemanticFiltersInput,
@@ -31,6 +35,8 @@ import type {
   SciverseWireContentResponse,
   SciverseWireMetaSearchResponse,
   SciverseWirePaper,
+  SciverseWireRelationType,
+  SciverseWireRelationsResponse,
 } from "./types";
 
 export const SCIVERSE_SEARCH_DEFAULT_PAGE_SIZE = 10;
@@ -41,6 +47,11 @@ export const SCIVERSE_SEMANTIC_MAX_QUERY_CHARS = 4096;
 export const SCIVERSE_SEMANTIC_MAX_DOC_IDS = 1000;
 export const SCIVERSE_READ_DEFAULT_LIMIT = 1200;
 export const SCIVERSE_READ_MAX_LIMIT = 4000;
+/** paper_relations：Research 只需要小批量发现，默认 10、硬上限 50（上游允许 200，刻意收紧）。 */
+export const SCIVERSE_RELATIONS_DEFAULT_PAGE_SIZE = 10;
+export const SCIVERSE_RELATIONS_MAX_PAGE_SIZE = 50;
+/** 上游在 page×page_size > 10000 时返回 400；这里的 clamp 使乘积远低于该阈值。 */
+export const SCIVERSE_RELATIONS_MAX_PAGE = 20;
 const ABSTRACT_PREVIEW_CHARS = 400;
 
 /** Fixed meta-search projection: stable metadata for the Agent surface. */
@@ -89,6 +100,14 @@ export function clampReadOffset(value: unknown): number {
 
 export function clampReadLimit(value: unknown): number {
   return clampInt(value, 1, SCIVERSE_READ_MAX_LIMIT, SCIVERSE_READ_DEFAULT_LIMIT);
+}
+
+export function clampRelationsPage(value: unknown): number {
+  return clampInt(value, 1, SCIVERSE_RELATIONS_MAX_PAGE, 1);
+}
+
+export function clampRelationsPageSize(value: unknown): number {
+  return clampInt(value, 1, SCIVERSE_RELATIONS_MAX_PAGE_SIZE, SCIVERSE_RELATIONS_DEFAULT_PAGE_SIZE);
 }
 
 export function isSciverseBoost(value: unknown): value is SciverseBoost {
@@ -371,5 +390,66 @@ export function parseContentResponse(
     ...(typeof payload.text_length === "number" ? { totalLength: payload.text_length } : {}),
     ...(typeof payload.next_offset === "number" ? { nextOffset: payload.next_offset } : {}),
     more: payload.more === true,
+  };
+}
+
+// ─── /meta-paper-relations request builder / parser ─────────
+
+const PAPER_RELATIONS: Record<SciversePaperRelation, SciverseWireRelationType> = {
+  references: "REFERENCES",
+  citations: "CITATIONS",
+  related_works: "RELATED_WORKS",
+};
+
+export function isSciversePaperRelation(value: unknown): value is SciversePaperRelation {
+  return typeof value === "string" && value in PAPER_RELATIONS;
+}
+
+export function buildPaperRelationsRequest(input: SciversePaperRelationsInput): Record<string, unknown> {
+  return {
+    unique_id: input.uniqueId,
+    relation: PAPER_RELATIONS[input.relation],
+    page: clampRelationsPage(input.page),
+    page_size: clampRelationsPageSize(input.pageSize),
+  };
+}
+
+export function parsePaperRelationsResponse(
+  payload: SciverseWireRelationsResponse,
+  input: SciversePaperRelationsInput,
+): SciversePaperRelationsResult {
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  const items: SciverseRelationItem[] = [];
+  for (const raw of rawItems) {
+    if (!raw || typeof raw !== "object") continue;
+    // 没有稳定标识的条目直接丢弃；未知 id_type 原样保留（provider-scoped），
+    // 由上层决定如何 canonicalize，绝不在此臆造 DOI。
+    const id = typeof raw.id === "string" ? raw.id.trim() : "";
+    if (!id) continue;
+    const item: SciverseRelationItem = {
+      id,
+      idType: typeof raw.id_type === "string" && raw.id_type.trim() ? raw.id_type.trim() : "unknown",
+    };
+    if (typeof raw.title === "string" && raw.title.trim()) item.title = raw.title.trim();
+    items.push(item);
+  }
+  const totalCountRaw = payload.total_count;
+  const totalCount = typeof totalCountRaw === "number"
+    ? totalCountRaw
+    : typeof totalCountRaw === "string"
+      ? Number(totalCountRaw)
+      : items.length;
+  const page = typeof payload.page === "number" && payload.page >= 1 ? payload.page : clampRelationsPage(input.page);
+  const pageSize = clampRelationsPageSize(input.pageSize);
+  const totalPages = typeof payload.total_pages === "number" && payload.total_pages >= 0 ? payload.total_pages : undefined;
+  return {
+    uniqueId: input.uniqueId,
+    relation: input.relation,
+    items,
+    totalCount: Number.isFinite(totalCount) ? totalCount : items.length,
+    page,
+    pageSize,
+    ...(totalPages !== undefined ? { totalPages } : {}),
+    hasMore: totalPages !== undefined ? page < totalPages : items.length >= pageSize,
   };
 }

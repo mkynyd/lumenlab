@@ -69,6 +69,7 @@ description: 文献综述：查找、验证和综合科学文献——从"X 领�
 
 - 开放式学术问题（"X 领域有哪些方法""某个结论的证据是什么"）优先 `sciverse.semantic_search` 取段落级正文证据；需要严格限定范围时先 `sciverse.search` 拿 doc_id 集合，再传给 `filters.docIds`（唯一硬约束；其余 filters 是软语义，元数据缺失的 chunk 可能不被排除）
 - 精确标题 / 作者 / 年份 / DOI 查找用 `sciverse.search`（结构化元数据 + BM25）；拿到有全文的论文后用 `sciverse.read(docId, offset)` 读证据附近的原文片段
+- 已有核心论文需要追溯源头或后续验证时，用 `sciverse.paper_relations(uniqueId, relation)`（references/citations/related_works，分页有界）；返回的是论文标识，引用关系本身不等于证据，目标论文仍要走 search/semantic_search/read 链路
 - 用户明确提到 arXiv 或给出 arXiv ID / URL 时用 `arxiv.search` / `arxiv.read` / `arxiv.fetch`
 - 普通互联网内容、官网、新闻、Sciverse 未覆盖的来源用 `web.search` + `web.fetch`
 - `reference.add` + `reference.list`：管理引用文献

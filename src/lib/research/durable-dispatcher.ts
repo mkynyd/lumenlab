@@ -19,7 +19,7 @@ function researchCheckpoint(input: { runId: string; question: string; selection:
     model: { provider: input.selection.provider, name: input.selection.model },
     skill: { id: null, version: null },
     rag: { sourceIds: [], selectedFileIds: [] },
-    allowedToolIds: ["web.search", "web.fetch", "arxiv.search", "arxiv.read", "arxiv.fetch", "project_rag.search", "project_files.read"],
+    allowedToolIds: ["web.search", "web.fetch", "arxiv.search", "arxiv.read", "arxiv.fetch", "sciverse.search", "sciverse.semantic_search", "sciverse.read", "sciverse.paper_relations", "project_rag.search", "project_files.read"],
     request: {
       message: input.question,
       model: input.selection.model,

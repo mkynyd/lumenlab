@@ -177,5 +177,24 @@ export function extractSourcesFromToolResult(
     });
   }
 
+  if (toolId === "sciverse.paper_relations") {
+    const items = Array.isArray(result.items) ? result.items : [];
+    return items.flatMap((item) => {
+      const record = asRecord(item);
+      if (!record) return [];
+      const title = asString(record.title);
+      if (!title) return [];
+      // 只有 DOI 类型的标识能构造可验证 URL；其它 idType 只保留标题。
+      const id = asString(record.id);
+      const idType = asString(record.idType)?.toLowerCase();
+      const url = id && idType === "doi" ? `https://doi.org/${id}` : undefined;
+      return [{
+        type: "sciverse" as const,
+        title,
+        ...(url ? { url } : {}),
+      }];
+    });
+  }
+
   return [];
 }

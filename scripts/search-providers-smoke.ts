@@ -6,7 +6,7 @@
  * 直接执行的 ToolRunner，不持久化 ToolExecution）。
  *
  * 用法（服务器或本地均可，env 从 .env 注入，绝不打印任何 Token）：
- *   LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts [--with-arxiv] [--require-sciverse-content]
+ *   LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts [--with-arxiv] [--with-paper-relations] [--require-sciverse-content]
  *
  * --require-sciverse-content（严格模式）：在有限的搜索窗口内优先选择
  * isContentAccessible=true 的论文，走 Research source provider 的完整
@@ -17,7 +17,7 @@ import type { ToolRunner } from "@/lib/agent/tools/tool-runner";
 import { executeTool, registerToolHandler } from "@/lib/agent/tool-executor";
 import { webSearch } from "@/lib/tools/web/search";
 import { arxivSearch } from "@/lib/tools/arxiv/search";
-import { sciverseRead, sciverseSearch, sciverseSemanticSearch } from "@/lib/tools/sciverse/handlers";
+import { sciversePaperRelations, sciverseRead, sciverseSearch, sciverseSemanticSearch } from "@/lib/tools/sciverse/handlers";
 import { createToolBackedResearchSourceProvider, type ResearchCandidate } from "@/lib/research/source-provider";
 import { createDiagnosticsReporter, parseCliArgs, requireLiveSmoke } from "./lib/live-diagnostics";
 
@@ -45,7 +45,7 @@ function createDirectToolRunner(signal: AbortSignal): ToolRunner {
 
 async function main() {
   const { flags } = parseCliArgs(process.argv.slice(2));
-  if (!requireLiveSmoke(SCRIPT, `npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/${SCRIPT}.ts [--with-arxiv] [--require-sciverse-content]`)) {
+  if (!requireLiveSmoke(SCRIPT, `npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/${SCRIPT}.ts [--with-arxiv] [--with-paper-relations] [--require-sciverse-content]`)) {
     process.exit(0);
   }
   const report = createDiagnosticsReporter(SCRIPT);
@@ -112,6 +112,37 @@ async function main() {
       report.pass("arxiv.search returned results", { count: arxiv.count });
     } else {
       report.warn("arxiv.search degraded (retry-exhausted or unreachable)", isErrorResult(arxiv) ? { error: arxiv.error } : undefined);
+    }
+  }
+
+  // 5b. sciverse.paper_relations（可选；用 search 到的真实 uniqueId 验证一页 relation contract）
+  if (flags.has("with-paper-relations")) {
+    const seedPaper = papers.find((paper) => typeof paper.uniqueId === "string");
+    if (!seedPaper) {
+      report.warn("no paper with uniqueId in window; skipping paper_relations check");
+    } else {
+      const relations = await sciversePaperRelations(ctx, { uniqueId: seedPaper.uniqueId as string, relation: "references", pageSize: 5 });
+      if (isErrorResult(relations)) {
+        // 404（论文无关系数据）与限流属可恢复降级；鉴权/配置错误是 correctness failure。
+        const code = relations.error;
+        if (code === "SCIVERSE_NOT_FOUND" || code === "SCIVERSE_RATE_LIMITED" || code === "SCIVERSE_UNAVAILABLE") {
+          report.warn("sciverse.paper_relations degraded", { error: code });
+        } else {
+          report.fail("sciverse.paper_relations failed", { error: code });
+        }
+      } else {
+        const items = Array.isArray((relations as { items?: unknown[] }).items) ? (relations as { items: Array<Record<string, unknown>> }).items : [];
+        const shapeOk = items.every((item) => typeof item.id === "string" && typeof item.idType === "string");
+        if (shapeOk && (relations as { relation?: unknown }).relation === "references") {
+          report.pass("sciverse.paper_relations returned one bounded page", {
+            items: items.length,
+            totalCount: (relations as { totalCount?: unknown }).totalCount,
+            idTypes: [...new Set(items.map((item) => item.idType))],
+          });
+        } else {
+          report.fail("sciverse.paper_relations returned malformed items");
+        }
+      }
     }
   }
 

@@ -9,6 +9,7 @@ const state = {
   sources: [] as Array<{ id: string; workspaceId: string; canonicalKey: string }>,
   snapshots: [] as Array<{ id: string; runId: string; sourceId: string; contentHash: string }>,
   evidences: [] as Array<{ id: string; runId: string; evidenceKey: string | null; locator: unknown }>,
+  citationEdges: [] as Array<Record<string, unknown>>,
   claims: [] as Array<Record<string, unknown>>,
   relations: [] as Array<Record<string, unknown>>,
   claimUpdates: [] as Array<{ id: string; data: Record<string, unknown> }>,
@@ -97,6 +98,7 @@ const questionRow = {
   title: "核心创新",
   question: "Transformer 的自注意力机制如何工作？",
   priority: "important",
+  status: "pending",
   orderIndex: 0,
   completionCriteria: [],
   evaluateAttempts: 0,
@@ -171,6 +173,14 @@ vi.mock("@/lib/db", () => ({
         state.candidates.push(row);
         return row;
       }),
+      upsert: vi.fn(async ({ where, create }: { where: { runId_provider_externalId: { runId: string; provider: string; externalId: string } }; create: Record<string, unknown> }) => {
+        const key = where.runId_provider_externalId;
+        const existing = state.candidates.find((row) => row.runId === key.runId && row.provider === key.provider && row.externalId === key.externalId);
+        if (existing) return existing;
+        const row = { ...create, id: nextId("cand"), researchSourceId: null };
+        state.candidates.push(row as { id: string; runId: string; provider: string; externalId: string; status: string; researchSourceId: string | null });
+        return row;
+      }),
       update: vi.fn(async ({ where, data }: { where: { id: string }; data: { status: string; researchSourceId?: string } }) => {
         const row = state.candidates.find((item) => item.id === where.id);
         if (row) Object.assign(row, data);
@@ -180,6 +190,31 @@ vi.mock("@/lib/db", () => ({
         const row = state.candidates.find((item) => item.id === where.id);
         if (row && row.status !== where.status?.not) row.status = data.status;
         return { count: 1 };
+      }),
+    },
+    researchSourceRelation: {
+      findMany: vi.fn(async () => state.citationEdges),
+      findUnique: vi.fn(async ({ where }: { where: { runId_edgeKey: { runId: string; edgeKey: string } } }) =>
+        state.citationEdges.find((row) => row.runId === where.runId_edgeKey.runId && row.edgeKey === where.runId_edgeKey.edgeKey) ?? null),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const row = { ...data, id: nextId("edge") };
+        state.citationEdges.push(row);
+        return row;
+      }),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const row = state.citationEdges.find((item) => item.id === where.id);
+        if (row) Object.assign(row, data);
+        return row;
+      }),
+      updateMany: vi.fn(async ({ where, data }: { where: { runId: string; targetCanonicalKey: string; targetSourceId: null }; data: { targetSourceId: string } }) => {
+        let count = 0;
+        for (const row of state.citationEdges) {
+          if (row.runId === where.runId && row.targetCanonicalKey === where.targetCanonicalKey && row.targetSourceId == null) {
+            row.targetSourceId = data.targetSourceId;
+            count += 1;
+          }
+        }
+        return { count };
       }),
     },
     researchSource: {
@@ -315,12 +350,14 @@ beforeEach(() => {
   state.sources = [];
   state.snapshots = [];
   state.evidences = [];
+  state.citationEdges = [];
   state.claims = [];
   state.relations = [];
   state.claimUpdates = [];
   state.report = null;
   state.savedCheckpoints = [];
   questionRow.evidence = [];
+  questionRow.status = "pending";
   runStatus = "researching";
   stageBehavior.claimExtractor = null;
   stageBehavior.synthesizer = null;
@@ -397,6 +434,179 @@ function claimExtractionState(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+function citationExpansionState(overrides: Record<string, unknown> = {}) {
+  return {
+    stage: "citation_expansion",
+    modelCalls: 0,
+    searchCalls: 0,
+    fetchCalls: 0,
+    sourceCount: 1,
+    replanCount: 0,
+    verificationRepairs: 0,
+    ...overrides,
+  };
+}
+
+describe("durable research handler · citation_expansion stage", () => {
+  const graphSource = {
+    ...SOURCE_ROW,
+    id: "src-1",
+    metadata: { provider: "sciverse", uniqueId: "paper:10.48550/arxiv.1706.03762", isContentAccessible: true, year: 2017, citationCount: 100 },
+  };
+
+  function graphEvidence() {
+    return evidenceRow({
+      sourceSnapshot: { sourceId: "src-1", metadata: { provider: "sciverse" }, retrievedAt: new Date(), source: graphSource },
+    });
+  }
+
+  it("skips expansion for resolved questions with enough independent sources", async () => {
+    runStatus = "evaluating";
+    // 两个独立来源的 resolved question：不需要 graph expansion。
+    const secondSource = { ...graphSource, id: "src-2", canonicalKey: "doi:10.1/b" };
+    questionRow.status = "resolved";
+    questionRow.evidence = [graphEvidence(), evidenceRow({ id: "ev-2", sourceSnapshotId: "snap-2", sourceSnapshot: { sourceId: "src-2", metadata: {}, retrievedAt: new Date(), source: secondSource } })];
+    const toolInvoker = vi.fn(async () => null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    const result = await handler(createContext({ researchState: citationExpansionState() }));
+
+    expect(result.kind).toBe("rescheduled");
+    expect(toolInvoker).not.toHaveBeenCalled();
+    const saved = state.savedCheckpoints.at(-1);
+    expect(saved?.researchState?.citationExpansion?.done).toBe(true);
+    expect(saved?.researchState?.stage).toBe("evaluating");
+  });
+
+  it("expands a single-source question via citations, persists edges and ingests graph evidence", async () => {
+    runStatus = "evaluating";
+    questionRow.status = "resolved";
+    questionRow.evidence = [graphEvidence()];
+    const toolInvoker = vi.fn<import("./source-provider").ResearchToolInvoker>(async (_ctx, toolId) => {
+      if (toolId === "sciverse.paper_relations") {
+        return { items: [{ id: "10.48550/arXiv.2303.00001", id_type: "doi", title: "Follow-up MoE study" }], totalCount: 1, page: 1, pageSize: 10, hasMore: false };
+      }
+      return null;
+    });
+    const graphCandidate: ResearchCandidate = {
+      provider: "arxiv",
+      kind: "arxiv",
+      externalId: "2303.00001",
+      title: "Follow-up MoE study",
+      url: "https://arxiv.org/abs/2303.00001",
+      metadata: { doi: "10.48550/arxiv.2303.00001" },
+    };
+    const graphRead: ReadResearchSource = {
+      candidate: graphCandidate,
+      title: "Follow-up MoE study",
+      content: "Follow-up work validates the routing improvements.",
+      excerpt: "Follow-up work validates the routing improvements.",
+      locator: { kind: "url", url: "https://arxiv.org/abs/2303.00001", provider: "arxiv" },
+      sourceVersion: "2023",
+      metadata: { provider: "arxiv" },
+    };
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => []),
+      read: vi.fn(async () => graphRead),
+    };
+    const handler = createDurableResearchExecutionHandler({ provider, toolInvoker });
+
+    const result = await handler(createContext({ researchState: citationExpansionState() }));
+
+    expect(result.kind).toBe("rescheduled");
+    // paper_relations 用 seed 的 uniqueId 调 citations；没有 skillId/审批通道。
+    const relationCall = toolInvoker.mock.calls.find((call) => call[1] === "sciverse.paper_relations");
+    expect(relationCall?.[2]).toMatchObject({ uniqueId: "paper:10.48550/arxiv.1706.03762", relation: "citations", page: 1 });
+    // arXiv DOI 直接构造 candidate，无 identity resolution 调用。
+    expect(toolInvoker.mock.calls.filter((call) => call[1] === "sciverse.search")).toHaveLength(0);
+    // edge 落库，candidate 走完整 read → ingest 链路并带 graph provenance。
+    expect(state.citationEdges).toHaveLength(1);
+    expect(state.citationEdges[0]).toMatchObject({ relation: "citations", hop: 1, provider: "sciverse" });
+    expect(state.candidates).toHaveLength(1);
+    expect(state.candidates[0]).toMatchObject({ provider: "arxiv", status: "fetched" });
+    expect((state.candidates[0] as unknown as Record<string, Record<string, unknown>>).metadata.discovery).toBe("sciverse.paper_relations");
+    expect(state.evidences).toHaveLength(1);
+    expect(state.evidences[0].evidenceKey).toEqual(expect.any(String));
+    // edge 回链到新归一化的 target source。
+    expect(state.citationEdges[0].targetSourceId).toBe(state.sources[0].id);
+    const saved = state.savedCheckpoints.at(-1);
+    expect(saved?.researchState?.citationExpansion?.done).toBe(true);
+    expect(saved?.researchState?.citationExpansion?.fingerprints["q-1"]?.length).toBeGreaterThan(0);
+    expect(saved?.researchState?.stage).toBe("evaluating");
+  });
+
+  it("does not re-run processed pages after lease recovery (fingerprint replay)", async () => {
+    runStatus = "evaluating";
+    questionRow.status = "resolved";
+    questionRow.evidence = [graphEvidence()];
+    const toolInvoker = vi.fn(async (_ctx: unknown, toolId: string) => {
+      if (toolId === "sciverse.paper_relations") {
+        return { items: [{ id: "10.48550/arXiv.2303.00001", id_type: "doi" }], totalCount: 1, page: 1, pageSize: 10, hasMore: false };
+      }
+      return null;
+    });
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => []),
+      read: vi.fn(async () => null),
+    };
+    const handler = createDurableResearchExecutionHandler({ provider, toolInvoker });
+
+    const first = await handler(createContext({ researchState: citationExpansionState() }));
+    const firstState = (first as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(toolInvoker.mock.calls.filter((call) => call[1] === "sciverse.paper_relations")).toHaveLength(1);
+    expect(state.citationEdges).toHaveLength(1);
+
+    // 重放同一 stage：question 已完成，不再调用任何工具。
+    await handler(createContext({ researchState: firstState as unknown as Record<string, unknown> }));
+    expect(toolInvoker.mock.calls.filter((call) => call[1] === "sciverse.paper_relations")).toHaveLength(1);
+    expect(state.citationEdges).toHaveLength(1);
+  });
+
+  it("degrades without failing the run when sciverse is not configured", async () => {
+    runStatus = "evaluating";
+    questionRow.status = "resolved";
+    questionRow.evidence = [graphEvidence()];
+    const toolInvoker = vi.fn(async (_ctx: unknown, toolId: string) =>
+      toolId.startsWith("sciverse.") ? { error: "SCIVERSE_NOT_CONFIGURED", message: "平台学术检索未配置或暂不可用" } : null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    const result = await handler(createContext({ researchState: citationExpansionState() }));
+
+    expect(result.kind).toBe("rescheduled");
+    expect(state.savedCheckpoints.at(-1)?.researchState?.citationExpansion?.done).toBe(true);
+    expect(state.savedCheckpoints.at(-1)?.researchState?.stage).toBe("evaluating");
+  });
+
+  it("routes evaluating → citation_expansion once, then to claim_extraction", async () => {
+    runStatus = "evaluating";
+    questionRow.status = "pending";
+    questionRow.evidence = [evidenceRow()];
+    const handler = createDurableResearchExecutionHandler();
+
+    // 第一次：评估完成后进入 citation_expansion（尚未执行过）。
+    const first = await handler(createContext({ researchState: {
+      stage: "evaluating",
+      modelCalls: 0,
+      searchCalls: 0,
+      fetchCalls: 0,
+      sourceCount: 1,
+      replanCount: 0,
+      verificationRepairs: 0,
+    } }));
+    const firstState = (first as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(firstState.stage).toBe("citation_expansion");
+
+    // expansion 完成后回到 evaluating，随后进入 claim_extraction（不再次 expansion）。
+    const second = await handler(createContext({ researchState: {
+      ...firstState,
+      stage: "evaluating",
+      citationExpansion: { done: true, completedQuestionIds: ["q-1"], fingerprints: {}, graphToolCalls: 0, metrics: {} },
+    } }));
+    const secondState = (second as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(secondState.stage).toBe("claim_extraction");
+  });
+});
 
 describe("durable research handler · claim_extraction stage", () => {
   const extractorOutput = {

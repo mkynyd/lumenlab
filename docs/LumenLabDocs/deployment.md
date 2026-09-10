@@ -105,9 +105,10 @@ git diff --check
 `scripts/` 下有三个正式诊断入口，统一输出 `[PASS] / [WARN] / [FAIL]` 并以退出码报告结果（0 通过，2 存在 correctness failure）。任何会真实调用外部服务或创建 Research Run 的脚本都必须显式设置 `LUMENLAB_LIVE_SMOKE=1`，否则只打印用途并退出：
 
 ```bash
-# 检索通道冒烟：web.search(AnySearch) + Sciverse search/semantic/read；可选 arXiv 与
-# Sciverse 全文证据链严格模式（窗口内无可访问全文时记 WARN 跳过）
-LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts --with-arxiv --require-sciverse-content
+# 检索通道冒烟：web.search(AnySearch) + Sciverse search/semantic/read；可选 arXiv、
+# 论文引用关系（--with-paper-relations）与 Sciverse 全文证据链严格模式
+#（--require-sciverse-content；窗口内无可访问全文时记 WARN 跳过）
+LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts --with-arxiv --with-paper-relations --require-sciverse-content
 
 # 有界 E2E：以 quick 预算创建并执行一个 Research Run（消耗真实模型额度）。
 # 需在 package.json 为 "type":"module" 的运行树执行（生产 build 树）；

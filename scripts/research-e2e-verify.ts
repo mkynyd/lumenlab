@@ -82,6 +82,28 @@ async function main() {
     report.warn("no chunk-level sciverse evidence in this run (metadata-only fallback is by design when full text is inaccessible)");
   }
 
+  // ---- citation graph（只读；不输出完整关系列表） ----
+  const citationEdges = await prisma.researchSourceRelation.findMany({ where: { runId }, select: { edgeKey: true, relation: true, hop: true, sourceId: true, targetSourceId: true, externalTargetId: true } });
+  const edgeKeys = citationEdges.map((edge) => edge.edgeKey);
+  check(new Set(edgeKeys).size === edgeKeys.length, "citation edge keys unique within run", { edges: citationEdges.length });
+  if (citationEdges.length > 0) {
+    const linked = citationEdges.filter((edge) => edge.targetSourceId).length;
+    report.pass("citation edges persisted", { edges: citationEdges.length, linkedTargets: linked, relations: [...new Set(citationEdges.map((edge) => edge.relation))], maxHop: Math.max(...citationEdges.map((edge) => edge.hop)) });
+    const graphCandidates = candidates.filter((candidate) => {
+      const metadata = (candidate.metadata ?? {}) as Record<string, unknown>;
+      return metadata.discovery === "sciverse.paper_relations";
+    });
+    check(graphCandidates.every((candidate) => {
+      const metadata = (candidate.metadata ?? {}) as Record<string, unknown>;
+      return typeof metadata.seedSourceId === "string" && typeof metadata.relation === "string" && typeof metadata.hop === "number";
+    }), "graph-derived candidates carry seed/relation/hop provenance", { graphCandidates: graphCandidates.length });
+    const metricsRecord = (run.metrics ?? {}) as Record<string, unknown>;
+    check(typeof metricsRecord.graphEdgesDiscovered === "number", "run metrics carry graph summary", { graphEdgesDiscovered: metricsRecord.graphEdgesDiscovered, graphSourcesFetched: metricsRecord.graphSourcesFetched });
+  } else {
+    // 没有 expansion 需求（resolved 且来源充足）或未找到可扩展 seed 是合法结果。
+    report.warn("no citation edges in this run (expansion may have been legitimately skipped)");
+  }
+
   // ---- claims ----
   const claims = await prisma.claim.findMany({
     where: { runId },

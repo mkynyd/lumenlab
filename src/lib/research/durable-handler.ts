@@ -9,7 +9,16 @@ import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected }
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
 import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion } from "./claim-graph";
 import { prioritizeResearchCandidates } from "./candidate-priority";
-import { createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider } from "./source-provider";
+import {
+  decideCitationExpansion,
+  emptyCitationGraphMetrics,
+  expandCitationGraphForQuestion,
+  resolveCitationGraphPolicy,
+  resolveSeedSciverseUniqueId,
+  selectGraphSeeds,
+  type GraphSeedInput,
+} from "./citation-graph";
+import { createResearchToolInvoker, createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider, type ResearchToolInvoker } from "./source-provider";
 import { academicCitationSignal, clampQuality, computeEvidenceRecency, computeResearchInformationGain, computeSourceDiversity, estimateSourceQuality, summarizeResearchQuality } from "./quality";
 import { assertResearchRunTransition } from "./state-machine";
 import type { ResearchPlanSnapshot, ResearchQuestionStatus, ResearchRunStatus } from "./contracts";
@@ -246,8 +255,9 @@ async function repairReportWithExistingRuntime(input: {
   };
 }
 
-export function createDurableResearchExecutionHandler(options: { provider?: ResearchSourceProvider } = {}): AgentExecutionHandler {
+export function createDurableResearchExecutionHandler(options: { provider?: ResearchSourceProvider; toolInvoker?: ResearchToolInvoker } = {}): AgentExecutionHandler {
   const provider = options.provider ?? createToolBackedResearchSourceProvider();
+  const toolInvoker = options.toolInvoker ?? createResearchToolInvoker();
   return async (context): Promise<AgentExecutionHandlerResult> => {
     const checkpoint = context.execution.checkpoint;
     const request = checkpoint?.request;
@@ -545,12 +555,159 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         await prisma.researchTask.create({ data: { runId: run.id, questionId: unresolvedCritical.id, kind: "replanner", priority: "critical", title: `补充研究：${unresolvedCritical.title}`, instructions: `针对未解决问题补充独立来源：${unresolvedCritical.question}`, idempotencyKey: `${run.id}:${unresolvedCritical.key}:replan:${state.replanCount}` } });
         state.stage = "researching";
         await transitionRun(run.id, "researching");
+      } else if (!state.citationExpansion?.done) {
+        // Citation Graph v1：Claim Extraction 之前先做一次有界的 scholarly graph
+        // expansion（run.status 保持 evaluating）；完成后回到 evaluating 用扩充后
+        // 的 Evidence 重新评估，再进入 Claim Extraction。
+        state.stage = "citation_expansion";
       } else {
         // Claim Graph v1：评估结束后先进入有界的 Claim Extraction 阶段，
         // run.status 保持 evaluating，Claim Graph 落库后再推进到 synthesizing。
         state.stage = "claim_extraction";
       }
       await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+      return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
+    }
+
+    if (state.stage === "citation_expansion") {
+      const policy = resolveCitationGraphPolicy(run.workspace.budgetProfile, run.workspace.domainProfileKey ?? null);
+      const planTimeRange = typeof (run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined)?.timeRange === "string"
+        ? (run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot).timeRange
+        : null;
+      const expansionState = state.citationExpansion ?? {
+        done: false,
+        completedQuestionIds: [] as string[],
+        fingerprints: {} as Record<string, string[]>,
+        graphToolCalls: 0,
+        metrics: emptyCitationGraphMetrics() as unknown as Record<string, number>,
+      };
+      const runTool = toolInvoker;
+      const questions = await prisma.researchQuestion.findMany({
+        where: { runId: run.id },
+        include: { evidence: { where: { status: "active" }, include: { sourceSnapshot: { include: { source: true } } } } },
+        orderBy: { orderIndex: "asc" },
+      });
+      for (const question of questions) {
+        if (context.signal.aborted) break;
+        if (expansionState.completedQuestionIds.includes(question.id)) continue;
+        if (!policy.enabled) {
+          expansionState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        const sourceIds = new Set(question.evidence.map((evidence) => evidence.sourceSnapshot.sourceId));
+        const decision = decideCitationExpansion({
+          questionStatus: question.status,
+          questionText: question.question,
+          activeEvidenceCount: question.evidence.length,
+          independentSourceCount: sourceIds.size,
+          timeRange: planTimeRange,
+          maxRelations: policy.maxRelationsPerSeed,
+        });
+        if (!decision.needed) {
+          expansionState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        // Seed：该 Question 已 fetch 的 scholarly ResearchSource（按确定性评分排序）。
+        const seedBySourceId = new Map<string, GraphSeedInput>();
+        for (const evidence of question.evidence) {
+          const source = evidence.sourceSnapshot.source;
+          if (seedBySourceId.has(source.id)) continue;
+          const metadata = source.metadata && typeof source.metadata === "object" && !Array.isArray(source.metadata) ? source.metadata as Record<string, unknown> : {};
+          const provider = typeof metadata.provider === "string" ? metadata.provider : null;
+          seedBySourceId.set(source.id, {
+            sourceId: source.id,
+            canonicalKey: source.canonicalKey,
+            kind: source.kind,
+            title: source.title,
+            doi: source.doi,
+            sciverseUniqueId: provider === "sciverse" && typeof metadata.uniqueId === "string" ? metadata.uniqueId : null,
+            isContentAccessible: metadata.isContentAccessible === true,
+            activeEvidenceCount: 0,
+            year: typeof metadata.year === "number" ? metadata.year : null,
+            citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : null,
+            influentialCitationCount: typeof metadata.influentialCitationCount === "number" ? metadata.influentialCitationCount : null,
+            fwci: typeof metadata.fwci === "number" ? metadata.fwci : null,
+          });
+        }
+        for (const evidence of question.evidence) {
+          const seed = seedBySourceId.get(evidence.sourceSnapshot.sourceId);
+          if (seed) seed.activeEvidenceCount += 1;
+        }
+        const seeds = selectGraphSeeds([...seedBySourceId.values()], policy);
+        if (seeds.length === 0) {
+          expansionState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        // Seed 缺 Sciverse uniqueId 时做有界 identity resolution（一次精确 DOI 检索）；
+        // 解析失败的 seed 直接放弃，graph 是增强路径，不影响既有 Evidence。
+        const resolvedSeeds: GraphSeedInput[] = [];
+        for (const seed of seeds) {
+          if (expansionState.graphToolCalls >= policy.maxGraphToolCallsPerRun) break;
+          if (seed.sciverseUniqueId) {
+            resolvedSeeds.push(seed);
+            continue;
+          }
+          if (!tryReserveResearchBudgetCounter(state, limits, "searchCalls")) break;
+          expansionState.graphToolCalls += 1;
+          const uniqueId = await resolveSeedSciverseUniqueId(runTool, providerContext, seed);
+          if (uniqueId) resolvedSeeds.push({ ...seed, sciverseUniqueId: uniqueId });
+        }
+        if (resolvedSeeds.length === 0) {
+          expansionState.completedQuestionIds.push(question.id);
+          continue;
+        }
+        const questionContext: ResearchProviderContext = { ...providerContext, question: question.question };
+        const output = await expandCitationGraphForQuestion({
+          userId: context.execution.userId,
+          workspaceId: run.workspaceId,
+          runId: run.id,
+          questionId: question.id,
+          questionText: question.question,
+          seeds: resolvedSeeds,
+          relations: decision.relations,
+          policy,
+          providerContext: questionContext,
+          provider,
+          runTool,
+          processedFingerprints: new Set(expansionState.fingerprints[question.id] ?? []),
+          graphToolCallsUsed: expansionState.graphToolCalls,
+          tryReserve: (counter) => tryReserveResearchBudgetCounter(state, limits, counter),
+          ingest: ingestResearchReadSource,
+        });
+        expansionState.fingerprints[question.id] = [...(expansionState.fingerprints[question.id] ?? []), ...output.processedFingerprints];
+        expansionState.graphToolCalls = output.graphToolCallsUsed;
+        for (const [key, value] of Object.entries(output.metrics)) {
+          expansionState.metrics[key] = (expansionState.metrics[key] ?? 0) + value;
+        }
+        expansionState.completedQuestionIds.push(question.id);
+        await appendPublicEvent(context, {
+          key: `research:citation-expansion:${question.id}`,
+          kind: "source_candidate_discovered",
+          runId: run.id,
+          message: `引用图扩展：${question.title}（${decision.reason}）`,
+          publicData: {
+            questionId: question.id,
+            needs: decision.needs,
+            relations: decision.relations,
+            ...output.metrics,
+          },
+        });
+        state.citationExpansion = expansionState;
+        await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+      }
+      expansionState.done = true;
+      state.citationExpansion = expansionState;
+      // 回到 evaluating 用扩充后的 Evidence 重新评估；claim extraction 的
+      // evidence fingerprint 自然变化，只重算受影响 Question。
+      state.stage = "evaluating";
+      await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+      await appendPublicEvent(context, {
+        key: `research:stage:citation_expansion:${run.id}`,
+        kind: "stage_changed",
+        runId: run.id,
+        message: "引用图扩展完成，重新评估后进入命题提炼",
+        publicData: { metrics: expansionState.metrics, graphToolCalls: expansionState.graphToolCalls },
+      });
       return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
     }
 
@@ -670,6 +827,24 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       evidence: { status: relation.evidence.status, sourceSnapshot: { sourceId: relation.evidence.sourceSnapshot.sourceId } },
     })))]));
     let verifierDecision: ResearchVerifierDecision = { claims: {} };
+    // Citation Graph：统计每个 Claim 的支持来源之间存在直接引用边的数量。
+    // 有引用关系不自动等于不独立（后续论文引用原论文仍可能提供独立实验），
+    // 只作为 verifier 的来源独立性风险信号。
+    const citationEdges = await prisma.researchSourceRelation.findMany({
+      where: { runId: run.id, targetSourceId: { not: null } },
+      select: { sourceId: true, targetSourceId: true },
+    });
+    const linkedPairs = new Set(citationEdges.flatMap((edge) => [`${edge.sourceId}->${edge.targetSourceId}`, `${edge.targetSourceId}->${edge.sourceId}`]));
+    const citationLinkedCountByClaim = new Map(claims.map((claim) => {
+      const sourceIds = [...new Set(claim.evidenceRelations.filter((relation) => relation.evidence.status === "active").map((relation) => relation.evidence.sourceSnapshot.sourceId))];
+      let linked = 0;
+      for (let i = 0; i < sourceIds.length; i += 1) {
+        for (let j = i + 1; j < sourceIds.length; j += 1) {
+          if (linkedPairs.has(`${sourceIds[i]}->${sourceIds[j]}`)) linked += 1;
+        }
+      }
+      return [claim.id, linked] as const;
+    }));
     if (state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits) {
       const verifierResult = await runResearchModelStage<ResearchVerifierDecision>({
         role: "research.verifier",
@@ -682,12 +857,14 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           "格式：{\"claims\":{\"claimId\":{\"status\":\"verified|needs_qualification|unsupported|conflicted\",\"reasonCode\":\"sufficient_support|single_source_only|indirect_support|scope_mismatch|temporal_mismatch|mixed_evidence|contradicted|no_support|invalid_evidence|model_review\"}}}。",
           "每个 Claim 只给出它实际关联的 Evidence；不要引用其他 Claim 的证据，不要把只有 context 关系的证据当作支持。",
           "逐条检查：Evidence 是否直接支持 Claim（directness）、独立来源是否充足（同一 ResearchSource 的多个 chunk 只算一个来源）、是否存在反驳或混合证据、范围/日期/因果是否超出 Evidence 表达、Claim 措辞是否需要限定。",
+          "citationLinkedSourceCount 表示该 Claim 的支持来源之间存在直接引用关系的成对数量：它是来源独立性的风险信号，但有引用关系不自动等于不独立，仍按 Evidence 内容判断。",
           "你只能确认或下调 deterministic 预检状态，不能把缺少直接支持或存在冲突的 Claim 升级为 verified。",
           `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
           `Claims 与关联 Evidence：${JSON.stringify(claims.map((claim) => ({
             id: claim.id,
             statement: claim.statement,
             deterministicPrecheck: { status: deterministicByClaim.get(claim.id)?.status, reasonCode: deterministicByClaim.get(claim.id)?.reasonCode },
+            citationLinkedSourceCount: citationLinkedCountByClaim.get(claim.id) ?? 0,
             relations: claim.evidenceRelations.map((relation) => ({
               relation: relation.relation,
               confidence: relation.confidence,
@@ -721,7 +898,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     for (const claim of claims) {
       const deterministic = deterministicByClaim.get(claim.id)!;
       const previousQuality = claim.quality && typeof claim.quality === "object" && !Array.isArray(claim.quality) ? claim.quality as Record<string, unknown> : {};
-      await prisma.claim.update({ where: { id: claim.id }, data: { verificationStatus: claimStatuses[claim.id]?.status, quality: json({ ...previousQuality, ...deterministic.quality, verificationReason: claimStatuses[claim.id]?.reasonCode }) } });
+      const citationLinkedSourceCount = citationLinkedCountByClaim.get(claim.id) ?? 0;
+      await prisma.claim.update({ where: { id: claim.id }, data: { verificationStatus: claimStatuses[claim.id]?.status, quality: json({ ...previousQuality, ...deterministic.quality, citationLinkedSourceCount, ...(citationLinkedSourceCount > 0 ? { independenceCaution: true } : {}), verificationReason: claimStatuses[claim.id]?.reasonCode }) } });
     }
     const repairTargets = selectVerificationRepairTargets({
       claims: claims.map((claim) => ({ id: claim.id, questionId: claim.questionId, question: claim.question ? { id: claim.question.id, title: claim.question.title, question: claim.question.question, priority: claim.question.priority } : null })),
@@ -787,8 +965,9 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const reportStructure = buildResearchReportStructure(claims.map((claim) => ({ id: claim.id, statement: claim.statement, questionId: claim.questionId, questionTitle: claim.question?.title ?? null, evidenceRelations: claim.evidenceRelations.map((relation) => ({ evidenceId: relation.evidenceId, sourceSnapshotId: relation.evidence.sourceSnapshotId, relation: relation.relation })) })));
     const reportDocument = { schemaVersion: "1", citationFormat: "evidence-marker-v1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots, evidenceRefs: evidence.map((item) => item.id), ...reportStructure };
     const contentHash = createHash("sha256").update(JSON.stringify({ reportDocument, citationMap, verificationSummary })).digest("hex");
-    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
-    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, verificationRepairs: state.verificationRepairs, verificationSummary }) } });
+    const graphMetrics = state.citationExpansion?.metrics ?? {};
+    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, graph: graphMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
+    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, claimCount: claims.length, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, verificationRepairs: state.verificationRepairs, ...graphMetrics, verificationSummary }) } });
     await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: "研究报告已完成并冻结为不可修改快照", publicData: { reportId: report.id, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, verificationSummary } });
     return { kind: "completed", checkpoint };
   };

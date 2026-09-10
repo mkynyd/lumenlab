@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolExecutionContext } from "@/lib/agent/tool-executor";
-import { sciverseRead, sciverseSearch, sciverseSemanticSearch } from "./handlers";
+import { sciversePaperRelations, sciverseRead, sciverseSearch, sciverseSemanticSearch } from "./handlers";
 
 const ctx: ToolExecutionContext = { userId: "user-1", conversationId: "conv-1" };
 
@@ -297,5 +297,104 @@ describe("error mapping and logging hygiene", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("sciverse.paper_relations handler", () => {
+  const relationsPayload = {
+    items: [
+      { id: "10.48550/arXiv.1706.03762", id_type: "doi", title: "Attention Is All You Need" },
+      { id: "paper:internal-9", id_type: "sciverse_internal" },
+      { id_type: "doi" }, // malformed: no id → dropped
+    ],
+    total_count: 3,
+    page: 1,
+    page_size: 10,
+    total_pages: 1,
+  };
+
+  it("sends the wire enum and returns normalized items with pagination", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(relationsPayload));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = (await sciversePaperRelations(ctx, {
+      uniqueId: "paper:10.1038/s41586-021-03819-2",
+      relation: "references",
+    })) as { items: Array<Record<string, unknown>>; totalCount: number; hasMore: boolean; relation: string };
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.sciverse.space/meta-paper-relations");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      unique_id: "paper:10.1038/s41586-021-03819-2",
+      relation: "REFERENCES",
+      page: 1,
+      page_size: 10,
+    });
+    expect(result.relation).toBe("references");
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toEqual({ id: "10.48550/arXiv.1706.03762", idType: "doi", title: "Attention Is All You Need" });
+    // Unknown id_type is preserved verbatim (provider-scoped), never guessed as DOI.
+    expect(result.items[1]).toEqual({ id: "paper:internal-9", idType: "sciverse_internal" });
+    expect(result.totalCount).toBe(3);
+    expect(result.hasMore).toBe(false);
+  });
+
+  it("maps citations and related_works to the wire enums", async () => {
+    for (const [agent, wire] of [["citations", "CITATIONS"], ["related_works", "RELATED_WORKS"]] as const) {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [], total_count: 0, page: 1, page_size: 10, total_pages: 0 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const result = (await sciversePaperRelations(ctx, { uniqueId: "paper:x", relation: agent })) as { items: unknown[]; hasMore: boolean };
+      expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body)).relation).toBe(wire);
+      expect(result.items).toEqual([]);
+      expect(result.hasMore).toBe(false);
+    }
+  });
+
+  it("clamps page/pageSize to the bounded window", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [], total_count: 0, page: 20, page_size: 50, total_pages: 40 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await sciversePaperRelations(ctx, { uniqueId: "paper:x", relation: "citations", page: 999, pageSize: 500 });
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body));
+    expect(body.page).toBe(20);
+    expect(body.page_size).toBe(50);
+  });
+
+  it("rejects missing uniqueId and unknown relation without hitting the network", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await sciversePaperRelations(ctx, { relation: "citations" })).toMatchObject({ error: "SCIVERSE_INVALID_REQUEST" });
+    expect(await sciversePaperRelations(ctx, { uniqueId: "paper:x", relation: "CITATIONS" })).toMatchObject({ error: "SCIVERSE_INVALID_REQUEST" });
+    expect(await sciversePaperRelations(ctx, { uniqueId: "paper:x", relation: "cited_by" })).toMatchObject({ error: "SCIVERSE_INVALID_REQUEST" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns SCIVERSE_NOT_CONFIGURED without a token", async () => {
+    delete process.env.SCIVERSE_API_TOKEN;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await sciversePaperRelations(ctx, { uniqueId: "paper:x", relation: "citations" })).toMatchObject({ error: "SCIVERSE_NOT_CONFIGURED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("maps 404 to recoverable SCIVERSE_NOT_FOUND and 429 to SCIVERSE_RATE_LIMITED", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ code: "NOT_FOUND", message: "paper not found" }, 404));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await sciversePaperRelations(ctx, { uniqueId: "paper:missing", relation: "citations" })).toMatchObject({ error: "SCIVERSE_NOT_FOUND", recoverable: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockReset().mockResolvedValue(jsonResponse({ code: "RATE_LIMITED", message: "too many" }, 429, { "retry-after": "2" }));
+    const rateLimited = await sciversePaperRelations(ctx, { uniqueId: "paper:x", relation: "citations" });
+    expect(rateLimited).toMatchObject({ error: "SCIVERSE_RATE_LIMITED", retryAfterMs: 2000 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the caller abort signal into fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(relationsPayload));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    await sciversePaperRelations({ ...ctx, signal: controller.signal }, { uniqueId: "paper:x", relation: "citations" });
+    const usedSignal = (fetchMock.mock.calls[0] as [string, RequestInit])[1].signal as AbortSignal;
+    controller.abort();
+    expect(usedSignal.aborted).toBe(true);
   });
 });

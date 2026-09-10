@@ -73,6 +73,7 @@ const TOOL_STATUS: Record<string, { label: string; orb: OrbState }> = {
   "sciverse.search": { label: "正在检索论文库", orb: "searching" },
   "sciverse.semantic_search": { label: "正在查找论文证据", orb: "searching" },
   "sciverse.read": { label: "正在阅读论文原文", orb: "connecting" },
+  "sciverse.paper_relations": { label: "正在展开论文引用关系", orb: "searching" },
 };
 
 const ARTIFACT_TYPES = [

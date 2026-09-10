@@ -15,25 +15,30 @@ import { SciverseError } from "./errors";
 import {
   buildAgenticSearchRequest,
   buildMetaSearchRequest,
+  buildPaperRelationsRequest,
   clampReadLimit,
   clampReadOffset,
   clampSearchPage,
   clampSearchPageSize,
   isSciverseBoost,
+  isSciversePaperRelation,
   isSciverseSemanticMode,
   parseAgenticSearchResponse,
   parseContentResponse,
   parseMetaSearchResponse,
+  parsePaperRelationsResponse,
   SCIVERSE_SEMANTIC_MAX_DOC_IDS,
   SCIVERSE_SEMANTIC_MAX_QUERY_CHARS,
 } from "./normalize";
 import { requestSciverse } from "./transport";
 import type {
+  SciversePaperRelationsInput,
   SciverseSearchInput,
   SciverseSemanticFiltersInput,
   SciverseWireAgenticResponse,
   SciverseWireContentResponse,
   SciverseWireMetaSearchResponse,
+  SciverseWireRelationsResponse,
 } from "./types";
 
 type SciverseResult = Record<string, unknown>;
@@ -247,6 +252,49 @@ export async function sciverseSemanticSearch(_ctx: ToolExecutionContext, args: R
     const durationMs = Date.now() - startedAt;
     if (error instanceof SciverseError) return mapSciverseError("/agentic-search", error, durationMs);
     logger.error("sciverse agentic-search unexpected failure", { provider: "sciverse", endpoint: "/agentic-search", durationMs });
+    return { error: "SCIVERSE_UNAVAILABLE", recoverable: true };
+  }
+}
+
+export async function sciversePaperRelations(_ctx: ToolExecutionContext, args: Record<string, unknown>): Promise<SciverseResult> {
+  const token = readToken();
+  if (!token) return NOT_CONFIGURED;
+
+  const uniqueId = asTrimmedString(args.uniqueId);
+  if (!uniqueId) return invalidRequest("uniqueId 不能为空（论文 unique_id，如 paper:10.1038/xxx；doc_id 无效）");
+  if (!isSciversePaperRelation(args.relation)) {
+    return invalidRequest("relation 仅支持 references / citations / related_works");
+  }
+
+  const input: SciversePaperRelationsInput = {
+    uniqueId,
+    relation: args.relation,
+    page: typeof args.page === "number" ? args.page : undefined,
+    pageSize: typeof args.pageSize === "number" ? args.pageSize : undefined,
+  };
+
+  const startedAt = Date.now();
+  try {
+    const payload = await requestSciverse<SciverseWireRelationsResponse>({
+      method: "POST",
+      path: "/meta-paper-relations",
+      body: buildPaperRelationsRequest(input),
+      token,
+      signal: _ctx.signal,
+    });
+    const result = parsePaperRelationsResponse(payload, input);
+    logger.debug("sciverse paper-relations ok", {
+      provider: "sciverse",
+      endpoint: "/meta-paper-relations",
+      status: 200,
+      results: result.items.length,
+      durationMs: Date.now() - startedAt,
+    });
+    return result as unknown as SciverseResult;
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    if (error instanceof SciverseError) return mapSciverseError("/meta-paper-relations", error, durationMs);
+    logger.error("sciverse paper-relations unexpected failure", { provider: "sciverse", endpoint: "/meta-paper-relations", durationMs });
     return { error: "SCIVERSE_UNAVAILABLE", recoverable: true };
   }
 }
