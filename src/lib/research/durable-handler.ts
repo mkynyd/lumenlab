@@ -325,7 +325,12 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const domainProfile = (run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined)?.domainProfile;
     const planSnapshot = run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined;
     // 有界收集 Sciverse advanced filter 的生效情况（诊断与 run.metrics 用）。
-    const scholarlyFilterAccumulator = { applied: new Set<string>(), dropped: new Set<string>(), questions: 0, relaxedRetry: false };
+    const scholarlyFilterAccumulator = {
+      applied: new Set<string>(state.scholarlyFilters?.applied ?? []),
+      dropped: new Set<string>(state.scholarlyFilters?.dropped ?? []),
+      questions: state.scholarlyFilters?.questions ?? 0,
+      relaxedRetry: state.scholarlyFilters?.relaxedRetry ?? false,
+    };
     // 有界、去重的 provider 降级代码（用户可读文案见 state-machine.ts）。
     const degradationCodes = new Set<string>((state.degradations ?? []).slice(0, MAX_RESEARCH_DEGRADATIONS));
     const providerContext: ResearchProviderContext = {
@@ -504,6 +509,12 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         }
       }));
       state.degradations = [...degradationCodes].slice(0, MAX_RESEARCH_DEGRADATIONS);
+      state.scholarlyFilters = {
+        applied: [...scholarlyFilterAccumulator.applied],
+        dropped: [...scholarlyFilterAccumulator.dropped],
+        questions: scholarlyFilterAccumulator.questions,
+        relaxedRetry: scholarlyFilterAccumulator.relaxedRetry,
+      };
       const retryableTasks = await prisma.researchTask.count({ where: { runId: run.id, status: "retrying" } });
       if (retryableTasks > 0) {
         await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
