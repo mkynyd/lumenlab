@@ -43,10 +43,10 @@ npm run seed:dev-access
 | 能力 | 需要的 provider |
 |---|---|
 | DeepSeek 文字聊天 | `deepseek` |
-| 图片 / PDF 项目解析、MiniMax 聊天 | `minimax` |
+| PDF 项目解析、MiniMax 聊天 | `minimax`（PDF 解析被拒时回退 MinerU） |
 | Office/WPS/iWork 与 `/tools` PDF 转 Markdown | `mineru` |
 | 向量检索 | `bailian`，缺失时降级为关键词检索 |
-| Qwen3.7-Plus 聊天 | `bailian` + `MODEL_QWEN_ENABLED=true` + `BAILIAN_WORKSPACE_ID` |
+| Qwen3.8-Flash 聊天 | `bailian` + `MODEL_QWEN_ENABLED=true` + `BAILIAN_WORKSPACE_ID` |
 
 ### 3. 启动
 

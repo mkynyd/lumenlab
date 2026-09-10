@@ -66,17 +66,15 @@ LumenLab 是一个**项目化**的 AI 学习工作台。它把以下能力整合
 
 ### 多模型流式对话
 
-- 支持 DeepSeek V4 Pro / Flash，复杂推理可开启深度推理模式。
-- MiniMax M3 负责图片 OCR、PDF 文档解析等多模态任务。
-- Qwen3.7-Plus 支持文本输出与图像、视频理解，当前账号具备百炼凭据时可选。
+- 活跃模型有三个：DeepSeek V4.1 Flash、MiniMax M3，以及服务端开放后的 Qwen3.8-Flash；三者都支持文本与图片输入，复杂推理可开启深度推理模式。
+- DeepSeek 侧已统一到 V4.1 Flash：历史 V4 Flash、V4 Flash Vision Exp、V4 Pro 会话在发起新回合时升级到该模型，历史消息与历史账单保持原样。
 - 流式输出，Markdown、公式、流程图、代码高亮实时渲染。
 - 通过 ProviderAdapter 统一厂商协议：DeepSeek、MiniMax、Qwen 均使用 Responses 原生 Function Calling，并在各自 Adapter 内完成名称与参数差异转换；三条路径都进入同一 AgentLoop。
-- `AGENT_PROVIDER_ADAPTER=pi` 可把 DeepSeek / MiniMax 切到隔离的 `@earendil-works/pi-ai` POC，Qwen 始终使用项目自有的 Bailian Adapter。
 
 ### 文档解析与转换
 
 - 项目资料支持 PDF、Office/WPS/iWork、图片、文本、代码等文件类型。
-- 项目 PDF 和图片由 MiniMax M3 解析，Office/WPS/iWork 文档由 MinerU 转为 Markdown 并保留图片资源。
+- 项目 PDF 由 MiniMax M3 解析（请求过大或格式无效时回退 MinerU），Office/WPS/iWork 文档由 MinerU 转为 Markdown 并保留图片资源；上传的图片不再单独 OCR，而是作为原始资源直接交给所选模型。
 - 独立 `/tools` 页面可把整篇 PDF 转换为包含公式、表格、图片的 Markdown。
 - 可下载包含 Markdown、图片目录、样式 PDF 与 DOCX 的完整 ZIP 包。
 - 转换结果可直接保存为项目资料。

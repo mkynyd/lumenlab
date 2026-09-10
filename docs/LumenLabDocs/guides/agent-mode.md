@@ -63,8 +63,8 @@ Agent 工具结果会被规范化为来源并写入消息记录。回答底部�
 
 - DeepSeek 内部 Tool 全部经 ProviderAdapter 可逆编码为 Responses Function Calling 名称；调用与结果按 call_id 配对，不再生成 XML/DSML 工具提示。
 - MiniMax M3 除了多模态理解，也会以原生 Tool 协议接收当前允许的工具；续跑时不会重复发送首轮附件。
-- Qwen3.7-Plus 启用后通过 DashScope 原生多模态与 Function Calling 协议进入同一工具循环，支持文本输出与图像、视频理解。
-- DeepSeek / MiniMax 可选用隔离的 `pi-ai` Provider POC；Qwen 不经过该适配层。
+- Qwen3.8-Flash 启用后通过百炼 compatible-mode Responses 进入同一工具循环，支持文本输出与图像理解；视频附件委托 DashScope 原生端点。
+- `AGENT_PROVIDER_ADAPTER` 只区分 `responses`（默认）与 `legacy` 别名，旧的 `pi` / `pi-ai` 配置会直接报错，不再提供隔离 POC。
 - 三条 Provider 路径都进入同一个 AgentLoop 与 ToolRunner，审批、审计和状态持久化规则一致。
 - Web 抓取受 allowlist 和 SSRF 校验限制，不保证任意网址都能读取。
 

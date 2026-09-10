@@ -47,7 +47,7 @@ Redis 不可用时，各消费者必须优雅降级；核心链路（聊天、�
 
 `src/lib/cache/export-cache.ts` 缓存 Artifact 导出结果：
 
-- 缓存键：`export:{artifactId}:{format}:{sha256(content)}`
+- 缓存键：`export:{artifactId}:{format}:{rendererVersion}:{contentHash}`，其中 `rendererVersion` 是导出渲染器版本号（当前 `2026-07-19.1`）
 - 支持格式：`markdown`、`docx`、`pdf`
 - TTL：3600 秒
 - 命中 / 未命中计数：`export:{format}:hit`、`export:{format}:miss`

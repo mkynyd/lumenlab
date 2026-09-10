@@ -18,7 +18,7 @@
 本次设计覆盖：
 
 - `light-ai-chat` 主业务应用
-- 两个主聊天模型：DeepSeek V4（Pro / Flash）和 MiniMax M3
+- 三个活跃聊天模型：`deepseek-flash`（DeepSeek V4.1 Flash）、`minimax-m3` 和 `qwen3.8-flash`（受 `MODEL_QWEN_ENABLED` 门禁）；`deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` / `deepseek-v4-pro` / `qwen3.7-plus` 为历史 ID，仅用于历史消息与账单
 - 一次完整的 `/api/chat` 请求生命周期：预算检查 → 压缩 → 模型调用 → 用量记录
 
 不覆盖：
@@ -40,7 +40,7 @@
 | 用量周期 | 按用户注册日起 30 天滚动窗口；同时支持每日 / 每周 / 每 5 小时聚合分析 |
 | 上下文预算 | 模型 1M 上下文预留 64K 输出空间，预算上限约 936K |
 | 预算阈值 | 70% 时前端警告，90% 时服务端自动压缩 |
-| 压缩模型 | DeepSeek V4 Flash（成本低、速度快、上下文长） |
+| 压缩模型 | DeepSeek V4.1 Flash（`deepseek-flash`，成本低、速度快、上下文长） |
 | 压缩策略 | 滚动摘要超出保护窗口的最早若干轮对话 |
 | 受保护内容 | 系统提示、最近 6 - 10 轮对话、RAG 注入的上下文 |
 | 摘要持久化 | 作为 `role=system` 的摘要消息存入 `Message` 表，后续请求自动引用 |
@@ -117,12 +117,15 @@ model Message {
 
 | 模型 | token 类型 | 每 1K tokens 信用点 |
 |------|-----------|-------------------|
-| DeepSeek V4 Flash | 输入 cache hit | 0.02 |
-| DeepSeek V4 Flash | 输入 cache miss | 1.0 |
-| DeepSeek V4 Flash | 输出 | 2.0 |
-| DeepSeek V4 Pro | 输入 cache hit | 0.025 |
-| DeepSeek V4 Pro | 输入 cache miss | 3.0 |
-| DeepSeek V4 Pro | 输出 | 6.0 |
+| `deepseek-flash`（低谷 / 高峰） | 输入 cache hit | 0.02 / 0.04 |
+| `deepseek-flash`（低谷 / 高峰） | 输入 cache miss | 1.0 / 2.0 |
+| `deepseek-flash`（低谷 / 高峰） | 输出 | 4.0 / 8.0 |
+| 历史 `deepseek-v4-flash` | 输入 cache hit / miss / 输出 | 0.02 / 1.0 / 2.0 |
+| 历史 `deepseek-v4-pro` | 输入 cache hit / miss / 输出 | 0.025 / 3.0 / 6.0 |
+| 历史 `deepseek-v4-flash-vision-exp`（低谷 / 高峰） | 输入 cache hit | 0.05 / 0.10 |
+| 历史 `deepseek-v4-flash-vision-exp`（低谷 / 高峰） | 输入 cache miss | 1.5 / 3.0 |
+| 历史 `deepseek-v4-flash-vision-exp`（低谷 / 高峰） | 输出 | 4.5 / 9.0 |
+| `qwen3.8-flash` | 输入 cache hit / miss / 输出 | 0.1 / 0.8 / 2.7 |
 | MiniMax M3 | 输入 | 2.1 |
 | MiniMax M3 | 输出 | 8.4 |
 | MiniMax M3 | 缓存读取 | 0.42 |
@@ -139,10 +142,10 @@ model Message {
 
 ### 1. 上下文预算检查（本地估算）
 
-使用 `tiktoken` 的 `cl100k_base` 编码进行快速估算：
+使用 `js-tiktoken` 的 `cl100k_base` 编码进行快速估算：
 
 ```ts
-import { encoding_for_model } from "tiktoken";
+import { getEncoding } from "js-tiktoken";
 
 const enc = encoding_for_model("gpt-4o"); // 使用 cl100k_base
 function estimateTokens(messages: Array<{ role: string; content: string }>) {
@@ -161,7 +164,7 @@ function estimateTokens(messages: Array<{ role: string; content: string }>) {
 - 用户最新输入
 - 图片 / 视频附件的占位 token（按每张 256 tokens 保守估算）
 
-由于 DeepSeek 和 MiniMax 的 Anthropic 兼容接口与 OpenAI tokenizer 并不完全一致，本地估算只用于预算检查，不用于最终扣费。
+由于三家供应商的 Responses 接口与 OpenAI tokenizer 并不完全一致，本地估算只用于预算检查，不用于最终扣费。
 
 ### 2. 精确记账（API usage）
 
@@ -319,7 +322,7 @@ await prisma.message.create({
 - `/api/chat/route.ts`：增加预算检查、压缩触发、用量写入。
 - `/api/chat/compact`（新增）：手动压缩接口。
 - `/api/me/usage`（新增）：返回当前周期用量、各模型占比、近 7 天趋势。
-- 管理脚本：`scripts/analyze-usage.ts`（新增）用于批量统计。
+- 用量页 `/usage` 与 `GET /api/me/usage` 提供周期额度、模型分布与最近请求明细。
 
 ### 前端
 
@@ -332,7 +335,7 @@ await prisma.message.create({
 
 ## 实现步骤
 
-1. 安装依赖：`npm install tiktoken`。
+1. 安装依赖：`npm install js-tiktoken`。
 2. Prisma schema 变更：扩展 `User`，新增 `TokenUsage`，扩展 `Message`。
 3. 生成并执行迁移：`npx prisma migrate dev`。
 4. 新增 `src/lib/tokens/`：

@@ -17,7 +17,7 @@
 | `REGISTRATION_SYNC_SECRET` | 必需 | — | 注册码同步请求校验密钥，与管理端使用同一值 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | 必需 | — | Base64 编码的 RSA 私钥 PEM，用于解密注册码同步快照 |
 | `DEEPSEEK_BASE_URL` | 必需 | `https://api.deepseek.com` | DeepSeek API 基础地址 |
-| `MODEL_QWEN_ENABLED` | 可选 | `false` | Qwen3.7-Plus 灰度开关；仅 `true` 时才可由用户选择 |
+| `MODEL_QWEN_ENABLED` | 可选 | `false` | Qwen3.8-Flash 灰度开关；仅 `true` 时才可由用户选择 |
 | `BAILIAN_WORKSPACE_ID` | Qwen 启用时必需 | — | 百炼工作空间 ID，用于构造 Qwen DashScope 区域端点；不包含 API Key |
 | `QINIU_ACCESS_KEY` | 必需 | — | 七牛云 Access Key |
 | `QINIU_SECRET_KEY` | 必需 | — | 七牛云 Secret Key，仅服务端使用 |
@@ -29,7 +29,7 @@
 | `USER_API_KEYS_ENABLED` | 可选 | `false` | 自托管开关；设为 `1` 或 `true` 时优先读取用户自行配置的 API Key |
 | `AGENT_RUNTIME_MODE` | 可选 | `legacy` | Agent Runtime 发布模式：`legacy` / `shadow` / `new` |
 | `AGENT_ORCHESTRATOR_ENABLED` | 已弃用 | — | 仅在未设置 `AGENT_RUNTIME_MODE` 时兼容旧部署：`0` → `legacy`，`1` → `new` |
-| `AGENT_PROVIDER_ADAPTER` | 可选 | `legacy` | 模型协议层：`legacy` 保持现有 Anthropic 兼容链路；`pi` 仅启用隔离 POC（`pi-ai` 兼容别名） |
+| `AGENT_PROVIDER_ADAPTER` | 可选 | `responses` | 模型协议层：`responses` 使用三家 Responses 原生调用；`legacy` 只是同一实现的配置别名；`pi` / `pi-ai` 已被拒绝 |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 可选 | `false` | 持久化 Agent 执行（`AgentExecution` 队列、Worker 租约与断点恢复）开关 |
 | `LEARNING_LOOP_ROLLOUT` | 可选 | `off` | 学习闭环灰度：`off` 隐藏入口；`preview` 开放独立学习工作区；`default` 将 `/learning` 设为默认首页（要求 `AGENT_DURABLE_EXECUTION_ENABLED=true`） |
 | `ADMIN_EMAILS` | 可选 | — | 管理控制台允许访问的邮箱列表（逗号分隔），控制 `/admin` 页面与 `/api/admin/**` 接口 |
@@ -73,7 +73,7 @@
 
 该开关没有前端 UI，需由部署者通过环境变量控制。
 
-支持的 provider 包括 `deepseek`、`minimax`、`mineru`、`bailian`。项目资料中的 PDF/图片解析依赖 MiniMax，Office/WPS/iWork 解析依赖 MinerU，向量检索与可选的 Qwen3.7-Plus 聊天共用 Bailian 凭据；缺失对应密钥时，相关能力会报错、从模型目录隐藏或降级。
+支持的 provider 包括 `deepseek`、`minimax`、`mineru`、`bailian`。项目资料的 PDF 解析依赖 MiniMax（可回退 MinerU），Office/WPS/iWork 解析依赖 MinerU，向量检索与可选的 Qwen3.8-Flash 聊天共用 Bailian 凭据；缺失对应密钥时，相关能力会报错、从模型目录隐藏或降级。图片不走解析 provider，上传后直接交给所选聊天模型。
 
 ### Agent 与联网
 
@@ -81,8 +81,9 @@
 - `AGENT_RUNTIME_MODE=shadow` 仍返回 legacy 结果，只比较 Skill、联网与计划 Tool ID 并记录日志；不会为候选方案额外调用 Provider 或执行 Tool，因此没有重复费用和副作用。
 - `AGENT_RUNTIME_MODE=new` 启用确定性工具前奏、Skill 状态事件与统一 Tool loop。Provider continuation 由 Adapter 根据 Responses 原生 function call/output items 处理，不再需要独立 continuation 开关。
 - 旧变量 `AGENT_ORCHESTRATOR_ENABLED` 只用于迁移兼容；两者同时存在时 `AGENT_RUNTIME_MODE` 优先。新部署不要再配置旧变量。
-- `AGENT_PROVIDER_ADAPTER=legacy` 是默认值。只有需要验证 `@earendil-works/pi-ai` 的 DeepSeek/MiniMax 协议适配时才设为 `pi`（旧 `pi-ai` 仍兼容）；该 POC 不会读取 pi 的本地认证文件，仍使用 LumenLab 已解析的中央 API Key。
-- `MODEL_QWEN_ENABLED=true` 且配置 `BAILIAN_WORKSPACE_ID` 后，已获得 Bailian 凭据的用户可选择 `qwen3.7-plus`。Qwen 走 DashScope 原生多模态与 Function Calling 协议，图片用 data URL，视频仅使用上传到七牛后的短期受限链接；视频临时对象会在请求结束或取消后删除。它只提供文本、图片/视频理解，不提供图片或视频生成。
+- `AGENT_PROVIDER_ADAPTER` 默认是 `responses`，`legacy` 为同一实现的兼容别名。`pi` / `pi-ai` 不支持当前活跃模型，命中时会抛出配置错误而不是静默降级。
+- `MODEL_QWEN_ENABLED=true` 且配置 `BAILIAN_WORKSPACE_ID` 后，已获得 Bailian 凭据的用户可选择 `qwen3.8-flash`。Qwen 走百炼 compatible-mode Responses，图片用 data URL，视频委托 DashScope 原生端点并使用上传到七牛后的短期受限链接；视频临时对象会在请求结束或取消后删除。它只提供文本、图片/视频理解，不提供图片或视频生成。
+- DeepSeek 侧当前只有一个活跃模型 `deepseek-flash`（DeepSeek V4.1 Flash）：历史 `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro` 已由官方下线并路由到该模型，平台保留其 ID 只用于历史消息与历史账单展示。
 - `AGENT_DEBUG_EVENTS=1` 会把 router candidates、confidence、stop reason 等调试事件写入 SSE，生产环境默认关闭。
 - `WEB_FETCH_ALLOWLIST` 控制 `web.fetch` 可抓取的域名。即使主机在 allowlist 中，服务端仍会对 IPv4、IPv6、IPv4-mapped IPv6 做公开地址判断，并复核 DNS、重定向和 SSRF 边界。实际出站连接固定到复核通过的 DNS 地址，每个重定向目标都重新执行同样的校验。
 

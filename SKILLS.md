@@ -14,13 +14,13 @@ LumenLab 当前从 `.lumenlab/skills` 发现 13 个内置 Skill。每个 Skill �
 | academic | `figure-style` | 1.0.0 | L2 | 科学图表规范、配色和反模式检查 |
 | academic | `humanizer-zh` | 1.0.0 | L2 | 中文润色、降低 AI 痕迹 |
 | exam | `exam-extract` | 1.0.0 | L2 | 考点抽取、考试范围与题型整理 |
-| exam | `exam-coach` | 1.1.0 | L2 | 复习计划、速记卡、自测题与复盘 |
+| exam | `exam-coach` | 1.2.0 | L2 | 复习计划、速记卡、自测题与复盘 |
 | coding | `code-reader` | 1.0.0 | L2 | 公开代码库、架构与调用路径理解 |
 | document | `pdf` | 1.0.0 | L2 | PDF 阅读、提取与整理 |
 | document | `docx` | 1.0.0 | L3 | Word 草稿、结构化文档与 DOCX 导出 |
 | document | `pptx` | 1.0.0 | L3 | 课程展示、答辩结构与讲稿大纲 |
 | document | `xlsx` | 1.0.0 | L2 | 表格设计、数据统计与公式说明 |
-| learning | `socratic-tutor` | 1.0.0 | L2 | 启发式追问与学习辅导 |
+| learning | `socratic-tutor` | 1.1.0 | L2 | 启发式追问与学习辅导 |
 
 Skill Router 的决策顺序为：用户手动选择或关闭、`policy.json` 的 `triggers.include/exclude`、兼容关键词规则、通用模式。手动选择优先级最高；缺少所需项目资料时，Skill 可以进入 `awaiting_context`，不会伪造上下文继续执行。
 
@@ -35,6 +35,7 @@ Skill Router 的决策顺序为：用户手动选择或关闭、`policy.json` �
 | L1 | `web.search` | auto | 联网检索 |
 | L1 | `web.fetch` | auto | 抓取 allowlist 内的公开网页 |
 | L1 | `arxiv.search` / `arxiv.read` / `arxiv.fetch` | auto | 搜索、读取与抓取 arXiv |
+| L1 | `sciverse.search` / `sciverse.semantic_search` / `sciverse.read` | auto | Sciverse 学术检索与正文片段读取 |
 | L1 | `reference.list` / `reference.format` | auto | 列出与格式化引用 |
 | L1 | `skill.activate` | auto | 激活已发现的 Skill 指令 |
 | L2 | `artifact.save` | ask_first | 保存 Markdown 成果 |

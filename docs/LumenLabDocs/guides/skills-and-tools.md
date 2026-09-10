@@ -51,6 +51,9 @@ Skill Router 会根据提问、隐藏快捷任务提示、选中文件、项目�
 | L1 | `arxiv.search` | 搜索 arXiv 论文 |
 | L1 | `arxiv.read` | 读取 arXiv 论文元数据 |
 | L1 | `arxiv.fetch` | 抓取 arXiv 公开页面 |
+| L1 | `sciverse.search` | Sciverse 学术检索（标题 / 摘要） |
+| L1 | `sciverse.semantic_search` | Sciverse 语义检索，按 docId 返回命中段落 |
+| L1 | `sciverse.read` | 按偏移读取 Sciverse 文献正文片段 |
 | L1 | `reference.list` | 列出参考文献 |
 | L1 | `reference.format` | 格式化 Artifact 上的引用 |
 | L1 | `skill.activate` | 激活指定 Skill 指令 |

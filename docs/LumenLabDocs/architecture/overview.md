@@ -9,8 +9,8 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 - **前端框架**：Next.js 16 App Router、React 19、TypeScript、Tailwind CSS 4
 - **数据库**：PostgreSQL + pgvector，使用 Prisma 7 作为 ORM
 - **缓存**：Redis 可选；Redis 不可用时核心功能会降级到内存或数据库
-- **AI 调用**：DeepSeek（对话 / 推理）、MiniMax（多模态与文档解析）、阿里云百炼（RAG 嵌入与可选 Qwen3.7-Plus 聊天）
-- **Provider 层**：项目自有 DeepSeek / MiniMax / Bailian Qwen Adapter；DeepSeek / MiniMax 可切换到隔离的 `pi-ai` POC
+- **AI 调用**：DeepSeek V4.1 Flash（对话 / 推理 / 图片理解）、MiniMax M3（多模态与文档解析）、阿里云百炼（RAG 嵌入与可选的 Qwen3.8-Flash 聊天）
+- **Provider 层**：项目自有 DeepSeek / MiniMax / Bailian Qwen Adapter，三家都走 Responses 原生 Function Calling
 - **部署**：生产使用 Next.js standalone + systemd + Nginx，PostgreSQL / Redis 绑定本机环回；本地依赖也可用 Docker Compose 启动
 
 ## 应用路由结构
@@ -113,7 +113,7 @@ response-stream.ts
 | 文件类型 | 解析路径 |
 |---|---|
 | 文本、Markdown、CSV、代码 | 本地读取 UTF-8 文本 |
-| 图片 | MiniMax M3 视觉 OCR |
+| 图片 | 不解析：标记为 `direct-image` 后直接作为原始资源交给所选多模态模型 |
 | PDF（≤20MB） | MiniMax M3 原生文档解析，请求过大或格式无效时自动回退 MinerU 一次 |
 | PDF（>20MB，上限 200MB） | MinerU 解析 |
 | Office / WPS / iWork | MinerU 解析 Markdown，图片保存为 `FileAssetResource` |

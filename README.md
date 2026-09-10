@@ -75,7 +75,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 服务端 Policy Engine 拦截所有 `tool_use`，按 L0–L4 风险等级决定执行、预批准或逐次确认。
 
-- L1 自动执行：项目资料读取、Artifact 列表、项目 RAG、网页/arXiv 只读检索、引用格式化、Skill 激活。
+- L1 自动执行：项目资料读取、Artifact 列表、项目 RAG、网页检索、arXiv 与 Sciverse 只读检索、引用格式化、Skill 激活。
 - L2 首次询问：保存 Artifact、新增或挂载参考文献。
 - L3 每次询问：删除项目资料、导出 Artifact DOCX。
 - Skill 只能收紧权限，不能放宽。
@@ -109,7 +109,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 | 风险 | Tool |
 |------|------|
-| L1 自动执行 | `project_files.list`、`project_files.read`、`artifact.list`、`project_rag.search`、`web.search`、`web.fetch`、`arxiv.search`、`arxiv.read`、`arxiv.fetch`、`reference.list`、`reference.format`、`skill.activate` |
+| L1 自动执行 | `project_files.list`、`project_files.read`、`artifact.list`、`project_rag.search`、`web.search`、`web.fetch`、`arxiv.search`、`arxiv.read`、`arxiv.fetch`、`sciverse.search`、`sciverse.semantic_search`、`sciverse.read`、`reference.list`、`reference.format`、`skill.activate` |
 | L2 首次询问 | `artifact.save`、`reference.add`、`reference.attach` |
 | L3 每次询问 | `project_files.delete`、`artifact.export_docx` |
 
@@ -127,7 +127,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 - `approval_required` — 等待用户授权。
 - `tool_started` / `tool_completed` / `tool_failed` — 工具执行生命周期。
 
-调试事件（`router_candidates`、`router_confidence`、`profile_changed`、`tool_loop_stop_reason` 等）仅在 `AGENT_DEBUG_EVENTS=1` 时发送，不默认入库。
+调试事件（如 `profile_changed`、`tool_loop_stop_reason`）仅在 `AGENT_DEBUG_EVENTS=1` 时发送，不默认入库。
 
 前端 `AgentTimeline` 把事件流折叠成时间线，`ApprovalCard` 展示受影响资源、可逆性与样本，提供 **仅本次允许**、**本会话同类允许**（仅 L1/L2）、**拒绝** 三个动作。
 
@@ -136,9 +136,9 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 ### 多模型流式对话
 
 - 新普通会话和新项目默认使用 Qwen3.8-Flash。已有会话保留自身选择，已有项目的新对话继承项目默认；历史模型在发起新请求时升级到同供应商的活跃模型，历史账单不改写。
-- 活跃模型包括 Qwen3.8-Flash、DeepSeek V4 Flash Vision 和 MiniMax M3，均支持文本与图片输入。Qwen 需启用 `MODEL_QWEN_ENABLED`、配置百炼工作空间，并为目标账号提供有效聊天凭证。不可用或请求失败时显示原因，保留当前选择、草稿和附件，由用户手动选择其他模型。
+- 活跃模型包括 Qwen3.8-Flash、DeepSeek V4.1 Flash（`deepseek-flash`）和 MiniMax M3，均支持文本与图片输入。DeepSeek 已把 V4 Flash、V4 Flash Vision Exp 与 V4 Pro 统一路由到 V4.1 Flash，平台侧只保留 `deepseek-flash` 用于新请求，历史 ID 仅用于历史消息与账单。Qwen 需启用 `MODEL_QWEN_ENABLED`、配置百炼工作空间，并为目标账号提供有效聊天凭证。不可用或请求失败时显示原因，保留当前选择、草稿和附件，由用户手动选择其他模型。
 - 三个聊天适配器使用 Responses，平台管理历史、工具审批和调用结果；原生图片在当前工具回合间保留。
-- PDF/DOCX 聊天输入先提取正文，扫描 PDF 转为有数量上限的页图；Qwen 视频附件走独立的 DashScope 兼容路径。独立文档解析保留。聊天图片的跨历史回合留存与查看仍待后续迭代。
+- PDF/DOCX 聊天输入先提取正文，扫描 PDF 转为有数量上限的页图；Qwen 视频附件走独立的 DashScope 兼容路径。独立文档解析保留。聊天图片附件会持久化并在历史回合中重新鉴权渲染，支持缩略图网格与大图查看器。
 - `AGENT_PROVIDER_ADAPTER=responses` 为默认配置，`legacy` 为兼容别名；旧 Pi POC 不用于当前活跃模型。各供应商可独立暂停，暂停后请求返回 503。
 - SSE 流式输出，Markdown / KaTeX / Mermaid / 代码高亮实时渲染。
 - 集中式 API Key 管理：用户不需要自行申请 Key，由管理员通过注册码体系统一配置。
@@ -146,7 +146,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 ### 文档解析与转换
 
 - 项目资料上传支持 PDF、Office/WPS/iWork 文档、图片、文本和代码文件，单次最多 50 个文件，单文件 50MB。
-- 项目 PDF 与图片走 MiniMax M3；Office/WPS/iWork 文档走 MinerU 转 Markdown 并保存图片资源；文本和代码本地解析。
+- 项目 PDF 走 MiniMax M3 原生文档解析（超过 20MB 或被拒绝时回退 MinerU，上限 200MB）；Office/WPS/iWork 文档走 MinerU 转 Markdown 并保存图片资源；文本和代码本地解析。上传的图片不再单独 OCR，标记为 `direct-image` 后作为原始资源直通所选模型。
 - 独立 `/tools` 文档转换继续使用 MinerU Precision，将 PDF 转为含公式、表格和图片的 Markdown。
 - 在线预览完整渲染结果，下载含 Markdown、图片目录、样式 PDF 和 DOCX 的 ZIP 包，并可保存到项目资料。
 
@@ -158,7 +158,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 ### Artifact 成果库
 
-- 对话中的优质回答可保存为 Artifact，支持 14 种成果类型。
+- 对话中的优质回答可保存为 Artifact，服务端成果类型枚举共 13 种，对话内的保存菜单提供其中 12 种常用类型。
 - 一键导出 Markdown、DOCX、PDF，以 Markdown 为唯一源，AST 级转换保证格式一致。
 - 导出结果通过 Redis 缓存，重复下载即时返回。
 
@@ -178,7 +178,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 | 语言 | TypeScript 5, React 19 |
 | 数据库 | PostgreSQL 16 + pgvector 0.8 |
 | ORM | Prisma 7.8 |
-| AI 调用 | ProviderAdapter：Anthropic SDK、DashScope 原生 HTTP、可选 `pi-ai` 隔离适配 |
+| AI 调用 | ProviderAdapter：DeepSeek / MiniMax / Bailian Qwen 三家 Responses 原生 Function Calling |
 | 缓存 | Redis 7 + TanStack Query + React `cache()` |
 | 认证 | NextAuth.js v5 (Credentials Provider, JWT) |
 | 样式 | Tailwind CSS 4 |
@@ -240,7 +240,7 @@ src/
 │   │   ├── runtime-events.ts           # 结构化 Runtime 事件
 │   │   ├── runtime-mode.ts             # legacy / shadow / new 显式策略
 │   │   ├── context/                    # 项目/文件归属与视觉上下文组装
-│   │   ├── adapters/                   # Provider Adapter（legacy / Pi POC / Bailian Qwen）
+│   │   ├── adapters/                   # Provider Adapter（DeepSeek / MiniMax / Bailian Qwen，Responses 原生）
 │   │   ├── providers/                  # Provider delta/usage 规范化
 │   │   ├── loop/agent-loop.ts          # 唯一模型工具循环
 │   │   ├── tools/tool-runner.ts        # Policy/审批/执行/审计状态机
@@ -267,8 +267,7 @@ src/
 │   ├── skills/                         # Skill discovery / migration / Provider-aware tools
 │   │   ├── discovery.ts                # 从 .lumenlab/skills 读取 SKILL.md + policy.json
 │   │   ├── migration.ts                # DiscoveredSkill → SkillMetadata
-│   │   ├── registry.ts                 # 注册入口 + 旧 SkillDefinition 兼容层
-│   │   └── executor.ts                 # legacy tool name 兼容层
+│   │   └── registry.ts                 # Skill 注册与元数据装配
 │   ├── tools/                          # 内置 Tool 实现
 │   │   ├── project-files/              # list / read / delete
 │   │   ├── artifacts/                  # save / list
@@ -277,10 +276,11 @@ src/
 │   │   ├── shared/sanitize.ts          # 跨租户预检
 │   │   └── registry.ts                 # Tool + handler 总装
 │   ├── chat/
-│   │   ├── router.ts                   # 文本/多模态分类 + 模型锁路由
-│   │   ├── minimax-chat.ts             # MiniMax M3 流式客户端
+│   │   ├── router.ts                   # 模型路由（显式选择 > 旧 modelLock > 默认模型）
+│   │   ├── model-catalog.ts            # 活跃/历史模型目录与计费版本
+│   │   ├── compression.ts              # 会话历史自动压缩
 │   │   └── project-conversation-state.ts
-│   ├── vision/minimax.ts               # MiniMax M3 视觉 OCR
+│   ├── vision/minimax.ts               # MiniMax 项目 PDF 原生解析客户端
 │   ├── rag/                            # 文档分块 + 关键词 + 向量 + 项目索引
 │   ├── files/                          # 解析任务、M3 文档流水线
 │   ├── parse/                          # MinerU 文本解析（独立 /tools 流程）
@@ -338,7 +338,7 @@ src/
          → AgentRuntime.run(AgentRunInput)
          → ContextAssembler + ConversationPersistence
          → Skill Router / RAG / 确定性 prelude
-         → ProviderAdapter（legacy：DeepSeek native + XML fallback / MiniMax native；可选 Pi 隔离适配；Qwen 走 DashScope 原生）
+         → ProviderAdapter（DeepSeek / MiniMax / Bailian Qwen 均走 Responses 原生 Function Calling）
          → Agent Loop（规范化调用、Policy、ToolRunner、continuation）
          → 结构化 AgentEvent
          → SSE Adapter（保持既有 data/event 格式与响应头）
@@ -478,9 +478,9 @@ npm run dev
 ### 上传资料
 
 1. 进入项目，在侧边栏上传文件（PNG、JPEG、WebP、PDF、Office/WPS/iWork、TXT、MD、CSV、代码等）。
-2. 图片与 PDF 使用 MiniMax M3 解析；Office/WPS/iWork 文档使用 MinerU 解析并保存图片资源；文本与代码本地读取。
+2. PDF 使用 MiniMax M3 解析（超过 20MB 或被拒时回退 MinerU）；Office/WPS/iWork 文档使用 MinerU 解析并保存图片资源；文本与代码本地读取；图片不单独解析，提问时直接交给所选模型。
 3. 单次最多 50 个文件，单文件上限 50MB，总大小上限 300MB。
-4. 可选对解析结果进行知识增强。
+4. 资料解析完成后自动刷新项目索引与向量，可直接用于检索与提问。
 
 ### 开始对话
 
@@ -507,7 +507,7 @@ npm run dev
 
 ### 保存成果
 
-1. 满意的回答可保存为 Artifact（14 种成果类型）。
+1. 满意的回答可保存为 Artifact（对话内置 12 种常用成果类型）。
 2. 成果库中可导出为 Markdown、DOCX 或 PDF。
 
 ### 转换 PDF 文档

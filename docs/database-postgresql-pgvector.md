@@ -68,6 +68,13 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/ai_workspace?schema=
 | Project | 项目空间 |
 | FileAsset | 上传文件 |
 | DocumentChunk | 文件内容向量块（pgvector） |
+| TokenUsage | 每次模型调用的 token 用量与信用点 |
+| AgentExecution / AgentExecutionEvent | durable Agent 执行状态与事件回放 |
+| Notification | 后台任务完成通知 |
+| ResearchWorkspace / ResearchRun / ResearchReportSnapshot | Deep Research 工作区、运行与不可变报告 |
+| PaperFormattingTask | 后台论文排版任务（受 `PAPER_FORMATTING_ENABLED` 门禁） |
+
+`prisma/schema.prisma` 当前共定义 94 个模型；上表只列出与检索、用量和后台任务直接相关的核心表，完整清单以 schema 为准。
 
 ## SQLite 迁移说明
 

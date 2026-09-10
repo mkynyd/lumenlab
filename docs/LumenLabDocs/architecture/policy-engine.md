@@ -97,7 +97,7 @@
 | `artifact.save` | L2 | ask_first | 写入成果 |
 | `artifact.export_docx` | L3 | ask_each | 生成并下载文档 |
 | `project_files.delete` | L3 | ask_each | 删除资料 |
-| `web_search_20250305` | L1 | auto | 外部搜索，只读 |
+| `web.search` | L1 | auto | 平台统一联网搜索（AnySearch → Bing RSS → DuckDuckGo），只读 |
 
 > 实际风险值以 `src/lib/tools/registry.ts` 与 `src/lib/skills/registry.ts` 中的定义为准。
 

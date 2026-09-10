@@ -70,7 +70,7 @@ ORM 使用 Prisma 7，客户端生成到 `src/generated/prisma/client`。
 
 | 字段 | 说明 |
 |---|---|
-| `Conversation.modelLock` | 当对话因多模态附件被锁定到 MiniMax 时，后续消息继续使用该 provider。 |
+| `Conversation.modelLock` | 只读的历史兼容字段：旧会话可能保存了 `qwen` / `minimax` 锁定值，`routeModel()` 会沿用对应 provider；新会话不再写入模型锁。 |
 | `FileAsset.enhancementStatus` | 文本增强状态：none / enhancing / enhanced / stale / failed。 |
 | `FileAsset.processingMetadata` | JSON，记录 OCR、图片保留数量等解析元数据。 |
 | `Message.cacheHitTokens` / `cacheMissTokens` | 外部 API 提示缓存命中 / 未命中 token 数。 |
