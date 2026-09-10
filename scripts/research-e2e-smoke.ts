@@ -7,10 +7,14 @@
  * 不手工 SQL 伪造数据。
  *
  * 会真实调用模型与外部检索（有额度消耗），必须显式 opt-in：
- *   LUMENLAB_LIVE_SMOKE=1 SMOKE_USER_ID=<existing user id> \
+ *   LUMENLAB_LIVE_SMOKE=1 SMOKE_USER_ID=<existing user id> [SMOKE_BUDGET_PROFILE=deep] \
  *     npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/research-e2e-smoke.ts
  *
- * 可选：SMOKE_QUESTION 覆盖默认研究问题。
+ * 可选环境变量：
+ *   SMOKE_QUESTION       覆盖默认研究问题
+ *   SMOKE_BUDGET_PROFILE quick（默认）| deep | comprehensive
+ *   SMOKE_DOMAIN_PROFILE 默认 computer_science
+ * deep/comprehensive 会按档位放大等待窗口，并触发 citation graph / 图表视觉证据。
  *
  * 运行环境注意：本脚本拉起完整 durable runtime（含 ESM-only 的 pi-ai 适配器），
  * 需要在 package.json 为 "type":"module" 的运行树执行（生产服务器 build 树即此形态）；
@@ -29,6 +33,15 @@ const SCRIPT = "research-e2e-smoke";
 const QUESTION = process.env.SMOKE_QUESTION?.trim()
   || "2025–2026 年大语言模型 Mixture-of-Experts 路由方法有哪些主要改进？请比较至少两个公开来源，并区分论文证据和网页资料。";
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
+const BUDGET_PROFILES = ["quick", "deep", "comprehensive"] as const;
+type SmokeBudgetProfile = (typeof BUDGET_PROFILES)[number];
+
+/** 按预算档位放大等待窗口；comprehensive 明确不作为验收默认值。 */
+const WALL_CLOCK_BUDGET: Record<SmokeBudgetProfile, { planningMs: number; runMs: number }> = {
+  quick: { planningMs: 4 * 60_000, runMs: 15 * 60_000 },
+  deep: { planningMs: 6 * 60_000, runMs: 40 * 60_000 },
+  comprehensive: { planningMs: 8 * 60_000, runMs: 150 * 60_000 },
+};
 
 async function waitForStatus(
   runId: string,
@@ -53,7 +66,7 @@ async function waitForStatus(
 }
 
 async function main() {
-  if (!requireLiveSmoke(SCRIPT, `SMOKE_USER_ID=<existing user id> npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/${SCRIPT}.ts`)) {
+  if (!requireLiveSmoke(SCRIPT, `SMOKE_USER_ID=<existing user id> [SMOKE_BUDGET_PROFILE=deep] npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/${SCRIPT}.ts`)) {
     process.exit(0);
   }
   const report = createDiagnosticsReporter(SCRIPT);
@@ -62,6 +75,14 @@ async function main() {
     report.fail("SMOKE_USER_ID is required (existing account id; script never creates users)");
     process.exit(report.summarize());
   }
+  const requestedProfile = (process.env.SMOKE_BUDGET_PROFILE?.trim() || "quick") as SmokeBudgetProfile;
+  if (!BUDGET_PROFILES.includes(requestedProfile)) {
+    report.fail("SMOKE_BUDGET_PROFILE must be quick, deep or comprehensive", { value: requestedProfile });
+    process.exit(report.summarize());
+  }
+  const domainProfileKey = process.env.SMOKE_DOMAIN_PROFILE?.trim() || "computer_science";
+  const wallClock = WALL_CLOCK_BUDGET[requestedProfile];
+  report.info("smoke configuration", { budgetProfile: requestedProfile, domainProfileKey });
 
   const worker = startAgentExecutionWorker();
   report.info("durable worker started", worker);
@@ -70,18 +91,18 @@ async function main() {
     userId,
     name: `production-smoke-${new Date().toISOString().slice(0, 16)}`,
     description: "production smoke workspace（明确标记的生产冒烟，可保留）",
-    domainProfileKey: "computer_science",
-    budgetProfile: "quick",
+    domainProfileKey,
+    budgetProfile: requestedProfile,
   });
   report.info("workspace created", { workspaceId: workspace.id });
 
-  const run = await createResearchRun({ userId, workspaceId: workspace.id, question: QUESTION, budgetProfile: "quick" });
+  const run = await createResearchRun({ userId, workspaceId: workspace.id, question: QUESTION, budgetProfile: requestedProfile });
   report.info("run created", { runId: run.id });
 
   const onTransition = (from: string, to: string, elapsedSec: number) =>
     report.info(`stage: ${from} -> ${to}`, { elapsedSec });
 
-  const planStatus = await waitForStatus(run.id, (status) => status === "awaiting_confirmation", 4 * 60_000, onTransition);
+  const planStatus = await waitForStatus(run.id, (status) => status === "awaiting_confirmation", wallClock.planningMs, onTransition);
   if (planStatus !== "awaiting_confirmation") {
     report.fail("planning did not reach awaiting_confirmation", { status: planStatus });
     process.exit(report.summarize());
@@ -89,7 +110,7 @@ async function main() {
   report.pass("plan reached confirmation gate");
   await confirmResearchRunPlan(userId, run.id);
 
-  const finalStatus = await waitForStatus(run.id, (status) => TERMINAL.has(status), 15 * 60_000, onTransition);
+  const finalStatus = await waitForStatus(run.id, (status) => TERMINAL.has(status), wallClock.runMs, onTransition);
   const finalRun = await prisma.researchRun.findUniqueOrThrow({ where: { id: run.id }, select: { status: true, metrics: true } });
   const metrics = (finalRun.metrics ?? {}) as Record<string, unknown>;
   if (finalStatus === "completed") {

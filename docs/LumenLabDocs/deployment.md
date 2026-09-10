@@ -115,7 +115,10 @@ LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env s
 # 有界 E2E：以 quick 预算创建并执行一个 Research Run（消耗真实模型额度）。
 # 需在 package.json 为 "type":"module" 的运行树执行（生产 build 树）；
 # 本地等价入口：RESEARCH_FULL_RUN_E2E=1 RESEARCH_E2E_USER_ID=<id> npm run test:research-run
-LUMENLAB_LIVE_SMOKE=1 SMOKE_USER_ID=<existing user id> npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/research-e2e-smoke.ts
+LUMENLAB_LIVE_SMOKE=1 SMOKE_USER_ID=<existing user id> SMOKE_BUDGET_PROFILE=deep \
+  npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/research-e2e-smoke.ts
+#（SMOKE_BUDGET_PROFILE 默认 quick；deep 才会触发 citation graph 与图表视觉证据，
+#  并相应放大等待窗口；SMOKE_QUESTION / SMOKE_DOMAIN_PROFILE 可覆盖默认值）
 
 # 只读结构验证：Run 状态与细分阶段、Evidence/Claim 幂等键、locator/provenance、Citation Graph 边、
 # visual observation（若发生）、advanced filter provenance、统一 metrics/accounting、citationMap、
