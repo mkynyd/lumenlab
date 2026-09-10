@@ -24,7 +24,7 @@ npx prisma migrate deploy
 
 ### 2. 选择账号与凭据模式
 
-中央管理模式需要独立的 [course-ai-regadmin](https://github.com/mkynyd/course-ai-regadmin) 发布注册码和加密凭据快照。
+中央管理模式需要另行部署的管理端发布注册码和加密凭据快照；主应用只接收并校验加密同步结果，不持有管理端凭据。
 
 单机自托管可开启用户 API Key 模式，并用种子脚本创建本地账号。`DEV_USER_PASSWORD` 必须显式设置，种子脚本不提供默认密码：
 

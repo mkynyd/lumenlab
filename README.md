@@ -8,7 +8,7 @@
 ![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react)
 [![CI](https://github.com/mkynyd/lumenlab/actions/workflows/ci.yml/badge.svg)](https://github.com/mkynyd/lumenlab/actions/workflows/ci.yml)
 
-[在线体验](https://lab.mkynstudio.top) · [在线文档](https://lab.mkynstudio.top/docs) · [注册码管理端](https://github.com/mkynyd/course-ai-regadmin)
+[在线体验](https://lab.mkynstudio.top) · [在线文档](https://lab.mkynstudio.top/docs)
 
 ## 目录
 
@@ -166,7 +166,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 - 登录与注册采用响应式双栏界面：桌面端在表单旁提供可手动切换的产品能力介绍，移动端聚焦认证流程；注册密码步骤会实时展示强度等级与逐项安全建议。
 - 用户注册需要提供邮箱、邮箱验证和密码；注册码在注册后于设置「服务访问」页绑定，用于切换密钥组。
-- 注册码由独立管理端 course-ai-regadmin 生成和发布。
+- 注册码由独立部署的管理端生成和发布，主应用只接收加密同步快照。
 - API Key 集中加密存储，用户无法查看明文。
 - 同步协议使用 RSA-OAEP + AES-256-GCM + HMAC 防篡改和重放。
 
@@ -406,7 +406,7 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 - Node.js 20+
 - PostgreSQL 16 + pgvector
 - Redis 7
-- 中央模式：course-ai-regadmin 发布的注册码与密钥组
+- 中央模式：由独立部署的管理端发布的注册码与密钥组
 - 自托管模式：通过 `scripts/seed-dev-access.ts` 初始化账号与用户 API Key
 
 本地基础设施（PostgreSQL 与 Redis）由 docker compose 管理，`npm run dev` 不会自动拉起它们，请先启动：
@@ -437,8 +437,8 @@ cp .env.example .env
 | `REDIS_URL` | Redis 连接串（可选，离线时降级至内存） |
 | `AUTH_SECRET` | 生成命令: `openssl rand -base64 32` |
 | `ENCRYPTION_KEY` | 64 位 hex, 生成命令: `openssl rand -hex 32` |
-| `REGISTRATION_CODE_PEPPER` | 注册码加盐, 与 regadmin 的 FINGERPRINT_SECRET 独立 |
-| `REGISTRATION_SYNC_SECRET` | 与 course-ai-regadmin 共享的同步密钥 |
+| `REGISTRATION_CODE_PEPPER` | 注册码加盐, 与管理端的 FINGERPRINT_SECRET 独立 |
+| `REGISTRATION_SYNC_SECRET` | 与管理端共享的同步密钥 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | RSA 私钥 (PEM base64) |
 | `AGENT_RUNTIME_MODE` | `legacy` / `shadow` / `new`，默认 `legacy` |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 持久 Agent Worker 与事件恢复开关，默认 `false` |
@@ -545,7 +545,3 @@ npx prisma migrate status
 - 遵循项目现有的代码组织模式。
 - API Key 等敏感信息禁止硬编码。
 - 新增 Agent Tool 时在 `src/lib/tools/registry.ts` 注册并补测试；新增 Skill 时在 `.lumenlab/skills/<category>/<skill>/` 提供 `SKILL.md` 与 `policy.json`。
-
-### 相关项目
-
-- [course-ai-regadmin](https://github.com/mkynyd/course-ai-regadmin) — 统一管理员后台，负责注册码、密钥组、发布同步及运营数据查看。

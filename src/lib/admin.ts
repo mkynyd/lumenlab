@@ -1,7 +1,7 @@
 /**
  * Legacy environment helper retained for feedback notification recipients.
- * Interactive administration moved to course-ai-regadmin; this module no
- * longer authenticates a main-application user as an administrator.
+ * Interactive administration moved to a separately deployed admin console;
+ * this module no longer authenticates a main-application user as an administrator.
  */
 export function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
