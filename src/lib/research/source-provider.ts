@@ -205,9 +205,20 @@ export function createResearchToolInvoker(toolRunner?: ToolRunner): ResearchTool
   };
 }
 
+/** `/content` 返回的「正文不可读」错误码（404/无权限）。 */
+function isUnreadableContentError(code: unknown): boolean {
+  return code === "SCIVERSE_CONTENT_UNAVAILABLE" || code === "SCIVERSE_NOT_FOUND";
+}
+
 export function createToolBackedResearchSourceProvider(input: { toolRunner?: ToolRunner; academicAdapters?: AcademicSourceAdapter[] } = {}): ResearchSourceProvider {
   const academicAdapters = input.academicAdapters ?? createAcademicSourceAdapters();
   const runTool = createResearchToolInvoker(input.toolRunner);
+  /**
+   * 本 provider 生命周期内已确认「正文不可读」的 docId（有界）。上游对部分论文的
+   * /content 返回 404，重试只会制造无谓的调用与 429 压力。
+   */
+  const unreadableDocIds = new Set<string>();
+  const MAX_UNREADABLE_DOC_IDS = 64;
 
   async function searchAcademic(context: ResearchProviderContext, question: string): Promise<ResearchCandidate[]> {
     // Sciverse 是学术检索主通道：返回有效结果时不再 fan-out 到 legacy adapters；
@@ -309,7 +320,8 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
         ? (semantic as Record<string, unknown>).hits as unknown[]
         : [];
       const slices: ReadResearchSourceSlice[] = [];
-      for (const rawHit of hits) {
+      const contentUnavailable = unreadableDocIds.has(docId);
+      for (const rawHit of contentUnavailable ? [] : hits) {
         if (!rawHit || typeof rawHit !== "object") continue;
         const hit = rawHit as Record<string, unknown>;
         if (stringValue(hit.docId) !== docId) continue;
@@ -320,6 +332,9 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
         let resourceRefs: ResearchResourceRef[] = [];
         let documentLength: number | null = null;
         const slice = await runTool(context, "sciverse.read", { docId, offset, limit: SCIVERSE_READ_LIMIT });
+        if (slice && typeof slice === "object" && "error" in slice && isUnreadableContentError((slice as Record<string, unknown>).error)) {
+          if (unreadableDocIds.size < MAX_UNREADABLE_DOC_IDS) unreadableDocIds.add(docId);
+        }
         if (slice && typeof slice === "object" && !("error" in slice)) {
           const sliceText = stringValue((slice as Record<string, unknown>).text);
           if (sliceText) {
@@ -358,11 +373,17 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
         });
         if (slices.length >= SCIVERSE_SEMANTIC_TOP_K) break;
       }
-      // 有 doc_id 但语义检索在硬 scope 内没有命中（上游返回空结果）时，仍然做一次
-      // 有界 offset=0 读取：正文与其中的图表引用是真实存在的证据，不能因为语义
-      // 检索为空就整体降级为 metadata-only。仍然只有一次读取，且有长度上限。
-      if (slices.length === 0) {
+      // 有 doc_id 但语义检索在硬 scope 内完全没有命中（上游返回空结果）时，仍然做
+      // 一次有界 offset=0 读取：正文与其中的图表引用是真实存在的证据，不能因为
+      // 语义检索为空就整体降级为 metadata-only。只有一次读取，且有长度上限。
+      //
+      // 若命中存在但读取失败（例如 429 限流或 404 无正文），不再追加这次头部读取：
+      // 那只会对同一篇文档重复施压，Evidence 仍然安全降级为 metadata-only。
+      if (slices.length === 0 && hits.length === 0 && !contentUnavailable) {
         const head = await runTool(context, "sciverse.read", { docId, offset: 0, limit: SCIVERSE_READ_LIMIT });
+        if (head && typeof head === "object" && "error" in head && isUnreadableContentError((head as Record<string, unknown>).error)) {
+          if (unreadableDocIds.size < MAX_UNREADABLE_DOC_IDS) unreadableDocIds.add(docId);
+        }
         const headText = head && typeof head === "object" && !("error" in head)
           ? stringValue((head as Record<string, unknown>).text)
           : null;

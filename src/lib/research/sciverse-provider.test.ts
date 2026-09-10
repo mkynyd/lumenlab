@@ -466,3 +466,33 @@ describe("research source provider · figure/table resource references", () => {
     expect(provenance.documentLength).toBeUndefined();
   });
 });
+
+describe("research source provider · provider pressure control", () => {
+  it("does not add a head read when the scoped semantic hits all failed to read", async () => {
+    const { runner, calls } = succeededToolRunner({
+      "sciverse.semantic_search": {
+        hits: [{ chunkId: "c1", docId: "a".repeat(64), title: "T", score: 0.9, offset: 100 }],
+        count: 1,
+        query: "q",
+      },
+      "sciverse.read": { error: "SCIVERSE_RATE_LIMITED", retryAfterMs: 2000 },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+    const read = await provider.read(createContext(), sciverseCandidateFixture());
+    // 命中存在但读取失败：不再补一次 offset=0 读取，避免对同一文档重复施压。
+    expect(calls.filter((call) => call.toolId === "sciverse.read")).toHaveLength(1);
+    expect(read?.snapshotScope).toMatchObject({ type: "metadata_only" });
+  });
+
+  it("remembers documents whose content is unreadable and stops re-reading them", async () => {
+    const { runner, calls } = succeededToolRunner({
+      "sciverse.semantic_search": { hits: [], count: 0, query: "q", scopedToEmptyResult: true },
+      "sciverse.read": { error: "SCIVERSE_CONTENT_UNAVAILABLE", recoverable: true },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+    await provider.read(createContext(), sciverseCandidateFixture());
+    await provider.read(createContext(), sciverseCandidateFixture());
+    // 第一次读取确认不可读后，后续读取不再发起 /content 调用。
+    expect(calls.filter((call) => call.toolId === "sciverse.read")).toHaveLength(1);
+  });
+});
