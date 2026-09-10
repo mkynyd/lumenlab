@@ -57,7 +57,7 @@ export function DocsMarkdown({ content, className }: DocsMarkdownProps) {
   return (
     <div
       className={cn(
-        "workbench-readable markdown-body break-words [&>:first-child]:mt-0",
+        "docs-markdown workbench-readable markdown-body break-words [&>:first-child]:mt-0",
         className
       )}
     >

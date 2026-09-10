@@ -984,6 +984,27 @@ pre code {
   margin: 1em auto;
 }
 
+/* /docs 正文链接：用强调蓝与正文区分，全程不加下划线；
+   hover 只用中性浅灰填充反馈，不用描边。 */
+.docs-markdown :where(a) {
+  color: var(--color-accent);
+  text-decoration: none;
+  border-radius: var(--radius-xs);
+  padding: 0.12em 0.4em;
+  margin-inline: -0.4em;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.docs-markdown :where(a):hover {
+  background: var(--color-surface-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docs-markdown :where(a) {
+    transition: none;
+  }
+}
+
 .workbench-ambient {
   position: absolute;
   inset: 0;

@@ -37,6 +37,8 @@ export const DOCS_NAV: DocSection[] = [
       { slug: "guides/artifacts", title: "成果与导出", filePath: "guides/artifacts.md" },
       { slug: "guides/agent-mode", title: "Agent 模式", filePath: "guides/agent-mode.md" },
       { slug: "guides/skills-and-tools", title: "Skills 与 Tools", filePath: "guides/skills-and-tools.md" },
+      { slug: "guides/deep-research", title: "深度研究", filePath: "guides/deep-research.md" },
+      { slug: "guides/papers", title: "论文排版", filePath: "guides/papers.md" },
     ],
   },
   {
