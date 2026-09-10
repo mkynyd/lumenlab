@@ -160,6 +160,21 @@ describe("research source provider · sciverse channel", () => {
     expect(candidates.some((candidate) => candidate.provider === "sciverse")).toBe(true);
   });
 
+  it("isolates arxiv degradation: failed arxiv.search never fails the whole channel mix", async () => {
+    const { runner } = succeededToolRunner({
+      "web.search": { sources: [{ url: "https://example.com/post", title: "Blog post" }] },
+      // arxiv.search 未 mock → ToolRunner failed（模拟新服务器出口超时后的有界失败）
+      "sciverse.search": { papers: [sciversePaper] },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+
+    const candidates = await provider.search(createContext(), "attention");
+
+    expect(candidates.some((candidate) => candidate.provider === "arxiv")).toBe(false);
+    expect(candidates.some((candidate) => candidate.provider === "web")).toBe(true);
+    expect(candidates.some((candidate) => candidate.provider === "sciverse")).toBe(true);
+  });
+
   it("scopes semantic search to the selected paper docId and reads bounded slices", async () => {
     const { runner, calls } = succeededToolRunner({
       "sciverse.semantic_search": {

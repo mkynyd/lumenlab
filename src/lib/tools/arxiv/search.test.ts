@@ -73,4 +73,43 @@ describe("arxiv.search", () => {
     const result = await arxivSearch("foo");
     expect(result.error).toBe("FETCH_ERROR");
   });
+
+  it("retries a network failure exactly once with bounded backoff", async () => {
+    fetchMock.mockRejectedValue(new Error("ECONNRESET"));
+    const startedAt = Date.now();
+    const result = await arxivSearch("foo");
+    expect(result.error).toBe("FETCH_ERROR");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(Date.now() - startedAt).toBeLessThan(5000);
+  });
+
+  it("succeeds when the single retry recovers", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new Error("ECONNRESET"))
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(SAMPLE_XML) });
+    const result = await arxivSearch("test paper", 2);
+    expect(result.error).toBeUndefined();
+    expect(result.count).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("never retries when the parent abort signal cancelled the call", async () => {
+    const controller = new AbortController();
+    fetchMock.mockImplementation(() => {
+      controller.abort();
+      return Promise.reject(new DOMException("The operation was aborted.", "AbortError"));
+    });
+    const result = await arxivSearch("foo", 5, { signal: controller.signal });
+    expect(result.error).toBe("FETCH_ERROR");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the parent signal through to fetch", async () => {
+    fetchMock.mockResolvedValue({ ok: true, text: () => Promise.resolve(SAMPLE_XML) });
+    const controller = new AbortController();
+    await arxivSearch("foo", 5, { signal: controller.signal });
+    const usedSignal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+    controller.abort();
+    expect(usedSignal.aborted).toBe(true);
+  });
 });

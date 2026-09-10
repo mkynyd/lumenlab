@@ -21,7 +21,10 @@
     "paper:validate-templates": "tsx scripts/validate-template-snapshots.ts",
     "alpha:clear-users": "prisma db execute --file scripts/clear-alpha-users.sql",
     "setup:api-key": "tsx scripts/setup-api-key.ts",
-    "seed:dev-access": "tsx scripts/seed-dev-access.ts"
+    "seed:dev-access": "tsx scripts/seed-dev-access.ts",
+    "diag:providers": "tsx --tsconfig scripts/tsconfig.json scripts/search-providers-smoke.ts",
+    "diag:research-verify": "tsx --tsconfig scripts/tsconfig.json scripts/research-e2e-verify.ts",
+    "diag:research-e2e": "tsx --tsconfig scripts/tsconfig.json scripts/research-e2e-smoke.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",

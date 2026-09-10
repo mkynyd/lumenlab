@@ -1,23 +1,28 @@
 /**
- * Deep Research Production Validation v1 — post-run verification (uncommitted ops script).
- * Read-only checks against the smoke Run; prints bounded, non-sensitive summaries.
+ * research-e2e-verify — 对指定 Research Run 做只读结构验证。
  *
- * Usage: SMOKE_RUN_ID=<run id> npx tsx scripts/research-e2e-verify.ts
+ * 只读数据库（不调用外部 API、不创建/修改任何记录、不需要 LUMENLAB_LIVE_SMOKE）。
+ * 检查 Run 状态、候选/来源/证据、evidenceKey 幂等、Sciverse locator/provenance、
+ * Claim Graph（claimKey、relation、verification、source independence）、
+ * ReportSnapshot/citationMap、durable lease 与 accounting。
+ *
+ * 用法：npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/research-e2e-verify.ts --run <runId>
+ *       （或 SMOKE_RUN_ID=<runId>）
  */
 import { prisma } from "@/lib/db";
+import { createDiagnosticsReporter, parseCliArgs } from "./lib/live-diagnostics";
 
-function log(message: string, data?: unknown) {
-  console.log(`[verify] ${message}${data !== undefined ? ` ${JSON.stringify(data)}` : ""}`);
-}
+const SCRIPT = "research-e2e-verify";
 
 async function main() {
-  const runId = process.env.SMOKE_RUN_ID?.trim();
-  if (!runId) throw new Error("SMOKE_RUN_ID required");
-  let failures = 0;
-  const check = (ok: boolean, label: string, detail?: unknown) => {
-    log(`${ok ? "PASS" : "FAIL"} ${label}`, detail);
-    if (!ok) failures += 1;
-  };
+  const { values } = parseCliArgs(process.argv.slice(2));
+  const runId = values.get("run")?.trim() || process.env.SMOKE_RUN_ID?.trim();
+  const report = createDiagnosticsReporter(SCRIPT);
+  if (!runId) {
+    report.fail(`run id required: --run <runId> or SMOKE_RUN_ID`);
+    process.exit(report.summarize());
+  }
+  const check = (ok: boolean, label: string, detail?: unknown) => (ok ? report.pass(label, detail) : report.fail(label, detail));
 
   const run = await prisma.researchRun.findUniqueOrThrow({
     where: { id: runId },
@@ -32,7 +37,7 @@ async function main() {
     byProvider[candidate.provider] ??= {};
     byProvider[candidate.provider][candidate.status] = (byProvider[candidate.provider][candidate.status] ?? 0) + 1;
   }
-  log("candidates by provider/status", byProvider);
+  report.info("candidates by provider/status", byProvider);
   check(candidates.some((candidate) => candidate.provider === "sciverse" && candidate.status === "fetched"), "sciverse candidate fetched");
   check(candidates.some((candidate) => candidate.provider === "anysearch" || candidate.provider === "web" || candidates.some((c) => c.provider !== "sciverse" && c.status === "fetched")), "web channel present alongside sciverse");
 
@@ -42,7 +47,7 @@ async function main() {
     include: { sourceSnapshot: { include: { source: true } } },
     orderBy: { createdAt: "asc" },
   });
-  log("evidence count", evidences.length);
+  report.info("evidence count", evidences.length);
   const keyCount = evidences.filter((evidence) => evidence.evidenceKey).length;
   check(keyCount === evidences.length, "all system evidence has deterministic evidenceKey", { withKey: keyCount, total: evidences.length });
   const keySet = new Set(evidences.map((evidence) => evidence.evidenceKey));
@@ -52,17 +57,30 @@ async function main() {
     const locator = evidence.locator as Record<string, unknown> | null;
     return locator?.kind === "sciverse";
   });
-  check(sciverseEvidence.length > 0, "sciverse chunk evidence exists", { count: sciverseEvidence.length });
+  check(sciverseEvidence.length > 0, "sciverse evidence exists", { count: sciverseEvidence.length });
   const sample = sciverseEvidence[0];
   if (sample) {
     const locator = sample.locator as Record<string, unknown>;
     const provenance = (sample.provenance ?? {}) as Record<string, unknown>;
-    check(Boolean(locator.docId) && (Boolean(locator.chunkId) || typeof locator.offset === "number"), "sciverse locator has docId/chunkId/offset", { locator });
-    check(typeof provenance.retrievalMethod === "string" && typeof provenance.provider === "string", "provenance keeps retrieval method/provider", { retrievalMethod: provenance.retrievalMethod, provider: provenance.provider, semanticScore: provenance.semanticScore });
+    const scope = ((sample.sourceSnapshot.metadata as Record<string, unknown> | null)?.scope ?? {}) as Record<string, unknown>;
+    if (scope.type === "metadata_only") {
+      // 无全文权限时的设计内降级：locator 保留 uniqueId/docId/doi，retrievalMethod 记录在 snapshot scope。
+      check(locator.kind === "sciverse" && (Boolean(locator.uniqueId) || Boolean(locator.docId) || Boolean(locator.doi)), "metadata-only sciverse locator keeps identifiers", { locator });
+      check(scope.retrievalMethod === "sciverse.search", "metadata-only scope records retrieval method", { retrievalMethod: scope.retrievalMethod });
+    } else {
+      check(Boolean(locator.docId) && (Boolean(locator.chunkId) || typeof locator.offset === "number"), "sciverse locator has docId/chunkId/offset", { locator });
+      check(typeof provenance.retrievalMethod === "string" && typeof provenance.provider === "string", "provenance keeps retrieval method/provider", { retrievalMethod: provenance.retrievalMethod, provider: provenance.provider, semanticScore: provenance.semanticScore });
+    }
     check(sample.evidenceType === "direct_quote", "raw passage uses direct_quote", { evidenceType: sample.evidenceType });
   }
-  const snapshotScope = sample ? (sample.sourceSnapshot.metadata as Record<string, unknown> | null)?.scope : null;
-  log("sample snapshot scope", snapshotScope);
+  const chunkLevel = sciverseEvidence.filter((evidence) => {
+    const locator = evidence.locator as Record<string, unknown>;
+    return Boolean(locator.docId) && (Boolean(locator.chunkId) || typeof locator.offset === "number");
+  });
+  report.info("chunk-level sciverse evidence (full-text accessible papers)", { count: chunkLevel.length });
+  if (chunkLevel.length === 0) {
+    report.warn("no chunk-level sciverse evidence in this run (metadata-only fallback is by design when full text is inaccessible)");
+  }
 
   // ---- claims ----
   const claims = await prisma.claim.findMany({
@@ -71,7 +89,7 @@ async function main() {
     orderBy: { createdAt: "asc" },
   });
   const activeClaims = claims.filter((claim) => claim.status === "active" || claim.status === "disputed");
-  log("claims", { total: claims.length, active: activeClaims.length, superseded: claims.length - activeClaims.length });
+  report.info("claims", { total: claims.length, active: activeClaims.length, superseded: claims.length - activeClaims.length });
   check(activeClaims.length > 0, "claim extractor produced at least one system claim");
   check(!claims.some((claim) => claim.statement.includes("的证据已获得独立来源支持")), "no legacy template claim");
   const withKey = activeClaims.filter((claim) => claim.claimKey).length;
@@ -99,7 +117,7 @@ async function main() {
     const validRelations = claim.evidenceRelations.filter((relation) => relation.evidence.status === "active");
     const uniqueSources = new Set(validRelations.map((relation) => relation.evidence.sourceSnapshot.sourceId)).size;
     check(quality.uniqueSourceCount === uniqueSources, `uniqueSourceCount consistent for claim ${claim.claimKey}`, { recorded: quality.uniqueSourceCount, actual: uniqueSources });
-    log("claim", {
+    report.info("claim", {
       key: claim.claimKey,
       statement: claim.statement.slice(0, 80),
       status: claim.verificationStatus,
@@ -115,13 +133,13 @@ async function main() {
   check(!activeClaims.some((claim) => claim.verificationStatus === "pending"), "no claim left pending");
 
   // ---- report ----
-  const report = run.reportSnapshot;
-  check(Boolean(report), "report snapshot frozen");
-  if (report) {
-    const citationMap = report.citationMap as Record<string, Array<{ evidenceId: string; relation: string; source: { title: string | null; doi: string | null; canonicalUrl: string | null; provider: string | null } }>>;
-    log("report refs", { evidenceIds: report.evidenceIds.length, sourceSnapshotIds: report.sourceSnapshotIds.length, citationEntries: Object.keys(citationMap).length });
+  const reportSnapshot = run.reportSnapshot;
+  check(Boolean(reportSnapshot), "report snapshot frozen");
+  if (reportSnapshot) {
+    const citationMap = reportSnapshot.citationMap as Record<string, Array<{ evidenceId: string; relation: string; source: { title: string | null; doi: string | null; canonicalUrl: string | null; provider: string | null } }>>;
+    report.info("report refs", { evidenceIds: reportSnapshot.evidenceIds.length, sourceSnapshotIds: reportSnapshot.sourceSnapshotIds.length, citationEntries: Object.keys(citationMap).length });
     const entries = Object.entries(citationMap).slice(0, 2);
-    for (const [claimId, refs] of entries) {
+    for (const [, refs] of entries) {
       for (const ref of refs.slice(0, 1)) {
         const evidence = evidences.find((item) => item.id === ref.evidenceId);
         check(Boolean(evidence), `citation trace evidence ${ref.evidenceId.slice(0, 8)}… exists`, {
@@ -132,38 +150,35 @@ async function main() {
           provider: ref.source.provider,
         });
       }
-      void claimId;
     }
-    const body = ((report.reportDocument as Record<string, unknown>)?.body as string) ?? "";
+    const body = ((reportSnapshot.reportDocument as Record<string, unknown>)?.body as string) ?? "";
     const markers = [...new Set([...body.matchAll(/\[E(\d+)\]/g)].map((match) => Number(match[1])))];
-    check(markers.every((index) => index >= 1 && index <= report.evidenceIds.length), "all [E#] markers resolve to snapshot evidence", { markers: markers.slice(0, 10), evidenceCount: report.evidenceIds.length });
+    check(markers.every((index) => index >= 1 && index <= reportSnapshot.evidenceIds.length), "all [E#] markers resolve to snapshot evidence", { markers: markers.slice(0, 10), evidenceCount: reportSnapshot.evidenceIds.length });
     const relationEvidenceIds = new Set(activeClaims.flatMap((claim) => claim.evidenceRelations.map((relation) => relation.evidenceId)));
     const sampleMarkers = markers.slice(0, 2);
     for (const index of sampleMarkers) {
-      const evidenceId = report.evidenceIds[index - 1];
+      const evidenceId = reportSnapshot.evidenceIds[index - 1];
       check(relationEvidenceIds.has(evidenceId), `marker E${index} evidence participates in a ClaimEvidenceRelation`);
     }
-    log("report body preview", body.slice(0, 400));
   }
 
   // ---- durable execution ----
   const execution = run.agentExecutionId
     ? await prisma.agentExecution.findUnique({ where: { id: run.agentExecutionId }, select: { status: true, leaseExpiresAt: true, attempt: true } })
     : null;
-  log("agent execution", execution);
+  report.info("agent execution", execution);
   check(execution?.status === "completed", "agent execution completed without lingering lease");
   const tasks = await prisma.researchTask.groupBy({ by: ["status"], where: { runId }, _count: true });
-  log("tasks by status", tasks);
+  report.info("tasks by status", tasks);
   check(!tasks.some((group) => group.status === "running"), "no task stuck in running");
 
   const metrics = (run.metrics ?? {}) as Record<string, unknown>;
   check(typeof metrics.modelCalls === "number" && (metrics.modelCalls as number) > 0 && typeof metrics.totalTokens === "number" && (metrics.totalTokens as number) > 0, "accounting recorded (modelCalls/tokens)", { modelCalls: metrics.modelCalls, totalTokens: metrics.totalTokens, costCredits: metrics.costCredits });
 
-  log(failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`);
-  process.exit(failures === 0 ? 0 : 2);
+  process.exit(report.summarize());
 }
 
 main().catch((error) => {
-  console.error("[verify] failed:", error instanceof Error ? error.message : String(error));
+  console.error(`[${SCRIPT}] crashed:`, error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

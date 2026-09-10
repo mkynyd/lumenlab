@@ -99,3 +99,23 @@ git diff --check
 ```
 
 部署后检查 `/api/health`、登录注册、SSE 流式聊天、文件上传与导出，并确认日志中没有泄露 API Key、同步密钥或 RSA 私钥。
+
+### 生产诊断（live diagnostics）
+
+`scripts/` 下有三个正式诊断入口，统一输出 `[PASS] / [WARN] / [FAIL]` 并以退出码报告结果（0 通过，2 存在 correctness failure）。任何会真实调用外部服务或创建 Research Run 的脚本都必须显式设置 `LUMENLAB_LIVE_SMOKE=1`，否则只打印用途并退出：
+
+```bash
+# 检索通道冒烟：web.search(AnySearch) + Sciverse search/semantic/read；可选 arXiv 与
+# Sciverse 全文证据链严格模式（窗口内无可访问全文时记 WARN 跳过）
+LUMENLAB_LIVE_SMOKE=1 npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/search-providers-smoke.ts --with-arxiv --require-sciverse-content
+
+# 有界 E2E：以 quick 预算创建并执行一个 Research Run（消耗真实模型额度）。
+# 需在 package.json 为 "type":"module" 的运行树执行（生产 build 树）；
+# 本地等价入口：RESEARCH_FULL_RUN_E2E=1 RESEARCH_E2E_USER_ID=<id> npm run test:research-run
+LUMENLAB_LIVE_SMOKE=1 SMOKE_USER_ID=<existing user id> npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/research-e2e-smoke.ts
+
+# 只读结构验证：Run 状态、Evidence/Claim 幂等键、locator/provenance、citationMap、accounting
+npx tsx --tsconfig scripts/tsconfig.json --env-file=.env scripts/research-e2e-verify.ts --run <runId>
+```
+
+诊断脚本不打印 Token、完整研究 query、原始 Evidence 全文或隐藏推理。

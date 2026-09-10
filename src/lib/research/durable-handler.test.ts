@@ -360,9 +360,11 @@ describe("durable research handler · researching stage", () => {
 
     await handler(createContext());
     const firstEvidenceIds = state.evidences.map((evidence) => evidence.id);
-    // 模拟 lease 恢复后同一 task 重跑：candidate 已存在（findFirst 命中）
+    // 模拟 lease 恢复后同一 task 重跑：candidate 已存在且 fetched，
+    // 不再重复 fetch（不烧 fetch budget），evidence 由 (runId, evidenceKey) 幂等。
     await handler(createContext());
 
+    expect(provider.read).toHaveBeenCalledTimes(1);
     expect(state.evidences).toHaveLength(1);
     expect(state.evidences.map((evidence) => evidence.id)).toEqual(firstEvidenceIds);
     expect(state.snapshots).toHaveLength(1);

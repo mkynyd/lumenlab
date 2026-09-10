@@ -8,6 +8,7 @@ import { evaluateResearchStop, getResearchBudget, releaseResearchBudgetCounter, 
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
 import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion } from "./claim-graph";
+import { prioritizeResearchCandidates } from "./candidate-priority";
 import { createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider } from "./source-provider";
 import { academicCitationSignal, clampQuality, computeEvidenceRecency, computeResearchInformationGain, computeSourceDiversity, estimateSourceQuality, summarizeResearchQuality } from "./quality";
 import { assertResearchRunTransition } from "./state-machine";
@@ -70,12 +71,6 @@ async function transitionRun(runId: string, next: ResearchRunStatus) {
   if (current.status === next) return;
   assertResearchRunTransition(current.status as ResearchRunStatus, next);
   await prisma.researchRun.update({ where: { id: runId }, data: { status: next } });
-}
-
-function prioritizeResearchCandidates(candidates: ResearchCandidate[], preferredProviders: string[] | undefined) {
-  if (!preferredProviders?.length) return candidates;
-  const rank = new Map(preferredProviders.map((provider, index) => [provider, index]));
-  return [...candidates].sort((left, right) => (rank.get(left.provider) ?? preferredProviders.length) - (rank.get(right.provider) ?? preferredProviders.length));
 }
 
 async function persistCandidate(input: {
@@ -423,6 +418,9 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             for (const candidate of prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders)) {
               if (context.signal.aborted || state.sourceCount >= limits.maxSources) break;
               const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate });
+              // 同一 Run 内已被成功读取的候选不重复 fetch：Evidence 由
+              // (runId, evidenceKey) 幂等，再读只会烧 fetch budget 而不产生新证据。
+              if (savedCandidate.status === "fetched") continue;
               await appendPublicEvent(context, { key: `research:candidate:${savedCandidate.id}`, kind: "source_candidate_discovered", runId: run.id, message: `发现来源候选：${candidate.title}`, publicData: { candidateId: savedCandidate.id, provider: candidate.provider, url: candidate.url, query } });
               if (!tryReserveResearchBudgetCounter(state, limits, "sourceCount")) break;
               if (!tryReserveResearchBudgetCounter(state, limits, "fetchCalls")) {

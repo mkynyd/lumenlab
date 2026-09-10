@@ -883,8 +883,8 @@ export function registerBuiltinTools(): void {
   registerToolHandler("web.fetch", async (_ctx, args) => {
     return webFetch(String(args.url ?? ""));
   });
-  registerToolHandler("arxiv.search", async (_ctx, args) => {
-    return arxivSearch(String(args.query ?? ""), args.maxResults ? Number(args.maxResults) : 5);
+  registerToolHandler("arxiv.search", async (ctx, args) => {
+    return arxivSearch(String(args.query ?? ""), args.maxResults ? Number(args.maxResults) : 5, { signal: ctx.signal });
   });
   registerToolHandler("arxiv.read", async (_ctx, args) => {
     return arxivRead(String(args.arxivId ?? ""));
