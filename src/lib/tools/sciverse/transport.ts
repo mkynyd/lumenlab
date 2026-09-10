@@ -65,12 +65,18 @@ function retryAfterMs(headers: Headers, details: unknown): number | null {
 async function parseErrorBody(response: Response): Promise<SciverseErrorBody> {
   const payload = await response.json().catch(() => null);
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {};
-  const record = payload as Record<string, unknown>;
+  const outer = payload as Record<string, unknown>;
+  // 上游有两种错误外壳：扁平的 {code,message,request_id} 与嵌套的
+  // {error:{biz_code,code,message}}（后者用于业务错误，例如 EMPTY_RESULT）。
+  const nested = outer.error && typeof outer.error === "object" && !Array.isArray(outer.error)
+    ? outer.error as Record<string, unknown>
+    : {};
+  const record = typeof outer.code === "string" ? outer : nested;
   return {
     code: typeof record.code === "string" ? record.code : undefined,
     message: typeof record.message === "string" ? record.message : undefined,
-    request_id: typeof record.request_id === "string" ? record.request_id : undefined,
-    details: record.details,
+    request_id: typeof outer.request_id === "string" ? outer.request_id : undefined,
+    details: outer.details ?? nested.biz_code,
   };
 }
 

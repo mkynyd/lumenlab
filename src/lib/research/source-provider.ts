@@ -358,6 +358,34 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
         });
         if (slices.length >= SCIVERSE_SEMANTIC_TOP_K) break;
       }
+      // 有 doc_id 但语义检索在硬 scope 内没有命中（上游返回空结果）时，仍然做一次
+      // 有界 offset=0 读取：正文与其中的图表引用是真实存在的证据，不能因为语义
+      // 检索为空就整体降级为 metadata-only。仍然只有一次读取，且有长度上限。
+      if (slices.length === 0) {
+        const head = await runTool(context, "sciverse.read", { docId, offset: 0, limit: SCIVERSE_READ_LIMIT });
+        const headText = head && typeof head === "object" && !("error" in head)
+          ? stringValue((head as Record<string, unknown>).text)
+          : null;
+        if (headText) {
+          const headRefs = parseResearchResourceRefs((head as Record<string, unknown>).resources);
+          const headLength = numberValue((head as Record<string, unknown>).totalLength);
+          slices.push({
+            excerpt: headText.slice(0, SCIVERSE_SLICE_MAX_CHARS),
+            locator: { kind: "sciverse", docId, offset: 0, doi, url: candidate.url },
+            provenance: {
+              provider: "sciverse",
+              discovery: "sciverse.search",
+              // 语义检索在 scope 内为空，正文来自有界头部读取。
+              retrievalMethod: "sciverse.read",
+              queryHash: hashQuery(question),
+              identifiers: { uniqueId, docId, doi },
+              ...(headRefs.length > 0 ? { resourceRefs: headRefs } : {}),
+              ...(headLength !== null ? { documentLength: headLength } : {}),
+            },
+          });
+        }
+      }
+
       if (slices.length > 0) {
         const content = slices.map((slice) => slice.excerpt).join("\n\n");
         return {
@@ -376,7 +404,9 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
             docId,
             sliceCount: slices.length,
             offsets: slices.map((slice) => slice.locator.offset),
-            retrievalMethod: "sciverse.semantic_search+sciverse.read",
+            retrievalMethod: slices.every((slice) => slice.provenance.retrievalMethod === "sciverse.read")
+              ? "sciverse.read"
+              : "sciverse.semantic_search+sciverse.read",
           },
         };
       }

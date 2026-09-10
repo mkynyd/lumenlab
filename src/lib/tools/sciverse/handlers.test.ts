@@ -593,3 +593,25 @@ describe("sciverse.resource handler", () => {
     expect(usedSignal.aborted).toBe(true);
   });
 });
+
+describe("sciverse.semantic_search · scoped empty result", () => {
+  it("treats a nested EMPTY_RESULT business error as an empty scope, not a failure", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(
+      { error: { biz_code: 11725, code: "EMPTY_RESULT", message: "结果为空，请检查入参后重试" } },
+      400,
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await sciverseSemanticSearch(ctx, { query: "q", filters: { docIds: ["a".repeat(64)] } });
+    expect(result).toMatchObject({ hits: [], count: 0, scopedToEmptyResult: true });
+    expect(result).not.toMatchObject({ error: expect.anything() });
+  });
+
+  it("still reports a genuine invalid request as an error", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(
+      { code: "INVALID_REQUEST", message: "top_k 超出范围" },
+      400,
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await sciverseSemanticSearch(ctx, { query: "q" })).toMatchObject({ error: "SCIVERSE_INVALID_REQUEST" });
+  });
+});

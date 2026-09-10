@@ -312,7 +312,20 @@ export async function sciverseSemanticSearch(_ctx: ToolExecutionContext, args: R
     return result as unknown as SciverseResult;
   } catch (error) {
     const durationMs = Date.now() - startedAt;
-    if (error instanceof SciverseError) return mapSciverseError("/agentic-search", error, durationMs);
+    if (error instanceof SciverseError) {
+      // 上游在「给定 scope 内没有语义命中」时返回 400 EMPTY_RESULT（业务码
+      // 11725）。这是可恢复的空结果，不是非法请求：返回空 hits，让调用方按
+      // 「本作用域没有语义命中」处理，而不是把整条通道判为失败。
+      if (error.status === 400 && error.code === "EMPTY_RESULT") {
+        logger.debug("sciverse agentic-search returned an empty scoped result", {
+          provider: "sciverse",
+          endpoint: "/agentic-search",
+          durationMs,
+        });
+        return { hits: [], count: 0, query, scopedToEmptyResult: true };
+      }
+      return mapSciverseError("/agentic-search", error, durationMs);
+    }
     logger.error("sciverse agentic-search unexpected failure", { provider: "sciverse", endpoint: "/agentic-search", durationMs });
     return { error: "SCIVERSE_UNAVAILABLE", recoverable: true };
   }

@@ -1179,6 +1179,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const claims = await prisma.claim.findMany({ where: { runId: run.id, status: { in: ["active", "disputed"] } }, include: { question: { select: { id: true, title: true, question: true, priority: true } }, evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } }, orderBy: { createdAt: "asc" } });
     const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
     const sourceSnapshots = [...new Set(evidence.map((item) => item.sourceSnapshotId))];
+    const canonicalSourceCount = new Set(evidence.map((item) => item.sourceSnapshot.sourceId)).size;
     // Claim Graph v1：先做 deterministic 证据结构下界，再让 model verifier 在下界之内审查。
     const deterministicByClaim = new Map(claims.map((claim) => [claim.id, computeDeterministicClaimVerification(claim.evidenceRelations.map((relation) => ({
       relation: relation.relation,
@@ -1340,7 +1341,11 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     };
     const unifiedMetrics = {
       evidenceCount: evidence.length,
-      sourceCount: sourceSnapshots.length,
+      // sourceCount 是「唯一来源」数（按 canonical ResearchSource 去重），
+      // sourceSnapshotCount 才是快照数：同一论文的多个 chunk 只算一个来源，
+      // 而同一来源在不同读取范围下可能有多个 snapshot。
+      sourceCount: canonicalSourceCount,
+      sourceSnapshotCount: sourceSnapshots.length,
       claimCount: claims.length,
       modelCalls: state.modelCalls,
       searchCalls: state.searchCalls,
@@ -1360,7 +1365,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       ...graphMetrics,
       verificationSummary,
     };
-    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, graph: graphMetrics, visual: visualMetrics, scholarlyFilters: scholarlyFilterMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
+    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: canonicalSourceCount, sourceSnapshotCount: sourceSnapshots.length, graph: graphMetrics, visual: visualMetrics, scholarlyFilters: scholarlyFilterMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
     await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ ...unifiedMetrics, scholarlyFilters: scholarlyFilterMetrics, degradations: [...degradationCodes] }) } });
     await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: "研究报告已完成并冻结为不可修改快照", publicData: { reportId: report.id, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, verificationSummary } });
     return { kind: "completed", checkpoint };

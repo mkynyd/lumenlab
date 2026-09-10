@@ -278,6 +278,33 @@ describe("research source provider · sciverse channel", () => {
     expect(read?.slices?.[0].locator).toMatchObject({ kind: "sciverse", docId: "a".repeat(64), offset: 512 });
   });
 
+  it("falls back to a bounded head read when the scoped semantic search is empty", async () => {
+    // 上游在硬 scope 内没有语义命中时返回空结果；正文仍然存在，不能因此整体降级。
+    const { runner, calls } = succeededToolRunner({
+      "sciverse.semantic_search": { hits: [], count: 0, query: "q", scopedToEmptyResult: true },
+      "sciverse.read": {
+        docId: "a".repeat(64),
+        offset: 0,
+        text: "head of the paper",
+        more: true,
+        totalLength: 30_000,
+        resources: [{ fileName: "dt=2025-08-07/ht=09/fig1.png", kind: "figure", alt: "Figure 1" }],
+      },
+    });
+    const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });
+
+    const read = await provider.read(createContext(), sciverseCandidateFixture());
+
+    expect(calls.filter((call) => call.toolId === "sciverse.read")).toHaveLength(1);
+    expect(calls.find((call) => call.toolId === "sciverse.read")?.args).toMatchObject({ offset: 0, limit: 1600 });
+    expect(read?.snapshotScope).toMatchObject({ type: "bounded_evidence_slices", retrievalMethod: "sciverse.read" });
+    expect(read?.slices?.[0].provenance).toMatchObject({
+      retrievalMethod: "sciverse.read",
+      documentLength: 30_000,
+      resourceRefs: [{ fileName: "dt=2025-08-07/ht=09/fig1.png", kind: "figure" }],
+    });
+  });
+
   it("returns null when the paper has neither doc_id content nor abstract", async () => {
     const { runner } = succeededToolRunner({});
     const provider = createToolBackedResearchSourceProvider({ toolRunner: runner, academicAdapters: [] });

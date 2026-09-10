@@ -232,6 +232,7 @@ async function main() {
     const canonicalSources = new Set(evidences.map((evidence) => evidence.sourceSnapshot.source.canonicalKey));
     report.info("canonical sources", { count: canonicalSources.size, snapshots: reportSnapshot.sourceSnapshotIds.length, evidence: evidences.length });
     check((run.metrics as Record<string, unknown> | null)?.sourceCount === canonicalSources.size, "reported source count equals canonical source count", { reported: (run.metrics as Record<string, unknown> | null)?.sourceCount, actual: canonicalSources.size });
+    check((run.metrics as Record<string, unknown> | null)?.sourceSnapshotCount === reportSnapshot.sourceSnapshotIds.length, "reported snapshot count equals frozen snapshots", { reported: (run.metrics as Record<string, unknown> | null)?.sourceSnapshotCount, actual: reportSnapshot.sourceSnapshotIds.length });
     // ReportSnapshot 必须完整。
     check(Boolean(reportSnapshot.contentHash) && Boolean(reportSnapshot.verificationSummary) && Boolean(reportSnapshot.coverageSummary), "report snapshot carries hash/verification/coverage");
   }
