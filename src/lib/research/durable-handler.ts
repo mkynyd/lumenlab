@@ -322,6 +322,20 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       verificationRepairs: 0,
     };
     const limits = getResearchBudget(run.workspace.budgetProfile);
+    // 收尾预算保留：visual_evidence 阶段读图与图表扫描都要占用 fetchCalls，但阅读
+    // 阶段很容易把整个 fetch 预算吃满（生产 deep run 实测 40/40），使视觉阶段永远
+    // 无法执行。因此只要视觉阶段还没跑完，就在发现/扩展阶段扣掉它需要的额度，等
+    // 视觉阶段真正执行时再用完整额度。
+    const visualPolicyForReserve = getResearchVisualPolicy(run.workspace.budgetProfile);
+    const visualFetchReserve = limits.fetchCalls > 0 && !state.visualEvidence?.done
+      ? Math.min(
+          limits.fetchCalls,
+          visualPolicyForReserve.maxFigureScanReads + visualPolicyForReserve.maxResourceFetches,
+        )
+      : 0;
+    const researchLimits = visualFetchReserve > 0
+      ? { ...limits, fetchCalls: Math.max(0, limits.fetchCalls - visualFetchReserve) }
+      : limits;
     const domainProfile = (run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined)?.domainProfile;
     const planSnapshot = run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined;
     // 有界收集 Sciverse advanced filter 的生效情况（诊断与 run.metrics 用）。
@@ -413,7 +427,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     if (state.stage === "researching") {
       await transitionRun(run.id, "researching");
       const elapsedMs = Date.now() - (run.startedAt ?? run.createdAt).getTime();
-      const hardBudgetReached = elapsedMs >= limits.wallTimeMs || state.modelCalls >= limits.modelCalls || (state.totalTokens ?? 0) >= limits.maxTokens || (state.costCredits ?? 0) >= limits.maxCostCredits || state.searchCalls >= limits.searchCalls || state.fetchCalls >= limits.fetchCalls || state.sourceCount >= limits.maxSources;
+      const hardBudgetReached = elapsedMs >= limits.wallTimeMs || state.modelCalls >= limits.modelCalls || (state.totalTokens ?? 0) >= limits.maxTokens || (state.costCredits ?? 0) >= limits.maxCostCredits || state.searchCalls >= limits.searchCalls || state.fetchCalls >= researchLimits.fetchCalls || state.sourceCount >= limits.maxSources;
       if (hardBudgetReached) {
         state.stage = "evaluating";
         await appendPublicEvent(context, { key: `research:budget:reached:${run.id}:${state.searchCalls}:${state.fetchCalls}`, kind: "budget_updated", runId: run.id, message: "已达到研究硬预算，进入评估阶段", publicData: { elapsedMs, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, limits } });
@@ -476,7 +490,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
               if (savedCandidate.status === "fetched") continue;
               await appendPublicEvent(context, { key: `research:candidate:${savedCandidate.id}`, kind: "source_candidate_discovered", runId: run.id, message: `发现来源候选：${candidate.title}`, publicData: { candidateId: savedCandidate.id, provider: candidate.provider, url: candidate.url, query } });
               if (!tryReserveResearchBudgetCounter(state, limits, "sourceCount")) break;
-              if (!tryReserveResearchBudgetCounter(state, limits, "fetchCalls")) {
+              if (!tryReserveResearchBudgetCounter(state, researchLimits, "fetchCalls")) {
                 releaseResearchBudgetCounter(state, "sourceCount");
                 continue;
               }
@@ -703,7 +717,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             resolvedSeeds.push(seed);
             continue;
           }
-          if (!tryReserveResearchBudgetCounter(state, limits, "searchCalls")) break;
+          if (!tryReserveResearchBudgetCounter(state, researchLimits, "searchCalls")) break;
           expansionState.graphToolCalls += 1;
           const uniqueId = await resolveSeedSciverseUniqueId(runTool, providerContext, seed);
           if (uniqueId) resolvedSeeds.push({ ...seed, sciverseUniqueId: uniqueId });
@@ -727,7 +741,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           runTool,
           processedFingerprints: new Set(expansionState.fingerprints[question.id] ?? []),
           graphToolCallsUsed: expansionState.graphToolCalls,
-          tryReserve: (counter) => tryReserveResearchBudgetCounter(state, limits, counter),
+          tryReserve: (counter) => tryReserveResearchBudgetCounter(state, researchLimits, counter),
           ingest: ingestResearchReadSource,
         });
         expansionState.fingerprints[question.id] = [...(expansionState.fingerprints[question.id] ?? []), ...output.processedFingerprints];
@@ -768,7 +782,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     }
 
     if (state.stage === "visual_evidence") {
-      const policy = getResearchVisualPolicy(run.workspace.budgetProfile);
+      // 视觉阶段使用完整限额：发现阶段已经把它的份额预留出来了。
+      const policy = visualPolicyForReserve;
       const visualState = state.visualEvidence ?? {
         done: false,
         completedQuestionIds: [] as string[],

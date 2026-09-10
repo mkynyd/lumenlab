@@ -894,6 +894,53 @@ describe("durable research handler · visual_evidence stage", () => {
     expect(nextState.visualEvidence?.metrics).toMatchObject({ observationsPersisted: 1, modelCalls: 1 });
   });
 
+  it("can spend the reserved finishing budget when reading sources stopped short of the ceiling", async () => {
+    workspaceBudgetProfile = "deep";
+    questionRow.evidence = [fullTextEvidence()];
+    vi.mocked(prismaResearchQuestionFindMany).mockImplementation(async () => [visualQuestion()] as never);
+    stageBehavior.visualEvaluator = { observations: [{ statement: "1.8x", resourceId: "r1", confidence: 0.6 }] };
+    const toolInvoker = vi.fn(async (_ctx: unknown, toolId: string) =>
+      toolId === "sciverse.resource" ? imageToolResult() : null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    // 阅读阶段按预留后的上限（deep 40 - 5 = 35）停下，视觉阶段使用剩下的 5 次。
+    const result = await handler(createContext({ researchState: visualStageState({ fetchCalls: 35 }) }));
+    const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(nextState.fetchCalls).toBeLessThanOrEqual(40);
+    expect(nextState.visualEvidence?.metrics).toMatchObject({ modelCalls: 1, observationsPersisted: 1 });
+    expect(nextState.stage).toBe("claim_extraction");
+  });
+
+  it("reserves the finishing fetch budget during the reading phase", async () => {
+    workspaceBudgetProfile = "deep";
+    const manyCandidates = Array.from({ length: 12 }, (_, index) => ({
+      provider: "web",
+      kind: "web" as const,
+      externalId: `https://example.test/${index}`,
+      title: `Source ${index}`,
+      url: `https://example.test/${index}`,
+      metadata: {},
+    }));
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => manyCandidates),
+      read: vi.fn(async (_ctx, candidate) => ({
+        candidate,
+        title: candidate.title,
+        content: "body",
+        excerpt: "body",
+        locator: { kind: "url", url: candidate.url },
+        sourceVersion: null,
+        metadata: {},
+      })),
+    };
+    const handler = createDurableResearchExecutionHandler({ provider });
+
+    // deep 上限 40，视觉阶段预留 5（2 次图表扫描读取 + 3 次资源抓取）。
+    const result = await handler(createContext({ researchState: visualStageState({ stage: "researching", fetchCalls: 30 }) }));
+    const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    expect(nextState.fetchCalls).toBe(35);
+  });
+
   it("does no visual work at all for the quick profile", async () => {
     workspaceBudgetProfile = "quick";
     questionRow.evidence = [fullTextEvidence()];
