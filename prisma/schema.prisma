@@ -1913,6 +1913,7 @@ model Evidence {
   locator          Json
   excerpt          String
   evidenceType     ResearchEvidenceType
+  evidenceKey      String?
   origin           ResearchEvidenceOrigin @default(system)
   createdByUserId  String?
   tags             String[]               @default([])
@@ -1938,6 +1939,7 @@ model Evidence {
   @@index([sourceSnapshotId])
   @@index([supersedesId])
   @@index([runId, origin, createdAt])
+  @@unique([runId, evidenceKey])
 }
 
 model Claim {

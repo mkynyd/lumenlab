@@ -61,6 +61,14 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 - 学习总览只突出一个今日下一步，并用分段条展示未开始、学习中、已掌握和到期复习数量，不伪造精确掌握率。
 - 资料重解析或删除只把关联知识标为待验证或不可用，保留不受影响的学习历史。
 
+### Deep Research
+
+- 研究运行按 Planner → 并行 Researcher → Evaluator/Replan → Synthesizer → Citation Verifier 的 durable 阶段执行，复用 AgentExecution 租约、checkpoint 与事件回放，报告冻结为不可变快照。
+- 检索分三条并列通道：Web（web.search/web.fetch）、学术（Sciverse 主通道，OpenAlex/Crossref/Semantic Scholar/PubMed 为回退，arXiv 为专项来源）、项目资料（project_rag/project_files）。
+- Sciverse 证据按论文 docId 硬范围做段落级语义检索，再在命中位置读取有界原文切片；证据以 chunk 级 locator（docId/chunkId/offset/pageNo）和 provenance 落库，快照元数据明确记录读取范围，不冒充全文。
+- 系统证据带确定性幂等键，任务重跑或租约恢复不会产生重复 Evidence；对象存储短暂失败时保留有界摘录并标注 rawContentPersisted=false。
+- 报告引用表可从 Evidence 追溯到来源快照与 canonical source（标题、DOI、canonical URL、provider、locator）。
+
 ### 受控 Agent 模式
 
 入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek、MiniMax 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。

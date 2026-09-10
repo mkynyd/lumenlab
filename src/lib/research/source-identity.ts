@@ -7,6 +7,12 @@ export interface SourceIdentityInput {
   arxivId?: string | null;
   pmid?: string | null;
   fileId?: string | null;
+  /**
+   * 稳定的 provider 作用域标识（例如 Sciverse docId/uniqueId）。仅在没有
+   * DOI/arXiv/PMID/URL 等可跨 provider 归并的标识时兜底，避免不同 provider
+   * 的 externalId 拼写差异永久制造重复 ResearchSource。
+   */
+  providerScopedId?: { provider: string; id: string } | null;
 }
 
 export interface SourceIdentity {
@@ -61,6 +67,9 @@ export function buildSourceIdentity(input: SourceIdentityInput): SourceIdentity 
   const arxivId = normalizeArxivId(input.arxivId ?? input.url);
   const pmid = normalizePmid(input.pmid ?? input.url);
   const canonicalUrl = normalizeCanonicalUrl(input.url);
+  const providerScoped = input.providerScopedId && input.providerScopedId.id.trim()
+    ? `${input.kind}:${input.providerScopedId.provider}:${input.providerScopedId.id.trim()}`
+    : null;
   const canonicalKey = doi
     ? `doi:${doi}`
     : arxivId && (input.kind === "arxiv" || /arxiv\.org/i.test(input.url ?? ""))
@@ -71,8 +80,9 @@ export function buildSourceIdentity(input: SourceIdentityInput): SourceIdentity 
           ? `${input.kind}:file:${input.fileId}`
           : canonicalUrl
             ? `url:${canonicalUrl}`
-            : `${input.kind}:unknown:${createHash("sha256")
-                .update(JSON.stringify({ kind: input.kind, url: input.url ?? null }))
-                .digest("hex")}`;
+            : providerScoped
+              ?? `${input.kind}:unknown:${createHash("sha256")
+                  .update(JSON.stringify({ kind: input.kind, url: input.url ?? null }))
+                  .digest("hex")}`;
   return { canonicalKey, canonicalUrl, doi, arxivId, pmid };
 }

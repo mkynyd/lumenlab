@@ -1,13 +1,12 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
-import { uploadObjectBuffer } from "@/lib/storage/object-storage";
 import type { AgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { AgentExecutionHandler, AgentExecutionHandlerContext, AgentExecutionHandlerResult } from "@/lib/agent/executions/agent-execution-runner";
 import { evaluateResearchStop, getResearchBudget, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
-import { buildSourceIdentity } from "./source-identity";
-import { createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext } from "./source-provider";
-import { computeEvidenceRecency, computeResearchInformationGain, computeSourceDiversity, estimateSourceQuality, summarizeResearchQuality } from "./quality";
+import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
+import { createToolBackedResearchSourceProvider, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider } from "./source-provider";
+import { academicCitationSignal, clampQuality, computeEvidenceRecency, computeResearchInformationGain, computeSourceDiversity, estimateSourceQuality, summarizeResearchQuality } from "./quality";
 import { assertResearchRunTransition } from "./state-machine";
 import type { ResearchPlanSnapshot, ResearchQuestionStatus, ResearchRunStatus } from "./contracts";
 import { nextResearchTaskRetryStatus } from "./task-retry";
@@ -15,6 +14,7 @@ import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
 import { applyResearchPlannerDecision } from "./plan";
 import { appendVerificationQualification, selectVerificationRepairTargets, verificationRepairInstruction, type VerificationRepairTarget } from "./verification-repair";
 import { buildResearchReportStructure } from "./report-document";
+import { buildResearchCitationMap } from "./report-citations";
 import {
   normalizeResearchEvaluatorDecision,
   normalizeResearchPlannerDecision,
@@ -69,10 +69,6 @@ async function transitionRun(runId: string, next: ResearchRunStatus) {
   await prisma.researchRun.update({ where: { id: runId }, data: { status: next } });
 }
 
-function sourceKind(candidate: ResearchCandidate) {
-  return candidate.kind === "project_file" ? "project_file" : candidate.kind;
-}
-
 function prioritizeResearchCandidates(candidates: ResearchCandidate[], preferredProviders: string[] | undefined) {
   if (!preferredProviders?.length) return candidates;
   const rank = new Map(preferredProviders.map((provider, index) => [provider, index]));
@@ -102,87 +98,6 @@ async function persistCandidate(input: {
       status: "selected",
     },
   });
-}
-
-async function persistReadSource(input: {
-  userId: string;
-  workspaceId: string;
-  runId: string;
-  questionId: string;
-  read: Awaited<ReturnType<ReturnType<typeof createToolBackedResearchSourceProvider>["read"]>>;
-}) {
-  if (!input.read) return null;
-  const metadata = input.read.candidate.metadata && typeof input.read.candidate.metadata === "object" ? input.read.candidate.metadata as Record<string, unknown> : {};
-  const metadataDoi = typeof metadata.doi === "string" ? metadata.doi : null;
-  const metadataPmid = typeof metadata.pmid === "string" ? metadata.pmid : null;
-  const identity = buildSourceIdentity({
-    kind: sourceKind(input.read.candidate),
-    url: input.read.candidate.url,
-    doi: input.read.candidate.kind === "doi" ? input.read.candidate.externalId : metadataDoi,
-    arxivId: input.read.candidate.kind === "arxiv" ? input.read.candidate.externalId : null,
-    pmid: input.read.candidate.kind === "pmid" ? input.read.candidate.externalId : metadataPmid,
-    fileId: input.read.candidate.kind === "project_file" ? input.read.candidate.externalId : null,
-  });
-  const contentHash = createHash("sha256").update(input.read.content).digest("hex");
-  let rawContentLocation: { provider: string; key: string };
-  try {
-    rawContentLocation = await uploadObjectBuffer({
-      key: `research/${input.userId}/${input.runId}/${contentHash}.md`,
-      mimeType: "text/markdown; charset=utf-8",
-      buffer: Buffer.from(input.read.content, "utf8"),
-    });
-  } catch {
-    return null;
-  }
-
-  const source = await prisma.researchSource.upsert({
-    where: { workspaceId_canonicalKey: { workspaceId: input.workspaceId, canonicalKey: identity.canonicalKey } },
-    create: {
-      workspaceId: input.workspaceId,
-      userId: input.userId,
-      kind: sourceKind(input.read.candidate),
-      canonicalKey: identity.canonicalKey,
-      title: input.read.title,
-      doi: identity.doi,
-      arxivId: identity.arxivId,
-      pmid: identity.pmid,
-      canonicalUrl: identity.canonicalUrl,
-      aliases: json({ urls: input.read.candidate.url ? [input.read.candidate.url] : [] }),
-      metadata: json(input.read.metadata),
-    },
-    update: {
-      title: input.read.title,
-      metadata: json(input.read.metadata),
-    },
-  });
-  const existingSnapshot = await prisma.researchSourceSnapshot.findFirst({ where: { runId: input.runId, sourceId: source.id, contentHash } });
-  const snapshot = existingSnapshot ?? await prisma.researchSourceSnapshot.create({
-    data: {
-      workspaceId: input.workspaceId,
-      runId: input.runId,
-      sourceId: source.id,
-      contentHash,
-      sourceVersion: input.read.sourceVersion,
-      rawContentLocation: json(rawContentLocation),
-      excerpt: input.read.excerpt,
-      metadata: json({ provider: input.read.candidate.provider, title: input.read.title }),
-    },
-  });
-  const existingEvidence = await prisma.evidence.findFirst({ where: { runId: input.runId, sourceSnapshotId: snapshot.id, statement: input.read.excerpt, status: "active" } });
-  const evidence = existingEvidence ?? await prisma.evidence.create({
-    data: {
-      workspaceId: input.workspaceId,
-      runId: input.runId,
-      questionId: input.questionId,
-      sourceSnapshotId: snapshot.id,
-      statement: input.read.excerpt,
-      locator: json(input.read.locator),
-      excerpt: input.read.excerpt,
-      evidenceType: input.read.candidate.kind === "project_file" ? "project_context" : "paraphrase",
-      provenance: json({ provider: input.read.candidate.provider, extraction: "bounded-source-reader-v1" }),
-    },
-  });
-  return { source, snapshot, evidence };
 }
 
 async function synthesizeWithExistingRuntime(input: {
@@ -268,8 +183,8 @@ async function repairReportWithExistingRuntime(input: {
   };
 }
 
-export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
-  const provider = createToolBackedResearchSourceProvider();
+export function createDurableResearchExecutionHandler(options: { provider?: ResearchSourceProvider } = {}): AgentExecutionHandler {
+  const provider = options.provider ?? createToolBackedResearchSourceProvider();
   return async (context): Promise<AgentExecutionHandlerResult> => {
     const checkpoint = context.execution.checkpoint;
     const request = checkpoint?.request;
@@ -435,7 +350,8 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
           await appendPublicEvent(context, { key: `research:query:${task.id}:${attempt}`, kind: "task_started", runId: run.id, message: `已生成检索策略：${task.question.title}`, publicData: { questionId: task.question.id, queries: workerDecision.queries } });
           for (const query of workerDecision.queries) {
             if (context.signal.aborted || !tryReserveResearchBudgetCounter(state, limits, "searchCalls")) break;
-            const candidates = await provider.search(providerContext, query);
+            const taskContext: ResearchProviderContext = { ...providerContext, question: task.question.question };
+            const candidates = await provider.search(taskContext, query);
             for (const candidate of prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders)) {
               if (context.signal.aborted || state.sourceCount >= limits.maxSources) break;
               const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate });
@@ -445,26 +361,24 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
                 releaseResearchBudgetCounter(state, "sourceCount");
                 continue;
               }
-              let read: Awaited<ReturnType<ReturnType<typeof createToolBackedResearchSourceProvider>["read"]>> | null = null;
-              let saved: Awaited<ReturnType<typeof persistReadSource>> = null;
+              let saved: Awaited<ReturnType<typeof ingestResearchReadSource>> = null;
+              let readTitle = candidate.title;
               try {
-                read = await provider.read(providerContext, candidate);
+                const read = await provider.read(taskContext, candidate);
                 if (!read) {
                   releaseResearchBudgetCounter(state, "sourceCount");
+                  await markCandidateRejected(savedCandidate.id);
                   continue;
                 }
-                saved = await persistReadSource({ userId: context.execution.userId, workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, read });
-                if (!saved) {
-                  releaseResearchBudgetCounter(state, "sourceCount");
-                  continue;
-                }
+                readTitle = read.title;
+                saved = await ingestResearchReadSource({ userId: context.execution.userId, workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, read });
               } catch (error) {
                 releaseResearchBudgetCounter(state, "sourceCount");
                 throw error;
               }
-              if (!read || !saved) continue;
-              await prisma.researchSourceCandidate.update({ where: { id: savedCandidate.id }, data: { status: "fetched" } });
-              await appendPublicEvent(context, { key: `research:snapshot:${saved.snapshot.id}`, kind: "source_snapshot_created", runId: run.id, message: `已读取并保存来源：${read.title}`, publicData: { sourceId: saved.source.id, snapshotId: saved.snapshot.id, evidenceId: saved.evidence.id, evidenceCount: state.sourceCount, query } });
+              if (!saved) continue;
+              await markCandidateFetched(savedCandidate.id, saved.source.id);
+              await appendPublicEvent(context, { key: `research:snapshot:${saved.snapshot.id}`, kind: "source_snapshot_created", runId: run.id, message: `已读取并保存来源：${readTitle}`, publicData: { sourceId: saved.source.id, snapshotId: saved.snapshot.id, evidenceId: saved.evidences[0]?.id ?? null, evidenceIds: saved.evidences.map((evidence) => evidence.id), rawContentPersisted: saved.rawContentPersisted, evidenceCount: state.sourceCount, query } });
             }
           }
           await prisma.researchTask.update({ where: { id: task.id }, data: { status: "completed", completedAt: new Date() } });
@@ -487,7 +401,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     }
 
     if (state.stage === "evaluating") {
-      const questions = await prisma.researchQuestion.findMany({ where: { runId: run.id }, include: { evidence: { where: { status: "active" }, select: { id: true, statement: true, sourceSnapshot: { select: { retrievedAt: true, source: { select: { id: true, kind: true } } } } } }, claims: { where: { status: { in: ["active", "disputed"] } }, select: { evidenceRelations: { select: { relation: true } } } } }, orderBy: { orderIndex: "asc" } });
+      const questions = await prisma.researchQuestion.findMany({ where: { runId: run.id }, include: { evidence: { where: { status: "active" }, select: { id: true, statement: true, sourceSnapshot: { select: { retrievedAt: true, source: { select: { id: true, kind: true, metadata: true } } } } } }, claims: { where: { status: { in: ["active", "disputed"] } }, select: { evidenceRelations: { select: { relation: true } } } } }, orderBy: { orderIndex: "asc" } });
       let unresolvedCritical: typeof questions[number] | undefined;
       const evaluatedStatuses = new Map<string, ResearchQuestionStatus>();
       for (const question of questions) {
@@ -525,8 +439,19 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
             : decision.status;
         const sourceKinds = question.evidence.map((item) => item.sourceSnapshot.source.kind);
         const independentSourceCount = new Set(question.evidence.map((item) => item.sourceSnapshot.source.id)).size;
+        const sourceQuality = question.evidence.length > 0
+          ? question.evidence.reduce((sum, item) => {
+              const metadata = item.sourceSnapshot.source.metadata && typeof item.sourceSnapshot.source.metadata === "object" ? item.sourceSnapshot.source.metadata as Record<string, unknown> : {};
+              const signal = academicCitationSignal({
+                citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : null,
+                influentialCitationCount: typeof metadata.influentialCitationCount === "number" ? metadata.influentialCitationCount : null,
+                fwci: typeof metadata.fwci === "number" ? metadata.fwci : null,
+              });
+              return sum + clampQuality(estimateSourceQuality(item.sourceSnapshot.source.kind) + (signal ?? 0));
+            }, 0) / question.evidence.length
+          : 0;
         const quality = summarizeResearchQuality({
-          sourceQuality: sourceKinds.length > 0 ? sourceKinds.reduce((sum, kind) => sum + estimateSourceQuality(kind), 0) / sourceKinds.length : 0,
+          sourceQuality,
           evidenceDirectness: decision.directness,
           independentCorroboration: Math.min(1, independentSourceCount / 2),
           sourceDiversity: computeSourceDiversity(sourceKinds),
@@ -614,7 +539,7 @@ export function createDurableResearchExecutionHandler(): AgentExecutionHandler {
     const unsupportedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "unsupported");
     const conflictedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "conflicted");
     const qualifiedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "needs_qualification");
-    const citationMap = Object.fromEntries(claims.map((claim) => [claim.id, claim.evidenceRelations.map((relation) => ({ evidenceId: relation.evidenceId, sourceSnapshotId: relation.evidence.sourceSnapshotId, relation: relation.relation }))]));
+    const citationMap = buildResearchCitationMap(claims);
     for (const claim of claims) await prisma.claim.update({ where: { id: claim.id }, data: { verificationStatus: claimStatuses[claim.id]?.status } });
     const repairTargets = selectVerificationRepairTargets({
       claims: claims.map((claim) => ({ id: claim.id, questionId: claim.questionId, question: claim.question ? { id: claim.question.id, title: claim.question.title, question: claim.question.question, priority: claim.question.priority } : null })),

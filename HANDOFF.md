@@ -94,3 +94,19 @@
 - PDF API 保留归属校验，在服务端读取对象并同源返回 PDF，添加 private/no-store；不修改 CSP、不修改七牛配置、不搬迁模板。
 - 真实登录页面 `http://localhost:3000/papers/cmt70nrkv0000jbc9dx8a07nt` 刷新后显示“第 1 / 2 页”；PDF 同源 GET 200 application/pdf，修复后网络记录无 CSP 错误。未修改论文正文或重新生成编译任务。
 - 定向验证：PDF 路由 2 项测试（七牛 PDF 返回字节、不跳转、归属隔离）与 ESLint 通过。
+## 2026-09-10 · 双服务器迁移预发部署完成（未切 DNS）
+
+- 主业务当前部署目标新机 `LumenLab-Server`：release `c5c95955` 已通过 `scripts/deploy.sh` 的 3002 隔离预检、本机 3000 health 与 `--resolve` HTTPS health；构建生成 81 个静态页面。regadmin release `a793141` 已在新机 3001 运行。
+- 迁移辅助修复已保留在本地部署脚本：缓存远端 UID，避免 heredoc 被权限探测吞掉；主应用根/release 目录设为 0755 以供 Nginx 静态读取（`.env` 仍 0600）；standalone 的 sharp、@img 与 playwright-core 从通过构建验证的 build 依赖树复制，避免 release 内二次解析依赖。
+- 新机已验证 PostgreSQL/Redis、pgvector 0.8.0、TeX Live/XeLaTeX/Noto CJK、bubblewrap、Chromium 1228；Node 服务绑定 127.0.0.1:3000/3001，nginx 对外提供 80/443/8080。8080 仅放行 `/api/webhooks/tencent-ses`。`/compile-workspace` 已创建，bwrap + XeLaTeX 中文 smoke 通过，Chromium headless 可读取登录页标题。
+- Playwright 预发证据在 `output/playwright/migration-preflight/`：lab 登录页静态资源 200、console 0 error，浅色/深色切换通过；regadmin 登录页静态资源 200，favicon 404 与旧机基线一致。真实业务凭据链路尚未执行，DNS 仍指向旧机。
+## 2026-09-10 · Deep Research Evidence Pipeline v1 — Sciverse 原生证据接入（main）
+
+- `src/lib/research/source-provider.ts`：Sciverse 接入为 primary academic channel，经 ToolRunner 调已注册的 `sciverse.search`（审计/平台 Token 单一 source of truth，未重装 transport）；仅当 SCIVERSE 未配置、返回 error 或空结果时回退 OpenAlex/Crossref/Semantic Scholar/PubMed adapter（未删除）；web/arxiv/project 通道不变。`ResearchProviderContext` 新增 `question`。
+- Sciverse read：`filters.docIds=[docId]` 硬 scope 的 `sciverse.semantic_search`（topK 4）→ 命中 offset 附近 `sciverse.read`（limit 1600，≤4000 clamp）有界 slice；read 失败回退 hit.chunk；无全文权限降级 metadata-only（snapshotScope.type=metadata_only），不构造虚假全文；绝不传空 docIds。
+- 新增 `src/lib/research/evidence-ingestion.ts`（persistReadSource 抽出的独立 ingest 模块）：DOI 优先 canonical 归并，无 DOI 退 arXiv/PMID/URL/`academic_paper:sciverse:{docId|uniqueId}`（source-identity 新增 providerScopedId 兜底）；alias/metadata 合并；chunk 级 Evidence（locator kind:"sciverse" + docId/chunkId/offset/pageNo，provenance 含 retrievalMethod/semanticScore/queryHash）；原始 source text 标 `direct_quote`；snapshot metadata.scope 记录 bounded slice 范围与 rawContentPersisted；对象存储失败降级保留 excerpt+evidence 并 console.error，不再整条丢弃。
+- Evidence 幂等：新增 nullable `evidenceKey` + `@@unique([runId, evidenceKey])`（迁移 `20260910120000_add_evidence_idempotency_key`，纯加列+唯一索引，生产可安全 deploy；历史/用户证据保持 NULL）；system evidence 经 upsert 去重，task 重跑不重复。`createDurableResearchExecutionHandler({ provider })` 支持注入便于测试。
+- Candidate 生命周期：selected → fetched（带 researchSourceId）/ rejected（read 不可得；不会把已 fetched 降级）。
+- 报告与质量：citationMap 由 `buildResearchCitationMap`（report-citations.ts）生成，Evidence→Snapshot→Source 可追溯（title/canonicalUrl/DOI/provider/locator，web 与 sciverse chunk 可区分）；quality 引入 citationCount/influentialCitationCount/FWCI 的有界（≤0.15）正向辅助信号，缺失中性；顺带修正 academic_paper 此前未命中 0.9 档的问题。
+- 门禁：341 文件 / 1958 测试、tsc、ESLint、Prisma validate、42 迁移 migrate deploy、production build、diff check 全绿。测试全部 mock ToolRunner/prisma/对象存储，未触真实 API。未部署。
+- 刻意未做：meta-paper-relations、resource/vision、catalog-aware filters_advanced、Claim Engine 重写、前端引用编辑器、新服务器部署。docs/adr/0008 已加 2026-09-10 addendum。
