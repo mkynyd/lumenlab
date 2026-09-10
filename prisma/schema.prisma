@@ -70,6 +70,7 @@ model User {
   credentialProfile    CredentialProfile?           @relation(fields: [credentialProfileId], references: [id], onDelete: SetNull)
   redemption           RegistrationRedemption?
   authChallenges       EmailChallenge[]
+  authIdentities       AuthIdentity[]
   feedback             Feedback[]
   profilePrompt        String?
   profileName          String?
@@ -1343,16 +1344,62 @@ model LoginAttempt {
 }
 
 // ============================================================
+// Authentication identity (expand phase)
+// ============================================================
+
+// 认证身份：描述“用户可以使用什么标识找到这个账户”，本身不承载凭证。
+//
+// - `User` 仍是 LumenLab 内部账户，Project / Conversation / Research / Paper /
+//   Learning / Artifact 等全部业务数据只关联 `User.id`。
+// - 密码属于账户级凭证，因此 `passwordHash` 保留在 `User`；同一个用户将来无论
+//   用邮箱、手机号还是 OAuth 作为 identifier，都共享同一个账户密码。
+// - 一个 User 可拥有多个 Identity，每个 Identity 都解析到同一个 `User.id`。当前
+//   阶段只创建和使用 email identity（type="email", provider="local",
+//   providerAccountId = normalizeEmail(email)）。
+// - 唯一约束：`[provider, providerAccountId]` 保证同一个外部身份不会属于两个
+//   User；`[userId, type]` 保证每个 User 每种 identity type 至多一个。
+// - `metadata` 预留给后续 provider（如 OAuth 的 issuer / scope），当前为空。
+model AuthIdentity {
+  id                 String    @id @default(cuid())
+  userId             String
+  type               String // "email"（后续扩展 phone / oauth）
+  provider           String // "local"（后续扩展 github / wechat / apple）
+  providerAccountId  String // 规范化后的标识；邮箱为 normalizeEmail(email)
+  verifiedAt         DateTime?
+  verificationSource String    @default("none") // none | legacy | code | link
+  metadata           Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, type])
+  @@index([userId])
+}
+
+// ============================================================
 // Email verification & password reset challenges
 // ============================================================
 
 // 邮箱验证/密码重设挑战。verify 发生在用户创建之前，故 userId 可空，仅 reset 填充。
 // 明文 code / rawToken 只在签发时存在于内存；数据库只存 sha256。
+//
+// Expand 阶段说明：物理表名保持 "EmailChallenge"（Prisma model 名不变，避免
+// ALTER TABLE RENAME 让旧 Release 失效），领域层已泛化为 VerificationChallenge，
+// 通用语义由新增的 channel / target / purpose 三列表达。旧 Release 只会写
+// legacy 的 type / email 列，因此新版本读取 pending challenge 时用
+// resolveChallengeChannel/resolveChallengePurpose 从 type/email 无损推导通用字段。
+// 这三列在 Contract Migration 之前保持 nullable，禁止改为 NOT NULL。
 model EmailChallenge {
   id               String    @id @default(cuid())
   type             String // "verify" | "reset"
   email            String
   userId           String? // 仅 reset：FK User onDelete Cascade
+  // 通用验证挑战字段（expand：nullable，新版本双写，读取时兼容推导）
+  channel          String? // "email"（后续扩展 "sms"）
+  target           String? // 规范化后的投递目标（邮箱或手机号）
+  purpose          String? // register | bind_identity | password_reset | ...
   // 验证码通道
   codeHash         String
   codeExpiresAt    DateTime
@@ -1379,6 +1426,7 @@ model EmailChallenge {
   // 部分唯一索引(同 email+type 至多一个活跃挑战)在迁移 SQL 中手工追加
   @@index([email, type])
   @@index([consumedAt])
+  @@index([channel, target, purpose])
 }
 
 // 邮件发送与投递状态日志。bulkId 为 SendEmail 返回的 MessageId。

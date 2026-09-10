@@ -2,6 +2,10 @@
  * POST /api/user/password
  * 登录态修改密码：校验当前密码后更新 passwordHash + passwordChangedAt
  * （旧 JWT 经 pwchg claim 失效），并删除 Redis pwchg 缓存避免旧会话残留。
+ *
+ * 身份模型（第一阶段）：这里以 `session.user.id`（始终是 `User.id`）作为账户
+ * 主键直接写入，因为密码是**账户级凭证**，与用哪个 identity 登录无关；同一个
+ * User 将来无论用邮箱还是手机号作为 identifier，都共享这一个密码。
  */
 
 import { NextResponse } from "next/server";
@@ -67,6 +71,7 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
+  // 唯一密码落点：User.passwordHash（+ passwordChangedAt 使旧 JWT 失效）
   await passwordResetRepository.updatePassword(
     session.user.id,
     passwordHash,

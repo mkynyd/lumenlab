@@ -3,7 +3,10 @@ import { NextRequest } from "next/server";
 
 const { registrationRepository } = vi.hoisted(() => ({
   registrationRepository: {
-    findUserByEmail: vi.fn(),
+    findEmailIdentity: vi.fn(),
+    createEmailIdentity: vi.fn(),
+    findEmailIdentityByUserId: vi.fn(),
+    getUserByNormalizedEmail: vi.fn(),
     findChallengeForTicket: vi.fn(),
     consumeTicket: vi.fn(),
     findDefaultCredentialProfile: vi.fn(),
@@ -33,6 +36,8 @@ import { POST } from "./route";
 
 const RAW_TICKET = "rawTicketRawTicketRawTicketRawTicketRawTicketRa";
 const TICKET_HASH = sha256(RAW_TICKET);
+// 挑战验证成功时刻（票据签发时刻），user 与 identity 必须写入同一个值
+const CHALLENGE_VERIFIED_AT = new Date(Date.now() - 10 * 60 * 1000);
 
 function makeRequest(body: Record<string, unknown>) {
   return new NextRequest("http://localhost/api/auth/register", {
@@ -50,11 +55,27 @@ describe("POST /api/auth/register", () => {
       .mockImplementation(async (operation: (repo: typeof registrationRepository) => unknown) =>
         operation(registrationRepository)
       );
-    registrationRepository.findUserByEmail.mockReset().mockResolvedValue(null);
+    registrationRepository.findEmailIdentity.mockReset().mockResolvedValue(null);
+    registrationRepository.findEmailIdentityByUserId
+      .mockReset()
+      .mockResolvedValue(null);
+    registrationRepository.getUserByNormalizedEmail
+      .mockReset()
+      .mockResolvedValue(null);
+    registrationRepository.createEmailIdentity.mockReset().mockResolvedValue({
+      id: "identity-1",
+      userId: "user-1",
+      type: "email",
+      provider: "local",
+      providerAccountId: "new@example.com",
+      verifiedAt: CHALLENGE_VERIFIED_AT,
+      verificationSource: "code",
+    });
     registrationRepository.findChallengeForTicket.mockReset().mockResolvedValue({
       id: "challenge-1",
       email: "new@example.com",
-      verifiedAt: new Date(Date.now() - 10 * 60 * 1000),
+      target: "new@example.com",
+      verifiedAt: CHALLENGE_VERIFIED_AT,
       verifiedVia: "code",
       ticketHash: TICKET_HASH,
       ticketExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
@@ -102,6 +123,12 @@ describe("POST /api/auth/register", () => {
         emailVerificationSource: "code",
       })
     );
+    expect(registrationRepository.createEmailIdentity).toHaveBeenCalledWith({
+      userId: "user-1",
+      providerAccountId: "new@example.com",
+      verifiedAt: CHALLENGE_VERIFIED_AT,
+      verificationSource: "code",
+    });
   });
 
   it("returns 429 when rate limited", async () => {
@@ -119,9 +146,15 @@ describe("POST /api/auth/register", () => {
   });
 
   it("returns 409 for an already-registered email", async () => {
-    registrationRepository.findUserByEmail
-      .mockReset()
-      .mockResolvedValue({ id: "existing" });
+    registrationRepository.findEmailIdentity.mockReset().mockResolvedValue({
+      id: "identity-existing",
+      userId: "existing",
+      type: "email",
+      provider: "local",
+      providerAccountId: "new@example.com",
+      verifiedAt: new Date(Date.now() - 10 * 60 * 1000),
+      verificationSource: "code",
+    });
 
     const response = await POST(
       makeRequest({

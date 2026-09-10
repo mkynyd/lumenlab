@@ -11,7 +11,10 @@ const { passwordResetRepository } = vi.hoisted(() => ({
   passwordResetRepository: {
     findResetToken: vi.fn(),
     claimResetToken: vi.fn(),
-    findUserByEmail: vi.fn(),
+    findEmailIdentity: vi.fn(),
+    createEmailIdentity: vi.fn(),
+    findEmailIdentityByUserId: vi.fn(),
+    getUserByNormalizedEmail: vi.fn(),
     updatePassword: vi.fn(),
     transaction: vi.fn(),
   },
@@ -42,16 +45,23 @@ describe("POST /api/auth/password/reset", () => {
   beforeEach(() => {
     checkRateLimit.mockReset().mockResolvedValue({ allowed: true });
     passwordResetRepository.findResetToken.mockReset().mockResolvedValue({
-      email: "user@example.com",
+      target: "user@example.com",
       tokenHash: sha256(RAW),
       tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
       tokenConsumedAt: null,
       consumedAt: null,
     });
     passwordResetRepository.claimResetToken.mockReset().mockResolvedValue(true);
-    passwordResetRepository.findUserByEmail
-      .mockReset()
-      .mockResolvedValue({ id: "user-1" });
+    passwordResetRepository.findEmailIdentity.mockReset().mockResolvedValue({
+      id: "identity-1",
+      userId: "user-1",
+      type: "email",
+      provider: "local",
+      providerAccountId: "user@example.com",
+      verifiedAt: new Date("2026-08-06T12:00:00.000Z"),
+      verificationSource: "legacy",
+    });
+    passwordResetRepository.getUserByNormalizedEmail.mockReset().mockResolvedValue(null);
     passwordResetRepository.updatePassword
       .mockReset()
       .mockResolvedValue(undefined);
@@ -106,7 +116,7 @@ describe("POST /api/auth/password/reset", () => {
 
   it("returns a ticket-field error for an expired token", async () => {
     passwordResetRepository.findResetToken.mockResolvedValue({
-      email: "user@example.com",
+      target: "user@example.com",
       tokenHash: sha256(RAW),
       tokenExpiresAt: new Date(Date.now() - 1000),
       tokenConsumedAt: null,

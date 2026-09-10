@@ -5,7 +5,10 @@ const { passwordResetRepository } = vi.hoisted(() => ({
   passwordResetRepository: {
     findResetToken: vi.fn(),
     claimResetToken: vi.fn(),
-    findUserByEmail: vi.fn(),
+    findEmailIdentity: vi.fn(),
+    createEmailIdentity: vi.fn(),
+    findEmailIdentityByUserId: vi.fn(),
+    getUserByNormalizedEmail: vi.fn(),
     updatePassword: vi.fn(),
     transaction: vi.fn(),
   },
@@ -24,7 +27,7 @@ describe("GET /api/auth/password/reset-link", () => {
   beforeEach(() => {
     vi.stubEnv("AUTH_URL", "https://lab.mkynstudio.top");
     passwordResetRepository.findResetToken.mockReset().mockResolvedValue({
-      email: "user@example.com",
+      target: "user@example.com",
       tokenHash: sha256(RAW),
       tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
       tokenConsumedAt: null,
@@ -55,7 +58,7 @@ describe("GET /api/auth/password/reset-link", () => {
 
   it("redirects to the invalid marker for a wrong token", async () => {
     passwordResetRepository.findResetToken.mockResolvedValue({
-      email: "user@example.com",
+      target: "user@example.com",
       tokenHash: sha256("other"),
       tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
       tokenConsumedAt: null,
@@ -75,7 +78,7 @@ describe("GET /api/auth/password/reset-link", () => {
 
   it("redirects to the invalid marker for a consumed token", async () => {
     passwordResetRepository.findResetToken.mockResolvedValue({
-      email: "user@example.com",
+      target: "user@example.com",
       tokenHash: sha256(RAW),
       tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
       tokenConsumedAt: new Date(),

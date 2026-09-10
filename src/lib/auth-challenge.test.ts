@@ -4,26 +4,32 @@ import {
   TICKET_TTL_MS,
   TOKEN_TTL_MS,
   createEmailChallenge,
+  createVerificationChallenge,
+  emailChallengeGenericFields,
+  resolveChallengeChannel,
+  resolveChallengePurpose,
+  resolveChallengeTarget,
   sha256,
   splitRawToken,
   verifyWithCode,
   verifyWithLink,
   type AuthChallengeRepository,
   type ChallengeForTicketRow,
-  type EmailChallengeRow,
-  type EmailChallengeTokenRow,
+  type ChallengeRow,
+  type ChallengeTokenRow,
 } from "@/lib/auth-challenge";
 
 const NOW = new Date("2026-08-06T12:00:00.000Z");
 const EMAIL = "new@example.com";
 
-function challengeRow(
-  overrides: Partial<EmailChallengeRow> = {}
-): EmailChallengeRow {
+function challengeRow(overrides: Partial<ChallengeRow> = {}): ChallengeRow {
   return {
     id: "challenge-1",
     email: EMAIL,
     type: "verify",
+    channel: "email",
+    target: EMAIL,
+    purpose: "register",
     userId: null,
     codeHash: sha256("123456"),
     codeExpiresAt: new Date(NOW.getTime() + CODE_TTL_MS),
@@ -34,10 +40,13 @@ function challengeRow(
   };
 }
 
-function tokenRow(overrides: Partial<EmailChallengeTokenRow> = {}) {
+function tokenRow(overrides: Partial<ChallengeTokenRow> = {}) {
   return {
     email: EMAIL,
     type: "verify",
+    channel: "email",
+    target: EMAIL,
+    purpose: "register",
     tokenHash: sha256("rawTokenPart"),
     tokenExpiresAt: new Date(NOW.getTime() + TOKEN_TTL_MS),
     tokenConsumedAt: null,
@@ -62,6 +71,9 @@ function createRepository(
       id: "challenge-1",
       email: EMAIL,
       type: "verify",
+      channel: "email",
+      target: EMAIL,
+      purpose: "register",
       verifiedAt: NOW,
       verifiedVia: "code",
       ticketHash: "hash",
@@ -75,21 +87,90 @@ function createRepository(
   };
 }
 
-describe("createEmailChallenge", () => {
-  it("stores only hashes and returns plaintext once for the email layer", async () => {
+describe("verification challenge generic semantics", () => {
+  it("maps the legacy type values actually used in this repository", () => {
+    // 仓库真实使用的 legacy type 只有 verify（注册验证）与 reset（密码重设）
+    expect(resolveChallengePurpose({ type: "verify" })).toBe("register");
+    expect(resolveChallengePurpose({ type: "reset" })).toBe("password_reset");
+  });
+
+  it("prefers the general purpose column over the legacy type", () => {
+    expect(
+      resolveChallengePurpose({ purpose: "bind_identity", type: "verify" })
+    ).toBe("bind_identity");
+  });
+
+  it("derives channel/target for legacy rows written by the previous release", () => {
+    const legacyRow = {
+      channel: null,
+      target: null,
+      email: "  Mixed@Case.COM ",
+    };
+    expect(resolveChallengeChannel(legacyRow)).toBe("email");
+    expect(resolveChallengeTarget(legacyRow)).toBe("mixed@case.com");
+  });
+
+  it("writes the email channel triple used for dual-write", () => {
+    expect(
+      emailChallengeGenericFields({ email: "  A@B.com ", purpose: "register" })
+    ).toEqual({ channel: "email", target: "a@b.com", purpose: "register" });
+  });
+});
+
+describe("createVerificationChallenge", () => {
+  it("closes previous challenges for the same target and purpose", async () => {
     const repository = createRepository();
-    const start = await createEmailChallenge(
-      { type: "verify", email: EMAIL },
+    await createVerificationChallenge(
+      { purpose: "register", target: "  New@Example.com " },
+      { repository, now: NOW }
+    );
+
+    expect(repository.invalidateActiveChallenges).toHaveBeenCalledWith(
+      "  New@Example.com ",
+      "register",
+      NOW
+    );
+    expect(repository.createChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purpose: "register",
+        email: "  New@Example.com ",
+      })
+    );
+  });
+
+  it("supports the password-reset purpose", async () => {
+    const repository = createRepository();
+    await createVerificationChallenge(
+      { purpose: "password_reset", target: EMAIL, userId: "user-1" },
       { repository, now: NOW }
     );
 
     expect(repository.invalidateActiveChallenges).toHaveBeenCalledWith(
       EMAIL,
-      "verify",
+      "password_reset",
+      NOW
+    );
+    expect(repository.createChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ purpose: "password_reset", userId: "user-1" })
+    );
+  });
+});
+
+describe("createEmailChallenge", () => {
+  it("stores only hashes and returns plaintext once for the email layer", async () => {
+    const repository = createRepository();
+    const start = await createEmailChallenge(
+      { email: EMAIL },
+      { repository, now: NOW }
+    );
+
+    expect(repository.invalidateActiveChallenges).toHaveBeenCalledWith(
+      EMAIL,
+      "register",
       NOW
     );
     expect(repository.createChallenge).toHaveBeenCalledWith({
-      type: "verify",
+      purpose: "register",
       email: EMAIL,
       userId: undefined,
       codeHash: sha256(start.code),
@@ -106,7 +187,7 @@ describe("verifyWithCode", () => {
   it("verifies a correct code and issues a one-time ticket", async () => {
     const repository = createRepository();
     const result = await verifyWithCode(
-      { type: "verify", email: EMAIL, code: "123456" },
+      { purpose: "register", email: EMAIL, code: "123456" },
       { repository, now: NOW }
     );
 
@@ -126,7 +207,7 @@ describe("verifyWithCode", () => {
   it("counts a wrong code and keeps the challenge open", async () => {
     const repository = createRepository();
     const result = await verifyWithCode(
-      { type: "verify", email: EMAIL, code: "000000" },
+      { purpose: "register", email: EMAIL, code: "000000" },
       { repository, now: NOW }
     );
 
@@ -144,7 +225,7 @@ describe("verifyWithCode", () => {
       incrementCodeAttempt: vi.fn().mockResolvedValue(false),
     });
     const result = await verifyWithCode(
-      { type: "verify", email: EMAIL, code: "000000" },
+      { purpose: "register", email: EMAIL, code: "000000" },
       { repository, now: NOW }
     );
 
@@ -160,7 +241,7 @@ describe("verifyWithCode", () => {
       ),
     });
     const result = await verifyWithCode(
-      { type: "verify", email: EMAIL, code: "123456" },
+      { purpose: "register", email: EMAIL, code: "123456" },
       { repository, now: NOW }
     );
 
@@ -174,7 +255,7 @@ describe("verifyWithCode", () => {
       ),
     });
     const result = await verifyWithCode(
-      { type: "verify", email: EMAIL, code: "123456" },
+      { purpose: "register", email: EMAIL, code: "123456" },
       { repository, now: NOW }
     );
 
@@ -186,11 +267,29 @@ describe("verifyWithCode", () => {
       findActiveByEmail: vi.fn().mockResolvedValue(null),
     });
     const result = await verifyWithCode(
-      { type: "verify", email: EMAIL, code: "123456" },
+      { purpose: "register", email: EMAIL, code: "123456" },
       { repository, now: NOW }
     );
 
     expect(result).toEqual({ ok: false, reason: "no_challenge" });
+  });
+
+  it("verifies a password-reset challenge by purpose", async () => {
+    const repository = createRepository({
+      findActiveByEmail: vi.fn().mockResolvedValue(
+        challengeRow({ type: "reset", purpose: "password_reset" })
+      ),
+    });
+    const result = await verifyWithCode(
+      { purpose: "password_reset", email: EMAIL, code: "123456" },
+      { repository, now: NOW }
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    expect(repository.findActiveByEmail).toHaveBeenCalledWith(
+      EMAIL,
+      "password_reset"
+    );
   });
 });
 
@@ -213,6 +312,21 @@ describe("verifyWithLink", () => {
         now: NOW,
       });
     }
+  });
+
+  it("derives the target from a legacy row whose general columns are still null", async () => {
+    const repository = createRepository({
+      findToken: vi.fn().mockResolvedValue(
+        tokenRow({
+          channel: null,
+          target: null,
+          email: "  Legacy@Example.com ",
+        })
+      ),
+    });
+    const result = await verifyWithLink({ token: TOKEN }, { repository, now: NOW });
+
+    expect(result).toMatchObject({ ok: true, email: "legacy@example.com" });
   });
 
   it("rejects a malformed token", async () => {

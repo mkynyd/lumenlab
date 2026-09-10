@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { prisma } = vi.hoisted(() => ({
-  prisma: { user: { findUnique: vi.fn() } },
-}));
-vi.mock("@/lib/db", () => ({ prisma }));
+const { resolveEmail } = vi.hoisted(() => ({ resolveEmail: vi.fn() }));
+vi.mock("@/lib/auth/service", () => ({ resolveEmail }));
 
 const { sendPasswordResetEmail } = vi.hoisted(() => ({
   sendPasswordResetEmail: vi.fn(),
@@ -23,7 +21,22 @@ function makeRequest(body: Record<string, unknown>) {
 
 describe("POST /api/auth/password/forgot", () => {
   beforeEach(() => {
-    prisma.user.findUnique.mockReset().mockResolvedValue({ id: "user-1" });
+    resolveEmail.mockReset().mockResolvedValue({
+      kind: "resolved",
+      identity: {
+        identity: {
+          id: "identity-1",
+          userId: "user-1",
+          type: "email",
+          provider: "local",
+          providerAccountId: "user@example.com",
+          verifiedAt: new Date("2026-08-06T12:00:00.000Z"),
+          verificationSource: "legacy",
+        },
+        userId: "user-1",
+        selfHealed: false,
+      },
+    });
     sendPasswordResetEmail.mockReset().mockResolvedValue({ ok: true });
   });
 
@@ -44,7 +57,7 @@ describe("POST /api/auth/password/forgot", () => {
   });
 
   it("returns the same success for an unknown email without sending (anti-enumeration)", async () => {
-    prisma.user.findUnique.mockResolvedValue(null);
+    resolveEmail.mockResolvedValue({ kind: "not_found" });
 
     const response = await POST(makeRequest({ email: "ghost@example.com" }));
 

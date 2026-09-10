@@ -2,34 +2,59 @@ import "server-only";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { findDefaultCredentialProfile } from "@/lib/profile-default";
+import { createAuthIdentityRepository } from "@/lib/data/auth-identity-repository";
+import { resolveChallengeTarget } from "@/lib/auth-challenge";
+import { normalizeEmail } from "@/lib/auth/identifier";
 import type {
   ChallengeTicketRow,
   RegistrationRepository,
 } from "@/lib/register-user";
+import type { AuthIdentityRepository } from "@/lib/auth/identity";
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
 
 class PrismaRegistrationRepository implements RegistrationRepository {
+  private readonly identities: AuthIdentityRepository;
+
   constructor(
     private readonly client: DatabaseClient,
     private readonly rootClient: PrismaClient
-  ) {}
-
-  findUserByEmail(email: string) {
-    return this.client.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
+  ) {
+    // 身份读写走同一个 client，因此在 transaction() 内创建 email Identity
+    // 与创建 User 处于同一数据库事务。
+    this.identities = createAuthIdentityRepository(client);
   }
 
-  findChallengeForTicket(
+  findEmailIdentity(providerAccountId: string) {
+    return this.identities.findEmailIdentity(providerAccountId);
+  }
+
+  createEmailIdentity(input: {
+    userId: string;
+    providerAccountId: string;
+    verifiedAt: Date | null;
+    verificationSource: string;
+  }) {
+    return this.identities.createEmailIdentity(input);
+  }
+
+  findEmailIdentityByUserId(userId: string) {
+    return this.identities.findEmailIdentityByUserId(userId);
+  }
+
+  getUserByNormalizedEmail(normalizedEmail: string) {
+    return this.identities.getUserByNormalizedEmail(normalizedEmail);
+  }
+
+  async findChallengeForTicket(
     challengeId: string
   ): Promise<ChallengeTicketRow | null> {
-    return this.client.emailChallenge.findUnique({
+    const row = await this.client.emailChallenge.findUnique({
       where: { id: challengeId },
       select: {
         id: true,
         email: true,
+        target: true,
         verifiedAt: true,
         verifiedVia: true,
         ticketHash: true,
@@ -38,6 +63,19 @@ class PrismaRegistrationRepository implements RegistrationRepository {
         consumedAt: true,
       },
     });
+    if (!row) return null;
+    // Expand 兼容：旧 Release 写入的挑战只有 legacy `email`，
+    // 用统一推导得到通用 target，上层只比较规范化后的目标。
+    return {
+      id: row.id,
+      target: resolveChallengeTarget(row),
+      verifiedAt: row.verifiedAt,
+      verifiedVia: row.verifiedVia,
+      ticketHash: row.ticketHash,
+      ticketExpiresAt: row.ticketExpiresAt,
+      ticketConsumedAt: row.ticketConsumedAt,
+      consumedAt: row.consumedAt,
+    };
   }
 
   async consumeTicket(input: {
@@ -71,9 +109,10 @@ class PrismaRegistrationRepository implements RegistrationRepository {
   }) {
     return this.client.user.create({
       data: {
-        email: input.email,
+        email: normalizeEmail(input.email),
         passwordHash: input.passwordHash,
         credentialProfileId: input.credentialProfileId,
+        // legacy 兼容字段：本阶段继续双写（Contract Migration 时再评估移除）
         emailVerifiedAt: input.emailVerifiedAt,
         emailVerificationSource: input.emailVerificationSource,
       },

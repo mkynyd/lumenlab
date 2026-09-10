@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { verifySendSchema } from "@/lib/validators";
 import { sendVerificationEmail } from "@/lib/email/service";
+import { checkEmailAvailability } from "@/lib/auth/service";
 
 export async function POST(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -27,12 +27,11 @@ export async function POST(request: Request) {
 
   const { email } = parsed.data;
 
-  // 已注册邮箱不再发验证邮件（注册页需要即时反馈）
-  const existing = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  });
-  if (existing) {
+  // 已注册邮箱不再发验证邮件（注册页需要即时反馈）。
+  // 走身份层检查：既覆盖 AuthIdentity，也覆盖 migration 窗口内只有 legacy
+  // `User.email` 的历史账户，以及 identity 与 legacy 落到不同账户的冲突情况。
+  const availability = await checkEmailAvailability(email);
+  if (availability.kind === "taken" || availability.kind === "conflict") {
     return NextResponse.json(
       { error: { email: ["该邮箱已被注册"] } },
       { status: 409 }

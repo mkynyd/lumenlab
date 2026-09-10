@@ -205,7 +205,9 @@ describe("isBlockedForSending", () => {
     authChallengeRepository.findActiveByEmail.mockResolvedValue({
       id: "challenge-1",
       email: "new@example.com",
-      type: "verify",
+      channel: "email",
+      target: "new@example.com",
+      purpose: "register",
       userId: null,
       codeHash: "",
       codeExpiresAt: new Date(NOW.getTime() + 15 * 60 * 1000),
@@ -223,7 +225,9 @@ describe("isBlockedForSending", () => {
     authChallengeRepository.findActiveByEmail.mockResolvedValue({
       id: "challenge-1",
       email: "new@example.com",
-      type: "verify",
+      channel: "email",
+      target: "new@example.com",
+      purpose: "register",
       userId: null,
       codeHash: sha256(sent.templateData.code),
       codeExpiresAt: new Date(NOW.getTime() + 15 * 60 * 1000),
@@ -233,7 +237,11 @@ describe("isBlockedForSending", () => {
     });
 
     const result = await verifyWithCode(
-      { type: "verify", email: "new@example.com", code: sent.templateData.code },
+      {
+        purpose: "register",
+        email: "new@example.com",
+        code: sent.templateData.code,
+      },
       { repository: authChallengeRepository as never, now: NOW }
     );
 

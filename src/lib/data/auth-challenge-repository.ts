@@ -1,14 +1,27 @@
 import "server-only";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import type {
-  AuthChallengeRepository,
-  ChallengeForTicketRow,
-  EmailChallengeRow,
-  EmailChallengeTokenRow,
+import { normalizeEmail } from "@/lib/auth/identifier";
+import {
+  emailChallengeGenericFields,
+  LEGACY_TYPE_BY_PURPOSE,
+  resolveChallengePurpose,
+  type AuthChallengeRepository,
+  type ChallengeForTicketRow,
+  type ChallengeRow,
+  type ChallengeTokenRow,
+  type VerificationPurpose,
 } from "@/lib/auth-challenge";
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
+
+// 通用字段与 legacy 字段一并读出：旧 Release 在 migration 窗口内创建的挑战
+// 只有 legacy 列，读取方通过 resolveChallenge* 兼容推导（Expand 阶段逻辑）。
+const CHALLENGE_GENERIC_SELECT = {
+  channel: true,
+  target: true,
+  purpose: true,
+} as const;
 
 class PrismaAuthChallengeRepository implements AuthChallengeRepository {
   constructor(
@@ -18,17 +31,20 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
 
   async invalidateActiveChallenges(
     email: string,
-    type: string,
+    purpose: VerificationPurpose,
     now: Date
   ): Promise<void> {
     await this.client.emailChallenge.updateMany({
-      where: { email, type, consumedAt: null },
+      where: {
+        consumedAt: null,
+        ...activeChallengeWhere(email, purpose),
+      },
       data: { consumedAt: now },
     });
   }
 
   createChallenge(input: {
-    type: string;
+    purpose: VerificationPurpose;
     email: string;
     userId?: string;
     codeHash: string;
@@ -36,10 +52,19 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
     tokenHash: string;
     tokenExpiresAt: Date;
   }) {
+    const generic = emailChallengeGenericFields({
+      email: input.email,
+      purpose: input.purpose,
+    });
     return this.client.emailChallenge.create({
       data: {
-        type: input.type,
-        email: input.email,
+        // legacy 列继续写入：旧 Release 仍会读它们
+        type: LEGACY_TYPE_BY_PURPOSE[input.purpose],
+        email: generic.target,
+        // 通用列（expand 新增，nullable）
+        channel: generic.channel,
+        target: generic.target,
+        purpose: generic.purpose,
         userId: input.userId ?? null,
         codeHash: input.codeHash,
         codeExpiresAt: input.codeExpiresAt,
@@ -50,14 +75,15 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
     });
   }
 
-  findActiveByEmail(
+  async findActiveByEmail(
     email: string,
-    type: string
-  ): Promise<EmailChallengeRow | null> {
-    return this.client.emailChallenge.findFirst({
-      where: { email, type, consumedAt: null },
+    purpose: VerificationPurpose
+  ): Promise<ChallengeRow | null> {
+    const row = await this.client.emailChallenge.findFirst({
+      where: { consumedAt: null, ...activeChallengeWhere(email, purpose) },
       orderBy: { createdAt: "desc" },
     });
+    return row ? withGenericFields(row) : null;
   }
 
   async incrementCodeAttempt(
@@ -103,12 +129,13 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
     return affected === 1;
   }
 
-  findToken(challengeId: string): Promise<EmailChallengeTokenRow | null> {
-    return this.client.emailChallenge.findUnique({
+  async findToken(challengeId: string): Promise<ChallengeTokenRow | null> {
+    const row = await this.client.emailChallenge.findUnique({
       where: { id: challengeId },
       select: {
         email: true,
         type: true,
+        ...CHALLENGE_GENERIC_SELECT,
         tokenHash: true,
         tokenExpiresAt: true,
         tokenConsumedAt: true,
@@ -116,6 +143,7 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
         consumedAt: true,
       },
     });
+    return row ? withGenericFields(row) : null;
   }
 
   async markTokenVerified(input: {
@@ -143,15 +171,16 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
     return affected === 1;
   }
 
-  findChallengeForTicket(
+  async findChallengeForTicket(
     challengeId: string
   ): Promise<ChallengeForTicketRow | null> {
-    return this.client.emailChallenge.findUnique({
+    const row = await this.client.emailChallenge.findUnique({
       where: { id: challengeId },
       select: {
         id: true,
         email: true,
         type: true,
+        ...CHALLENGE_GENERIC_SELECT,
         verifiedAt: true,
         verifiedVia: true,
         ticketHash: true,
@@ -160,6 +189,7 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
         consumedAt: true,
       },
     });
+    return row ? withGenericFields(row) : null;
   }
 
   async consumeTicket(input: {
@@ -202,6 +232,42 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
       { isolationLevel: "Serializable" }
     );
   }
+}
+
+/**
+ * pending challenge 的定位条件：新版本按通用列（channel/target/purpose）匹配，
+ * 同时按 legacy `email`/`type` 匹配，覆盖 migration 窗口内旧 Release 写入的、
+ * 通用列为 null 的挑战。两个条件都只用于“同目标同用途”的挑战，不会误伤其他用途。
+ */
+function activeChallengeWhere(email: string, purpose: VerificationPurpose) {
+  const normalized = normalizeEmail(email);
+  return {
+    OR: [
+      { target: normalized, purpose },
+      { email: normalized, type: LEGACY_TYPE_BY_PURPOSE[purpose] },
+    ],
+  };
+}
+
+/**
+ * Expand 兼容：通用列在旧 Release 写入的行上为 null，
+ * 这里统一按 legacy `type`/`email` 无损推导，上层只读通用语义。
+ */
+function withGenericFields<
+  T extends {
+    email: string;
+    type: string;
+    channel: string | null;
+    target: string | null;
+    purpose: string | null;
+  },
+>(row: T): T {
+  return {
+    ...row,
+    channel: row.channel ?? "email",
+    target: row.target ?? normalizeEmail(row.email),
+    purpose: row.purpose ?? resolveChallengePurpose(row),
+  };
 }
 
 export const authChallengeRepository = new PrismaAuthChallengeRepository(

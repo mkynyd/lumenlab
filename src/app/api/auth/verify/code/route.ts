@@ -47,8 +47,9 @@ export async function POST(request: Request) {
   }
 
   const { email, code } = parsed.data;
+  // 领域层已泛化为 VerificationChallenge：注册邮箱验证对应 purpose="register"
   const result = await verifyWithCode(
-    { type: "verify", email, code },
+    { purpose: "register", email, code },
     { repository: authChallengeRepository }
   );
   if (!result.ok) {

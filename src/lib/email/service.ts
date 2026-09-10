@@ -11,9 +11,10 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import {
-  createEmailChallenge,
-  type ChallengeType,
+  createVerificationChallenge,
+  type VerificationPurpose,
 } from "@/lib/auth-challenge";
+import { normalizeEmail } from "@/lib/auth/identifier";
 import { authChallengeRepository } from "@/lib/data/auth-challenge-repository";
 import { sendTemplateEmail } from "@/lib/email/ses-client";
 import {
@@ -29,6 +30,16 @@ import {
 export type SendEmailResult =
   | { ok: true }
   | { ok: false; reason: "rate_limited" | "send_failed" };
+
+/**
+ * EmailLog.kind / SES 回调头沿用 legacy 取值（verify / reset）。
+ * 领域层已改用通用 purpose，这里做一次显式映射，本阶段不改 EmailLog 表结构。
+ */
+const LEGACY_EMAIL_KIND: Record<VerificationPurpose, string> = {
+  register: "verify",
+  password_reset: "reset",
+  bind_identity: "verify",
+};
 
 /** dropped / hard bounce / spamreport 后停止向该地址发送认证邮件 */
 export async function isBlockedForSending(email: string): Promise<boolean> {
@@ -68,7 +79,7 @@ async function checkSendLimits(
 }
 
 async function deliverTemplateEmail(input: {
-  kind: ChallengeType;
+  kind: VerificationPurpose;
   challengeId: string;
   email: string;
   templateId: string;
@@ -78,7 +89,8 @@ async function deliverTemplateEmail(input: {
 }): Promise<{ ok: true } | { ok: false; reason: "send_failed" }> {
   const log = await prisma.emailLog.create({
     data: {
-      kind: input.kind,
+      // EmailLog.kind 沿用 legacy 取值（verify/reset），本阶段不改表
+      kind: LEGACY_EMAIL_KIND[input.kind],
       email: input.email,
       challengeId: input.challengeId,
       templateId: input.templateId,
@@ -92,8 +104,8 @@ async function deliverTemplateEmail(input: {
     subject: input.subject,
     templateId: input.templateId,
     templateData: input.templateData,
-    smtpMessageId: `<${input.kind}-${input.challengeId}@mail.mkynstudio.top>`,
-    headers: { "X-Tencentcloudses-Cb-Kind": input.kind },
+    smtpMessageId: `<${LEGACY_EMAIL_KIND[input.kind]}-${input.challengeId}@mail.mkynstudio.top>`,
+    headers: { "X-Tencentcloudses-Cb-Kind": LEGACY_EMAIL_KIND[input.kind] },
   });
 
   if (!result.ok) {
@@ -117,23 +129,29 @@ async function deliverTemplateEmail(input: {
   return { ok: true };
 }
 
-/** 发送注册邮箱验证邮件（双通道：验证码 + 一次性链接） */
+/**
+ * 发送注册邮箱验证邮件（双通道：验证码 + 一次性链接）。
+ *
+ * 领域层已泛化为 VerificationChallenge（purpose="register"，
+ * channel 由当前唯一的 email 通道决定）；邮件层是 email channel 的实现。
+ */
 export async function sendVerificationEmail(
   input: { email: string; ip: string },
   opts: { now?: Date } = {}
 ): Promise<SendEmailResult> {
+  const email = normalizeEmail(input.email);
   const allowed = await checkSendLimits(
-    input.email,
+    email,
     input.ip,
     { email: RateLimits.VERIFY_SEND_EMAIL, ip: RateLimits.VERIFY_SEND_IP },
     "verify-send"
   );
   if (!allowed) return { ok: false, reason: "rate_limited" };
 
-  if (await isBlockedForSending(input.email)) return { ok: true };
+  if (await isBlockedForSending(email)) return { ok: true };
 
-  const start = await createEmailChallenge(
-    { type: "verify", email: input.email },
+  const start = await createVerificationChallenge(
+    { purpose: "register", target: email },
     { repository: authChallengeRepository, now: opts.now }
   );
   // 模板链接域名固定为生产域名，变量只承载 token
@@ -147,9 +165,9 @@ export async function sendVerificationEmail(
   };
 
   return deliverTemplateEmail({
-    kind: "verify",
+    kind: "register",
     challengeId: start.challengeId,
-    email: input.email,
+    email,
     templateId: getTemplateId("verify") ?? "",
     subject: buildVerifySubject(),
     templateData,
@@ -162,27 +180,28 @@ export async function sendPasswordResetEmail(
   input: { email: string; userId: string; ip: string },
   opts: { now?: Date } = {}
 ): Promise<SendEmailResult> {
+  const email = normalizeEmail(input.email);
   const allowed = await checkSendLimits(
-    input.email,
+    email,
     input.ip,
     { email: RateLimits.FORGOT_SEND_EMAIL, ip: RateLimits.FORGOT_SEND_IP },
     "forgot-send"
   );
   if (!allowed) return { ok: false, reason: "rate_limited" };
 
-  if (await isBlockedForSending(input.email)) return { ok: true };
+  if (await isBlockedForSending(email)) return { ok: true };
 
-  const start = await createEmailChallenge(
-    { type: "reset", email: input.email, userId: input.userId },
+  const start = await createVerificationChallenge(
+    { purpose: "password_reset", target: email, userId: input.userId },
     { repository: authChallengeRepository, now: opts.now }
   );
   const resetToken = `${start.challengeId}.${start.rawToken}`;
   const templateData = buildResetTemplateData(resetToken);
 
   return deliverTemplateEmail({
-    kind: "reset",
+    kind: "password_reset",
     challengeId: start.challengeId,
-    email: input.email,
+    email,
     templateId: getTemplateId("reset") ?? "",
     subject: buildResetSubject(),
     templateData,

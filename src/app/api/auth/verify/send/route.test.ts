@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { prisma } = vi.hoisted(() => ({
-  prisma: { user: { findUnique: vi.fn() } },
+const { checkEmailAvailability } = vi.hoisted(() => ({
+  checkEmailAvailability: vi.fn(),
 }));
-vi.mock("@/lib/db", () => ({ prisma }));
+vi.mock("@/lib/auth/service", () => ({ checkEmailAvailability }));
 
 const { sendVerificationEmail } = vi.hoisted(() => ({
   sendVerificationEmail: vi.fn(),
@@ -23,7 +23,9 @@ function makeRequest(body: Record<string, unknown>) {
 
 describe("POST /api/auth/verify/send", () => {
   beforeEach(() => {
-    prisma.user.findUnique.mockReset().mockResolvedValue(null);
+    checkEmailAvailability
+      .mockReset()
+      .mockResolvedValue({ kind: "available", legacyUserId: null });
     sendVerificationEmail.mockReset().mockResolvedValue({ ok: true });
   });
 
@@ -42,8 +44,9 @@ describe("POST /api/auth/verify/send", () => {
     });
   });
 
-  it("returns 409 when the email is already registered", async () => {
-    prisma.user.findUnique.mockResolvedValue({ id: "existing" });
+  it("returns 409 when the email is already registered through its identity", async () => {
+    checkEmailAvailability
+      .mockResolvedValue({ kind: "taken", userId: "existing", verified: true });
 
     const response = await POST(makeRequest({ email: "taken@example.com" }));
 

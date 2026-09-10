@@ -1,43 +1,16 @@
-import NextAuth, { CredentialsSignin } from "next-auth";
+/**
+ * Auth.js 装配（Node runtime 实例）。
+ *
+ * 凭据校验逻辑在 `@/lib/auth/login`；本文件只负责 NextAuth 装配与 JWT 失效规则。
+ * 账号主键始终是 `User.id`（绝不使用 AuthIdentity.id）；`passwordChangedAt` 是
+ * 账户级密码版本，因此保留在 `User` 并通过 `pwchg` claim 让旧会话失效。
+ */
+
+import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import { loginSchema } from "@/lib/validators";
-import { prisma } from "@/lib/db";
 import { authConfig } from "@/lib/auth.config";
-import { buildUserAvatarUrl } from "@/lib/user-profile";
-import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { getPasswordChangedAt } from "@/lib/password-version";
-
-// 用于在用户不存在时执行一次耗时近似的 dummy bcrypt.compare，
-// 防止攻击者通过响应时间枚举邮箱是否存在。
-const DUMMY_HASH = bcrypt.hashSync("login-timing-dummy", 10);
-
-/** 邮箱未验证时抛出，signIn 返回的 result.code 为 "email_not_verified" */
-class EmailNotVerifiedError extends CredentialsSignin {
-  code = "email_not_verified";
-}
-
-function getClientIp(request: Request | undefined): string {
-  const forwarded = request?.headers?.get?.("x-forwarded-for");
-  if (forwarded) {
-    return forwarded.split(",")[0].trim();
-  }
-  return request?.headers?.get?.("x-real-ip") ?? "unknown";
-}
-
-async function recordLoginAttempt(
-  email: string,
-  ip: string,
-  success: boolean
-): Promise<void> {
-  try {
-    await prisma.loginAttempt.create({
-      data: { email, ip, success },
-    });
-  } catch {
-    // 审计写入失败不应阻断登录流程
-  }
-}
+import { authorizeWithEmailPassword } from "@/lib/auth/login";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -49,59 +22,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials, request) {
-        const parsed = loginSchema.safeParse(credentials);
-        if (!parsed.success) return null;
-
-        const { email, password } = parsed.data;
-        const ip = getClientIp(request as Request | undefined);
-
-        // 按 IP + email 维度进行登录限流
-        const rate = await checkRateLimit(
-          `login:${ip}:${email}`,
-          RateLimits.LOGIN.max,
-          RateLimits.LOGIN.window
+      authorize(credentials, request) {
+        return authorizeWithEmailPassword(
+          credentials,
+          request as Request | undefined
         );
-        if (!rate.allowed) {
-          await recordLoginAttempt(email, ip, false);
-          return null;
-        }
-
-        const user = await prisma.user.findUnique({ where: { email } });
-
-        // 无论用户是否存在都执行一次 bcrypt.compare，保持响应时间接近。
-        const valid = user
-          ? await bcrypt.compare(password, user.passwordHash)
-          : await bcrypt.compare(password, DUMMY_HASH);
-
-        if (!valid) {
-          await recordLoginAttempt(email, ip, false);
-          return null;
-        }
-
-        // 上面 valid 为 true 时 user 一定存在；此处 guard 用于类型安全。
-        if (!user) {
-          return null;
-        }
-
-        // 未完成邮箱验证的账号拒绝登录（老用户由迁移 backfill 标记为已验证）。
-        // 放在密码比较之后，保持 dummy-hash 时序防护。
-        if (!user.emailVerifiedAt) {
-          await recordLoginAttempt(email, ip, false);
-          throw new EmailNotVerifiedError();
-        }
-
-        await recordLoginAttempt(email, ip, true);
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          avatarPreset: user.avatarPreset,
-          image: buildUserAvatarUrl(user),
-          // 密码版本：重设密码后旧 JWT 经 pwchg claim 失效
-          passwordChangedAt: user.passwordChangedAt?.getTime() ?? null,
-        };
       },
     }),
   ],

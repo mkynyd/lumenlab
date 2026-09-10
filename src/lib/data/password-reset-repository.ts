@@ -2,30 +2,70 @@ import "server-only";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { invalidatePasswordChangedAtCache } from "@/lib/password-version";
+import { createAuthIdentityRepository } from "@/lib/data/auth-identity-repository";
+import { resolveChallengeTarget } from "@/lib/auth-challenge";
 import type {
   PasswordResetRepository,
   PasswordResetTokenRow,
 } from "@/lib/password-reset";
+import type { AuthIdentityRepository } from "@/lib/auth/identity";
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
 
 class PrismaPasswordResetRepository implements PasswordResetRepository {
+  private readonly identities: AuthIdentityRepository;
+
   constructor(
     private readonly client: DatabaseClient,
     private readonly rootClient: PrismaClient
-  ) {}
+  ) {
+    this.identities = createAuthIdentityRepository(client);
+  }
 
-  findResetToken(challengeId: string): Promise<PasswordResetTokenRow | null> {
-    return this.client.emailChallenge.findUnique({
+  findEmailIdentity(providerAccountId: string) {
+    return this.identities.findEmailIdentity(providerAccountId);
+  }
+
+  createEmailIdentity(input: {
+    userId: string;
+    providerAccountId: string;
+    verifiedAt: Date | null;
+    verificationSource: string;
+  }) {
+    return this.identities.createEmailIdentity(input);
+  }
+
+  findEmailIdentityByUserId(userId: string) {
+    return this.identities.findEmailIdentityByUserId(userId);
+  }
+
+  getUserByNormalizedEmail(normalizedEmail: string) {
+    return this.identities.getUserByNormalizedEmail(normalizedEmail);
+  }
+
+  async findResetToken(
+    challengeId: string
+  ): Promise<PasswordResetTokenRow | null> {
+    const row = await this.client.emailChallenge.findUnique({
       where: { id: challengeId },
       select: {
         email: true,
+        target: true,
         tokenHash: true,
         tokenExpiresAt: true,
         tokenConsumedAt: true,
         consumedAt: true,
       },
     });
+    if (!row) return null;
+    // Expand 兼容：旧 Release 写入的挑战只有 legacy `email` 列
+    return {
+      target: resolveChallengeTarget(row),
+      tokenHash: row.tokenHash,
+      tokenExpiresAt: row.tokenExpiresAt,
+      tokenConsumedAt: row.tokenConsumedAt,
+      consumedAt: row.consumedAt,
+    };
   }
 
   async claimResetToken(input: {
@@ -33,6 +73,8 @@ class PrismaPasswordResetRepository implements PasswordResetRepository {
     tokenHash: string;
     now: Date;
   }): Promise<boolean> {
+    // legacy `type = 'reset'` 条件保留：migration 窗口内旧 Release 创建的挑战
+    // 只有 legacy 列（通用 purpose 为 null），必须继续能认出来。
     const affected = await this.client.$executeRaw`
       UPDATE "EmailChallenge"
       SET "tokenConsumedAt" = ${input.now},
@@ -45,13 +87,6 @@ class PrismaPasswordResetRepository implements PasswordResetRepository {
         AND "consumedAt" IS NULL
     `;
     return affected === 1;
-  }
-
-  findUserByEmail(email: string) {
-    return this.client.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
   }
 
   async updatePassword(
