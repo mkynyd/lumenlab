@@ -50,20 +50,37 @@ describe("research visual policy", () => {
 });
 
 describe("visual need decision", () => {
-  it("requires both an unresolved gap and an explicit figure/table signal", () => {
+  it("triggers for an unresolved question that asks about a measured figure", () => {
     expect(decideVisualEvidenceNeed({
       questionText: "Compare the measured throughput reported in Figure 3",
       status: "partially_resolved",
       fullTextEvidenceCount: 2,
-    })).toMatchObject({ needed: true });
+    })).toMatchObject({ needed: true, reason: "question_requests_figure_measurement" });
   });
 
-  it("does not fire for a resolved question", () => {
+  it("still triggers when the user explicitly names a figure even if the question was resolved", () => {
+    // 「有证据」不等于「已经拿到了图表里的数值」：用户点名图表时应按需读数。
     expect(decideVisualEvidenceNeed({
-      questionText: "Compare the measured throughput reported in Figure 3",
+      questionText: "各方法在原始论文图表中报告的实测吞吐量是多少？",
+      status: "resolved",
+      fullTextEvidenceCount: 3,
+    })).toMatchObject({ needed: true, reason: "question_requests_figure_measurement" });
+  });
+
+  it("does not fire for a resolved question that only asks a quantitative question", () => {
+    expect(decideVisualEvidenceNeed({
+      questionText: "Compare the measured throughput reported by each method",
       status: "resolved",
       fullTextEvidenceCount: 2,
     })).toMatchObject({ needed: false, reason: "no_unresolved_gap" });
+  });
+
+  it("fires for an unresolved quantitative gap without a figure noun", () => {
+    expect(decideVisualEvidenceNeed({
+      questionText: "Which method reports the highest measured throughput?",
+      status: "unresolved",
+      fullTextEvidenceCount: 2,
+    })).toMatchObject({ needed: true, reason: "unresolved_quantitative_gap" });
   });
 
   it("does not fire without full-text evidence", () => {
@@ -79,7 +96,7 @@ describe("visual need decision", () => {
       questionText: "What is the history of mixture-of-experts routing?",
       status: "unresolved",
       fullTextEvidenceCount: 3,
-    })).toMatchObject({ needed: false, signals: [] });
+    })).toMatchObject({ needed: false, reason: "no_visual_signal", signals: [] });
   });
 
   it("recognises completion criteria signals as well as the question text", () => {
@@ -88,7 +105,7 @@ describe("visual need decision", () => {
       completionCriteria: ["给出图表中的实测加速比"],
       status: "controversial",
       fullTextEvidenceCount: 1,
-    })).toMatchObject({ needed: true });
+    })).toMatchObject({ needed: true, reason: "question_requests_figure_measurement" });
   });
 });
 

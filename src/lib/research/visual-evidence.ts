@@ -94,11 +94,19 @@ export function emptyVisualEvidenceMetrics(): EmptyVisualEvidenceMetrics {
 // ─── Deterministic need decision ────────────────────────────────────────────
 
 /**
- * 只有下列情况才使用视觉证据：
- * - Question 仍未解决/部分解决/有争议（evaluator 判定存在缺口）；
- * - 且问题本身指向图表中的定量结果或图表比较（确定性关键词）。
+ * 视觉证据只在两种确定性情形下使用：
+ *
+ * 1. **问题明确要求图表读数**：同时出现「图表名词」（图表 / 图 N / 表 N / figure /
+ *    table / chart / plot / 曲线）与「定量名词」（实测 / 定量 / 数值 / 测量 /
+ *    measurement / benchmark 等）。此时用户已经点名要看图里的数字，与 evaluator
+ *    的解决状态无关——「有证据」不等于「已经拿到了图表中的数值」。
+ * 2. **存在未解决的证据缺口**且问题指向定量比较：只有一类信号时，仍要求
+ *    Question 未解决/部分解决/有争议。
+ *
+ * 两种情形都要求该 Question 已有正文级证据：metadata-only 来源没有正文，也就
+ * 没有可定位的图表。是否真的存在图表仍由正文里的确定性图片占位决定。
  */
-const VISUAL_NEED_SIGNALS = [
+const EXPLICIT_VISUAL_SIGNALS = [
   "figure",
   "fig.",
   "table",
@@ -106,23 +114,30 @@ const VISUAL_NEED_SIGNALS = [
   "plot",
   "graph",
   "diagram",
+  "图表",
+  "曲线",
+  "示意图",
+  "图 ",
+  "表 ",
+];
+
+const QUANTITATIVE_SIGNALS = [
   "measurement",
   "measured",
-  "benchmark result",
+  "quantitative",
+  "benchmark",
   "throughput",
   "latency",
   "accuracy",
-  "quantitative",
-  "图表",
-  "图 ",
-  "表 ",
-  "曲线",
   "实测",
   "测量",
   "数值",
   "定量",
   "对比实验",
   "实验结果",
+  "吞吐",
+  "延迟",
+  "准确率",
 ];
 
 export interface VisualNeedInput {
@@ -136,17 +151,24 @@ export interface VisualNeedInput {
 
 export interface VisualNeedDecision {
   needed: boolean;
-  reason: "question_asks_for_measurement" | "no_unresolved_gap" | "no_full_text_evidence";
+  reason: "question_requests_figure_measurement" | "unresolved_quantitative_gap" | "no_visual_signal" | "no_unresolved_gap" | "no_full_text_evidence";
   signals: string[];
 }
 
 export function decideVisualEvidenceNeed(input: VisualNeedInput): VisualNeedDecision {
   const haystack = [input.questionText, ...(input.completionCriteria ?? [])].join(" ").toLowerCase();
-  const signals = VISUAL_NEED_SIGNALS.filter((signal) => haystack.includes(signal));
-  if (signals.length === 0) return { needed: false, reason: "question_asks_for_measurement", signals: [] };
-  if (input.status === "resolved") return { needed: false, reason: "no_unresolved_gap", signals };
+  const visualSignals = EXPLICIT_VISUAL_SIGNALS.filter((signal) => haystack.includes(signal));
+  const quantitativeSignals = QUANTITATIVE_SIGNALS.filter((signal) => haystack.includes(signal));
+  const signals = [...new Set([...visualSignals, ...quantitativeSignals])];
+  if (visualSignals.length === 0 && quantitativeSignals.length === 0) {
+    return { needed: false, reason: "no_visual_signal", signals: [] };
+  }
   if (input.fullTextEvidenceCount === 0) return { needed: false, reason: "no_full_text_evidence", signals };
-  return { needed: true, reason: "question_asks_for_measurement", signals };
+  if (visualSignals.length > 0 && quantitativeSignals.length > 0) {
+    return { needed: true, reason: "question_requests_figure_measurement", signals };
+  }
+  if (input.status === "resolved") return { needed: false, reason: "no_unresolved_gap", signals };
+  return { needed: true, reason: "unresolved_quantitative_gap", signals };
 }
 
 // ─── Structured output normalization ────────────────────────────────────────

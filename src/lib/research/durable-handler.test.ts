@@ -910,6 +910,22 @@ describe("durable research handler · visual_evidence stage", () => {
     expect(nextState.visualEvidence?.metrics).toMatchObject({ questionsSelected: 0, modelCalls: 0 });
   });
 
+  it("runs visual analysis for a resolved question that explicitly asks for figure measurements", async () => {
+    workspaceBudgetProfile = "deep";
+    questionRow.evidence = [fullTextEvidence()];
+    vi.mocked(prismaResearchQuestionFindMany).mockImplementation(async () => [
+      visualQuestion({ status: "resolved", question: "各方法在原始论文图表中报告的实测吞吐量是多少？", completionCriteria: [] }),
+    ] as never);
+    stageBehavior.visualEvaluator = { observations: [{ statement: "1.8x", resourceId: "r1", confidence: 0.6 }] };
+    const toolInvoker = vi.fn(async (_ctx: unknown, toolId: string) => toolId === "sciverse.resource" ? imageToolResult() : null);
+    const handler = createDurableResearchExecutionHandler({ toolInvoker });
+
+    const result = await handler(createContext({ researchState: visualStageState() }));
+    const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
+    // 用户点名要看图表里的数字时，不因 evaluator 已判定 resolved 而跳过。
+    expect(nextState.visualEvidence?.metrics).toMatchObject({ questionsSelected: 1, modelCalls: 1, observationsPersisted: 1 });
+  });
+
   it("skips questions that do not ask for a figure/table measurement", async () => {
     workspaceBudgetProfile = "deep";
     questionRow.evidence = [fullTextEvidence()];

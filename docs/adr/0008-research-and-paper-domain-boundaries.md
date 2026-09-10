@@ -58,7 +58,7 @@ Wire 事实以 2026-09-11 对生产 API 的实测为准：原生 HTTP 只有**�
 
 Sciverse `/resource` 提供「按正文 Markdown 中 `![alt](file_name)` 的相对路径取图」的合同，没有资源列表接口。因此链路是确定性的：`sciverse.read` 在返回的有界正文里解析图片占位（拒绝绝对路径、`..`、反斜杠、协议前缀、无目录前缀的名字），把**有界**引用（每条 slice ≤ 4 个，含 alt 与紧邻上下文）写进 slice provenance；`sciverse.resource`（新 L1 read-only 工具，server-only token，绝无 user-facing skillId）按该相对路径取回受限图片字节（≤ 4 MB，非图片或超限只回传元数据）。
 
-视觉分析是一个独立的、有硬预算的 durable stage：`evaluating → citation_expansion → evaluating → visual_evidence → claim_extraction`。它只在 Question 仍未解决**且**问题或完成标准明确指向图表中的定量/比较结果时触发；quick profile 完全关闭（0 次调用），deep 最多 1 题 / 2 资源 / 1 次模型调用，comprehensive 最多 2 题 / 3 资源 / 2 次调用；一次模型调用覆盖最多 3 张图，**没有 per-paper / per-resource 的 LLM fan-out**。图表扫描读取也计入 fetch 预算。
+视觉分析是一个独立的、有硬预算的 durable stage：`evaluating → citation_expansion → evaluating → visual_evidence → claim_extraction`。触发条件是确定性的两种情形之一：①问题或完成标准同时包含「图表名词」与「定量名词」（用户点名要看图里的数字，此时不因 evaluator 判定 resolved 而跳过——「有证据」不等于「已拿到图表中的数值」）；②只有一类信号时，要求该 Question 仍未解决；两种情形都要求该 Question 已有正文级证据；quick profile 完全关闭（0 次调用），deep 最多 1 题 / 2 资源 / 1 次模型调用，comprehensive 最多 2 题 / 3 资源 / 2 次调用；一次模型调用覆盖最多 3 张图，**没有 per-paper / per-resource 的 LLM fan-out**。图表扫描读取也计入 fetch 预算。
 
 视觉模型只在受控多模态 stage（新角色 `research.visual_evaluator`，同一活跃 DeepSeek 多模态模型、thinking 关闭）里看到**明确选中的资源 + 有界图注/正文上下文**，不接受通用 Project 媒体自动注入。输出必须是严格结构化 JSON（`{observations:[{statement, resourceId, pageNo?, figureNo?, tableNo?, metric?, value?, unit?, confidence, limitations?}]}`），未知 resourceId、非有限 confidence、缺失 statement、超长字段一律丢弃；模型自由 Markdown 永不成为持久证据。
 
