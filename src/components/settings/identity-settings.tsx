@@ -6,6 +6,12 @@ import { Input } from "@/components/ui/input";
 import { parseLoginIdentifier, type IdentityType } from "@/lib/auth/identifier";
 
 type IdentityStatus = { type: IdentityType; maskedValue: string; verified: boolean };
+async function fetchIdentities(): Promise<IdentityStatus[]> {
+  const response = await fetch("/api/user/identities", { cache: "no-store" });
+  if (!response.ok) throw new Error("无法读取登录方式，请稍后重试");
+  const data = await response.json();
+  return data.identities;
+}
 export function IdentitySettings() {
   const [identities, setIdentities] = useState<IdentityStatus[] | null>(null);
   const [binding, setBinding] = useState<IdentityType | null>(null);
@@ -17,12 +23,20 @@ export function IdentitySettings() {
   const [message, setMessage] = useState("");
 
   async function load() {
-    const response = await fetch("/api/user/identities", { cache: "no-store" });
-    if (!response.ok) throw new Error("无法读取登录方式，请稍后重试");
-    const data = await response.json();
-    setIdentities(data.identities);
+    setIdentities(await fetchIdentities());
   }
-  useEffect(() => { load().catch(() => setMessage("无法读取登录方式，请稍后重试")); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const next = await fetchIdentities();
+        if (!cancelled) setIdentities(next);
+      } catch {
+        if (!cancelled) setMessage("无法读取登录方式，请稍后重试");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     if (resendLeft <= 0) return;
     const timer = window.setTimeout(() => setResendLeft((value) => Math.max(0, value - 1)), 1000);
