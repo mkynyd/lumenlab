@@ -10,7 +10,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "@/lib/auth.config";
 import { getPasswordChangedAt } from "@/lib/password-version";
-import { authorizeWithEmailPassword } from "@/lib/auth/login";
+import { authorizeWithIdentifierPassword } from "@/lib/auth/login";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -19,11 +19,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       id: "login",
       name: "Login",
       credentials: {
-        email: { label: "Email", type: "email" },
+        identifier: { label: "邮箱或手机号", type: "text" },
+        email: { label: "Legacy email", type: "email" }, // Expand compatibility
         password: { label: "Password", type: "password" },
       },
       authorize(credentials, request) {
-        return authorizeWithEmailPassword(
+        return authorizeWithIdentifierPassword(
           credentials,
           request as Request | undefined
         );

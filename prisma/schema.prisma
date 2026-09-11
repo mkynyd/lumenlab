@@ -17,7 +17,7 @@ datasource db {
 model User {
   paperFormattingTasks    PaperFormattingTask[]
   id                      String                @id @default(cuid())
-  email                   String                @unique
+  email                   String?               @unique
   passwordHash            String
   name                    String?
   avatarPreset            String                @default("lumen")
@@ -1334,12 +1334,15 @@ model UserToolPreference {
 
 model LoginAttempt {
   id        String   @id @default(cuid())
-  email     String
+  email     String? // legacy email audit; NULL for phone
+  identifier String? // normalized login alias; Expand nullable for old writers
+  identityType String? // email | phone
   ip        String
   success   Boolean
   createdAt DateTime @default(now())
 
   @@index([email, createdAt])
+  @@index([identifier, createdAt])
   @@index([ip, createdAt])
 }
 

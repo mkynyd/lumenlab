@@ -15,7 +15,7 @@ const profileSchema = z.object({
 });
 
 function profileResponse(user: {
-  email: string;
+  email: string | null;
   name: string | null;
   avatarPreset: string | null;
   avatarObjectKey?: string | null;

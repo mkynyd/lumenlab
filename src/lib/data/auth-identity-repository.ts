@@ -7,11 +7,12 @@
  */
 
 import "server-only";
+import { parseLoginIdentifier } from "@/lib/auth/identifier";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import {
   EMAIL_IDENTITY,
-  type AuthIdentityRepository,
+  type LocalIdentityRepository,
   type AuthIdentityRow,
   type LegacyEmailUserRow,
 } from "@/lib/auth/identity";
@@ -36,18 +37,32 @@ const IDENTITY_SELECT = {
  */
 export function createAuthIdentityRepository(
   client: DatabaseClient
-): AuthIdentityRepository {
+): LocalIdentityRepository {
   return {
+    async findIdentity(input) {
+      return client.authIdentity.findFirst({ where: { type: input.type, provider: input.provider, providerAccountId: input.providerAccountId }, select: IDENTITY_SELECT });
+    },
+    async findIdentitiesByUserId(userId) {
+      return client.authIdentity.findMany({ where: { userId }, select: IDENTITY_SELECT });
+    },
+    async createIdentity(input) {
+      const parsed = parseLoginIdentifier(input.providerAccountId);
+      if (!parsed || parsed.type !== input.type) throw new Error("Invalid identity");
+      try {
+        return await client.authIdentity.create({
+          data: { ...input, provider: "local", providerAccountId: parsed.providerAccountId },
+          select: IDENTITY_SELECT,
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) return null;
+        throw error;
+      }
+    },
     async findEmailIdentity(
       providerAccountId: string
     ): Promise<AuthIdentityRow | null> {
-      return client.authIdentity.findUnique({
-        where: {
-          provider_providerAccountId: {
-            provider: EMAIL_IDENTITY.provider,
-            providerAccountId,
-          },
-        },
+      return client.authIdentity.findFirst({
+        where: { ...EMAIL_IDENTITY, providerAccountId },
         select: IDENTITY_SELECT,
       });
     },

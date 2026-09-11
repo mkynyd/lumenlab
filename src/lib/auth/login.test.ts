@@ -9,14 +9,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { prisma, checkRateLimit, resolveEmail, readEmailVerificationState, bcrypt } =
+const { prisma, checkRateLimit, resolveIdentifier, readEmailVerificationState, bcrypt } =
   vi.hoisted(() => ({
     prisma: {
       user: { findUnique: vi.fn() },
       loginAttempt: { create: vi.fn() },
     },
     checkRateLimit: vi.fn(),
-    resolveEmail: vi.fn(),
+    resolveIdentifier: vi.fn(),
     readEmailVerificationState: vi.fn(),
     bcrypt: {
       compare: vi.fn(),
@@ -30,7 +30,7 @@ vi.mock("@/lib/rate-limit", () => ({
   checkRateLimit,
   RateLimits: { LOGIN: { max: 5, window: 60_000 } },
 }));
-vi.mock("@/lib/auth/service", () => ({ resolveEmail, readEmailVerificationState }));
+vi.mock("@/lib/auth/service", () => ({ resolveIdentifier, readEmailVerificationState }));
 vi.mock("bcryptjs", () => ({ default: bcrypt }));
 
 import { authorizeWithEmailPassword } from "@/lib/auth/login";
@@ -82,7 +82,7 @@ describe("authorizeWithEmailPassword", () => {
     prisma.user.findUnique.mockReset().mockResolvedValue(USER_ROW);
     prisma.loginAttempt.create.mockReset().mockResolvedValue({});
     checkRateLimit.mockReset().mockResolvedValue({ allowed: true });
-    resolveEmail.mockReset().mockResolvedValue(resolved());
+    resolveIdentifier.mockReset().mockResolvedValue(resolved());
     readEmailVerificationState
       .mockReset()
       .mockResolvedValue({ verifiedAt: new Date("2026-08-01T00:00:00.000Z"), source: "identity" });
@@ -95,7 +95,7 @@ describe("authorizeWithEmailPassword", () => {
       request()
     );
 
-    expect(resolveEmail).toHaveBeenCalledWith("user@example.com");
+    expect(resolveIdentifier).toHaveBeenCalledWith("user@example.com");
     // JWT 主键必须是 User.id，不能是 AuthIdentity.id
     expect(user).toMatchObject({
       id: "user-1",
@@ -113,7 +113,7 @@ describe("authorizeWithEmailPassword", () => {
       request()
     );
 
-    expect(resolveEmail).toHaveBeenCalledWith("user@example.com");
+    expect(resolveIdentifier).toHaveBeenCalledWith("user@example.com");
     expect(checkRateLimit).toHaveBeenCalledWith(
       "login:203.0.113.9:user@example.com",
       5,
@@ -131,12 +131,12 @@ describe("authorizeWithEmailPassword", () => {
 
     expect(user).toBeNull();
     expect(prisma.loginAttempt.create).toHaveBeenCalledWith({
-      data: { email: "user@example.com", ip: "203.0.113.9", success: false },
+      data: { email: "user@example.com", identifier: "user@example.com", identityType: "email", ip: "203.0.113.9", success: false },
     });
   });
 
   it("keeps the dummy bcrypt comparison for unknown accounts (timing protection)", async () => {
-    resolveEmail.mockResolvedValue({ kind: "not_found" });
+    resolveIdentifier.mockResolvedValue({ kind: "not_found" });
     bcrypt.compare.mockResolvedValue(false);
 
     const user = await authorizeWithEmailPassword(
@@ -157,7 +157,7 @@ describe("authorizeWithEmailPassword", () => {
   });
 
   it("self-heals a legacy-only account during the migration window and still logs in", async () => {
-    resolveEmail.mockResolvedValue({
+    resolveIdentifier.mockResolvedValue({
       ...(resolved() as Extract<EmailIdentityResolution, { kind: "resolved" }>),
       selfHealed: true,
     });
@@ -169,12 +169,12 @@ describe("authorizeWithEmailPassword", () => {
 
     expect(user).toMatchObject({ id: "user-1" });
     expect(prisma.loginAttempt.create).toHaveBeenCalledWith({
-      data: { email: "user@example.com", ip: "203.0.113.9", success: true },
+      data: { email: "user@example.com", identifier: "user@example.com", identityType: "email", ip: "203.0.113.9", success: true },
     });
   });
 
   it("rejects an unverified email after the password check", async () => {
-    resolveEmail.mockResolvedValue(resolved(USER_ROW.id, null));
+    resolveIdentifier.mockResolvedValue(resolved(USER_ROW.id, null));
 
     await expect(
       authorizeWithEmailPassword(
@@ -186,7 +186,7 @@ describe("authorizeWithEmailPassword", () => {
     // 时序防护：密码比较发生在验证状态检查之前
     expect(bcrypt.compare).toHaveBeenCalledTimes(1);
     expect(prisma.loginAttempt.create).toHaveBeenCalledWith({
-      data: { email: "user@example.com", ip: "203.0.113.9", success: false },
+      data: { email: "user@example.com", identifier: "user@example.com", identityType: "email", ip: "203.0.113.9", success: false },
     });
   });
 
@@ -201,7 +201,7 @@ describe("authorizeWithEmailPassword", () => {
     expect(user).toBeNull();
     expect(bcrypt.compare).not.toHaveBeenCalled();
     expect(prisma.loginAttempt.create).toHaveBeenCalledWith({
-      data: { email: "user@example.com", ip: "203.0.113.9", success: false },
+      data: { email: "user@example.com", identifier: "user@example.com", identityType: "email", ip: "203.0.113.9", success: false },
     });
   });
 
@@ -212,7 +212,7 @@ describe("authorizeWithEmailPassword", () => {
     );
 
     expect(user).toBeNull();
-    expect(resolveEmail).not.toHaveBeenCalled();
+    expect(resolveIdentifier).not.toHaveBeenCalled();
     expect(bcrypt.compare).not.toHaveBeenCalled();
   });
 
@@ -229,5 +229,39 @@ describe("authorizeWithEmailPassword", () => {
 
   it("derives the dummy hash from bcrypt.hashSync at module load", () => {
     expect(bcrypt.hashSync).toHaveBeenCalledWith("login-timing-dummy", 10);
+  });
+});
+
+describe("phone credentials", () => {
+  beforeEach(() => {
+    prisma.user.findUnique.mockReset().mockResolvedValue({ ...USER_ROW, email: null });
+    prisma.loginAttempt.create.mockReset().mockResolvedValue({});
+    checkRateLimit.mockReset().mockResolvedValue({ allowed: true });
+    resolveIdentifier.mockReset().mockResolvedValue(resolved());
+    bcrypt.compare.mockReset().mockResolvedValue(true);
+  });
+  it("normalizes phone, reads User only by id, and keeps email null in the session account", async () => {
+    const user = await authorizeWithEmailPassword({ identifier: "13812345678", password: "password123" }, request());
+    expect(user).toMatchObject({ id: "user-1", email: null });
+    expect(resolveIdentifier).toHaveBeenCalledWith("+8613812345678");
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "user-1" } }));
+    expect(bcrypt.compare).toHaveBeenCalledWith("password123", "stored-hash");
+    expect(prisma.loginAttempt.create).toHaveBeenCalledWith({ data: { email: null, identifier: "+8613812345678", identityType: "phone", ip: "203.0.113.9", success: true } });
+  });
+  it("uses one dummy bcrypt for nonexistent phones", async () => {
+    resolveIdentifier.mockResolvedValue({ kind: "not_found" });
+    bcrypt.compare.mockResolvedValue(false);
+    expect(await authorizeWithEmailPassword({ identifier: "13812345678", password: "password123" }, request())).toBeNull();
+    expect(bcrypt.compare).toHaveBeenCalledExactlyOnceWith("password123", DUMMY_HASH_SENTINEL);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+  it("rejects an unverified phone after password comparison", async () => {
+    resolveIdentifier.mockResolvedValue(resolved(USER_ROW.id, null));
+    await expect(authorizeWithEmailPassword({ identifier: "+8613812345678", password: "password123" }, request())).rejects.toMatchObject({ code: "identity_not_verified" });
+    expect(bcrypt.compare).toHaveBeenCalledTimes(1);
+  });
+  it("audit failure does not block phone login", async () => {
+    prisma.loginAttempt.create.mockRejectedValue(new Error("offline"));
+    expect(await authorizeWithEmailPassword({ identifier: "13812345678", password: "password123" }, request())).toMatchObject({ id: "user-1" });
   });
 });

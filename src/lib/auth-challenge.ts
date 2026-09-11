@@ -3,8 +3,8 @@
  *
  * 目标模型可表达 `channel = email | sms`、`target = 邮箱或手机号`、
  * `purpose = register | bind_identity | password_reset | ...`，并复用验证码 Hash、
- * TTL、attempt、一次性消费、Ticket 等安全机制。**当前阶段只有 email channel**，
- * 不实现任何短信发送。
+ * TTL、attempt、一次性消费、Ticket 等安全机制。Phase 2 同时支持 email 与 SMS；
+ * SMS 只使用验证码，不发链接 token。
  *
  * 双通道验证：6 位验证码 + 一次性链接，任一方式验证成功后签发一次性票据；
  * 验证成功或挑战被新挑战取代后，当前挑战立即失效。
@@ -19,9 +19,10 @@
  */
 
 import crypto from "crypto";
-import { normalizeEmail } from "@/lib/auth/identifier";
+import { normalizeEmail, parseLoginIdentifier } from "@/lib/auth/identifier";
 
 export const CODE_TTL_MS = 15 * 60 * 1000; // 验证码有效期 15 分钟
+export const SMS_CODE_TTL_MS = 5 * 60 * 1000;
 export const TOKEN_TTL_MS = 60 * 60 * 1000; // 链接 token 有效期 60 分钟
 export const TICKET_TTL_MS = 15 * 60 * 1000; // 注册票据有效期 15 分钟
 export const MAX_CODE_ATTEMPTS = 5; // 验证码最多失败 5 次
@@ -44,18 +45,19 @@ export type VerificationPurpose =
 export const PURPOSE_BY_LEGACY_TYPE: Record<string, VerificationPurpose> = {
   verify: "register",
   reset: "password_reset",
+  bind_identity: "bind_identity",
 };
 
 /** 写入 legacy `type` 列时使用的反向映射（与上面一一对应） */
 export const LEGACY_TYPE_BY_PURPOSE: Record<VerificationPurpose, string> = {
   register: "verify",
   password_reset: "reset",
-  bind_identity: "verify",
+  bind_identity: "bind_identity",
 };
 
 const EMAIL_CHANNEL: VerificationChannel = "email";
 
-/** 通用列缺失时按 email channel 读取（当前只有 email 通道） */
+/** 通用列缺失时按历史 email channel 读取。 */
 export function resolveChallengeChannel(row: {
   channel?: string | null;
 }): VerificationChannel {
@@ -80,7 +82,7 @@ export function resolveChallengeTarget(row: {
   return normalizeEmail(row.email ?? "");
 }
 
-/** 当前 email channel 的通用字段三元组（新版本写入时与 legacy 列双写） */
+/** email channel 的通用字段三元组（新版本写入时与 legacy 列双写） */
 export function emailChallengeGenericFields(input: {
   email: string;
   purpose: VerificationPurpose;
@@ -139,12 +141,15 @@ export interface ChallengeForTicketRow {
   consumedAt: Date | null;
 }
 
+export type ChallengeScope = { channel: VerificationChannel; userId?: string };
+
 export interface AuthChallengeRepository {
   /** 将同 target+purpose 的旧活跃挑战置 consumedAt（发新挑战前调用） */
   invalidateActiveChallenges(
     email: string,
     purpose: VerificationPurpose,
-    now: Date
+    now: Date,
+    scope?: ChallengeScope
   ): Promise<void>;
   /**
    * 创建挑战：通用字段与 legacy `type`/`email` 同时写入，
@@ -152,16 +157,18 @@ export interface AuthChallengeRepository {
    */
   createChallenge(input: {
     purpose: VerificationPurpose;
+    channel?: VerificationChannel;
     email: string;
     userId?: string;
     codeHash: string;
     codeExpiresAt: Date;
-    tokenHash: string;
-    tokenExpiresAt: Date;
+    tokenHash: string | null;
+    tokenExpiresAt: Date | null;
   }): Promise<{ id: string }>;
   findActiveByEmail(
     email: string,
-    purpose: VerificationPurpose
+    purpose: VerificationPurpose,
+    scope?: ChallengeScope
   ): Promise<ChallengeRow | null>;
   /** 原子：仅当未关闭/未验证且未达上限时 attempts+1；超限自动关闭挑战 */
   incrementCodeAttempt(id: string, maxAttempts: number, now: Date): Promise<boolean>;
@@ -224,22 +231,22 @@ function generateRaw(): string {
 export interface ChallengeStart {
   challengeId: string;
   code: string; // 明文验证码，仅此函数返回（下游只有邮件层）
-  rawToken: string; // 明文链接 token，仅此函数返回
+  rawToken: string | null; // 明文链接 token，仅此函数返回
   codeExpiresAt: Date;
-  tokenExpiresAt: Date;
+  tokenExpiresAt: Date | null;
 }
 
 /**
  * 创建新挑战（先关闭同 target+purpose 的旧活跃挑战，再落库 hash）。
  * 返回的明文 code / rawToken 仅用于构造邮件内容。
  *
- * 当前阶段只有 email channel：`channel` 由 `emailChallengeGenericFields` 固定为
- * "email"，下一阶段接入短信时在这里按标识类型分流，不要提前写死发送逻辑。
+ * email 与 SMS 共用这一 challenge 生命周期；SMS 按 channel 使用较短 TTL 且不创建链接 token。
  */
 export async function createVerificationChallenge(
   input: {
     purpose: VerificationPurpose;
     target: string;
+    channel?: VerificationChannel;
     userId?: string;
   },
   opts: {
@@ -250,22 +257,33 @@ export async function createVerificationChallenge(
   }
 ): Promise<ChallengeStart> {
   const now = opts.now || new Date();
-  const codeTtlMs = opts.codeTtlMs ?? CODE_TTL_MS;
+  const identifier = parseLoginIdentifier(input.target);
+  const channel = input.channel ?? "email";
+  if (!identifier || identifier.channel !== channel ||
+      (input.purpose === "bind_identity" && !input.userId) ||
+      (input.purpose === "register" && input.userId) ||
+      (channel === "sms" && input.purpose === "password_reset")) {
+    throw new Error("Invalid verification challenge scope");
+  }
+  const target = identifier.providerAccountId;
+  const scope = { channel, userId: input.userId };
+  const codeTtlMs = channel === "sms" ? SMS_CODE_TTL_MS : (opts.codeTtlMs ?? CODE_TTL_MS);
   const tokenTtlMs = opts.tokenTtlMs ?? TOKEN_TTL_MS;
 
   const code = generateCode();
-  const rawToken = generateRaw();
+  const rawToken = channel === "email" && input.purpose !== "bind_identity" ? generateRaw() : null;
   const codeExpiresAt = new Date(now.getTime() + codeTtlMs);
-  const tokenExpiresAt = new Date(now.getTime() + tokenTtlMs);
+  const tokenExpiresAt = rawToken ? new Date(now.getTime() + tokenTtlMs) : null;
 
-  await opts.repository.invalidateActiveChallenges(input.target, input.purpose, now);
+  await opts.repository.invalidateActiveChallenges(target, input.purpose, now, scope);
   const { id } = await opts.repository.createChallenge({
     purpose: input.purpose,
-    email: input.target,
+    email: target,
+    channel,
     userId: input.userId,
     codeHash: sha256(code),
     codeExpiresAt,
-    tokenHash: sha256(rawToken),
+    tokenHash: rawToken ? sha256(rawToken) : null,
     tokenExpiresAt,
   });
 
@@ -303,7 +321,7 @@ export type CodeVerifyResult =
 
 /** 验证码通道验证。成功后签发一次性票据。 */
 export async function verifyWithCode(
-  input: { purpose: VerificationPurpose; email: string; code: string },
+  input: { purpose: VerificationPurpose; email?: string; target?: string; channel?: VerificationChannel; userId?: string; code: string },
   opts: {
     repository: AuthChallengeRepository;
     maxAttempts?: number;
@@ -313,13 +331,23 @@ export async function verifyWithCode(
   const now = opts.now || new Date();
   const maxAttempts = opts.maxAttempts ?? MAX_CODE_ATTEMPTS;
 
+  const identifier = parseLoginIdentifier(input.target ?? input.email);
+  const channel = input.channel ?? "email";
+  if (!identifier || identifier.channel !== channel ||
+      (input.purpose === "bind_identity" && !input.userId) ||
+      (input.purpose === "register" && input.userId) ||
+      (channel === "sms" && input.purpose === "password_reset")) return { ok: false, reason: "no_challenge" };
   const challenge = await opts.repository.findActiveByEmail(
-    input.email,
-    input.purpose
+    identifier.providerAccountId, input.purpose, { channel, userId: input.userId }
   );
-  if (!challenge) return { ok: false, reason: "no_challenge" };
+  if (!challenge || challenge.consumedAt ||
+      resolveChallengeChannel(challenge) !== channel ||
+      resolveChallengePurpose(challenge) !== input.purpose ||
+      resolveChallengeTarget(challenge) !== identifier.providerAccountId ||
+      (challenge.userId ?? null) !== (input.userId ?? null)) return { ok: false, reason: "no_challenge" };
+  if (challenge.codeAttempts >= maxAttempts) return { ok: false, reason: "attempts_exceeded" };
   if (challenge.verifiedAt) return { ok: false, reason: "already_verified" };
-  if (challenge.codeExpiresAt.getTime() < now.getTime()) {
+  if (challenge.codeExpiresAt.getTime() <= now.getTime()) {
     return { ok: false, reason: "expired" };
   }
 
@@ -364,7 +392,10 @@ export async function verifyWithLink(
   if (!split) return { ok: false, reason: "malformed" };
 
   const challenge = await opts.repository.findToken(split.id);
-  if (!challenge || challenge.tokenHash !== sha256(split.raw)) {
+  if (!challenge || challenge.consumedAt ||
+      resolveChallengeChannel(challenge) !== "email" ||
+      resolveChallengePurpose(challenge) !== "register" ||
+      challenge.tokenHash !== sha256(split.raw)) {
     return { ok: false, reason: "not_found" };
   }
   if (challenge.verifiedAt) return { ok: false, reason: "already_used" };

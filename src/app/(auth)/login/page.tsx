@@ -19,13 +19,13 @@ function LoginForm() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [errorField, setErrorField] = useState<"email" | "password" | null>(null);
+  const [errorField, setErrorField] = useState<"identifier" | "password" | null>(null);
 
   const notice =
     searchParams.get("reset") === "done"
       ? "密码已重置，请重新登录"
       : searchParams.get("registered") === "true"
-        ? "注册成功，请使用邮箱和密码登录"
+        ? "注册成功，请使用邮箱或手机号和密码登录"
         : null;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -34,22 +34,25 @@ function LoginForm() {
     setError(null);
 
     const form = new FormData(e.currentTarget);
-    const email = form.get("email") as string;
+    const identifier = form.get("identifier") as string;
     const password = form.get("password") as string;
 
     try {
       const result = await signIn("login", {
-        email,
+        identifier,
         password,
         redirect: false,
       });
 
       if (result?.error) {
-        if (result.code === "email_not_verified") {
+        if (result.code === "identity_not_verified") {
+          setError("该登录方式尚未完成验证");
+          setErrorField("identifier");
+        } else if (result.code === "email_not_verified") {
           setError("该邮箱尚未完成验证，请查收验证邮件并完成注册");
-          setErrorField("email");
+          setErrorField("identifier");
         } else {
-          setError("邮箱或密码错误，请重试");
+          setError("邮箱、手机号或密码错误，请重试");
           setErrorField("password");
         }
         setIsLoading(false);
@@ -84,20 +87,20 @@ function LoginForm() {
       <form method="post" onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
           <label
-            htmlFor="email"
+            htmlFor="identifier"
             className="block text-sm font-medium text-[var(--color-text-primary)]"
           >
-            邮箱
+            邮箱或手机号
           </label>
           <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
+            id="identifier"
+            name="identifier"
+            type="text"
+            autoComplete="username"
             required
-            placeholder="you@example.com"
+            placeholder="邮箱或大陆手机号"
             className="h-11 px-3"
-            aria-invalid={errorField === "email" || undefined}
+            aria-invalid={errorField === "identifier" || undefined}
             aria-describedby={error ? errorId : undefined}
           />
         </div>

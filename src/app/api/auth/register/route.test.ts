@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 const { registrationRepository } = vi.hoisted(() => ({
   registrationRepository: {
     findEmailIdentity: vi.fn(),
-    createEmailIdentity: vi.fn(),
+    createIdentity: vi.fn(),
     findEmailIdentityByUserId: vi.fn(),
     getUserByNormalizedEmail: vi.fn(),
     findChallengeForTicket: vi.fn(),
@@ -62,7 +62,7 @@ describe("POST /api/auth/register", () => {
     registrationRepository.getUserByNormalizedEmail
       .mockReset()
       .mockResolvedValue(null);
-    registrationRepository.createEmailIdentity.mockReset().mockResolvedValue({
+    registrationRepository.createIdentity.mockReset().mockResolvedValue({
       id: "identity-1",
       userId: "user-1",
       type: "email",
@@ -75,6 +75,7 @@ describe("POST /api/auth/register", () => {
       id: "challenge-1",
       email: "new@example.com",
       target: "new@example.com",
+      channel: "email", purpose: "register", userId: null,
       verifiedAt: CHALLENGE_VERIFIED_AT,
       verifiedVia: "code",
       ticketHash: TICKET_HASH,
@@ -123,7 +124,8 @@ describe("POST /api/auth/register", () => {
         emailVerificationSource: "code",
       })
     );
-    expect(registrationRepository.createEmailIdentity).toHaveBeenCalledWith({
+    expect(registrationRepository.createIdentity).toHaveBeenCalledWith({
+      type: "email",
       userId: "user-1",
       providerAccountId: "new@example.com",
       verifiedAt: CHALLENGE_VERIFIED_AT,
@@ -166,7 +168,7 @@ describe("POST /api/auth/register", () => {
 
     expect(response.status).toBe(409);
     expect((await response.json()).error).toEqual({
-      email: ["该邮箱已被注册"],
+      email: ["该登录方式已被注册"],
     });
   });
 
@@ -185,7 +187,7 @@ describe("POST /api/auth/register", () => {
 
     expect(response.status).toBe(400);
     expect((await response.json()).error).toEqual({
-      ticket: ["验证已失效，请重新验证邮箱"],
+      ticket: ["验证已失效，请重新验证"],
     });
   });
 

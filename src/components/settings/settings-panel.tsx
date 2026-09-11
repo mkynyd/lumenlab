@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { IdentitySettings } from "./identity-settings";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -1142,6 +1143,7 @@ function SecuritySection() {
 
   return (
     <SectionShell id="settings-panel-security" title="账号安全">
+      <IdentitySettings />
       <section aria-labelledby="change-password-heading">
         <div className="mb-3">
           <h3

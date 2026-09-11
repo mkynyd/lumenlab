@@ -38,6 +38,7 @@ function challengeRow(
 ): ChallengeTicketRow {
   return {
     id: CHALLENGE_ID,
+    channel: "email", purpose: "register", userId: null,
     target: input.email,
     verifiedAt: new Date("2026-08-06T11:50:00.000Z"),
     verifiedVia: "code",
@@ -53,8 +54,12 @@ function createRepository(
   overrides: Partial<RegistrationRepository> = {}
 ): RegistrationRepository {
   return {
+    findIdentity: vi.fn().mockResolvedValue(null),
+    findIdentitiesByUserId: vi.fn().mockResolvedValue([]),
+    bindLegacyEmail: vi.fn().mockResolvedValue(true),
     findEmailIdentity: vi.fn().mockResolvedValue(null),
     createEmailIdentity: vi.fn().mockResolvedValue(identityRow()),
+    createIdentity: vi.fn().mockResolvedValue(identityRow()),
     findEmailIdentityByUserId: vi.fn().mockResolvedValue(null),
     getUserByNormalizedEmail: vi.fn().mockResolvedValue(null),
     findChallengeForTicket: vi.fn().mockResolvedValue(challengeRow()),
@@ -114,7 +119,8 @@ describe("registerUserWithTicket", () => {
 
     await registerUserWithTicket(input, { repository, now: NOW });
 
-    expect(repository.createEmailIdentity).toHaveBeenCalledWith({
+    expect(repository.createIdentity).toHaveBeenCalledWith({
+      type: "email",
       userId: "user-1",
       providerAccountId: input.email,
       verifiedAt: new Date("2026-08-06T11:50:00.000Z"),
@@ -138,21 +144,24 @@ describe("registerUserWithTicket", () => {
     expect(repository.createUser).toHaveBeenCalledWith(
       expect.objectContaining({ email: "new@example.com" })
     );
-    expect(repository.createEmailIdentity).toHaveBeenCalledWith(
+    expect(repository.createIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ providerAccountId: "new@example.com" })
     );
   });
 
   it("rejects an email that is already registered through its identity", async () => {
     const repository = createRepository({
-      findEmailIdentity: vi.fn().mockResolvedValue(identityRow()),
+      findIdentity: vi.fn().mockResolvedValue(null),
+    findIdentitiesByUserId: vi.fn().mockResolvedValue([]),
+    bindLegacyEmail: vi.fn().mockResolvedValue(true),
+    findEmailIdentity: vi.fn().mockResolvedValue(identityRow()),
     });
     repository.transaction = async (operation) => operation(repository);
 
     await expect(
       registerUserWithTicket(input, { repository, now: NOW })
     ).rejects.toEqual(
-      new RegistrationError("email_exists", "该邮箱已被注册")
+      new RegistrationError("email_exists", "该登录方式已被注册")
     );
     expect(repository.consumeTicket).not.toHaveBeenCalled();
   });
@@ -172,14 +181,17 @@ describe("registerUserWithTicket", () => {
     await expect(
       registerUserWithTicket(input, { repository, now: NOW })
     ).rejects.toEqual(
-      new RegistrationError("email_exists", "该邮箱已被注册")
+      new RegistrationError("email_exists", "该登录方式已被注册")
     );
     expect(repository.createUser).not.toHaveBeenCalled();
   });
 
   it("stops with identity_conflict when the identity and the legacy user disagree", async () => {
     const repository = createRepository({
-      findEmailIdentity: vi.fn().mockResolvedValue(
+      findIdentity: vi.fn().mockResolvedValue(null),
+    findIdentitiesByUserId: vi.fn().mockResolvedValue([]),
+    bindLegacyEmail: vi.fn().mockResolvedValue(true),
+    findEmailIdentity: vi.fn().mockResolvedValue(
         identityRow({ userId: "other-user" })
       ),
       getUserByNormalizedEmail: vi.fn().mockResolvedValue({
@@ -199,7 +211,7 @@ describe("registerUserWithTicket", () => {
 
   it("fails the whole registration when the identity insert loses a race", async () => {
     const repository = createRepository({
-      createEmailIdentity: vi.fn().mockResolvedValue(null),
+      createIdentity: vi.fn().mockResolvedValue(null),
     });
     repository.transaction = async (operation) => operation(repository);
 

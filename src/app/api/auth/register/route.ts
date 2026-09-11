@@ -42,12 +42,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const { email, password, ticket } = parsed.data;
+  const { identifier, email, password, ticket } = parsed.data;
 
   try {
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await registerUserWithTicket(
-      { email, passwordHash, ticket },
+      { identifier, email, passwordHash, ticket },
       { repository: registrationRepository }
     );
 
@@ -66,6 +66,12 @@ export async function POST(request: Request) {
 export function handleRegistrationError(error: unknown) {
   if (error instanceof RegistrationError) {
     switch (error.code) {
+      case "identifier_exists":
+      case "identity_conflict":
+      case "identity_already_bound":
+        return NextResponse.json({ error: error.message }, { status: 409 });
+      case "identifier_invalid":
+        return NextResponse.json({ error: error.message }, { status: 400 });
       case "email_exists":
         return NextResponse.json(
           { error: { email: [error.message] } },
@@ -89,6 +95,9 @@ export function handleRegistrationError(error: unknown) {
           { status: 400 }
         );
     }
+  }
+  if (typeof error === "object" && error !== null && "code" in error && ["P2002", "P2034"].includes(String(error.code))) {
+    return NextResponse.json({ error: "身份已被占用或请求冲突，请重新尝试" }, { status: 409 });
   }
   return NextResponse.json(
     { error: "服务器内部错误，请稍后重试" },

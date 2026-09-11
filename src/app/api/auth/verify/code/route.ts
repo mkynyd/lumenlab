@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parseLoginIdentifier } from "@/lib/auth/identifier";
 import { verifyCodeSchema } from "@/lib/validators";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
 import { verifyWithCode } from "@/lib/auth-challenge";
@@ -6,7 +7,7 @@ import { authChallengeRepository } from "@/lib/data/auth-challenge-repository";
 
 const CODE_ERROR_MESSAGES: Record<string, string> = {
   no_challenge: "请先获取验证码",
-  already_verified: "该邮箱已完成验证",
+  already_verified: "该身份已完成验证",
   expired: "验证码已过期，请重新获取",
   invalid_code: "验证码错误",
   attempts_exceeded: "尝试次数过多，请重新获取验证码",
@@ -46,10 +47,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const { email, code } = parsed.data;
+  const identifier = parseLoginIdentifier(parsed.data.identifier ?? parsed.data.email)!;
+  const { code } = parsed.data;
   // 领域层已泛化为 VerificationChallenge：注册邮箱验证对应 purpose="register"
   const result = await verifyWithCode(
-    { purpose: "register", email, code },
+    { purpose: "register", target: identifier.providerAccountId, channel: identifier.channel, code },
     { repository: authChallengeRepository }
   );
   if (!result.ok) {

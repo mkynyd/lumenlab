@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeEmail, parseLoginIdentifier } from "@/lib/auth/identifier";
 import { ALL_CHAT_MODELS, DEFAULT_CHAT_MODEL, isChatModelEnabled } from "@/lib/chat/model-catalog";
 
 export const sendMessageSchema = z.object({
@@ -29,28 +30,31 @@ export const sendMessageSchema = z.object({
   materialScope: z.enum(["project-corpus", "none"]).optional(),
 });
 
+// Phase 1 clients may still submit email; Contract after those clients retire.
+const identifierFields = {
+  identifier: z.string().max(254).transform((value) => parseLoginIdentifier(value)?.providerAccountId ?? value).optional(),
+  email: z.string().max(254).transform(normalizeEmail).optional(),
+};
+function validIdentifier(value: { identifier?: string; email?: string }) {
+  return parseLoginIdentifier(value.identifier ?? value.email) !== null;
+}
 export const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().email("邮箱格式不正确"),
+  ...identifierFields,
   password: z.string().min(8, "密码至少需要 8 个字符").max(128),
-});
-
-// 注册：邮箱验证票据（<challengeId>.<raw>）作为注册凭证，替代注册码
-export const registerSchema = loginSchema.extend({
-  ticket: z.string().min(1, "缺少邮箱验证票据").max(200, "邮箱验证票据无效"),
-});
-
-// 邮箱验证码：6 位数字
+}).refine(validIdentifier, { path: ["identifier"], message: "请输入有效的邮箱或大陆手机号" });
+export const registerSchema = z.object({
+  ...identifierFields,
+  password: z.string().min(8, "密码至少需要 8 个字符").max(128),
+  ticket: z.string().min(1, "缺少身份验证票据").max(200, "身份验证票据无效"),
+}).refine(validIdentifier, { path: ["identifier"], message: "请输入有效的邮箱或大陆手机号" });
 export const verifyCodeSchema = z.object({
-  email: z.string().trim().toLowerCase().email("邮箱格式不正确"),
-  code: z
-    .string()
-    .regex(/^\d{6}$/, "验证码应为 6 位数字"),
-});
-
-// 发送验证/重设邮件
-export const verifySendSchema = z.object({
-  email: z.string().trim().toLowerCase().email("邮箱格式不正确"),
-});
+  ...identifierFields,
+  code: z.string().regex(/^\d{6}$/, "验证码应为 6 位数字"),
+}).refine(validIdentifier, { path: ["identifier"], message: "请输入有效的邮箱或大陆手机号" });
+export const verifySendSchema = z.object(identifierFields)
+  .refine(validIdentifier, { path: ["identifier"], message: "请输入有效的邮箱或大陆手机号" });
+// Password recovery remains email-only in Phase 2.
+export const forgotPasswordSchema = z.object({ email: z.string().trim().toLowerCase().email("邮箱格式不正确") });
 
 // 密码重设：ticket 即邮件中的一次性 token
 export const resetPasswordSchema = z.object({

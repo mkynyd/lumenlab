@@ -3,7 +3,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { invalidatePasswordChangedAtCache } from "@/lib/password-version";
 import { createAuthIdentityRepository } from "@/lib/data/auth-identity-repository";
-import { resolveChallengeTarget } from "@/lib/auth-challenge";
+import { resolveChallengeTarget, resolveChallengeChannel, resolveChallengePurpose } from "@/lib/auth-challenge";
 import type {
   PasswordResetRepository,
   PasswordResetTokenRow,
@@ -51,13 +51,16 @@ class PrismaPasswordResetRepository implements PasswordResetRepository {
       select: {
         email: true,
         target: true,
+        channel: true,
+        purpose: true,
+        type: true,
         tokenHash: true,
         tokenExpiresAt: true,
         tokenConsumedAt: true,
         consumedAt: true,
       },
     });
-    if (!row) return null;
+    if (!row || resolveChallengeChannel(row) !== "email" || resolveChallengePurpose(row) !== "password_reset") return null;
     // Expand 兼容：旧 Release 写入的挑战只有 legacy `email` 列
     return {
       target: resolveChallengeTarget(row),
@@ -81,6 +84,8 @@ class PrismaPasswordResetRepository implements PasswordResetRepository {
           "updatedAt" = CURRENT_TIMESTAMP
       WHERE "id" = ${input.challengeId}
         AND "type" = 'reset'
+        AND COALESCE("channel", 'email') = 'email'
+        AND COALESCE("purpose", 'password_reset') = 'password_reset'
         AND "tokenHash" = ${input.tokenHash}
         AND "tokenConsumedAt" IS NULL
         AND "tokenExpiresAt" > ${input.now}

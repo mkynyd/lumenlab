@@ -6,7 +6,7 @@ import { queryKeys } from "@/lib/query-keys";
 import type { AvatarPresetId } from "@/lib/user-profile";
 
 export interface UserProfile {
-  email: string;
+  email: string | null;
   name: string | null;
   avatarPreset: AvatarPresetId;
   avatarUrl: string | null;

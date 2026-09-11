@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifySendSchema } from "@/lib/validators";
+import { forgotPasswordSchema } from "@/lib/validators";
 import { sendPasswordResetEmail } from "@/lib/email/service";
 import { resolveEmail } from "@/lib/auth/service";
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请求格式错误" }, { status: 400 });
   }
 
-  const parsed = verifySendSchema.safeParse(body);
+  const parsed = forgotPasswordSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.flatten().fieldErrors },

@@ -3,7 +3,9 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/auth/identifier";
 import {
-  emailChallengeGenericFields,
+  resolveChallengeChannel,
+  type ChallengeScope,
+  type VerificationChannel,
   LEGACY_TYPE_BY_PURPOSE,
   resolveChallengePurpose,
   type AuthChallengeRepository,
@@ -32,12 +34,13 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
   async invalidateActiveChallenges(
     email: string,
     purpose: VerificationPurpose,
-    now: Date
+    now: Date,
+    scope: ChallengeScope = { channel: "email" }
   ): Promise<void> {
     await this.client.emailChallenge.updateMany({
       where: {
         consumedAt: null,
-        ...activeChallengeWhere(email, purpose),
+        ...activeChallengeWhere(email, purpose, scope),
       },
       data: { consumedAt: now },
     });
@@ -45,21 +48,19 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
 
   createChallenge(input: {
     purpose: VerificationPurpose;
+    channel?: VerificationChannel;
     email: string;
     userId?: string;
     codeHash: string;
     codeExpiresAt: Date;
-    tokenHash: string;
-    tokenExpiresAt: Date;
+    tokenHash: string | null;
+    tokenExpiresAt: Date | null;
   }) {
-    const generic = emailChallengeGenericFields({
-      email: input.email,
-      purpose: input.purpose,
-    });
+    const generic = { channel: input.channel ?? "email", target: input.email, purpose: input.purpose };
     return this.client.emailChallenge.create({
       data: {
-        // legacy 列继续写入：旧 Release 仍会读它们
-        type: LEGACY_TYPE_BY_PURPOSE[input.purpose],
+        // SMS 的 legacy email 仅是 opaque target，不代表真实邮箱；User.email 不写手机号。
+        type: generic.channel === "sms" ? `sms_${input.purpose}` : LEGACY_TYPE_BY_PURPOSE[input.purpose],
         email: generic.target,
         // 通用列（expand 新增，nullable）
         channel: generic.channel,
@@ -77,10 +78,11 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
 
   async findActiveByEmail(
     email: string,
-    purpose: VerificationPurpose
+    purpose: VerificationPurpose,
+    scope: ChallengeScope = { channel: "email" }
   ): Promise<ChallengeRow | null> {
     const row = await this.client.emailChallenge.findFirst({
-      where: { consumedAt: null, ...activeChallengeWhere(email, purpose) },
+      where: { consumedAt: null, ...activeChallengeWhere(email, purpose, scope) },
       orderBy: { createdAt: "desc" },
     });
     return row ? withGenericFields(row) : null;
@@ -125,6 +127,7 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
         AND "consumedAt" IS NULL
         AND "verifiedAt" IS NULL
         AND "codeExpiresAt" > ${input.now}
+        AND "codeAttempts" < 5
     `;
     return affected === 1;
   }
@@ -239,14 +242,21 @@ class PrismaAuthChallengeRepository implements AuthChallengeRepository {
  * 同时按 legacy `email`/`type` 匹配，覆盖 migration 窗口内旧 Release 写入的、
  * 通用列为 null 的挑战。两个条件都只用于“同目标同用途”的挑战，不会误伤其他用途。
  */
-function activeChallengeWhere(email: string, purpose: VerificationPurpose) {
-  const normalized = normalizeEmail(email);
-  return {
-    OR: [
-      { target: normalized, purpose },
-      { email: normalized, type: LEGACY_TYPE_BY_PURPOSE[purpose] },
+/** Legacy method name retained; all core predicates use channel/target/purpose/owner. */
+export function activeChallengeWhere(target: string, purpose: VerificationPurpose, scope: ChallengeScope = { channel: "email" }): Prisma.EmailChallengeWhereInput {
+  const userId = scope.userId ?? null;
+  const generic: Prisma.EmailChallengeWhereInput = { channel: scope.channel, target, purpose, userId };
+  if (scope.channel !== "email" || purpose === "bind_identity") return generic;
+  // Fallback ONLY for old writers whose generic columns are absent. Never let
+  // legacy type override an explicit different purpose/channel/target.
+  return { OR: [generic, {
+    AND: [
+      { OR: [{ channel: null }, { channel: "email" }] },
+      { OR: [{ purpose: null }, { purpose }] },
+      { OR: [{ target: null }, { target }] },
+      { email: target, type: LEGACY_TYPE_BY_PURPOSE[purpose], userId },
     ],
-  };
+  }] };
 }
 
 /**
@@ -264,7 +274,7 @@ function withGenericFields<
 >(row: T): T {
   return {
     ...row,
-    channel: row.channel ?? "email",
+    channel: resolveChallengeChannel(row),
     target: row.target ?? normalizeEmail(row.email),
     purpose: row.purpose ?? resolveChallengePurpose(row),
   };

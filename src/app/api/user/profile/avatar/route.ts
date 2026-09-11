@@ -43,7 +43,7 @@ function isUploadedFile(value: unknown): value is UploadedAvatarFile {
 }
 
 function profileResponse(user: {
-  email: string;
+  email: string | null;
   name: string | null;
   avatarPreset: string | null;
   avatarObjectKey?: string | null;
@@ -152,7 +152,7 @@ export async function POST(request: Request) {
   const avatarUpdatedAt = new Date();
 
   let nextUser: {
-    email: string;
+    email: string | null;
     name: string | null;
     avatarPreset: string | null;
     avatarObjectKey: string | null;

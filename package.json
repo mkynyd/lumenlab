@@ -27,6 +27,7 @@
     "diag:research-e2e": "tsx --tsconfig scripts/tsconfig.json scripts/research-e2e-smoke.ts"
   },
   "dependencies": {
+    "@alicloud/dypnsapi20170525": "2.0.0",
     "@anthropic-ai/sdk": "^0.104.1",
     "@chenglou/pretext": "^0.0.8",
     "@earendil-works/pi-ai": "0.80.7",

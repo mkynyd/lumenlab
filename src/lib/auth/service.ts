@@ -11,6 +11,8 @@ import {
   authIdentityRepository,
 } from "@/lib/data/auth-identity-repository";
 import {
+  checkIdentityAvailability,
+  resolveIdentity,
   checkEmailIdentityAvailability,
   resolveEmailIdentity,
   resolveEmailVerificationState,
@@ -39,4 +41,11 @@ export function readEmailVerificationState(
   email: string
 ): Promise<EmailVerificationState | null> {
   return resolveEmailVerificationState(email, authIdentityRepository);
+}
+
+export function resolveIdentifier(identifier: string) {
+  return resolveIdentity(identifier, authIdentityRepository);
+}
+export function checkIdentifierAvailability(identifier: string) {
+  return checkIdentityAvailability(identifier, authIdentityRepository);
 }

@@ -73,7 +73,7 @@ export const authConfig: NextAuthConfig = {
         session.user.avatarPreset = token.avatarPreset ?? null;
         session.user.image = token.picture ?? null;
       }
-      return session;
+      return session.user ? { ...session, user: { ...session.user, email: token.email ?? null } } : session;
     },
   },
   providers: [], // populated in auth.ts

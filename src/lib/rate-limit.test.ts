@@ -40,3 +40,12 @@ describe("checkRateLimit", () => {
     expect(second.allowed).toBe(false);
   });
 });
+
+describe("paid transport shared limiter", () => {
+  it("never falls back to per-process memory when shared Redis is required", async () => {
+    vi.resetModules(); redisEval.mockRejectedValue(new Error("offline"));
+    const { checkRateLimit } = await import("@/lib/rate-limit");
+    expect(await checkRateLimit("sms:first", 1, 60000, { requireRedis: true })).toMatchObject({ allowed: false, unavailable: true });
+    expect(await checkRateLimit("sms:second", 1, 60000, { requireRedis: true })).toMatchObject({ allowed: false, unavailable: true });
+  });
+});

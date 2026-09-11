@@ -56,7 +56,7 @@ function nextButton(name: RegExp | string) {
 
 // 步骤内容渲染在 role="group" 容器内，在其中查询可避免命中步骤导航标题
 function stepContent() {
-  return within(screen.getByRole("group"));
+  return within(screen.getAllByRole("group").find((element) => element.getAttribute("aria-label") !== "注册方式")!);
 }
 
 // These cases verify agreement gates, not per-keystroke input behavior. Paste

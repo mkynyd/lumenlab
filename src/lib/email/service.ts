@@ -29,7 +29,7 @@ import {
 
 export type SendEmailResult =
   | { ok: true }
-  | { ok: false; reason: "rate_limited" | "send_failed" };
+  | { ok: false; reason: "rate_limited" | "send_failed" | "unavailable" };
 
 /**
  * EmailLog.kind / SES 回调头沿用 legacy 取值（verify / reset）。
@@ -136,10 +136,11 @@ async function deliverTemplateEmail(input: {
  * channel 由当前唯一的 email 通道决定）；邮件层是 email channel 的实现。
  */
 export async function sendVerificationEmail(
-  input: { email: string; ip: string },
+  input: { email: string; ip: string; purpose?: "register" | "bind_identity"; userId?: string },
   opts: { now?: Date } = {}
 ): Promise<SendEmailResult> {
   const email = normalizeEmail(input.email);
+  if (input.purpose === "bind_identity" && !getTemplateId("bind_identity")) return { ok: false, reason: "unavailable" };
   const allowed = await checkSendLimits(
     email,
     input.ip,
@@ -151,24 +152,24 @@ export async function sendVerificationEmail(
   if (await isBlockedForSending(email)) return { ok: true };
 
   const start = await createVerificationChallenge(
-    { purpose: "register", target: email },
+    { purpose: input.purpose ?? "register", target: email, userId: input.userId },
     { repository: authChallengeRepository, now: opts.now }
   );
   // 模板链接域名固定为生产域名，变量只承载 token
-  const verifyToken = `${start.challengeId}.${start.rawToken}`;
-  const templateData = buildVerifyTemplateData(start.code, verifyToken);
+  const verifyToken = start.rawToken ? `${start.challengeId}.${start.rawToken}` : "";
+  const templateData = input.purpose === "bind_identity" ? { code: start.code } : buildVerifyTemplateData(start.code, verifyToken);
   const rendered = {
     code: start.code,
     verifyToken,
-    verifyUrl: buildVerifyUrl(start.challengeId, start.rawToken),
+    verifyUrl: start.rawToken ? buildVerifyUrl(start.challengeId, start.rawToken) : "",
     expiresAt: start.codeExpiresAt.toISOString(),
   };
 
   return deliverTemplateEmail({
-    kind: "register",
+    kind: input.purpose ?? "register",
     challengeId: start.challengeId,
     email,
-    templateId: getTemplateId("verify") ?? "",
+    templateId: getTemplateId(input.purpose === "bind_identity" ? "bind_identity" : "verify") ?? "",
     subject: buildVerifySubject(),
     templateData,
     rendered,
@@ -207,8 +208,8 @@ export async function sendPasswordResetEmail(
     templateData,
     rendered: {
       resetToken,
-      resetUrl: buildResetUrl(start.challengeId, start.rawToken),
-      expiresAt: start.tokenExpiresAt.toISOString(),
+      resetUrl: buildResetUrl(start.challengeId, start.rawToken!),
+      expiresAt: start.tokenExpiresAt!.toISOString(),
     },
   });
 }

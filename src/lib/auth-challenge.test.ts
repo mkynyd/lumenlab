@@ -126,14 +126,15 @@ describe("createVerificationChallenge", () => {
     );
 
     expect(repository.invalidateActiveChallenges).toHaveBeenCalledWith(
-      "  New@Example.com ",
+      "new@example.com",
       "register",
-      NOW
+      NOW,
+      { channel: "email", userId: undefined }
     );
     expect(repository.createChallenge).toHaveBeenCalledWith(
       expect.objectContaining({
         purpose: "register",
-        email: "  New@Example.com ",
+        email: "new@example.com",
       })
     );
   });
@@ -148,7 +149,8 @@ describe("createVerificationChallenge", () => {
     expect(repository.invalidateActiveChallenges).toHaveBeenCalledWith(
       EMAIL,
       "password_reset",
-      NOW
+      NOW,
+      { channel: "email", userId: "user-1" }
     );
     expect(repository.createChallenge).toHaveBeenCalledWith(
       expect.objectContaining({ purpose: "password_reset", userId: "user-1" })
@@ -167,15 +169,17 @@ describe("createEmailChallenge", () => {
     expect(repository.invalidateActiveChallenges).toHaveBeenCalledWith(
       EMAIL,
       "register",
-      NOW
+      NOW,
+      { channel: "email", userId: undefined }
     );
     expect(repository.createChallenge).toHaveBeenCalledWith({
       purpose: "register",
+      channel: "email",
       email: EMAIL,
       userId: undefined,
       codeHash: sha256(start.code),
       codeExpiresAt: new Date(NOW.getTime() + CODE_TTL_MS),
-      tokenHash: sha256(start.rawToken),
+      tokenHash: sha256(start.rawToken!),
       tokenExpiresAt: new Date(NOW.getTime() + TOKEN_TTL_MS),
     });
     expect(start.code).toMatch(/^\d{6}$/);
@@ -288,7 +292,8 @@ describe("verifyWithCode", () => {
     expect(result).toMatchObject({ ok: true });
     expect(repository.findActiveByEmail).toHaveBeenCalledWith(
       EMAIL,
-      "password_reset"
+      "password_reset",
+      { channel: "email", userId: undefined }
     );
   });
 });

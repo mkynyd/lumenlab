@@ -6,11 +6,11 @@
  * 模板变量使用腾讯云格式 {{code}} / {{verifyUrl}} / {{resetUrl}}。
  */
 
-export type EmailKind = "verify" | "reset";
+export type EmailKind = "verify" | "reset" | "bind_identity";
 
 export function getTemplateId(kind: EmailKind): string | null {
   const value =
-    kind === "verify"
+    kind === "bind_identity" ? process.env.SES_TEMPLATE_BIND_IDENTITY : kind === "verify"
       ? process.env.SES_TEMPLATE_VERIFY
       : process.env.SES_TEMPLATE_RESET;
   return value?.trim() ? value.trim() : null;

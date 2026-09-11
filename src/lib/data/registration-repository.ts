@@ -3,18 +3,18 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { findDefaultCredentialProfile } from "@/lib/profile-default";
 import { createAuthIdentityRepository } from "@/lib/data/auth-identity-repository";
-import { resolveChallengeTarget } from "@/lib/auth-challenge";
+import { resolveChallengeTarget, resolveChallengeChannel, resolveChallengePurpose } from "@/lib/auth-challenge";
 import { normalizeEmail } from "@/lib/auth/identifier";
 import type {
   ChallengeTicketRow,
   RegistrationRepository,
 } from "@/lib/register-user";
-import type { AuthIdentityRepository } from "@/lib/auth/identity";
+import type { LocalIdentityRepository } from "@/lib/auth/identity";
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
 
 class PrismaRegistrationRepository implements RegistrationRepository {
-  private readonly identities: AuthIdentityRepository;
+  private readonly identities: LocalIdentityRepository;
 
   constructor(
     private readonly client: DatabaseClient,
@@ -23,6 +23,21 @@ class PrismaRegistrationRepository implements RegistrationRepository {
     // 身份读写走同一个 client，因此在 transaction() 内创建 email Identity
     // 与创建 User 处于同一数据库事务。
     this.identities = createAuthIdentityRepository(client);
+  }
+
+  findIdentity(input: Parameters<LocalIdentityRepository["findIdentity"]>[0]) {
+    return this.identities.findIdentity(input);
+  }
+  findIdentitiesByUserId(userId: string) { return this.identities.findIdentitiesByUserId(userId); }
+  createIdentity(input: Parameters<LocalIdentityRepository["createIdentity"]>[0]) {
+    return this.identities.createIdentity(input);
+  }
+  async bindLegacyEmail(userId: string, email: string, verifiedAt: Date, source: string) {
+    const result = await this.client.user.updateMany({
+      where: { id: userId, email: null },
+      data: { email, emailVerifiedAt: verifiedAt, emailVerificationSource: source },
+    });
+    return result.count === 1;
   }
 
   findEmailIdentity(providerAccountId: string) {
@@ -55,6 +70,10 @@ class PrismaRegistrationRepository implements RegistrationRepository {
         id: true,
         email: true,
         target: true,
+        channel: true,
+        purpose: true,
+        type: true,
+        userId: true,
         verifiedAt: true,
         verifiedVia: true,
         ticketHash: true,
@@ -69,6 +88,9 @@ class PrismaRegistrationRepository implements RegistrationRepository {
     return {
       id: row.id,
       target: resolveChallengeTarget(row),
+      channel: resolveChallengeChannel(row),
+      purpose: resolveChallengePurpose(row),
+      userId: row.userId,
       verifiedAt: row.verifiedAt,
       verifiedVia: row.verifiedVia,
       ticketHash: row.ticketHash,
@@ -101,15 +123,15 @@ class PrismaRegistrationRepository implements RegistrationRepository {
   }
 
   createUser(input: {
-    email: string;
+    email: string | null;
     passwordHash: string;
     credentialProfileId: string;
-    emailVerifiedAt: Date;
+    emailVerifiedAt: Date | null;
     emailVerificationSource: string;
   }) {
     return this.client.user.create({
       data: {
-        email: normalizeEmail(input.email),
+        email: input.email === null ? null : normalizeEmail(input.email),
         passwordHash: input.passwordHash,
         credentialProfileId: input.credentialProfileId,
         // legacy 兼容字段：本阶段继续双写（Contract Migration 时再评估移除）

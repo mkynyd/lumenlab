@@ -6,11 +6,12 @@ import Link from "next/link";
 import { Check, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { PasswordStrength } from "@/components/auth/password-strength";
+import { parseLoginIdentifier, maskIdentifier, type IdentityType } from "@/lib/auth/identifier";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Stepper, type Step } from "@/components/ui/stepper";
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isEmail = (value: string) => parseLoginIdentifier(value)?.type === "email";
 const CODE_PATTERN = /^\d{6}$/;
 
 type ErrorField = "email" | "code" | "password" | "confirm" | null;
@@ -28,12 +29,15 @@ function RegisterFlow() {
     searchParams.get("verified") === "1" &&
     linkTicket.length > 0 &&
     linkTicket.length <= 200 &&
-    EMAIL_PATTERN.test(linkEmail);
+    isEmail(linkEmail);
   const linkFailed =
     searchParams.get("verify") === "failed" ||
     (searchParams.get("verified") === "1" && !isVerifiedLink);
 
   const [step, setStep] = useState(() => (isVerifiedLink ? 2 : 0));
+  const [method, setMethod] = useState<IdentityType>("email");
+  const label = method === "email" ? "邮箱" : "手机号";
+  const [lastSent, setLastSent] = useState("");
   const [email, setEmail] = useState(() => (isVerifiedLink ? linkEmail : ""));
   const [ticket, setTicket] = useState<string | null>(() =>
     isVerifiedLink ? linkTicket : null
@@ -83,16 +87,15 @@ function RegisterFlow() {
 
   /** 发送验证邮件；失败时设置错误并抛出让 Stepper 停留在当前步 */
   async function sendVerification() {
-    if (!EMAIL_PATTERN.test(email.trim())) {
-      fail("邮箱格式不正确", "email");
-    }
+    const identifier = parseLoginIdentifier(email);
+    if (!identifier || identifier.type !== method) fail(`${label}格式不正确`, "email");
     const { res, data } = await postJson("/api/auth/verify/send", {
-      email: email.trim(),
+      identifier: email.trim(),
     }).catch(() => fail("网络异常，请稍后重试", null));
 
     if (!res.ok) {
       if (res.status === 409) {
-        fail("该邮箱已被注册", "email", true);
+        fail(`该${label}已被注册`, "email", true);
       }
       if (res.status === 429) {
         fail("请求太频繁，请稍后再试", null);
@@ -102,7 +105,7 @@ function RegisterFlow() {
           ? data.error.email[0]
           : typeof data.error === "string"
             ? data.error
-            : "邮件发送失败，请稍后重试";
+            : "验证码发送失败，请稍后重试";
       fail(message, typeof data.error === "object" ? "email" : null);
     }
 
@@ -110,6 +113,7 @@ function RegisterFlow() {
     setErrorField(null);
     setShowLoginLink(false);
     setResendLeft(data.resendAfter ?? 60);
+    setLastSent(email.trim());
   }
 
   /** 验证码通道：换取注册 ticket */
@@ -118,7 +122,7 @@ function RegisterFlow() {
       fail("验证码应为 6 位数字", "code");
     }
     const { res, data } = await postJson("/api/auth/verify/code", {
-      email: email.trim(),
+      identifier: email.trim(),
       code,
     }).catch(() => fail("网络异常，请稍后重试", null));
 
@@ -156,11 +160,11 @@ function RegisterFlow() {
     }
     if (!ticket) {
       setStep(0);
-      fail("请先完成邮箱验证", null);
+      fail("请先完成身份验证", null);
     }
 
     const { res, data } = await postJson("/api/auth/register", {
-      email: email.trim(),
+      identifier: email.trim(),
       password,
       ticket,
     }).catch(() => fail("网络异常，请稍后重试", null));
@@ -168,7 +172,7 @@ function RegisterFlow() {
     if (!res.ok) {
       if (res.status === 409) {
         setStep(0);
-        fail("该邮箱已被注册", "email", true);
+        fail(`该${label}已被注册`, "email", true);
       }
       if (res.status === 429) {
         fail("请求太频繁，请稍后再试", null);
@@ -192,7 +196,7 @@ function RegisterFlow() {
 
   async function handleStepChange(next: number) {
     if (step === 0 && next === 1) {
-      await sendVerification();
+      if (lastSent !== email.trim() || resendLeft <= 0) await sendVerification();
     } else if (step === 1 && next === 2) {
       await verifyCode();
     } else if (step === 2 && next === 3) {
@@ -233,7 +237,7 @@ function RegisterFlow() {
   const steps: Step[] = [
     {
       id: "email",
-      title: "填写邮箱",
+      title: `填写${label}`,
       isValid: email.trim().length > 0,
       content: (
         <div className="space-y-4">
@@ -242,23 +246,23 @@ function RegisterFlow() {
               htmlFor="email"
               className="block text-sm font-medium text-[var(--color-text-primary)]"
             >
-              邮箱
+              {label}
             </label>
             <Input
               id="email"
               name="email"
-              type="email"
-              autoComplete="email"
+              type={method === "email" ? "email" : "tel"}
+              autoComplete={method === "email" ? "email" : "tel"}
               required
-              placeholder="you@example.com"
+              placeholder={method === "email" ? "you@example.com" : "11 位大陆手机号或 +86"}
               className="h-11 px-3"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => { setEmail(event.target.value); setTicket(null); setCode(""); }}
               aria-invalid={errorField === "email" || undefined}
               aria-describedby={error ? errorId : undefined}
             />
             <p className="text-xs text-[var(--color-text-tertiary)]">
-              我们将向该邮箱发送验证邮件（验证码 + 验证链接）
+              {method === "email" ? "我们将向该邮箱发送验证邮件（验证码 + 验证链接）" : "发送 6 位短信验证码，有效期 5 分钟"}
             </p>
           </div>
           {errorBlock}
@@ -267,7 +271,7 @@ function RegisterFlow() {
     },
     {
       id: "verify",
-      title: "邮箱验证",
+      title: `${label}验证`,
       isValid: CODE_PATTERN.test(code),
       content: (
         <div className="space-y-4">
@@ -296,7 +300,7 @@ function RegisterFlow() {
               aria-describedby={error ? errorId : undefined}
             />
             <p className="text-xs text-[var(--color-text-tertiary)]">
-              验证邮件已发送至 {email}，也可以直接点击邮件中的验证链接
+              {method === "email" ? `验证邮件已发送至 ${email}，也可以直接点击邮件中的验证链接` : `短信验证码已发送至 ${maskIdentifier(parseLoginIdentifier(email)?.providerAccountId ?? email)}`}
             </p>
           </div>
           {errorBlock}
@@ -440,7 +444,7 @@ function RegisterFlow() {
   return (
     <AuthShell
       title="创建你的账户"
-      subtitle="完成邮箱验证，建立属于你的 LumenLab 学习工作台。"
+      subtitle="验证邮箱或手机号，建立属于你的 LumenLab 学习工作台。"
       footer={
         <>
           已有账户？{" "}
@@ -453,6 +457,14 @@ function RegisterFlow() {
         </>
       }
     >
+      {step === 0 && <div className="mb-5 flex gap-2" role="group" aria-label="注册方式">
+        {(["email", "phone"] as const).map((type) => <button key={type} type="button"
+          aria-pressed={method === type}
+          className={`h-9 flex-1 rounded-md px-3 text-sm transition-colors ${method === type ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)]"}`}
+          onClick={() => { setMethod(type); setEmail(""); setCode(""); setTicket(null); setError(null); setErrorField(null); setPassword(""); setConfirmPassword(""); }}>
+          {type === "email" ? "邮箱" : "手机号"}
+        </button>)}
+      </div>}
       <Stepper
         steps={steps}
         currentStep={step}
@@ -461,7 +473,7 @@ function RegisterFlow() {
         allowForwardJump={false}
         variant="dots"
         nextLabel={
-          step === 0 ? "发送验证邮件" : step === 1 ? "验证" : "创建账户"
+          step === 0 ? (method === "email" ? "发送验证邮件" : "发送短信验证码") : step === 1 ? "验证" : "创建账户"
         }
         completeLabel="去登录"
         pendingLabel={

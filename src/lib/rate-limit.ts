@@ -5,6 +5,7 @@ export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   resetTime: number;
+  unavailable?: boolean;
 }
 
 interface RateLimitEntry {
@@ -85,10 +86,12 @@ function checkMemoryRateLimit(
 export async function checkRateLimit(
   key: string,
   maxRequests: number,
-  windowMs: number
+  windowMs: number,
+  options: { requireRedis?: boolean } = {}
 ): Promise<RateLimitResult> {
   const now = Date.now();
   if (now < redisUnavailableUntil) {
+    if (options.requireRedis) return { allowed: false, remaining: 0, resetTime: redisUnavailableUntil, unavailable: true };
     return checkMemoryRateLimit(key, maxRequests, windowMs, now);
   }
 
@@ -109,11 +112,15 @@ export async function checkRateLimit(
     };
   } catch {
     redisUnavailableUntil = now + 30_000;
+    if (options.requireRedis) return { allowed: false, remaining: 0, resetTime: redisUnavailableUntil, unavailable: true };
     return checkMemoryRateLimit(key, maxRequests, windowMs, now);
   }
 }
 
 export const RateLimits = {
+  SMS_RESEND: { max: 1, window: 60_000 },
+  SMS_TARGET_DAY: { max: 10, window: 86_400_000 },
+  SMS_SEND_IP: { max: 5, window: 600_000 },
   LOGIN: { max: 5, window: 60_000 },
   REGISTER: { max: 3, window: 60_000 },
   CHAT: { max: 30, window: 60_000 },

@@ -1,30 +1,47 @@
-/**
- * 认证标识规范化（单一实现）。
- *
- * 认证、注册、密码重设等所有路径都必须经过这里，禁止各自实现不同的 normalize
- * 逻辑，否则会出现“登录能找到、注册却认为不存在”的账户重复问题。
- *
- * 当前阶段只有 email；phone 等标识在下一阶段接入时在此扩展，
- * 不要提前引入尚未需要的通用策略框架。
- */
+/** The single normalization boundary for local login aliases. Client-safe. */
+import { z } from "zod";
 
-/**
- * 邮箱规范化：trim + lowercase。
- *
- * 所有写入与查询 AuthIdentity.providerAccountId 的地方都必须先过这里，
- * 保证大小写与首尾空格不会绕过唯一性约束。
- */
+export type IdentityType = "email" | "phone";
+export type LoginIdentifier = {
+  type: IdentityType;
+  provider: "local";
+  providerAccountId: string;
+  channel: "email" | "sms";
+};
+
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/** 判断字符串是否为 `local@domain` 形状的邮箱（非 RFC 完整校验） */
 export function isEmailIdentifier(value: string): boolean {
-  const at = value.indexOf("@");
-  return at > 0 && at === value.lastIndexOf("@") && at < value.length - 1;
+  return z.email().safeParse(value).success;
 }
 
-/** 邮箱是否可规范化（空串或缺少 @ 视为不可用标识） */
 export function isNormalizableEmail(email: string): boolean {
   return isEmailIdentifier(normalizeEmail(email));
+}
+
+/** Mainland mobile only: accept 11 digits or +86, store canonical E.164. */
+export function normalizePhone(value: string): string | null {
+  const phone = value.trim();
+  const national = phone.startsWith("+86") ? phone.slice(3) : phone;
+  return /^1[3-9]\d{9}$/.test(national) ? `+86${national}` : null;
+}
+
+export function parseLoginIdentifier(value: unknown): LoginIdentifier | null {
+  if (typeof value !== "string" || value.length > 254) return null;
+  const email = normalizeEmail(value);
+  if (isEmailIdentifier(email)) {
+    return { type: "email", provider: "local", providerAccountId: email, channel: "email" };
+  }
+  const phone = normalizePhone(value);
+  return phone ? { type: "phone", provider: "local", providerAccountId: phone, channel: "sms" } : null;
+}
+
+export function maskIdentifier(value: string): string {
+  const identifier = parseLoginIdentifier(value);
+  if (!identifier) return "未绑定";
+  if (identifier.type === "phone") return `${identifier.providerAccountId.slice(0, 6)}****${identifier.providerAccountId.slice(-4)}`;
+  const [local, domain] = identifier.providerAccountId.split("@");
+  return `${local.slice(0, 1)}***@${domain}`;
 }

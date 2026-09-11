@@ -166,7 +166,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 ### 注册码与集中认证
 
 - 登录与注册采用响应式双栏界面：桌面端在表单旁提供可手动切换的产品能力介绍，移动端聚焦认证流程；注册密码步骤会实时展示强度等级与逐项安全建议。
-- 用户注册需要提供邮箱、邮箱验证和密码；注册码在注册后于设置「服务访问」页绑定，用于切换密钥组。
+- 用户可选择邮箱或中国大陆手机号，先通过验证码证明身份，再设置账户密码。邮箱也支持一次性验证链接。日常登录使用“邮箱或手机号 + 密码”；设置「账号安全」可绑定另一种身份，两种身份共享同一个账户和密码。注册码在注册后于设置「服务访问」页绑定，用于切换密钥组。
 - 注册码由独立部署的管理端生成和发布，主应用只接收加密同步快照。
 - API Key 集中加密存储，用户无法查看明文。
 - 同步协议使用 RSA-OAEP + AES-256-GCM + HMAC 防篡改和重放。
@@ -223,7 +223,7 @@ src/
 │       ├── learning/today/              # 今日学习聚合
 │       ├── projects/[id]/learning/      # Goal/Scope/Map/Practice/Review API
 │       ├── auth/[...nextauth]/         # NextAuth 认证路由
-│       ├── auth/register/              # 邮箱验证注册
+│       ├── auth/register/              # 邮箱/手机号验证注册
 │       ├── projects/                   # 项目 CRUD
 │       ├── conversations/              # 对话管理
 │       ├── files/                      # 文件上传、解析、下载、增强
@@ -466,7 +466,7 @@ npx prisma migrate deploy
 npm run dev
 ```
 
-打开 `http://localhost:3000`。中央模式使用邮箱 + 验证码注册；自托管开发模式可先运行 `USER_API_KEYS_ENABLED=1 npm run seed:dev-access` 创建本地账号与凭据。
+打开 `http://localhost:3000`。中央模式使用邮箱或大陆手机号验证注册；自托管开发模式可先运行 `USER_API_KEYS_ENABLED=1 npm run seed:dev-access` 创建本地账号与凭据。
 
 ## 使用指南
 
@@ -546,3 +546,13 @@ npx prisma migrate status
 - 遵循项目现有的代码组织模式。
 - API Key 等敏感信息禁止硬编码。
 - 新增 Agent Tool 时在 `src/lib/tools/registry.ts` 注册并补测试；新增 Skill 时在 `.lumenlab/skills/<category>/<skill>/` 提供 `SKILL.md` 与 `policy.json`。
+
+### 手机号认证配置
+
+短信使用 `@alicloud/dypnsapi20170525@2.0.0` 的 `SendSmsVerifyCode`，endpoint 固定为 `dypnsapi.aliyuncs.com`。LumenLab 自行生成、保存验证码 Hash 并完成校验；短信验证码仅用于注册和绑定，不用于登录或找回密码。
+
+- 配置 `ALIYUN_SMS_SIGN_NAME`、`ALIYUN_SMS_TEMPLATE_CODE_REGISTER`、`ALIYUN_SMS_TEMPLATE_CODE_BIND_IDENTITY`；模板变量为实际验证码 `code` 和分钟数 `min`。`ALIYUN_SMS_SCHEME_NAME` 可选。
+- 使用 Alibaba 默认 Credential chain。可配置工作负载角色，或 `ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET`；临时凭据另需 `ALIBABA_CLOUD_SECURITY_TOKEN`。应用 RAM 最小权限为 `dypns:SendSmsVerifyCode`、Resource `*`，不需要 `CheckSmsVerifyCode` 权限。
+- 邮箱绑定复用腾讯 SES，另配置验证码专用 `SES_TEMPLATE_BIND_IDENTITY`，模板见 `assets/ses-templates/bind-identity.html`；原邮箱注册/重设密码模板不变。
+- SMS code 有效期 5 分钟，邮箱 code 15 分钟，Ticket 15 分钟；同目标/用途 60 秒重发间隔、每号码 10 次/24 小时、每 IP 5 次/10 分钟。必须配置共享 `REDIS_URL`，Redis 不可用时短信暂停发送。
+- 本阶段不支持换绑、解绑、国际号码和短信找回密码。部署前需启用阿里云号码认证服务并配置可用签名/模板；自动测试使用注入的 mock，不发送真实短信。

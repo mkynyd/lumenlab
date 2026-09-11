@@ -4,8 +4,8 @@
  * 职责分层：
  * - `User` 是 LumenLab 内部账户，Project / Conversation / Research / Paper /
  *   Learning / Artifact 等全部业务数据只关联 `User.id`。
- * - `AuthIdentity` 描述“用户可以使用什么标识找到这个账户”。当前阶段只使用
- *   email identity（type="email", provider="local"）。
+ * - `AuthIdentity` 描述“用户可以使用什么标识找到这个账户”。Phase 2 使用
+ *   email 与 phone identity（provider="local"）。
  * - 密码属于账户级凭证，`passwordHash` 仍保留在 `User`；一个用户将来无论用
  *   邮箱还是手机号作为 identifier，都共享同一个账户密码。
  *
@@ -19,18 +19,18 @@
  * 本模块为纯领域逻辑（repository 注入），不直接依赖 Prisma。
  */
 
-import { normalizeEmail } from "@/lib/auth/identifier";
+import { normalizeEmail, isNormalizableEmail, parseLoginIdentifier, type LoginIdentifier, type IdentityType } from "@/lib/auth/identifier";
 
 export const AUTH_IDENTITY_TYPE_EMAIL = "email";
 export const AUTH_IDENTITY_PROVIDER_LOCAL = "local";
 
-/** 当前阶段唯一在用的 identity 标识 */
+/** Legacy email identity constants retained for the Expand compatibility path. */
 export const EMAIL_IDENTITY = {
   type: AUTH_IDENTITY_TYPE_EMAIL,
   provider: AUTH_IDENTITY_PROVIDER_LOCAL,
 } as const;
 
-export type AuthIdentityType = typeof AUTH_IDENTITY_TYPE_EMAIL;
+export type AuthIdentityType = IdentityType;
 export type AuthIdentityProvider = typeof AUTH_IDENTITY_PROVIDER_LOCAL;
 
 export interface AuthIdentityRow {
@@ -120,7 +120,7 @@ export async function resolveEmailIdentity(
   repository: AuthIdentityRepository
 ): Promise<EmailIdentityResolution> {
   const normalized = normalizeEmail(email);
-  if (!normalized) return { kind: "not_found" };
+  if (!isNormalizableEmail(normalized)) return { kind: "not_found" };
 
   const identity = await repository.findEmailIdentity(normalized);
   const legacyUser = await repository.getUserByNormalizedEmail(normalized);
@@ -196,7 +196,7 @@ export async function checkEmailIdentityAvailability(
   repository: AuthIdentityRepository
 ): Promise<EmailIdentityAvailability> {
   const normalized = normalizeEmail(email);
-  if (!normalized) return { kind: "conflict" };
+  if (!isNormalizableEmail(normalized)) return { kind: "conflict" };
 
   const legacyUser = await repository.getUserByNormalizedEmail(normalized);
   if (!legacyUser) {
@@ -250,4 +250,30 @@ export async function resolveEmailVerificationState(
   const legacyUser = await repository.getUserByNormalizedEmail(normalized);
   if (!legacyUser) return null;
   return { verifiedAt: legacyUser.emailVerifiedAt, source: "legacy-user" };
+}
+
+/** Generic local identities; email-only wrappers remain for the Expand window. */
+export interface LocalIdentityRepository extends AuthIdentityRepository {
+  findIdentity(input: Pick<LoginIdentifier, "type" | "provider" | "providerAccountId">): Promise<AuthIdentityRow | null>;
+  findIdentitiesByUserId(userId: string): Promise<AuthIdentityRow[]>;
+  createIdentity(input: {
+    type: IdentityType; userId: string; providerAccountId: string;
+    verifiedAt: Date | null; verificationSource: string;
+  }): Promise<AuthIdentityRow | null>;
+}
+
+export async function resolveIdentity(value: string, repository: LocalIdentityRepository): Promise<EmailIdentityResolution> {
+  const identifier = parseLoginIdentifier(value);
+  if (!identifier) return { kind: "not_found" };
+  if (identifier.type === "email") return resolveEmailIdentity(identifier.providerAccountId, repository);
+  const identity = await repository.findIdentity(identifier);
+  return identity ? { kind: "resolved", identity, userId: identity.userId, selfHealed: false } : { kind: "not_found" };
+}
+
+export async function checkIdentityAvailability(value: string, repository: LocalIdentityRepository): Promise<EmailIdentityAvailability> {
+  const identifier = parseLoginIdentifier(value);
+  if (!identifier) return { kind: "conflict" };
+  if (identifier.type === "email") return checkEmailIdentityAvailability(identifier.providerAccountId, repository);
+  const identity = await repository.findIdentity(identifier);
+  return identity ? { kind: "taken", userId: identity.userId, verified: identity.verifiedAt !== null } : { kind: "available", legacyUserId: null };
 }
