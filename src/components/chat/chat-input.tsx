@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FileText, Globe, Paperclip, Plus, Send, StopCircle, X } from "lucide-react";
+import { ArrowUp, FileText, Globe, Paperclip, Plus, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -253,9 +253,7 @@ export function ChatInput({
       <form
         onSubmit={handleSubmit}
         autoComplete="off"
-        className={cn(
-          "mx-auto w-full max-w-[48rem] shrink-0 space-y-2 bg-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pb-4"
-        )}
+        className="mx-auto flex w-full max-w-[48rem] shrink-0 flex-col gap-2 bg-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pb-4"
       >
       {blockedReason && (
         <div
@@ -271,11 +269,9 @@ export function ChatInput({
           </span>
         </div>
       )}
-      <div
-        className="workbench-input-dock rounded-[28px] border border-[var(--color-border-light)] bg-[var(--color-control)] p-1.5 sm:p-2"
-      >
+      <div className="workbench-input-dock rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-control)] transition-colors focus-within:border-[var(--color-border-strong)]">
         {attachments.length > 0 && (
-          <div className="mb-1.5 flex flex-wrap gap-1.5 px-1">
+          <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">
             {attachments.map((attachment) => (
               <AttachmentPreviewChip
                 key={attachment.id}
@@ -293,23 +289,10 @@ export function ChatInput({
           onChange={(event) => addFiles(event.target.files)}
         />
         {contextHint && (
-          <p className="mb-0.5 truncate px-2 text-xs text-[var(--color-text-tertiary)]">
+          <p className="truncate px-3.5 pt-2.5 text-xs text-[var(--color-text-tertiary)]">
             {contextHint}
           </p>
         )}
-        <div className="flex items-end gap-1 sm:block">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-lg"
-            disabled={disabled || isStreaming}
-            onClick={() => setMobileToolsOpen(true)}
-            className="size-11 rounded-full sm:hidden"
-            aria-label="更多输入选项"
-            aria-expanded={mobileToolsOpen}
-          >
-            <Plus size={20} strokeWidth={2} />
-          </Button>
           <Textarea
             ref={textareaRef}
             aria-label="消息内容"
@@ -321,31 +304,26 @@ export function ChatInput({
             disabled={disabled}
             autoComplete="off"
             className={cn(
-              "max-h-40 min-h-11 flex-1 resize-none border-0 bg-transparent! px-1.5 py-2.5 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 sm:px-2 sm:py-2",
+              "block max-h-40 min-h-14 w-full resize-none border-0 bg-transparent! px-3.5 pb-1 pt-3 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0",
               "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
               "focus:outline-none disabled:opacity-50"
             )}
             style={textareaStyle}
           />
-          <div className="hidden sm:block">
-          <div className="mt-1.5 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  disabled={disabled || isStreaming}
-                  onClick={() => fileInputRef.current?.click()}
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 rounded-full"
-                  aria-label="添加附件"
-                >
-                  <Paperclip size={17} strokeWidth={2} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">添加附件</TooltipContent>
-            </Tooltip>
+        <div className="flex items-center gap-1.5 px-3 pb-3 pt-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={disabled || isStreaming}
+            onClick={() => setMobileToolsOpen(true)}
+            className="shrink-0 rounded-[var(--radius-md)] sm:hidden"
+            aria-label="更多输入选项"
+            aria-expanded={mobileToolsOpen}
+          >
+            <Plus />
+          </Button>
+          <div className="hidden min-w-0 items-center gap-1.5 sm:flex">
             {model && onModelChange && (
               <ModelSelector
                 model={model}
@@ -357,6 +335,22 @@ export function ChatInput({
                 compact
               />
             )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  disabled={disabled || isStreaming}
+                  onClick={() => fileInputRef.current?.click()}
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 rounded-[var(--radius-md)]"
+                  aria-label="添加附件"
+                >
+                  <Paperclip />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">添加附件</TooltipContent>
+            </Tooltip>
             {onSkillChange && (
               <SkillSelector
                 value={skillValue}
@@ -375,13 +369,13 @@ export function ChatInput({
                     onClick={onWebSearchToggle}
                     disabled={isStreaming || disabled}
                     className={cn(
-                      "shrink-0 rounded-full",
+                      "shrink-0 rounded-[var(--radius-md)]",
                       webSearchActive && "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                     )}
                     aria-label={webSearchActive ? "关闭联网搜索" : "打开联网搜索"}
                     aria-pressed={webSearchActive}
                   >
-                    <Globe size={17} strokeWidth={webSearchActive ? 2.5 : 2} />
+                    <Globe strokeWidth={webSearchActive ? 2.5 : 2} />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top">
@@ -397,11 +391,11 @@ export function ChatInput({
                   type="button"
                   onClick={onStop}
                   variant="destructive"
-                  size="icon-lg"
-                  className="shrink-0 rounded-full"
+                  size="icon-sm"
+                  className="ml-auto shrink-0 rounded-[var(--radius-md)]"
                   aria-label="停止生成"
                 >
-                  <StopCircle size={17} strokeWidth={2} />
+                  <StopCircle />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top">停止生成</TooltipContent>
@@ -411,45 +405,18 @@ export function ChatInput({
               <TooltipTrigger asChild>
                 <Button
                   type="submit"
-                  disabled={!hasSendableContent || disabled || Boolean(blockedReason)}
+                  disabled={!hasSendableContent || disabled || isSubmitting || Boolean(blockedReason)}
                   variant="primary"
-                  size="icon-lg"
-                  className="shrink-0 rounded-full"
+                  size="icon-sm"
+                  className="ml-auto shrink-0 rounded-[var(--radius-md)]"
                   aria-label="发送消息"
                 >
-                  <Send size={17} strokeWidth={2} />
+                  <ArrowUp />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top">发送消息</TooltipContent>
             </Tooltip>
           )}
-        </div>
-          </div>
-          <div className="sm:hidden">
-            {isStreaming ? (
-              <Button
-                type="button"
-                onClick={onStop}
-                variant="destructive"
-                size="icon-lg"
-                className="size-11 rounded-full"
-                aria-label="停止生成"
-              >
-                <StopCircle size={18} strokeWidth={2} />
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                disabled={!hasSendableContent || disabled || Boolean(blockedReason)}
-                variant="primary"
-                size="icon-lg"
-                className="size-11 rounded-full"
-                aria-label="发送消息"
-              >
-                <Send size={18} strokeWidth={2} />
-              </Button>
-            )}
-          </div>
         </div>
       </div>
       <Dialog open={mobileToolsOpen} onOpenChange={setMobileToolsOpen}>
