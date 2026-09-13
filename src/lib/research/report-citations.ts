@@ -198,6 +198,8 @@ function stringArray(value: unknown, maximum: number): string[] {
 export function buildResearchBibliography(input: {
   evidence: BibliographyEvidenceInput[];
   relations?: BibliographyRelationInput[];
+  /** 只展示最终正文实际引用的 Evidence，并按首次引用顺序排列。 */
+  citedEvidenceIds?: string[];
 }): ResearchBibliographyEntry[] {
   const graphTargets = new Set<string>();
   const graphRelationsBySource = new Map<string, Set<string>>();
@@ -209,8 +211,12 @@ export function buildResearchBibliography(input: {
     graphRelationsBySource.set(relation.targetSourceId, set);
   }
 
+  const citedOrder = input.citedEvidenceIds ? new Map(input.citedEvidenceIds.map((id, index) => [id, index])) : null;
+  const selectedEvidence = citedOrder
+    ? input.evidence.filter((item) => citedOrder.has(item.id)).sort((left, right) => citedOrder.get(left.id)! - citedOrder.get(right.id)!)
+    : input.evidence;
   const bySource = new Map<string, ResearchBibliographyEntry>();
-  for (const evidence of input.evidence) {
+  for (const evidence of selectedEvidence) {
     const source = evidence.sourceSnapshot.source;
     const existing = bySource.get(source.id);
     const scope = evidenceScopeOf(evidence);

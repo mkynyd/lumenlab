@@ -1,9 +1,16 @@
 import type {
   ResearchBudgetLimits,
   ResearchBudgetProfile,
+  ResearchFinalizationBudgetReserve,
   ResearchStopDecision,
   ResearchStopInput,
 } from "./contracts";
+
+export const RESEARCH_FINALIZATION_RESERVES: Record<ResearchBudgetProfile, ResearchFinalizationBudgetReserve> = {
+  quick: { modelCalls: 6, maxTokens: 12_000, maxCostCredits: 36 },
+  deep: { modelCalls: 6, maxTokens: 32_000, maxCostCredits: 96 },
+  comprehensive: { modelCalls: 6, maxTokens: 72_000, maxCostCredits: 220 },
+};
 
 export const RESEARCH_BUDGETS: Record<ResearchBudgetProfile, ResearchBudgetLimits> = {
   quick: {
@@ -58,6 +65,35 @@ export const RESEARCH_BUDGETS: Record<ResearchBudgetProfile, ResearchBudgetLimit
 
 export function getResearchBudget(profile: ResearchBudgetProfile): ResearchBudgetLimits {
   return { ...RESEARCH_BUDGETS[profile] };
+}
+
+export function getResearchFinalizationReserve(profile: ResearchBudgetProfile): ResearchFinalizationBudgetReserve {
+  return { ...RESEARCH_FINALIZATION_RESERVES[profile] };
+}
+
+/** Discovery/evaluation may only consume the budget left after mandatory finishing work. */
+export function getResearchExplorationBudget(profile: ResearchBudgetProfile): ResearchBudgetLimits {
+  const limits = getResearchBudget(profile);
+  const reserve = getResearchFinalizationReserve(profile);
+  return {
+    ...limits,
+    modelCalls: Math.max(0, limits.modelCalls - reserve.modelCalls),
+    maxTokens: Math.max(0, limits.maxTokens - reserve.maxTokens),
+    maxCostCredits: Math.max(0, limits.maxCostCredits - reserve.maxCostCredits),
+  };
+}
+
+export function finalizationBudgetRemaining(input: {
+  limits: ResearchBudgetLimits;
+  modelCalls: number;
+  totalTokens: number;
+  costCredits: number;
+}) {
+  return {
+    modelCalls: Math.max(0, input.limits.modelCalls - input.modelCalls),
+    maxTokens: Math.max(0, input.limits.maxTokens - input.totalTokens),
+    maxCostCredits: Math.max(0, input.limits.maxCostCredits - input.costCredits),
+  };
 }
 
 export function canStartResearcher(

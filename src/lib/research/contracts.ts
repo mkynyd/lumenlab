@@ -59,11 +59,14 @@ export type ResearchQuestionStatus = (typeof RESEARCH_QUESTION_STATUSES)[number]
 export type ResearchRole =
   | "research.planner"
   | "research.worker"
+  | "research.source_triage"
   | "research.evaluator"
   | "research.claim_extractor"
   | "research.visual_evaluator"
+  | "research.report_architect"
   | "research.synthesizer"
-  | "research.verifier";
+  | "research.verifier"
+  | "research.report_auditor";
 
 export interface ResearchBudgetLimits {
   profile: ResearchBudgetProfile;
@@ -82,6 +85,23 @@ export interface ResearchBudgetLimits {
   maxQuestionReplans: number;
 }
 
+export interface ResearchFinalizationBudgetReserve {
+  modelCalls: number;
+  maxTokens: number;
+  maxCostCredits: number;
+}
+
+export const RESEARCH_INTENT_TYPES = [
+  "factual",
+  "comparison",
+  "trend",
+  "literature_review",
+  "causal",
+  "recommendation",
+  "technical_review",
+] as const;
+export type ResearchIntentType = (typeof RESEARCH_INTENT_TYPES)[number];
+
 export interface ResearchQuestionPlan {
   key: string;
   title: string;
@@ -92,7 +112,18 @@ export interface ResearchQuestionPlan {
 }
 
 export interface ResearchPlanSnapshot {
-  schemaVersion: "1";
+  schemaVersion: "1" | "2";
+  /** 用户原始输入。Planner 可以重组研究问题，但不得改写这一字段。 */
+  originalRequest?: string;
+  objective?: string;
+  intentType?: ResearchIntentType;
+  targetTimeRange?: string | null;
+  evidenceTimeRange?: string | null;
+  scopeInclusions?: string[];
+  scopeExclusions?: string[];
+  assumptions?: string[];
+  evaluationDimensions?: string[];
+  expectedOutput?: string;
   researchGoal: string;
   scope: string;
   timeRange: string | null;

@@ -3,7 +3,7 @@ import { runAgentRuntime } from "@/lib/agent/runtime";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import { logger } from "@/lib/logger";
-import type { ResearchPriority, ResearchRole } from "./contracts";
+import { RESEARCH_INTENT_TYPES, type ResearchIntentType, type ResearchPriority, type ResearchRole } from "./contracts";
 import { selectResearchModel } from "./model-routing";
 import type { ChatModel } from "@/lib/chat/model-catalog";
 
@@ -93,11 +93,31 @@ export function parseStructuredJson<T>(content: string): T | null {
 }
 
 export interface ResearchWorkerDecision {
-  queries: string[];
+  queries: ResearchQueryStrategyItem[];
   rationale?: string;
 }
 
+export type ResearchQueryPurpose = "primary_work" | "survey" | "comparison" | "contradiction" | "baseline" | "recent_validation";
+export type ResearchSourceRole = "primary" | "secondary" | "context";
+
+export interface ResearchQueryStrategyItem {
+  query: string;
+  purpose: ResearchQueryPurpose;
+  sourceRole: ResearchSourceRole;
+  freshness: "target_period" | "retrospective_allowed" | "any";
+  questionKey: string;
+}
+
 export interface ResearchPlannerDecision {
+  objective?: string;
+  intentType?: ResearchIntentType;
+  targetTimeRange?: string | null;
+  evidenceTimeRange?: string | null;
+  scopeInclusions?: string[];
+  scopeExclusions?: string[];
+  assumptions?: string[];
+  evaluationDimensions?: string[];
+  expectedOutput?: string;
   scope?: string;
   timeRange?: string | null;
   sourceStrategy?: string[];
@@ -140,6 +160,15 @@ export function normalizeResearchPlannerDecision(value: unknown): ResearchPlanne
       }).slice(0, 8)
     : undefined;
   return {
+    objective: typeof record.objective === "string" ? record.objective.trim().slice(0, 2_000) : undefined,
+    intentType: typeof record.intentType === "string" && (RESEARCH_INTENT_TYPES as readonly string[]).includes(record.intentType) ? record.intentType as ResearchIntentType : undefined,
+    targetTimeRange: record.targetTimeRange === null ? null : typeof record.targetTimeRange === "string" ? record.targetTimeRange.trim().slice(0, 240) : undefined,
+    evidenceTimeRange: record.evidenceTimeRange === null ? null : typeof record.evidenceTimeRange === "string" ? record.evidenceTimeRange.trim().slice(0, 240) : undefined,
+    scopeInclusions: boundedStrings(record.scopeInclusions, 8, 240),
+    scopeExclusions: boundedStrings(record.scopeExclusions, 8, 240),
+    assumptions: boundedStrings(record.assumptions, 8, 240),
+    evaluationDimensions: boundedStrings(record.evaluationDimensions, 8, 120),
+    expectedOutput: typeof record.expectedOutput === "string" ? record.expectedOutput.trim().slice(0, 1_000) : undefined,
     scope: typeof record.scope === "string" ? record.scope.trim().slice(0, 2_000) : undefined,
     timeRange: record.timeRange === null ? null : typeof record.timeRange === "string" ? record.timeRange.trim().slice(0, 240) : undefined,
     sourceStrategy: boundedStrings(record.sourceStrategy, 8, 240),
@@ -149,13 +178,27 @@ export function normalizeResearchPlannerDecision(value: unknown): ResearchPlanne
   };
 }
 
-export function normalizeResearchWorkerDecision(value: unknown, fallback: string): ResearchWorkerDecision {
+const QUERY_PURPOSES = new Set<ResearchQueryPurpose>(["primary_work", "survey", "comparison", "contradiction", "baseline", "recent_validation"]);
+const SOURCE_ROLES = new Set<ResearchSourceRole>(["primary", "secondary", "context"]);
+
+export function normalizeResearchWorkerDecision(value: unknown, fallback: string, questionKey = "q1"): ResearchWorkerDecision {
   const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const queries = Array.isArray(record.queries)
-    ? record.queries.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, 3)
+    ? record.queries.flatMap((item, index) => {
+        if (typeof item === "string" && item.trim()) {
+          return [{ query: item.trim().slice(0, 500), purpose: index === 0 ? "primary_work" as const : "comparison" as const, sourceRole: index === 0 ? "primary" as const : "secondary" as const, freshness: "any" as const, questionKey }];
+        }
+        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+        const query = item as Record<string, unknown>;
+        if (typeof query.query !== "string" || !query.query.trim()) return [];
+        const purpose = QUERY_PURPOSES.has(query.purpose as ResearchQueryPurpose) ? query.purpose as ResearchQueryPurpose : "primary_work";
+        const sourceRole = SOURCE_ROLES.has(query.sourceRole as ResearchSourceRole) ? query.sourceRole as ResearchSourceRole : purpose === "survey" ? "secondary" : "primary";
+        const freshness: ResearchQueryStrategyItem["freshness"] = query.freshness === "target_period" || query.freshness === "retrospective_allowed" || query.freshness === "any" ? query.freshness : "any";
+        return [{ query: query.query.trim().slice(0, 500), purpose, sourceRole, freshness, questionKey: typeof query.questionKey === "string" && /^q[1-8]$/.test(query.questionKey) ? query.questionKey : questionKey }];
+      }).slice(0, 4)
     : [];
   return {
-    queries: queries.length > 0 ? queries : [fallback],
+    queries: queries.length > 0 ? queries : [{ query: fallback, purpose: "primary_work", sourceRole: "primary", freshness: "any", questionKey }],
     rationale: typeof record.rationale === "string" ? record.rationale.slice(0, 1_000) : undefined,
   };
 }
@@ -168,6 +211,11 @@ export interface ResearchEvaluatorDecision {
   directness: number;
   gap?: string;
   followUpQueries?: string[];
+  criterionCoverage?: Array<{ criterion: string; covered: boolean; evidenceIds: string[]; reason?: string }>;
+  independentSourceCount?: number;
+  primaryEvidencePresent?: boolean;
+  conflictState?: "none" | "possible" | "confirmed";
+  stopReason?: string;
 }
 
 export function normalizeResearchEvaluatorDecision(value: unknown, fallback: ResearchEvaluatorDecision): ResearchEvaluatorDecision {
@@ -183,6 +231,16 @@ export function normalizeResearchEvaluatorDecision(value: unknown, fallback: Res
     directness: numberOr(record.directness, fallback.directness),
     gap: typeof record.gap === "string" ? record.gap.slice(0, 2_000) : fallback.gap,
     followUpQueries,
+    criterionCoverage: Array.isArray(record.criterionCoverage) ? record.criterionCoverage.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const entry = item as Record<string, unknown>;
+      if (typeof entry.criterion !== "string") return [];
+      return [{ criterion: entry.criterion.slice(0, 240), covered: entry.covered === true, evidenceIds: boundedStrings(entry.evidenceIds, 12, 120) ?? [], reason: typeof entry.reason === "string" ? entry.reason.slice(0, 500) : undefined }];
+    }).slice(0, 12) : fallback.criterionCoverage,
+    independentSourceCount: typeof record.independentSourceCount === "number" && Number.isFinite(record.independentSourceCount) ? Math.max(0, Math.floor(record.independentSourceCount)) : fallback.independentSourceCount,
+    primaryEvidencePresent: typeof record.primaryEvidencePresent === "boolean" ? record.primaryEvidencePresent : fallback.primaryEvidencePresent,
+    conflictState: record.conflictState === "none" || record.conflictState === "possible" || record.conflictState === "confirmed" ? record.conflictState : fallback.conflictState,
+    stopReason: typeof record.stopReason === "string" ? record.stopReason.slice(0, 500) : fallback.stopReason,
   };
 }
 

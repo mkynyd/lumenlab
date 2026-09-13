@@ -89,6 +89,16 @@ function runDetail(overrides: Record<string, unknown> = {}) {
 
 function planDetail() {
   return {
+    originalRequest: "2025 年 MoE 路由方法的主要改进",
+    objective: "评估 2025 年 MoE 路由方法的主要改进",
+    intentType: "trend",
+    targetTimeRange: "2025",
+    evidenceTimeRange: "允许更早基线与后续验证",
+    scopeInclusions: ["MoE expert routing mechanism"],
+    scopeExclusions: ["generic LLM request routing"],
+    assumptions: ["以公开技术证据为准"],
+    evaluationDimensions: ["routing mechanism", "load balancing"],
+    expectedOutput: "按机制分类并比较证据强度的报告",
     researchGoal: "评估 MoE 路由",
     scope: "近五年公开证据",
     timeRange: "2021-2026",
@@ -152,6 +162,16 @@ describe("ResearchWorkspaceView status and progress", () => {
     expect(screen.getByText("MoE 路由研究")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/输入一个研究问题/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建 Follow-up Run" })).toBeInTheDocument();
+  });
+
+  it("does not present a failed final synthesis as a normal-quality report", () => {
+    hooks.run = { ...hooks.run, data: runDetail({
+      status: "completed",
+      stage: { key: "completed", label: "已完成" },
+      reportSnapshot: { generatedAt: "2026-01-01T01:00:00.000Z", reportDocument: { title: "研究结果", body: "## 综合阶段未完成", evidenceRefs: [], qualityState: "degraded" }, citationMap: {} },
+    }) };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(screen.getByRole("alert")).toHaveTextContent("不会把诊断性证据摘要伪装成正常高质量报告");
   });
 
   it("reports bounded progress counters including citation expansion and visual evidence", () => {
@@ -242,7 +262,10 @@ describe("ResearchWorkspaceView stage-driven layout", () => {
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
     const card = screen.getByRole("region", { name: "研究计划" });
     expect(within(card).getByText("1 个研究问题")).toBeInTheDocument();
-    expect(within(card).getByText("2021-2026")).toBeInTheDocument();
+    expect(within(card).getByText("2025")).toBeInTheDocument();
+    expect(within(card).getByText("2025 年 MoE 路由方法的主要改进")).toBeInTheDocument();
+    expect(card).toHaveTextContent("generic LLM request routing");
+    expect(card).toHaveTextContent("按机制分类并比较证据强度的报告");
     expect(within(card).getByRole("button", { name: /确认计划并开始研究/ })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "提交调整" })).toBeInTheDocument();
     // awaiting_confirmation 不渲染进行中分组（进度摘要 / 当前任务）。

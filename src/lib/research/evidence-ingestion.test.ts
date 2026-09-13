@@ -167,6 +167,13 @@ describe("research evidence ingestion", () => {
     expect((state.snapshots[0].metadata.scope as Record<string, unknown>).type).toBe("bounded_evidence_slices");
   });
 
+  it("persists question-scoped relevance on Evidence provenance", async () => {
+    const read = sciverseRead();
+    read.candidate = { ...read.candidate, metadata: { ...read.candidate.metadata, sourceAssessment: { relevance: "direct", sourceRole: "primary", qualityClass: "primary_peer_reviewed", relevanceScore: 0.9, reason: "direct" }, queryPurpose: "primary_work", intendedSourceRole: "primary" } };
+    await ingestResearchReadSource({ ...ingestInput, read });
+    expect(state.evidences[0].provenance).toMatchObject({ sourceAssessment: { relevance: "direct", sourceRole: "primary" }, queryPurpose: "primary_work", intendedSourceRole: "primary" });
+  });
+
   it("merges providers into one canonical source by normalized DOI", async () => {
     await ingestResearchReadSource({ ...ingestInput, read: sciverseRead() });
     const crossrefRead: ReadResearchSource = {

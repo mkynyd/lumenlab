@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getResearchBudget, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter, type ResearchBudgetCounters } from "./budget";
+import { getResearchBudget, getResearchExplorationBudget, getResearchFinalizationReserve, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter, type ResearchBudgetCounters } from "./budget";
 
 function counters(): ResearchBudgetCounters {
   return { modelCalls: 0, searchCalls: 0, fetchCalls: 0, sourceCount: 0 };
@@ -13,6 +13,16 @@ describe("research budget reservations", () => {
 
     expect(reservations).toEqual([true, true, false, false, false]);
     expect(state.searchCalls).toBe(2);
+  });
+
+  it.each(["deep", "comprehensive"] as const)("reserves model, token and credit budget for %s finalization", (profile) => {
+    const total = getResearchBudget(profile);
+    const exploration = getResearchExplorationBudget(profile);
+    const reserve = getResearchFinalizationReserve(profile);
+    expect(total.modelCalls - exploration.modelCalls).toBe(reserve.modelCalls);
+    expect(total.maxTokens - exploration.maxTokens).toBe(reserve.maxTokens);
+    expect(total.maxCostCredits - exploration.maxCostCredits).toBe(reserve.maxCostCredits);
+    expect(reserve.modelCalls).toBeGreaterThanOrEqual(5);
   });
 
   it("uses maxSources for source reservations and can release failed reads", () => {

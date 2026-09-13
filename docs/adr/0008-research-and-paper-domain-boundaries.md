@@ -75,3 +75,13 @@ Sciverse `/resource` 提供「按正文 Markdown 中 `![alt](file_name)` 的相�
 ### 运行时可观测性与产品面
 
 run 状态机不变（无新 `ResearchRunStatus`/`ResearchTaskKind`）；UI 需要的细分阶段由 durable checkpoint 的 `researchState.stage` 派生（`resolveResearchPublicStage`），因此 citation expansion / visual evidence / claim extraction 不再共用一个模糊的「处理中」。provider 降级以稳定代码记录在 checkpoint（有界 ≤ 12 条）与 `run.metrics.degradations`，前端映射为用户语言（例如「arXiv 暂时不可用，已使用其它学术来源继续」），failed run 额外返回 `failureReason`。`run.metrics` 统一为一份计数（工具调用、来源、Evidence、graph、visual、model/tokens/cost、elapsed、budgetStopReason、degradations），阶段不再各写一套含义重叠的字段——未新增 metrics 表。
+
+## Addendum 2026-09-14 — Deep Research Quality Overhaul v2
+
+本轮保持 Provider、Tool Registry、Evidence/Claim 数据模型与 durable runtime 边界不变，重做从用户意图到最终报告的质量控制链。`ResearchPlanSnapshot` 兼容读取 schema v1，并以 schema v2 原样持久化 `originalRequest`、结构化意图、目标时间与证据时间、纳入/排除范围、假设、评价维度和预期输出。Planner 可以完整替换与排序 Research Questions；Worker 只输出带 `purpose/sourceRole/freshness` 的高层 Query Strategy，Provider endpoint、wire filters 与预算继续由服务器决定。
+
+Candidate 在 bounded read 前经过独立的 Source Relevance/Quality triage。`direct|adjacent|irrelevant` 回答“是否能解决当前问题”，quality class 回答“来源是什么证据等级”，两者不可互相替代；明确 irrelevant 在 fetch 前拒绝，adjacent 每个 query 最多读取两个。Evaluator 按 completion criterion 消费带来源角色、相关性、质量、范围与 canonical identity 的 Evidence packet；metadata-only、adjacent 与 irrelevant 不计 substantive coverage，趋势/比较/综述/技术评述类问题的 deterministic 下界要求至少三个独立 direct 来源且包含 primary evidence，模型不能把 count-only evidence 升级为 resolved。
+
+最终链路改为 Claim Extraction → deterministic/model Verifier → 有界 verification repair research → Report Architect → Report Writer → deterministic/model Report Auditor → 最多一次 Writer repair → 冻结。Architect 只组织可报告 Claim，按主题/机制/比较维度而非论文列表输出 JSON；Writer 只能使用 outline 与最终 Claim packets，unsupported Claim 不进入肯定性正文，引用只能取对应关系内的 `[E#]`；Auditor 检查原问题覆盖、跨来源综合、证据强度、时间与可比性、引用关系、限定/冲突、模板语言和 bibliography。ReportSnapshot 的 `evidenceIds`、`sourceSnapshotIds`、`citationMap` 与导出 bibliography 均由报告实际出现的合法 Evidence marker 派生，并按首次引用顺序冻结。
+
+预算从 Run 开始拆为 exploration 与 finalization 两部分；research/evaluator replan/citation graph/visual evidence 只能消耗 exploration 上限，finalization reserve 同时保留 model calls、tokens 与 credits，覆盖 verifier、architect、writer、auditor 及一次受控 repair/re-audit。旧 deterministic synthesis bullet fallback 被删除；Provider 或 Writer 真正不可用时只生成明确的 degraded diagnostic artifact，并记录 `research_synthesis_unavailable` / quality gate degradation，UI 不将其呈现为正常高质量报告。关键阶段 prompt 统一版本化并写入 ReportSnapshot `modelConfiguration.promptVersions`，便于生产回归定位。

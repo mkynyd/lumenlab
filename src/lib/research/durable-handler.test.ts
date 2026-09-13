@@ -25,11 +25,15 @@ const stageBehavior: {
   synthesizer: string | null;
   verifier: unknown;
   visualEvaluator: unknown;
+  reportArchitect: unknown;
+  reportAuditor: unknown;
 } = {
   claimExtractor: null,
   synthesizer: null,
   verifier: null,
   visualEvaluator: null,
+  reportArchitect: null,
+  reportAuditor: null,
 };
 
 let idCounter = 0;
@@ -298,6 +302,8 @@ vi.mock("./model-stage", async (importOriginal) => {
       if (input.role === "research.synthesizer") return { value: stageBehavior.synthesizer, usage: null, model: "deepseek-flash", attempted: stageBehavior.synthesizer !== null };
       if (input.role === "research.verifier") return { value: stageBehavior.verifier, usage: null, model: "deepseek-flash", attempted: true };
       if (input.role === "research.visual_evaluator") return { value: stageBehavior.visualEvaluator, usage: null, model: "deepseek-flash", attempted: true };
+      if (input.role === "research.report_architect") return { value: stageBehavior.reportArchitect, usage: null, model: "deepseek-flash", attempted: stageBehavior.reportArchitect !== null };
+      if (input.role === "research.report_auditor") return { value: stageBehavior.reportAuditor, usage: null, model: "deepseek-flash", attempted: stageBehavior.reportAuditor !== null };
       return { value: null, usage: null, model: "deepseek-flash", attempted: false };
     }),
   };
@@ -376,6 +382,8 @@ beforeEach(() => {
   stageBehavior.synthesizer = null;
   stageBehavior.verifier = null;
   stageBehavior.visualEvaluator = null;
+  stageBehavior.reportArchitect = null;
+  stageBehavior.reportAuditor = null;
   workspaceBudgetProfile = "quick";
   vi.clearAllMocks();
 });
@@ -658,7 +666,7 @@ describe("durable research handler · claim_extraction stage", () => {
     expect(state.relations).toHaveLength(1);
     expect(state.relations[0]).toMatchObject({ evidenceId: "ev-1", relation: "supports", confidence: 0.86 });
     const saved = state.savedCheckpoints.at(-1);
-    expect(saved?.researchState?.stage).toBe("synthesizing");
+    expect(saved?.researchState?.stage).toBe("verifying");
     expect(saved?.researchState?.claimExtraction?.fingerprints["q-1"]).toEqual(expect.any(String));
     expect(saved?.researchState?.modelCalls).toBe(1);
   });
@@ -676,7 +684,7 @@ describe("durable research handler · claim_extraction stage", () => {
     expect(result.kind).toBe("rescheduled");
     expect(vi.mocked(runResearchModelStage).mock.calls.filter(([input]) => (input as { role: string }).role === "research.claim_extractor")).toHaveLength(0);
     expect(state.claims).toHaveLength(0);
-    expect(state.savedCheckpoints.at(-1)?.researchState?.stage).toBe("synthesizing");
+    expect(state.savedCheckpoints.at(-1)?.researchState?.stage).toBe("verifying");
   });
 
   it("does not fall back to template claims when the extractor is unavailable", async () => {
@@ -690,7 +698,7 @@ describe("durable research handler · claim_extraction stage", () => {
     expect(result.kind).toBe("rescheduled");
     expect(state.claims).toHaveLength(0);
     expect(state.relations).toHaveLength(0);
-    expect(state.savedCheckpoints.at(-1)?.researchState?.stage).toBe("synthesizing");
+    expect(state.savedCheckpoints.at(-1)?.researchState?.stage).toBe("verifying");
   });
 
   it("does not create duplicate claims when the stage reruns after lease recovery", async () => {
@@ -709,8 +717,8 @@ describe("durable research handler · claim_extraction stage", () => {
   });
 });
 
-describe("durable research handler · synthesizing stage", () => {
-  it("drives the fallback report from the claim graph instead of a raw evidence pile", async () => {
+describe("durable research handler · legacy synthesizing checkpoint", () => {
+  it("resumes at verification without emitting the retired formal-looking fallback", async () => {
     runStatus = "synthesizing";
     questionRow.evidence = [evidenceRow()];
     state.claims.push({
@@ -732,8 +740,7 @@ describe("durable research handler · synthesizing stage", () => {
     expect(result.kind).toBe("rescheduled");
     const saved = state.savedCheckpoints.at(-1);
     expect(saved?.researchState?.stage).toBe("verifying");
-    expect(saved?.researchState?.draftReport).toContain("自注意力");
-    expect(saved?.researchState?.draftReport).toContain("[E1]");
+    expect(saved?.researchState?.draftReport).toBeUndefined();
   });
 });
 
@@ -781,6 +788,9 @@ describe("durable research handler · verifying stage", () => {
     runStatus = "verifying";
     seedClaimWithEvidence("active");
     stageBehavior.verifier = { claims: { "claim-1": { status: "verified", reasonCode: "sufficient_support" } } };
+    stageBehavior.reportArchitect = { thesis: "Transformer 的核心变化是以自注意力替代循环计算。", sections: [{ title: "机制与意义", question: "核心创新是什么", claimIds: ["claim-1"], comparisonDimensions: ["计算路径"], importance: "high" }], uncertainties: [], excludedClaimIds: [] };
+    stageBehavior.synthesizer = "## 综合判断\n\nTransformer 的核心架构变化是以自注意力机制替代循环结构，使序列位置之间能够直接建立依赖，并改善并行训练能力。[E1]\n\n这一判断来自当前已核验的直接证据。现有材料足以说明机制层面的变化，但不能单凭这一条证据推导所有任务上的性能优势，因此结论应限定在架构与计算路径层面。";
+    stageBehavior.reportAuditor = { pass: true, issues: [], repairInstructions: [] };
     const handler = createDurableResearchExecutionHandler();
 
     const result = await handler(createContext({ researchState: { ...claimExtractionState(), stage: "verifying", draftReport: "草稿" } }));
@@ -792,6 +802,24 @@ describe("durable research handler · verifying stage", () => {
     const report = state.report as { claimSnapshots: Array<{ verificationStatus: string; reasonCode: string }>; citationMap: Record<string, Array<{ relation: string }>> };
     expect(report.claimSnapshots[0]).toMatchObject({ verificationStatus: "verified", reasonCode: "sufficient_support" });
     expect(report.citationMap["claim-1"][0].relation).toBe("supports");
+  });
+
+  it("still runs verifier, architect, writer and auditor at the deep exploration ceiling", async () => {
+    workspaceBudgetProfile = "deep";
+    runStatus = "verifying";
+    seedClaimWithEvidence("active");
+    stageBehavior.verifier = { claims: { "claim-1": { status: "verified", reasonCode: "sufficient_support" } } };
+    stageBehavior.reportArchitect = { thesis: "自注意力改变了序列建模的计算路径。", sections: [{ title: "机制综合", question: "核心创新是什么", claimIds: ["claim-1"], comparisonDimensions: ["计算路径"], importance: "high" }], uncertainties: [], excludedClaimIds: [] };
+    stageBehavior.synthesizer = "## 机制综合\n\nTransformer 以自注意力取代循环结构，使不同位置之间直接建立依赖，并允许序列位置并行参与训练。[E1]\n\n当前证据直接支持架构机制的变化。它说明计算路径发生了改变，但单一来源不足以把这一机制变化外推为所有任务和规模下的统一性能优势，因此报告保留这一适用范围。进一步比较时还需要在一致的数据集、模型规模、训练预算和评价指标下验证；当前材料不能支持超出这些条件的强结论。报告因此只回答已被证据覆盖的机制问题，并把尚未覆盖的性能比较留作后续研究。";
+    stageBehavior.reportAuditor = { pass: true, issues: [], repairInstructions: [] };
+    const handler = createDurableResearchExecutionHandler();
+
+    const result = await handler(createContext({ researchState: { ...claimExtractionState(), stage: "verifying", modelCalls: 34, totalTokens: 128_000, costCredits: 384 } }));
+
+    expect(result.kind).toBe("completed");
+    const roles = vi.mocked(runResearchModelStage).mock.calls.map(([input]) => (input as { role: string }).role);
+    expect(roles).toEqual(expect.arrayContaining(["research.verifier", "research.report_architect", "research.synthesizer", "research.report_auditor"]));
+    expect(state.report).toMatchObject({ reportDocument: { qualityState: "normal" }, modelConfiguration: { promptVersions: { reportWriter: "research-report-writer-v2" } } });
   });
 });
 
@@ -911,7 +939,7 @@ describe("durable research handler · visual_evidence stage", () => {
     expect(nextState.stage).toBe("claim_extraction");
   });
 
-  it("reserves the finishing fetch budget during the reading phase", async () => {
+  it("caps adjacent candidates per query while preserving the finishing fetch reserve", async () => {
     workspaceBudgetProfile = "deep";
     const manyCandidates = Array.from({ length: 12 }, (_, index) => ({
       provider: "web",
@@ -938,7 +966,9 @@ describe("durable research handler · visual_evidence stage", () => {
     // deep 上限 40，视觉阶段预留 5（2 次图表扫描读取 + 3 次资源抓取）。
     const result = await handler(createContext({ researchState: visualStageState({ stage: "researching", fetchCalls: 30 }) }));
     const nextState = (result as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
-    expect(nextState.fetchCalls).toBe(35);
+    expect(nextState.fetchCalls).toBe(32);
+    expect(provider.read).toHaveBeenCalledTimes(2);
+    expect(nextState.fetchCalls).toBeLessThanOrEqual(35);
   });
 
   it("does no visual work at all for the quick profile", async () => {

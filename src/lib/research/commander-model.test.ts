@@ -44,7 +44,7 @@ describe("createResearchRun commander model", () => {
     const createData = prisma.researchRun.create.mock.calls[0][0].data;
     expect(createData.commanderModel).toBe("qwen3.8-max");
     const configuration = createData.modelConfiguration as Record<string, { model: string; source: string; reasoningEffort: string }>;
-    expect(Object.keys(configuration)).toHaveLength(7);
+    expect(Object.keys(configuration)).toHaveLength(10);
     for (const [role, selection] of Object.entries(configuration)) {
       expect(selection).toMatchObject({ model: "qwen3.8-max", source: "run_override" });
       expect(selection.reasoningEffort).toBe(role === "research.synthesizer" ? "max" : "high");

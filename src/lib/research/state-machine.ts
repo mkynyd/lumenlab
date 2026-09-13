@@ -7,7 +7,7 @@ const ALLOWED: Record<ResearchRunStatus, readonly ResearchRunStatus[]> = {
   awaiting_confirmation: ["queued", "planning", "cancelled", "failed"],
   queued: ["researching", "cancelled", "failed"],
   researching: ["evaluating", "awaiting_scope_confirmation", "cancelled", "failed"],
-  evaluating: ["researching", "synthesizing", "awaiting_scope_confirmation", "cancelled", "failed"],
+  evaluating: ["researching", "synthesizing", "verifying", "awaiting_scope_confirmation", "cancelled", "failed"],
   synthesizing: ["verifying", "awaiting_scope_confirmation", "cancelled", "failed"],
   verifying: ["completed", "researching", "evaluating", "synthesizing", "awaiting_scope_confirmation", "cancelled", "failed"],
   awaiting_scope_confirmation: ["queued", "researching", "cancelled", "failed"],
@@ -112,6 +112,11 @@ export const RESEARCH_DEGRADATION_MESSAGES: Record<string, string> = {
   web_error: "联网搜索暂时不可用，已使用学术与项目来源继续",
   visual_resources_unavailable: "论文图表资源暂时不可读，已仅使用正文证据继续",
   visual_model_unavailable: "图表分析模型暂时不可用，已仅使用正文证据继续",
+  research_verifier_unavailable: "最终命题核验模型未成功完成，报告已按确定性证据下界降级",
+  research_report_architecture_unavailable: "报告结构规划未成功完成，已使用保守结构继续",
+  research_synthesis_unavailable: "研究资料已经收集，但最终综合阶段未成功完成",
+  research_report_audit_unavailable: "最终报告质量审计未成功完成，本次结果已标记为降级",
+  research_report_quality_gate_failed: "最终报告未完整通过质量门禁，请查看已保存证据或创建 Follow-up Run",
 };
 
 export function describeResearchDegradation(code: string): string | null {

@@ -113,14 +113,14 @@ describe("research model stage contracts", () => {
 
   it("falls back to the question when a worker response is unusable", () => {
     expect(normalizeResearchWorkerDecision({ queries: ["  query  ", "", 1], rationale: "x" }, "fallback"))
-      .toEqual({ queries: ["query"], rationale: "x" });
-    expect(normalizeResearchWorkerDecision(null, "fallback").queries).toEqual(["fallback"]);
+      .toEqual({ queries: [{ query: "query", purpose: "primary_work", sourceRole: "primary", freshness: "any", questionKey: "q1" }], rationale: "x" });
+    expect(normalizeResearchWorkerDecision(null, "fallback").queries).toEqual([{ query: "fallback", purpose: "primary_work", sourceRole: "primary", freshness: "any", questionKey: "q1" }]);
   });
 
   it("keeps evaluator values inside the public quality contract", () => {
     expect(normalizeResearchEvaluatorDecision({ status: "controversial", coverage: 4, directness: -1, followUpQueries: ["补充"] }, {
       status: "unresolved", coverage: 0, directness: 0,
-    })).toEqual({ status: "controversial", coverage: 1, directness: 0, gap: undefined, followUpQueries: ["补充"] });
+    })).toEqual({ status: "controversial", coverage: 1, directness: 0, gap: undefined, followUpQueries: ["补充"], criterionCoverage: undefined, independentSourceCount: undefined, primaryEvidencePresent: undefined, conflictState: undefined, stopReason: undefined });
   });
 
   it("drops verifier claims with unknown statuses", () => {

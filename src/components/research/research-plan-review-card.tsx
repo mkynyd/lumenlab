@@ -5,6 +5,16 @@ import { Check } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 
 export interface ResearchPlanView {
+  originalRequest?: string;
+  objective?: string;
+  intentType?: string;
+  targetTimeRange?: string | null;
+  evidenceTimeRange?: string | null;
+  scopeInclusions?: string[];
+  scopeExclusions?: string[];
+  assumptions?: string[];
+  evaluationDimensions?: string[];
+  expectedOutput?: string;
   researchGoal: string;
   scope: string;
   timeRange: string | null;
@@ -94,9 +104,10 @@ export function ResearchPlanReviewCard({
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <PlanMeta label="研究目标" value={plan.researchGoal} />
+        <PlanMeta label="研究目标" value={plan.objective ?? plan.researchGoal} />
         <PlanMeta label="研究强度" value={plan.researchIntensity} />
-        <PlanMeta label="时间范围" value={plan.timeRange ?? "未限定"} />
+        <PlanMeta label="目标时间" value={plan.targetTimeRange ?? plan.timeRange ?? "未限定"} />
+        {plan.evidenceTimeRange ? <PlanMeta label="证据时间" value={plan.evidenceTimeRange} /> : null}
         <PlanMeta label="领域 Profile" value={plan.domainProfile?.name ?? "通用研究"} />
       </div>
 
@@ -122,22 +133,29 @@ export function ResearchPlanReviewCard({
       <details className="mt-4">
         <summary className="cursor-pointer select-none text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">计划详情（范围 / 来源策略 / 预期产出 / 完成标准）</summary>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          {plan.originalRequest ? <div className="min-w-0"><p className="text-[11px] text-[var(--color-text-tertiary)]">原始请求</p><p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.originalRequest}</p></div> : null}
+          {plan.intentType ? <div className="min-w-0"><p className="text-[11px] text-[var(--color-text-tertiary)]">研究意图</p><p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.intentType}</p></div> : null}
           <div className="min-w-0">
             <p className="text-[11px] text-[var(--color-text-tertiary)]">研究范围</p>
             <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.scope}</p>
           </div>
+          {plan.scopeInclusions?.length ? <div className="min-w-0"><p className="text-[11px] text-[var(--color-text-tertiary)]">纳入范围</p><ul className="mt-1 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.scopeInclusions.map((item) => <li key={item}>· {item}</li>)}</ul></div> : null}
+          {plan.scopeExclusions?.length ? <div className="min-w-0"><p className="text-[11px] text-[var(--color-text-tertiary)]">排除范围</p><ul className="mt-1 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.scopeExclusions.map((item) => <li key={item}>· {item}</li>)}</ul></div> : null}
           <div className="min-w-0">
             <p className="text-[11px] text-[var(--color-text-tertiary)]">来源策略</p>
             <ul className="mt-1 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.sourceStrategy.map((item) => <li key={item}>· {item}</li>)}</ul>
           </div>
           <div className="min-w-0">
             <p className="text-[11px] text-[var(--color-text-tertiary)]">预期产出</p>
+            {plan.expectedOutput ? <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.expectedOutput}</p> : null}
             <ul className="mt-1 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.expectedOutputs.map((item) => <li key={item}>· {item}</li>)}</ul>
           </div>
           <div className="min-w-0">
             <p className="text-[11px] text-[var(--color-text-tertiary)]">完成标准</p>
             <ul className="mt-1 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.completionCriteria.map((item) => <li key={item}>· {item}</li>)}</ul>
           </div>
+          {plan.evaluationDimensions?.length ? <div className="min-w-0"><p className="text-[11px] text-[var(--color-text-tertiary)]">评估维度</p><ul className="mt-1 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.evaluationDimensions.map((item) => <li key={item}>· {item}</li>)}</ul></div> : null}
+          {plan.assumptions?.length ? <div className="min-w-0"><p className="text-[11px] text-[var(--color-text-tertiary)]">默认假设</p><ul className="mt-1 space-y-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.assumptions.map((item) => <li key={item}>· {item}</li>)}</ul></div> : null}
         </div>
       </details>
 

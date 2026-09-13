@@ -3,8 +3,8 @@ import { prisma } from "@/lib/db";
 import type { AgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { AgentExecutionHandler, AgentExecutionHandlerContext, AgentExecutionHandlerResult } from "@/lib/agent/executions/agent-execution-runner";
-import { DEEPSEEK_CHAT_MODEL, type ChatModel } from "@/lib/chat/model-catalog";
-import { evaluateResearchStop, getResearchBudget, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
+import type { ChatModel } from "@/lib/chat/model-catalog";
+import { evaluateResearchStop, finalizationBudgetRemaining, getResearchBudget, getResearchExplorationBudget, getResearchFinalizationReserve, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
 import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion, snapshotScopeTypeOf } from "./claim-graph";
@@ -26,9 +26,24 @@ import { nextResearchTaskRetryStatus } from "./task-retry";
 import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
 import { resolveCommanderModel } from "./model-routing";
 import { applyResearchPlannerDecision } from "./plan";
-import { appendVerificationQualification, selectVerificationRepairTargets, verificationRepairInstruction, type VerificationRepairTarget } from "./verification-repair";
+import { selectVerificationRepairTargets, verificationRepairInstruction } from "./verification-repair";
 import { buildResearchReportStructure } from "./report-document";
 import { buildResearchCitationMap } from "./report-citations";
+import { deterministicSourceAssessment, mergeSourceAssessments, normalizeSourceTriageDecision } from "./source-triage";
+import {
+  buildEvaluatorPrompt,
+  buildPlannerPrompt,
+  buildQueryStrategyPrompt,
+  buildReportArchitectPrompt,
+  buildReportAuditorPrompt,
+  buildReportWriterPrompt,
+  buildSourceTriagePrompt,
+  buildVerifierPrompt,
+  RESEARCH_PROMPT_VERSIONS,
+  type ReportClaimPacket,
+} from "./prompts";
+import { deterministicReportAudit, evidenceMarkersInReport, fallbackReportArchitecture, normalizeReportArchitecture, normalizeReportAuditDecision } from "./report-quality";
+import { deterministicEvaluatorDecision } from "./evaluator";
 import {
   buildVisualEvidenceFingerprint,
   buildVisualEvidencePrompt,
@@ -127,156 +142,76 @@ async function persistCandidate(input: {
   });
 }
 
-export interface SynthesisClaimInput {
-  id: string;
-  statement: string;
-  status: "verified" | "needs_qualification" | "unsupported" | "conflicted";
-  reasonCode: string;
-  qualifiers: string[];
-  /** 该 Claim 实际建立 ClaimEvidenceRelation 的 Evidence 标记（如 E1、E3），按关系顺序。 */
-  markers: string[];
-  relations: Array<{ marker: string; relation: string }>;
-}
-
-export interface SynthesisEvidenceInput {
-  id: string;
-  statement: string;
-  excerpt: string;
-  source: string;
-}
-
-function formatEvidenceList(evidence: SynthesisEvidenceInput[]) {
-  return evidence.map((item, index) => `E${index + 1}（${item.id}）. ${item.statement}\n来源：${item.source}\n摘录：${item.excerpt}`).join("\n\n").slice(0, 60_000);
-}
-
-async function synthesizeWithExistingRuntime(input: {
+async function architectReportWithExistingRuntime(input: {
   userId: string;
   conversationId: string;
   projectId: string | null;
   signal: AbortSignal;
-  question: string;
-  domainProfile?: ResearchPlanSnapshot["domainProfile"];
-  claims: SynthesisClaimInput[];
-  evidence: SynthesisEvidenceInput[];
-  useModel: boolean;
+  plan: ResearchPlanSnapshot;
+  questions: unknown[];
+  claims: ReportClaimPacket[];
+  coverageGaps: string[];
   modelOverride?: ChatModel | null;
 }) {
-  const evidenceText = formatEvidenceList(input.evidence);
-  const claimsText = input.claims.map((claim) => {
-    const relationText = claim.relations.map((relation) => `${relation.marker}=${relation.relation}`).join("，") || "无";
-    return [
-      `- Claim（${claim.id}，核验状态=${claim.status}，reason=${claim.reasonCode}）：${claim.statement}`,
-      `  允许引用的证据标记：${claim.markers.join("、") || "无"}（关系：${relationText}）`,
-      claim.qualifiers.length > 0 ? `  限定条件：${claim.qualifiers.join("；")}` : null,
-    ].filter(Boolean).join("\n");
-  }).join("\n");
-  const claimDriven = input.claims.length > 0;
-  const prompt = claimDriven
-    ? [
-        "你是 LumenLab 的研究报告 Synthesizer。只使用下面已经持久化的 Claim Graph 与其关联 Evidence，不联网，不补写未提供的事实。",
-        "输出一份简洁的 Markdown 研究报告：",
-        "- 核验状态为 verified 的 Claim 可以作为正常结论；",
-        "- needs_qualification 的 Claim 必须带限定措辞（范围、时间、条件或因果强度）后才能进入正文；",
-        "- conflicted 的 Claim 必须明确呈现为证据冲突或不确定结论，不能单方面断言；",
-        "- unsupported 的 Claim 不允许作为肯定性事实写入报告。",
-        "每个事实性断言末尾添加证据标记（如 [E1]）：只能使用该 Claim「允许引用的证据标记」中列出的编号，不能从其他 Claim 或 Evidence 列表里补引用，不能编造编号。",
-        `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
-        `研究问题：${input.question}`,
-        "\nClaim Graph：\n",
-        claimsText,
-        "\n已保存 Evidence（仅供核对标记与摘录，不代表可自由引用）：\n",
-        evidenceText || "（没有可用 Evidence）",
-      ].join("\n")
-    : [
-        "你是 LumenLab 的研究报告 Synthesizer。只使用下面已经读取并保存的 Evidence，不联网，不补写未提供的事实。",
-        "输出一份简洁的 Markdown 研究报告，明确结论、证据不足、冲突与范围限制；不要展示隐藏推理。",
-        "每个重要事实性断言末尾尽量添加对应的证据标记，例如 [E1] 或 [E2]；只能使用下面列出的 E 编号，不能编造编号，也不要把 Evidence ID 直接写入正文。",
-        `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
-        `研究问题：${input.question}`,
-        "\n已保存 Evidence：\n",
-        evidenceText || "（没有可用 Evidence）",
-      ].join("\n");
-  const stage = input.useModel ? await runResearchModelStage<string>({
+  return runResearchModelStage({
+    role: "research.report_architect",
+    userId: input.userId,
+    conversationId: input.conversationId,
+    projectId: input.projectId,
+    signal: input.signal,
+    modelOverride: input.modelOverride,
+    prompt: buildReportArchitectPrompt({ plan: input.plan, questions: input.questions, claims: input.claims, coverageGaps: input.coverageGaps }),
+    parse: (content) => normalizeReportArchitecture(JSON.parse(content.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "")), new Set(input.claims.map((claim) => claim.id))),
+  });
+}
+
+async function writeFinalReportWithExistingRuntime(input: {
+  userId: string;
+  conversationId: string;
+  projectId: string | null;
+  signal: AbortSignal;
+  plan: ResearchPlanSnapshot;
+  architecture: unknown;
+  claims: ReportClaimPacket[];
+  profile: string;
+  modelOverride?: ChatModel | null;
+  repair?: { draft: string; instructions: string[] };
+}) {
+  const prompt = buildReportWriterPrompt({ plan: input.plan, architecture: input.architecture, claims: input.claims, profile: input.profile });
+  return runResearchModelStage<string>({
     role: "research.synthesizer",
     userId: input.userId,
     conversationId: input.conversationId,
     projectId: input.projectId,
     signal: input.signal,
-    prompt,
     modelOverride: input.modelOverride,
+    prompt: input.repair ? `${prompt}\n\n受控修订要求：${JSON.stringify(input.repair.instructions)}\n当前草稿：\n${input.repair.draft}` : prompt,
     parse: (content) => content.trim() || null,
-  }) : { value: null, usage: null, model: DEEPSEEK_CHAT_MODEL, attempted: false };
-  if (stage.value) return { content: stage.value, usage: stage.usage, model: stage.model, attempted: stage.attempted };
-  if (claimDriven) {
-    const lines: string[] = [];
-    for (const claim of input.claims) {
-      const markers = claim.markers.map((marker) => `[${marker}]`).join("");
-      if (claim.status === "verified") lines.push(`- ${claim.statement}${markers}`);
-      else if (claim.status === "needs_qualification") lines.push(`- （需限定）${claim.statement}${claim.qualifiers.length > 0 ? `——限定：${claim.qualifiers.join("；")}` : ""}${markers}`);
-      else if (claim.status === "conflicted") lines.push(`- （证据冲突，结论不确定）${claim.statement}${markers}`);
-    }
-    return {
-      content: lines.length > 0
-        ? `## 研究结论\n\n本次研究围绕“${input.question}”形成以下可核验结论：\n\n${lines.join("\n")}\n\n## 限制\n\n以上内容只代表当前 Run 已成功读取的来源与核验状态，不替代未完成的独立验证。`
-        : `## 研究结论\n\n当前 Run 的 Claim 均未达到可作为结论的核验状态，不能对“${input.question}”形成可靠结论。`,
-      usage: null,
-      model: stage.model,
-      attempted: stage.attempted,
-    };
-  }
-  return {
-    content: evidenceText
-      ? `## 研究结论\n\n本次研究围绕“${input.question}”收集了以下可核验证据：\n\n${input.evidence.map((item, index) => `- ${item.statement}（来源：${item.source}）[E${index + 1}]`).join("\n")}\n\n## 限制\n\n以上内容只代表当前 Run 已成功读取的来源，不替代未完成的独立验证。`
-      : `## 研究结论\n\n当前 Run 没有成功读取可核验来源，不能对“${input.question}”形成可靠结论。`,
-    usage: null,
-    model: stage.model,
-    attempted: stage.attempted,
-  };
+  });
 }
 
-async function repairReportWithExistingRuntime(input: {
+async function auditFinalReportWithExistingRuntime(input: {
   userId: string;
   conversationId: string;
   projectId: string | null;
   signal: AbortSignal;
-  question: string;
-  domainProfile?: ResearchPlanSnapshot["domainProfile"];
-  draft: string;
-  evidence: Array<{ id: string; statement: string; excerpt: string; source: string }>;
-  targets: VerificationRepairTarget[];
-  unsupportedClaims: number;
-  conflictedClaims: number;
-  qualifiedClaims: number;
-  useModel: boolean;
+  plan: ResearchPlanSnapshot;
+  architecture: unknown;
+  claims: ReportClaimPacket[];
+  report: string;
+  bibliographySourceIds: string[];
   modelOverride?: ChatModel | null;
 }) {
-  const evidenceText = input.evidence.map((item, index) => `E${index + 1}（${item.id}）. ${item.statement}\n来源：${item.source}\n摘录：${item.excerpt}`).join("\n\n").slice(0, 60_000);
-  const prompt = [
-    "你是 LumenLab 的 Citation Repair Synthesizer。只使用当前 Run 已读取并保存的 Evidence，不联网，不展示隐藏推理。",
-    "局部修订下面的 Markdown 报告：删除或改写没有直接支持的断言，明确表达冲突证据，并为范围、日期、因果等强措辞加限定。保留可验证的内容和原有结构。",
-    "重要事实性断言末尾使用 [E1] 等标记；只能使用下面列出的 E 编号，不能编造编号或 Evidence ID。",
-    `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
-    `研究问题：${input.question}`,
-    `核验缺口：${input.targets.map(verificationRepairInstruction).join("\n") || "当前报告存在需要限定的引用"}`,
-    `当前报告草稿：\n${input.draft}`,
-    `已保存 Evidence：\n${evidenceText || "（没有可用 Evidence）"}`,
-  ].join("\n\n");
-  const stage = input.useModel ? await runResearchModelStage<string>({
-    role: "research.synthesizer",
+  return runResearchModelStage({
+    role: "research.report_auditor",
     userId: input.userId,
     conversationId: input.conversationId,
     projectId: input.projectId,
     signal: input.signal,
-    prompt,
     modelOverride: input.modelOverride,
-    parse: (content) => content.trim() || null,
-  }) : { value: null, usage: null, model: DEEPSEEK_CHAT_MODEL, attempted: false };
-  return {
-    content: stage.value ?? appendVerificationQualification({ draft: input.draft, unsupportedClaims: input.unsupportedClaims, conflictedClaims: input.conflictedClaims, qualifiedClaims: input.qualifiedClaims }),
-    usage: stage.usage,
-    model: stage.model,
-    attempted: stage.attempted,
-  };
+    prompt: buildReportAuditorPrompt({ plan: input.plan, report: input.report, architecture: input.architecture, claims: input.claims, bibliographySourceIds: input.bibliographySourceIds }),
+    parse: (content) => normalizeReportAuditDecision(JSON.parse(content.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, ""))),
+  });
 }
 
 export function createDurableResearchExecutionHandler(options: { provider?: ResearchSourceProvider; toolInvoker?: ResearchToolInvoker } = {}): AgentExecutionHandler {
@@ -327,6 +262,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       verificationRepairs: 0,
     };
     const limits = getResearchBudget(run.workspace.budgetProfile);
+    const explorationLimits = getResearchExplorationBudget(run.workspace.budgetProfile);
+    const finalizationReserve = getResearchFinalizationReserve(run.workspace.budgetProfile);
     const modelOverride = resolveCommanderModel(run.commanderModel);
     // 收尾预算保留：visual_evidence 阶段读图与图表扫描都要占用 fetchCalls，但阅读
     // 阶段很容易把整个 fetch 预算吃满（生产 deep run 实测 40/40），使视觉阶段永远
@@ -340,8 +277,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         )
       : 0;
     const researchLimits = visualFetchReserve > 0
-      ? { ...limits, fetchCalls: Math.max(0, limits.fetchCalls - visualFetchReserve) }
-      : limits;
+      ? { ...explorationLimits, fetchCalls: Math.max(0, explorationLimits.fetchCalls - visualFetchReserve) }
+      : explorationLimits;
     const domainProfile = (run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined)?.domainProfile;
     const planSnapshot = run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined;
     // 有界收集 Sciverse advanced filter 的生效情况（诊断与 run.metrics 用）。
@@ -385,16 +322,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         projectId: run.workspace.projectId,
         signal: context.signal,
         modelOverride,
-        prompt: [
-          "你是 LumenLab Research Planner。只返回 JSON，不要 Markdown，不要隐藏推理，不要联网。",
-          "你只能在已有计划上做有限、可解释的规划修订，不能虚构来源或直接生成研究结论。",
-          "格式：{\"scope\":\"范围\",\"timeRange\":\"时间范围或 null\",\"sourceStrategy\":[\"来源策略\"],\"completionCriteria\":[\"完成标准\"],\"expectedOutputs\":[\"预期产出\"],\"questions\":[{\"key\":\"q1\",\"title\":\"标题\",\"question\":\"问题\",\"priority\":\"critical|important|supporting\",\"completionCriteria\":[\"标准\"],\"sourceStrategy\":[\"策略\"]}]}。",
-          `用户研究问题：${run.question}`,
-          `预算配置：${run.workspace.budgetProfile}`,
-          `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
-          `当前计划：${JSON.stringify(currentPlan)}`,
-          "只保留最多八个研究问题；优先 critical，再 important，最后 supporting。",
-        ].join("\n"),
+        prompt: buildPlannerPrompt({ plan: currentPlan, profile: run.workspace.budgetProfile, domainProfile }),
       });
       recordResearchModelStage(state, plannerResult);
       const revisedPlan = applyResearchPlannerDecision(currentPlan, normalizeResearchPlannerDecision(plannerResult.value));
@@ -434,7 +362,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     if (state.stage === "researching") {
       await transitionRun(run.id, "researching");
       const elapsedMs = Date.now() - (run.startedAt ?? run.createdAt).getTime();
-      const hardBudgetReached = elapsedMs >= limits.wallTimeMs || state.modelCalls >= limits.modelCalls || (state.totalTokens ?? 0) >= limits.maxTokens || (state.costCredits ?? 0) >= limits.maxCostCredits || state.searchCalls >= limits.searchCalls || state.fetchCalls >= researchLimits.fetchCalls || state.sourceCount >= limits.maxSources;
+      const hardBudgetReached = elapsedMs >= researchLimits.wallTimeMs || state.modelCalls >= researchLimits.modelCalls || (state.totalTokens ?? 0) >= researchLimits.maxTokens || (state.costCredits ?? 0) >= researchLimits.maxCostCredits || state.searchCalls >= researchLimits.searchCalls || state.fetchCalls >= researchLimits.fetchCalls || state.sourceCount >= researchLimits.maxSources;
       if (hardBudgetReached) {
         state.stage = "evaluating";
         await appendPublicEvent(context, { key: `research:budget:reached:${run.id}:${state.searchCalls}:${state.fetchCalls}`, kind: "budget_updated", runId: run.id, message: "已达到研究硬预算，进入评估阶段", publicData: { elapsedMs, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, limits } });
@@ -446,7 +374,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         where: { runId: run.id, status: "running" },
         data: { status: "retrying", lastError: json({ code: "worker_recovered_running_task" }) },
       });
-      const tasks = await prisma.researchTask.findMany({ where: { runId: run.id, status: { in: ["pending", "retrying"] } }, include: { question: true }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }], take: Math.min(limits.researcherConcurrency, Math.max(0, limits.modelCalls - state.modelCalls)) });
+      const tasks = await prisma.researchTask.findMany({ where: { runId: run.id, status: { in: ["pending", "retrying"] } }, include: { question: true }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }], take: Math.min(researchLimits.researcherConcurrency, Math.max(0, researchLimits.modelCalls - state.modelCalls)) });
       const directives = await prisma.researchUserDirective.findMany({ where: { runId: run.id, status: "applied" }, orderBy: { createdAt: "asc" }, select: { text: true } });
       const directiveContext = directives.length > 0 ? `\n用户追加研究方向（在当前预算内吸收）：${directives.map((directive) => directive.text).join("；")}` : "";
       await appendPublicEvent(context, { key: "research:stage:researching", kind: "stage_changed", runId: run.id, message: "已进入研究阶段", publicData: { taskCount: tasks.length, concurrency: limits.researcherConcurrency } });
@@ -462,7 +390,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         await prisma.researchQuestion.update({ where: { id: task.question.id }, data: { status: "researching", researchAttempts: { increment: 1 } } });
         await appendPublicEvent(context, { key: `research:task:start:${task.id}`, kind: "task_started", runId: run.id, message: `开始研究：${task.question.title}`, publicData: { questionId: task.question.id, priority: task.question.priority } });
         try {
-          if (!tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+          if (!tryReserveResearchBudgetCounter(state, researchLimits, "modelCalls")) {
             await prisma.researchTask.update({ where: { id: task.id }, data: { status: "retrying", lastError: json({ code: "research_model_budget_reserved" }) } });
             return;
           }
@@ -473,26 +401,50 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             projectId: run.workspace.projectId,
             signal: context.signal,
             modelOverride,
-            prompt: [
-              "你是 LumenLab Research Worker 的 Query Generation 阶段。只返回 JSON，不要 Markdown，不要隐藏推理。",
-              "JSON 格式：{\"queries\":[\"最多三个短而互补的检索词\"],\"rationale\":\"一句话\"}。",
-              `全局研究问题：${run.question}`,
-              `当前 Research Question：${task.question.question}`,
-              `当前 Task 说明：${task.instructions ?? "沿用 Research Question，优先补充独立来源。"}`,
-              `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
-              `约束：${directiveContext || "优先学术、官方和项目资料；不要扩大研究范围。"}`,
-            ].join("\n"),
+            prompt: buildQueryStrategyPrompt({
+              plan: planSnapshot!,
+              questionKey: task.question.key,
+              question: task.question.question,
+              task: task.instructions ?? "沿用 Research Question，优先补充独立来源。",
+              domainProfile,
+              directiveContext,
+            }),
           });
           recordResearchModelStage(state, workerResult, { modelCallReserved: true });
-          const workerDecision = normalizeResearchWorkerDecision(workerResult.value, task.question.question);
-          await appendPublicEvent(context, { key: `research:query:${task.id}:${attempt}`, kind: "task_started", runId: run.id, message: `已生成检索策略：${task.question.title}`, publicData: { questionId: task.question.id, queries: workerDecision.queries } });
-          for (const query of workerDecision.queries) {
-            if (context.signal.aborted || !tryReserveResearchBudgetCounter(state, limits, "searchCalls")) break;
+          const workerDecision = normalizeResearchWorkerDecision(workerResult.value, task.question.question, task.question.key);
+          await appendPublicEvent(context, { key: `research:query:${task.id}:${attempt}`, kind: "task_started", runId: run.id, message: `已生成检索策略：${task.question.title}`, publicData: { questionId: task.question.id, queries: workerDecision.queries.map((item) => item.query) } });
+          for (const strategy of workerDecision.queries) {
+            const query = strategy.query;
+            if (context.signal.aborted || !tryReserveResearchBudgetCounter(state, researchLimits, "searchCalls")) break;
             const taskContext: ResearchProviderContext = { ...providerContext, question: task.question.question };
             const candidates = await provider.search(taskContext, query);
-            for (const candidate of prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders)) {
+            const prioritized = prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders).slice(0, 12);
+            const deterministicAssessments = new Map(prioritized.map((candidate, index) => [String(index), deterministicSourceAssessment({ question: task.question!.question, strategy, candidate })]));
+            let modelAssessments: ReturnType<typeof normalizeSourceTriageDecision> = {};
+            if (prioritized.some((_, index) => deterministicAssessments.get(String(index))?.relevance !== "irrelevant") && tryReserveResearchBudgetCounter(state, researchLimits, "modelCalls")) {
+              const triageResult = await runResearchModelStage<{ candidates?: unknown }>({
+                role: "research.source_triage",
+                userId: context.execution.userId,
+                conversationId: context.execution.conversationId,
+                projectId: run.workspace.projectId,
+                signal: context.signal,
+                modelOverride,
+                prompt: buildSourceTriagePrompt({ plan: planSnapshot!, question: task.question.question, strategy, candidates: prioritized.map((candidate, index) => ({ id: String(index), candidate })) }),
+              });
+              recordResearchModelStage(state, triageResult, { modelCallReserved: true });
+              modelAssessments = normalizeSourceTriageDecision(triageResult.value, new Set(prioritized.map((_, index) => String(index))));
+            }
+            let adjacentAccepted = 0;
+            for (const [candidateIndex, candidate] of prioritized.entries()) {
               if (context.signal.aborted || state.sourceCount >= limits.maxSources) break;
-              const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate });
+              const assessment = mergeSourceAssessments(deterministicAssessments.get(String(candidateIndex))!, modelAssessments[String(candidateIndex)]);
+              const assessedCandidate = { ...candidate, metadata: { ...candidate.metadata, sourceAssessment: assessment, queryPurpose: strategy.purpose, intendedSourceRole: strategy.sourceRole } };
+              const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate: assessedCandidate });
+              if (assessment.relevance === "irrelevant" || (assessment.relevance === "adjacent" && adjacentAccepted >= 2)) {
+                await markCandidateRejected(savedCandidate.id);
+                continue;
+              }
+              if (assessment.relevance === "adjacent") adjacentAccepted += 1;
               // 同一 Run 内已被成功读取的候选不重复 fetch：Evidence 由
               // (runId, evidenceKey) 幂等，再读只会烧 fetch budget 而不产生新证据。
               if (savedCandidate.status === "fetched") continue;
@@ -505,7 +457,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
               let saved: Awaited<ReturnType<typeof ingestResearchReadSource>> = null;
               let readTitle = candidate.title;
               try {
-                const read = await provider.read(taskContext, candidate);
+                const read = await provider.read(taskContext, assessedCandidate);
                 if (!read) {
                   releaseResearchBudgetCounter(state, "sourceCount");
                   await markCandidateRejected(savedCandidate.id);
@@ -549,18 +501,27 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     }
 
     if (state.stage === "evaluating") {
-      const questions = await prisma.researchQuestion.findMany({ where: { runId: run.id }, include: { evidence: { where: { status: "active" }, select: { id: true, statement: true, sourceSnapshot: { select: { retrievedAt: true, source: { select: { id: true, kind: true, metadata: true } } } } } } }, orderBy: { orderIndex: "asc" } });
+      const questions = await prisma.researchQuestion.findMany({ where: { runId: run.id }, include: { evidence: { where: { status: "active" }, select: { id: true, statement: true, excerpt: true, evidenceType: true, provenance: true, sourceSnapshot: { select: { retrievedAt: true, metadata: true, source: { select: { id: true, kind: true, title: true, canonicalKey: true, metadata: true } } } } } } }, orderBy: { orderIndex: "asc" } });
       let unresolvedCritical: typeof questions[number] | undefined;
       const evaluatedStatuses = new Map<string, ResearchQuestionStatus>();
       for (const question of questions) {
-        const fallbackDecision: ResearchEvaluatorDecision = {
-          status: question.evidence.length >= 2 ? "resolved" : question.evidence.length === 1 ? "partially_resolved" : "unresolved",
-          coverage: question.evidence.length > 0 ? Math.min(1, question.evidence.length / 2) : 0,
-          directness: question.evidence.length > 0 ? 0.7 : 0,
-        };
+        const evidencePackets = question.evidence.map((item) => {
+          const sourceMetadata = item.sourceSnapshot.source.metadata && typeof item.sourceSnapshot.source.metadata === "object" && !Array.isArray(item.sourceSnapshot.source.metadata) ? item.sourceSnapshot.source.metadata as Record<string, unknown> : {};
+          const evidenceProvenance = item.provenance && typeof item.provenance === "object" && !Array.isArray(item.provenance) ? item.provenance as Record<string, unknown> : {};
+          const snapshotMetadata = item.sourceSnapshot.metadata && typeof item.sourceSnapshot.metadata === "object" && !Array.isArray(item.sourceSnapshot.metadata) ? item.sourceSnapshot.metadata as Record<string, unknown> : {};
+          const assessmentValue = evidenceProvenance.sourceAssessment ?? sourceMetadata.sourceAssessment;
+          const assessment = assessmentValue && typeof assessmentValue === "object" && !Array.isArray(assessmentValue) ? assessmentValue as Record<string, unknown> : {};
+          const scope = snapshotMetadata.scope && typeof snapshotMetadata.scope === "object" && !Array.isArray(snapshotMetadata.scope) ? snapshotMetadata.scope as Record<string, unknown> : {};
+          return { id: item.id, statement: item.statement, excerpt: item.excerpt, sourceTitle: item.sourceSnapshot.source.title, year: sourceMetadata.year ?? null, venue: sourceMetadata.venue ?? null, sourceRole: assessment.sourceRole ?? evidenceProvenance.intendedSourceRole ?? sourceMetadata.intendedSourceRole ?? "context", sourceRelevance: assessment.relevance ?? "adjacent", qualityClass: assessment.qualityClass ?? "context_source", evidenceType: item.evidenceType, scope: scope.type ?? "unknown", canonicalSourceIdentity: item.sourceSnapshot.source.canonicalKey };
+        });
+        const substantive = evidencePackets.filter((item) => item.sourceRelevance === "direct" && item.scope !== "metadata_only");
+        const independentDirectSources = new Set(substantive.map((item) => item.canonicalSourceIdentity)).size;
+        const primaryEvidencePresent = substantive.some((item) => item.sourceRole === "primary");
+        const analyticalIntent = planSnapshot?.intentType === "trend" || planSnapshot?.intentType === "comparison" || planSnapshot?.intentType === "literature_review" || planSnapshot?.intentType === "technical_review";
+        const fallbackDecision = deterministicEvaluatorDecision({ intentType: planSnapshot?.intentType, evidence: evidencePackets });
         let decision = fallbackDecision;
         const canEvaluateQuestion = question.evaluateAttempts < limits.maxQuestionEvaluateAttempts;
-        if (canEvaluateQuestion && state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits) {
+        if (canEvaluateQuestion && state.modelCalls < researchLimits.modelCalls && (state.totalTokens ?? 0) < researchLimits.maxTokens && (state.costCredits ?? 0) < researchLimits.maxCostCredits) {
           const evaluatorResult = await runResearchModelStage<ResearchEvaluatorDecision>({
             role: "research.evaluator",
             userId: context.execution.userId,
@@ -568,22 +529,14 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             projectId: run.workspace.projectId,
             signal: context.signal,
             modelOverride,
-            prompt: [
-              "你是 LumenLab Research Evaluator。只返回 JSON，不要 Markdown，不要隐藏推理。",
-              "格式：{\"status\":\"resolved|partially_resolved|unresolved|controversial\",\"coverage\":0到1,\"directness\":0到1,\"gap\":\"缺口\",\"followUpQueries\":[\"可选检索词\"]}。",
-              `研究问题：${question.question}`,
-              `完成标准：${JSON.stringify(question.completionCriteria)}`,
-              `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
-              `已有 Evidence：${JSON.stringify(question.evidence.map((item) => ({ statement: item.statement, sourceKind: item.sourceSnapshot.source.kind })))}`,
-              "只根据这些 Evidence 判断；没有证据不能判定 resolved。",
-            ].join("\n"),
+            prompt: buildEvaluatorPrompt({ plan: planSnapshot!, question: { question: question.question, completionCriteria: question.completionCriteria }, domainProfile, evidence: evidencePackets }),
           });
           recordResearchModelStage(state, evaluatorResult);
           decision = normalizeResearchEvaluatorDecision(evaluatorResult.value, fallbackDecision);
         }
-        const status = question.evidence.length === 0
+        const status = substantive.length === 0
           ? "unresolved"
-          : question.evidence.length === 1 && decision.status === "resolved"
+          : (!primaryEvidencePresent || (analyticalIntent && independentDirectSources < 3)) && decision.status === "resolved"
             ? "partially_resolved"
             : decision.status;
         const sourceKinds = question.evidence.map((item) => item.sourceSnapshot.source.kind);
@@ -609,7 +562,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           recency: computeEvidenceRecency(question.evidence.map((item) => item.sourceSnapshot.retrievedAt)),
         });
         evaluatedStatuses.set(question.id, status as ResearchQuestionStatus);
-        await prisma.researchQuestion.update({ where: { id: question.id }, data: { status, evaluateAttempts: canEvaluateQuestion ? { increment: 1 } : undefined, qualitySummary: json({ coverage: decision.coverage, directness: decision.directness, gap: decision.gap, followUpQueries: decision.followUpQueries ?? [], conflictReviewed: true, dimensions: quality, evaluationBudgetExhausted: !canEvaluateQuestion }) } });
+        await prisma.researchQuestion.update({ where: { id: question.id }, data: { status, evaluateAttempts: canEvaluateQuestion ? { increment: 1 } : undefined, qualitySummary: json({ coverage: decision.coverage, directness: decision.directness, criterionCoverage: decision.criterionCoverage ?? [], independentSourceCount: decision.independentSourceCount ?? independentDirectSources, primaryEvidencePresent: decision.primaryEvidencePresent ?? primaryEvidencePresent, conflictState: decision.conflictState ?? "none", gap: decision.gap, followUpQueries: decision.followUpQueries ?? [], stopReason: decision.stopReason ?? fallbackDecision.stopReason, conflictReviewed: true, dimensions: quality, evaluationBudgetExhausted: !canEvaluateQuestion }) } });
         if (question.priority === "critical" && (status === "unresolved" || status === "controversial")) unresolvedCritical = question;
         await appendPublicEvent(context, { key: `research:question:evaluated:${question.id}:${state.replanCount}`, kind: "question_evaluated", runId: run.id, message: `${question.title}：${status === "resolved" ? "已解决" : status === "partially_resolved" ? "部分解决" : "未解决"}`, publicData: { questionId: question.id, status, evidenceCount: question.evidence.length } });
       }
@@ -620,7 +573,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       const conflictCoverage = questions.length === 0 ? 0 : questions.filter((question) => question.evidence.length > 0 && evaluatedStatuses.has(question.id)).length / questions.length;
       const informationGain = computeResearchInformationGain(state.lastEvidenceCount ?? 0, allEvidence.length);
       state.lastEvidenceCount = allEvidence.length;
-      const stopDecision = evaluateResearchStop({ limits, modelCalls: state.modelCalls, totalTokens: state.totalTokens, costCredits: state.costCredits, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, elapsedMs: Date.now() - (run.startedAt ?? run.createdAt).getTime(), criticalQuestionsResolved: !unresolvedCritical, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain, hasPendingCriticalWork: Boolean(unresolvedCritical) });
+      const stopDecision = evaluateResearchStop({ limits: researchLimits, modelCalls: state.modelCalls, totalTokens: state.totalTokens, costCredits: state.costCredits, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, elapsedMs: Date.now() - (run.startedAt ?? run.createdAt).getTime(), criticalQuestionsResolved: !unresolvedCritical, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain, hasPendingCriticalWork: Boolean(unresolvedCritical) });
       lastBudgetStopReason = stopDecision.reason;
       await appendPublicEvent(context, { key: `research:budget:evaluated:${run.id}:${state.replanCount}`, kind: "budget_updated", runId: run.id, message: stopDecision.summary, publicData: { ...stopDecision, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain, counters: { modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount } } });
       if (!stopDecision.stop && unresolvedCritical && unresolvedCritical.replanAttempts < limits.maxQuestionReplans && state.replanCount < limits.maxReplans && state.searchCalls < limits.searchCalls) {
@@ -1000,7 +953,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           continue;
         }
 
-        if (!tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+        if (!tryReserveResearchBudgetCounter(state, researchLimits, "modelCalls")) {
           metrics.budgetStops += 1;
           break;
         }
@@ -1156,52 +1109,27 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
       }
       state.claimExtraction = { fingerprints };
-      state.stage = "synthesizing";
-      await transitionRun(run.id, "synthesizing");
+      state.stage = "verifying";
+      await transitionRun(run.id, "verifying");
       await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
-      await appendPublicEvent(context, { key: "research:stage:claim_extraction", kind: "stage_changed", runId: run.id, message: "Claim Extraction 完成，进入报告整理", publicData: { extractedQuestions, questionCount: questions.length } });
+      await appendPublicEvent(context, { key: "research:stage:claim_extraction", kind: "stage_changed", runId: run.id, message: "Claim Extraction 完成，先核验命题再组织报告", publicData: { extractedQuestions, questionCount: questions.length } });
       return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
     }
 
     if (state.stage === "synthesizing") {
-      const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
-      const synthesisClaims = await prisma.claim.findMany({
-        where: { runId: run.id, status: { in: ["active", "disputed"] } },
-        include: { evidenceRelations: { include: { evidence: { select: { id: true, status: true, evidenceType: true, sourceSnapshot: { select: { sourceId: true, metadata: true } } } } } } },
-        orderBy: { createdAt: "asc" },
-      });
-      const markerByEvidenceId = new Map(evidence.map((item, index) => [item.id, `E${index + 1}`]));
-      const claimsInput: SynthesisClaimInput[] = synthesisClaims.map((claim) => {
-        const precheck = computeDeterministicClaimVerification(claim.evidenceRelations.map((relation) => ({
-          relation: relation.relation,
-          evidence: {
-            status: relation.evidence.status,
-            evidenceType: relation.evidence.evidenceType,
-            snapshotScopeType: snapshotScopeTypeOf(relation.evidence.sourceSnapshot.metadata),
-            sourceSnapshot: { sourceId: relation.evidence.sourceSnapshot.sourceId },
-          },
-        })));
-        const qualifiers = claim.quality && typeof claim.quality === "object" && !Array.isArray(claim.quality) && Array.isArray((claim.quality as Record<string, unknown>).qualifiers)
-          ? ((claim.quality as Record<string, unknown>).qualifiers as unknown[]).filter((item): item is string => typeof item === "string")
-          : [];
-        const relations = claim.evidenceRelations.flatMap((relation) => {
-          const marker = markerByEvidenceId.get(relation.evidenceId);
-          return marker ? [{ marker, relation: relation.relation }] : [];
-        });
-        return { id: claim.id, statement: claim.statement, status: precheck.status, reasonCode: precheck.reasonCode, qualifiers, markers: relations.map((relation) => relation.marker), relations };
-      });
-      const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, domainProfile, claims: claimsInput, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, modelOverride, evidence: evidence.map((item) => ({ id: item.id, statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
-      state.draftReport = synthesis.content;
-      recordResearchModelStage(state, synthesis);
+      // Compatibility for checkpoints created before verify-before-synthesize.
+      // Never emit the former deterministic bullet fallback; resume at Claim verification.
       state.stage = "verifying";
       await transitionRun(run.id, "verifying");
       await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
-      await appendPublicEvent(context, { key: "research:synthesis:completed", kind: "stage_changed", runId: run.id, message: "已生成结构化报告草稿，开始核验引用", publicData: { evidenceCount: evidence.length } });
+      await appendPublicEvent(context, { key: "research:synthesis:legacy-resume", kind: "stage_changed", runId: run.id, message: "已切换为先核验命题、再组织报告的收尾流程" });
       return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
     }
 
     const existingReport = await prisma.researchReportSnapshot.findUnique({ where: { runId: run.id } });
     if (existingReport) return { kind: "completed", checkpoint };
+    const finalizationStart = { modelCalls: state.modelCalls, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 };
+    const canUseFinalizationModel = () => (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits;
     const claims = await prisma.claim.findMany({ where: { runId: run.id, status: { in: ["active", "disputed"] } }, include: { question: { select: { id: true, title: true, question: true, priority: true } }, evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } }, orderBy: { createdAt: "asc" } });
     const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
     const sourceSnapshots = [...new Set(evidence.map((item) => item.sourceSnapshotId))];
@@ -1235,7 +1163,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       }
       return [claim.id, linked] as const;
     }));
-    if (state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits) {
+    let verifierAvailable = false;
+    if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
       const verifierResult = await runResearchModelStage<ResearchVerifierDecision>({
         role: "research.verifier",
         userId: context.execution.userId,
@@ -1243,16 +1172,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         projectId: run.workspace.projectId,
         signal: context.signal,
         modelOverride,
-        prompt: [
-          "你是 LumenLab Citation Verifier。只返回 JSON，不要 Markdown，不要隐藏推理，也不要联网。",
-          "格式：{\"claims\":{\"claimId\":{\"status\":\"verified|needs_qualification|unsupported|conflicted\",\"reasonCode\":\"sufficient_support|single_source_only|indirect_support|scope_mismatch|temporal_mismatch|mixed_evidence|contradicted|no_support|invalid_evidence|model_review\"}}}。",
-          "每个 Claim 只给出它实际关联的 Evidence；不要引用其他 Claim 的证据，不要把只有 context 关系的证据当作支持。",
-          "逐条检查：Evidence 是否直接支持 Claim（directness）、独立来源是否充足（同一 ResearchSource 的多个 chunk 只算一个来源）、是否存在反驳或混合证据、范围/日期/因果是否超出 Evidence 表达、Claim 措辞是否需要限定。",
-          "citationLinkedSourceCount 表示该 Claim 的支持来源之间存在直接引用关系的成对数量：它是来源独立性的风险信号，但有引用关系不自动等于不独立，仍按 Evidence 内容判断。",
-          "evidenceType=visual_observation 表示这是模型从论文图表读出的派生观察，不等于原论文的直接陈述；只读到摘要级元数据（没有正文）的来源也不能作为正文事实引用。这两类证据已经由 deterministic 下界限制为最多 needs_qualification，你只能维持或继续下调。",
-          "你只能确认或下调 deterministic 预检状态，不能把缺少直接支持或存在冲突的 Claim 升级为 verified。",
-          `领域 Profile：${JSON.stringify(domainProfile ?? {})}`,
-          `Claims 与关联 Evidence：${JSON.stringify(claims.map((claim) => ({
+        prompt: buildVerifierPrompt({ plan: planSnapshot!, domainProfile, claims: claims.map((claim) => ({
             id: claim.id,
             statement: claim.statement,
             deterministicPrecheck: { status: deterministicByClaim.get(claim.id)?.status, reasonCode: deterministicByClaim.get(claim.id)?.reasonCode },
@@ -1272,12 +1192,15 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
                 canonicalUrl: relation.evidence.sourceSnapshot.source.canonicalUrl,
               },
             })),
-          })))}`,
-        ].join("\n"),
+          })) }),
       });
-      recordResearchModelStage(state, verifierResult);
+      recordResearchModelStage(state, verifierResult, { modelCallReserved: true });
       verifierDecision = normalizeResearchVerifierDecision(verifierResult.value);
+      verifierAvailable = Boolean(verifierResult.value);
+      if (!verifierAvailable) degradationCodes.add("research_verifier_unavailable");
       await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+    } else {
+      degradationCodes.add("research_verifier_unavailable");
     }
     const claimStatuses = Object.fromEntries(claims.map((claim) => {
       const deterministic = deterministicByClaim.get(claim.id)!;
@@ -1286,7 +1209,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const unsupportedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "unsupported");
     const conflictedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "conflicted");
     const qualifiedClaims = claims.filter((claim) => claimStatuses[claim.id]?.status === "needs_qualification");
-    const citationMap = buildResearchCitationMap(claims);
+    const fullCitationMap = buildResearchCitationMap(claims);
     for (const claim of claims) {
       const deterministic = deterministicByClaim.get(claim.id)!;
       const previousQuality = claim.quality && typeof claim.quality === "object" && !Array.isArray(claim.quality) ? claim.quality as Record<string, unknown> : {};
@@ -1301,9 +1224,12 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const canScheduleVerificationResearch = repairTargets.length > 0
       && state.verificationRepairs < limits.maxVerificationRepairs
       && Date.now() - (run.startedAt ?? run.createdAt).getTime() < limits.wallTimeMs
-      && state.searchCalls < limits.searchCalls
-      && state.fetchCalls < limits.fetchCalls
-      && state.sourceCount < limits.maxSources;
+      && state.modelCalls < researchLimits.modelCalls
+      && (state.totalTokens ?? 0) < researchLimits.maxTokens
+      && (state.costCredits ?? 0) < researchLimits.maxCostCredits
+      && state.searchCalls < researchLimits.searchCalls
+      && state.fetchCalls < researchLimits.fetchCalls
+      && state.sourceCount < researchLimits.maxSources;
     if (canScheduleVerificationResearch) {
       const repairIteration = state.verificationRepairs + 1;
       state.verificationRepairs = repairIteration;
@@ -1326,37 +1252,101 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       await appendPublicEvent(context, { key: `research:verification:repair:${run.id}:${repairIteration}`, kind: "verification_updated", runId: run.id, message: "引用核验发现核心证据缺口，已创建有限补充研究任务", publicData: { repairIteration, taskCount: repairTargets.length, claimIds: repairTargets.flatMap((target) => target.claimIds), questionIds: repairTargets.map((target) => target.questionId), verificationRepairsRemaining: Math.max(0, limits.maxVerificationRepairs - repairIteration) } });
       return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
     }
-    const hasVerificationIssues = unsupportedClaims.length > 0 || conflictedClaims.length > 0 || qualifiedClaims.length > 0;
-    if (hasVerificationIssues) {
-      const shouldUseRepairModel = state.verificationRepairs < limits.maxVerificationRepairs
-        && state.modelCalls < limits.modelCalls
-        && (state.totalTokens ?? 0) < limits.maxTokens
-        && (state.costCredits ?? 0) < limits.maxCostCredits;
-      if (shouldUseRepairModel) state.verificationRepairs += 1;
-      const repair = await repairReportWithExistingRuntime({
-        userId: context.execution.userId,
-        conversationId: context.execution.conversationId,
-        projectId: run.workspace.projectId,
-        signal: context.signal,
-        question: run.question,
-        domainProfile,
-        draft: state.draftReport ?? "",
-        evidence: evidence.map((item) => ({ id: item.id, statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })),
-        targets: repairTargets,
-        unsupportedClaims: unsupportedClaims.length,
-        conflictedClaims: conflictedClaims.length,
-        qualifiedClaims: qualifiedClaims.length,
-        useModel: shouldUseRepairModel,
-        modelOverride,
-      });
-      state.draftReport = repair.content;
-      recordResearchModelStage(state, repair);
-      await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
-      await appendPublicEvent(context, { key: `research:verification:qualified:${run.id}:${state.verificationRepairs}`, kind: "verification_updated", runId: run.id, message: "引用核验已完成局部修订并保留证据边界", publicData: { verificationRepairs: state.verificationRepairs, modelAttempted: repair.attempted, unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length, needsQualification: qualifiedClaims.length } });
+    const markerByEvidenceId = new Map(evidence.map((item, index) => [item.id, `E${index + 1}`]));
+    const claimPackets: ReportClaimPacket[] = claims.map((claim) => {
+      const quality = claim.quality && typeof claim.quality === "object" && !Array.isArray(claim.quality) ? claim.quality as Record<string, unknown> : {};
+      const qualifiers = Array.isArray(quality.qualifiers) ? quality.qualifiers.filter((item): item is string => typeof item === "string").slice(0, 8) : [];
+      return {
+        id: claim.id,
+        statement: claim.statement,
+        status: claimStatuses[claim.id]?.status ?? "unsupported",
+        qualifiers,
+        evidence: claim.evidenceRelations.flatMap((relation) => {
+          const marker = markerByEvidenceId.get(relation.evidenceId);
+          if (!marker || relation.evidence.status !== "active") return [];
+          const sourceMetadata = relation.evidence.sourceSnapshot.source.metadata && typeof relation.evidence.sourceSnapshot.source.metadata === "object" && !Array.isArray(relation.evidence.sourceSnapshot.source.metadata) ? relation.evidence.sourceSnapshot.source.metadata as Record<string, unknown> : {};
+          const provenance = relation.evidence.provenance && typeof relation.evidence.provenance === "object" && !Array.isArray(relation.evidence.provenance) ? relation.evidence.provenance as Record<string, unknown> : {};
+          return [{ marker, relation: relation.relation, statement: relation.evidence.statement, excerpt: relation.evidence.excerpt, source: { title: relation.evidence.sourceSnapshot.source.title, canonicalKey: relation.evidence.sourceSnapshot.source.canonicalKey, year: sourceMetadata.year ?? null, venue: sourceMetadata.venue ?? null, assessment: provenance.sourceAssessment ?? sourceMetadata.sourceAssessment ?? null } }];
+        }),
+      };
+    });
+    const reportQuestions = await prisma.researchQuestion.findMany({ where: { runId: run.id }, orderBy: { orderIndex: "asc" }, select: { id: true, key: true, title: true, question: true, priority: true, status: true, qualitySummary: true } });
+    const coverageGaps = reportQuestions.flatMap((question) => {
+      const quality = question.qualitySummary && typeof question.qualitySummary === "object" && !Array.isArray(question.qualitySummary) ? question.qualitySummary as Record<string, unknown> : {};
+      return typeof quality.gap === "string" && quality.gap.trim() ? [quality.gap.trim().slice(0, 500)] : [];
+    });
+    const allowedClaimIds = new Set(claimPackets.filter((claim) => claim.status !== "unsupported").map((claim) => claim.id));
+    let architecture = fallbackReportArchitecture({ objective: planSnapshot?.objective ?? run.question, intentType: planSnapshot?.intentType, claims: claimPackets });
+    let architectureAvailable = false;
+    if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+      const architect = await architectReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, plan: planSnapshot!, questions: reportQuestions, claims: claimPackets, coverageGaps, modelOverride });
+      recordResearchModelStage(state, architect, { modelCallReserved: true });
+      const normalized = normalizeReportArchitecture(architect.value, allowedClaimIds);
+      if (normalized) {
+        architecture = normalized;
+        architectureAvailable = true;
+      } else degradationCodes.add("research_report_architecture_unavailable");
+    } else degradationCodes.add("research_report_architecture_unavailable");
+
+    let reportBody = "";
+    let synthesisAvailable = false;
+    if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+      const writer = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile });
+      recordResearchModelStage(state, writer, { modelCallReserved: true });
+      if (writer.value) {
+        reportBody = writer.value;
+        synthesisAvailable = true;
+      }
     }
-    const verificationSummary = { citationExistence: claims.length > 0 && unsupportedClaims.length === 0 ? "verified" : "needs_qualification", citationSupport: unsupportedClaims.length === 0 ? "verified" : "unsupported", citationAdequacy: conflictedClaims.length > 0 ? "conflicted" : sourceSnapshots.length > 0 ? "verified" : "unsupported", unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length, needsQualification: qualifiedClaims.length, verificationRepairs: state.verificationRepairs, verifierReasons: claimStatuses };
-    const reportStructure = buildResearchReportStructure(claims.map((claim) => ({ id: claim.id, statement: claim.statement, questionId: claim.questionId, questionTitle: claim.question?.title ?? null, evidenceRelations: claim.evidenceRelations.map((relation) => ({ evidenceId: relation.evidenceId, sourceSnapshotId: relation.evidence.sourceSnapshotId, relation: relation.relation })) })));
-    const reportDocument = { schemaVersion: "1", citationFormat: "evidence-marker-v1", title: `研究报告：${run.question}`, format: "markdown", body: state.draftReport ?? "", claimRefs: claims.map((claim) => claim.id), citationRefs: sourceSnapshots, evidenceRefs: evidence.map((item) => item.id), ...reportStructure };
+    if (!synthesisAvailable) {
+      degradationCodes.add("research_synthesis_unavailable");
+      reportBody = "## 综合阶段未完成\n\n研究资料已经收集，但最终综合阶段未成功完成。当前来源、Evidence 与 Claim 已保留，可在工作区查看或通过 Follow-up Run 重试。";
+    }
+
+    let deterministicAudit = deterministicReportAudit({ report: reportBody, evidenceRefs: evidence.map((item) => item.id), claims: claimPackets });
+    const bibliographySourceIdsFor = (body: string) => [...new Set(evidenceMarkersInReport(body).flatMap((marker) => evidence[marker - 1]?.sourceSnapshot.sourceId ? [evidence[marker - 1].sourceSnapshot.sourceId] : []))];
+    let modelAudit = { pass: false, issues: [] as Array<{ code: string; severity: "error" | "warning"; message: string }>, repairInstructions: [] as string[] };
+    let auditorAvailable = false;
+    if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+      const audit = await auditFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, report: reportBody, bibliographySourceIds: bibliographySourceIdsFor(reportBody) });
+      recordResearchModelStage(state, audit, { modelCallReserved: true });
+      if (audit.value) {
+        modelAudit = normalizeReportAuditDecision(audit.value);
+        auditorAvailable = true;
+      } else degradationCodes.add("research_report_audit_unavailable");
+    } else degradationCodes.add("research_report_audit_unavailable");
+
+    let reportAuditPass = synthesisAvailable && deterministicAudit.pass && auditorAvailable && modelAudit.pass;
+    if (!reportAuditPass && synthesisAvailable && auditorAvailable && state.verificationRepairs < limits.maxVerificationRepairs && canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+      state.verificationRepairs += 1;
+      const repair = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile, repair: { draft: reportBody, instructions: [...deterministicAudit.issues.map((issue) => issue.message), ...modelAudit.repairInstructions] } });
+      recordResearchModelStage(state, repair, { modelCallReserved: true });
+      if (repair.value) reportBody = repair.value;
+      deterministicAudit = deterministicReportAudit({ report: reportBody, evidenceRefs: evidence.map((item) => item.id), claims: claimPackets });
+      if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+        const reaudit = await auditFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, report: reportBody, bibliographySourceIds: bibliographySourceIdsFor(reportBody) });
+        recordResearchModelStage(state, reaudit, { modelCallReserved: true });
+        if (reaudit.value) modelAudit = normalizeReportAuditDecision(reaudit.value);
+      }
+      reportAuditPass = deterministicAudit.pass && modelAudit.pass;
+    }
+    if (!reportAuditPass) degradationCodes.add("research_report_quality_gate_failed");
+    state.draftReport = reportBody;
+    await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
+
+    const citedEvidenceIds = [...new Set(evidenceMarkersInReport(reportBody).flatMap((marker) => evidence[marker - 1]?.id ? [evidence[marker - 1].id] : []))];
+    const citedEvidenceSet = new Set(citedEvidenceIds);
+    const citationMap = Object.fromEntries(Object.entries(fullCitationMap).flatMap(([claimId, entries]) => {
+      if (claimStatuses[claimId]?.status === "unsupported") return [];
+      const filtered = entries.filter((entry) => citedEvidenceSet.has(entry.evidenceId));
+      return filtered.length > 0 ? [[claimId, filtered]] : [];
+    }));
+    const citedSnapshots = [...new Set(evidence.filter((item) => citedEvidenceSet.has(item.id)).map((item) => item.sourceSnapshotId))];
+    const verificationSummary = { citationExistence: citedEvidenceIds.length > 0 ? "verified" : "needs_qualification", citationSupport: unsupportedClaims.length === 0 ? "verified" : "unsupported", citationAdequacy: conflictedClaims.length > 0 ? "conflicted" : citedSnapshots.length > 0 ? "verified" : "unsupported", unsupportedClaims: unsupportedClaims.length, conflictedClaims: conflictedClaims.length, needsQualification: qualifiedClaims.length, verificationRepairs: state.verificationRepairs, verifierAvailable, verifierReasons: claimStatuses, reportAuditPass, auditIssues: [...deterministicAudit.issues, ...modelAudit.issues] };
+    const reportClaims = claims.filter((claim) => claimStatuses[claim.id]?.status !== "unsupported");
+    const reportStructure = buildResearchReportStructure(reportClaims.map((claim) => ({ id: claim.id, statement: claim.statement, questionId: claim.questionId, questionTitle: claim.question?.title ?? null, evidenceRelations: claim.evidenceRelations.filter((relation) => citedEvidenceSet.has(relation.evidenceId)).map((relation) => ({ evidenceId: relation.evidenceId, sourceSnapshotId: relation.evidence.sourceSnapshotId, relation: relation.relation })) })));
+    const qualityState = reportAuditPass && verifierAvailable && architectureAvailable ? "normal" : "degraded";
+    const reportDocument = { schemaVersion: "2", citationFormat: "evidence-marker-v1", title: `研究报告：${run.question}`, format: "markdown", body: reportBody, qualityState, architecture, claimRefs: reportClaims.map((claim) => claim.id), citationRefs: citedSnapshots, evidenceRefs: citedEvidenceIds, ...reportStructure };
     const contentHash = createHash("sha256").update(JSON.stringify({ reportDocument, citationMap, verificationSummary })).digest("hex");
     const graphMetrics = state.citationExpansion?.metrics ?? {};
     const visualMetrics = state.visualEvidence?.metrics ?? {};
@@ -1390,12 +1380,21 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       visualObservationCount: typeof visualMetrics.observationsPersisted === "number" ? visualMetrics.observationsPersisted : 0,
       budgetStopReason: lastBudgetStopReason,
       degradationCount: degradationCodes.size,
+      finalizationBudgetReserved: finalizationReserve,
+      finalizationBudgetUsed: {
+        modelCalls: state.modelCalls - finalizationStart.modelCalls,
+        totalTokens: (state.totalTokens ?? 0) - finalizationStart.totalTokens,
+        costCredits: (state.costCredits ?? 0) - finalizationStart.costCredits,
+      },
+      finalizationBudgetRemaining: finalizationBudgetRemaining({ limits, modelCalls: state.modelCalls, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 }),
+      reportAuditPass,
       ...graphMetrics,
       verificationSummary,
     };
-    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: evidence.map((item) => item.id), sourceSnapshotIds: sourceSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: claims.length, evidenceCount: evidence.length, sourceCount: canonicalSourceCount, sourceSnapshotCount: sourceSnapshots.length, graph: graphMetrics, visual: visualMetrics, scholarlyFilters: scholarlyFilterMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json(run.modelConfiguration ?? {}), contentHash } });
+    const existingModelConfiguration = run.modelConfiguration && typeof run.modelConfiguration === "object" && !Array.isArray(run.modelConfiguration) ? run.modelConfiguration as Record<string, unknown> : {};
+    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: citedEvidenceIds, sourceSnapshotIds: citedSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: reportQuestions.length, evidenceCount: evidence.length, citedEvidenceCount: citedEvidenceIds.length, sourceCount: canonicalSourceCount, citedSourceSnapshotCount: citedSnapshots.length, graph: graphMetrics, visual: visualMetrics, scholarlyFilters: scholarlyFilterMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json({ ...existingModelConfiguration, promptVersions: RESEARCH_PROMPT_VERSIONS }), contentHash } });
     await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ ...unifiedMetrics, scholarlyFilters: scholarlyFilterMetrics, degradations: [...degradationCodes] }) } });
-    await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: "研究报告已完成并冻结为不可修改快照", publicData: { reportId: report.id, evidenceCount: evidence.length, sourceCount: sourceSnapshots.length, verificationSummary } });
+    await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: reportAuditPass ? "研究报告已通过质量核验并冻结为不可修改快照" : "研究资料已冻结；最终综合或质量核验未完整通过", publicData: { reportId: report.id, evidenceCount: citedEvidenceIds.length, sourceCount: citedSnapshots.length, verificationSummary, qualityState } });
     return { kind: "completed", checkpoint };
   };
 }

@@ -69,7 +69,7 @@ interface ResearchRunDetail {
   budgetSnapshot?: { profile: string; modelCalls: number; searchCalls: number; fetchCalls: number; maxSources: number; maxTokens: number; maxCostCredits: number; maxVerificationRepairs: number } | null;
   metrics?: { modelCalls?: number; searchCalls?: number; fetchCalls?: number; sourceCount?: number; totalTokens?: number; costCredits?: number; verificationRepairs?: number; degradationCount?: number; degradations?: string[] } | null;
   reportSnapshot?: {
-    reportDocument: { body?: string; title?: string; evidenceRefs?: string[] };
+    reportDocument: { body?: string; title?: string; evidenceRefs?: string[]; qualityState?: "normal" | "degraded" };
     citationMap?: ResearchCitationMap;
     coverageSummary?: { graph?: Record<string, unknown>; visual?: Record<string, unknown> } | null;
     verificationSummary?: unknown;
@@ -103,6 +103,16 @@ interface ResearchPublicEvent {
 }
 
 interface ResearchPlan {
+  originalRequest?: string;
+  objective?: string;
+  intentType?: string;
+  targetTimeRange?: string | null;
+  evidenceTimeRange?: string | null;
+  scopeInclusions?: string[];
+  scopeExclusions?: string[];
+  assumptions?: string[];
+  evaluationDimensions?: string[];
+  expectedOutput?: string;
   researchGoal: string;
   scope: string;
   timeRange: string | null;
@@ -358,6 +368,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
       bibliography: buildResearchBibliography({
         evidence: (run.evidence ?? []) as never,
         relations: run.sourceRelations ?? [],
+        citedEvidenceIds: run.reportSnapshot.reportDocument.evidenceRefs ?? [],
       }),
     });
     try {
@@ -499,6 +510,12 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                   {run.degradations.map((item) => (
                     <p key={item.code} className="text-xs leading-5 text-[var(--color-warning)]">{item.message}</p>
                   ))}
+                </div>
+              ) : null}
+
+              {run.reportSnapshot?.reportDocument.qualityState === "degraded" ? (
+                <div role="alert" className="mt-4 bg-[var(--color-info-muted)] px-4 py-3">
+                  <p className="text-xs leading-5 text-[var(--color-warning)]">研究资料已经保存，但最终综合或质量审计未完整通过。本页不会把诊断性证据摘要伪装成正常高质量报告。</p>
                 </div>
               ) : null}
 

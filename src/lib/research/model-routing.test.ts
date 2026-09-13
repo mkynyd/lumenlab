@@ -14,10 +14,13 @@ describe("research model routing", () => {
 
   it("exposes all role assignments as structured configuration", () => {
     const configuration = researchModelConfiguration();
-    expect(Object.keys(configuration)).toHaveLength(7);
+    expect(Object.keys(configuration)).toHaveLength(10);
     expect(configuration["research.verifier"].role).toBe("research.verifier");
     expect(configuration["research.claim_extractor"].role).toBe("research.claim_extractor");
     expect(configuration["research.visual_evaluator"].role).toBe("research.visual_evaluator");
+    expect(configuration["research.source_triage"].role).toBe("research.source_triage");
+    expect(configuration["research.report_architect"].role).toBe("research.report_architect");
+    expect(configuration["research.report_auditor"].role).toBe("research.report_auditor");
   });
 
   it("allows active overrides, upgrades legacy IDs, and rejects unknown models", () => {

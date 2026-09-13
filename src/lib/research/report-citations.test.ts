@@ -114,6 +114,13 @@ describe("research bibliography", () => {
     });
   });
 
+  it("includes only actually cited evidence in first-citation order", () => {
+    const secondSource = evidenceInput({ id: "ev-2", sourceSnapshot: { ...(evidenceInput() as never as { sourceSnapshot: object }).sourceSnapshot, sourceId: "src-2", source: { ...(evidenceInput() as never as { sourceSnapshot: { source: object } }).sourceSnapshot.source, id: "src-2", canonicalKey: "doi:10.1/second", title: "Second" } } });
+    const entries = buildResearchBibliography({ evidence: [evidenceInput({ id: "ev-1" }), secondSource], citedEvidenceIds: ["ev-2"] });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ index: 1, sourceId: "src-2", evidenceIds: ["ev-2"] });
+  });
+
   it("separates metadata-only, visual and graph-discovered provenance", () => {
     const entries = buildResearchBibliography({
       evidence: [

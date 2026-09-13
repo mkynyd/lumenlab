@@ -82,6 +82,7 @@ export async function ingestResearchReadSource(input: {
   const read = input.read;
   if (!read) return null;
   const candidateMetadata = read.candidate.metadata && typeof read.candidate.metadata === "object" ? read.candidate.metadata : {};
+  const mergedReadMetadata = mergeSourceMetadata(candidateMetadata, read.metadata);
   const metadataDoi = typeof candidateMetadata.doi === "string" ? candidateMetadata.doi : null;
   const metadataPmid = typeof candidateMetadata.pmid === "string" ? candidateMetadata.pmid : null;
   const metadataDocId = typeof candidateMetadata.docId === "string" ? candidateMetadata.docId : null;
@@ -124,7 +125,7 @@ export async function ingestResearchReadSource(input: {
         data: {
           title: read.title || existingSource.title,
           aliases: json(mergeAliases(existingSource.aliases, read.candidate.url)),
-          metadata: json(mergeSourceMetadata(existingSource.metadata, read.metadata)),
+          metadata: json(mergeSourceMetadata(existingSource.metadata, mergedReadMetadata)),
         },
       })
     : await prisma.researchSource.create({
@@ -139,7 +140,7 @@ export async function ingestResearchReadSource(input: {
           pmid: identity.pmid,
           canonicalUrl: identity.canonicalUrl,
           aliases: json({ urls: read.candidate.url ? [read.candidate.url] : [] }),
-          metadata: json(read.metadata),
+          metadata: json(mergedReadMetadata),
         },
       });
 
@@ -172,6 +173,11 @@ export async function ingestResearchReadSource(input: {
   const slices = read.slices && read.slices.length > 0
     ? read.slices
     : [{ excerpt: read.excerpt, locator: read.locator, provenance: { provider: read.candidate.provider, extraction: "bounded-source-reader-v1" } }];
+  const triageProvenance = {
+    ...(candidateMetadata.sourceAssessment ? { sourceAssessment: candidateMetadata.sourceAssessment } : {}),
+    ...(typeof candidateMetadata.queryPurpose === "string" ? { queryPurpose: candidateMetadata.queryPurpose } : {}),
+    ...(typeof candidateMetadata.intendedSourceRole === "string" ? { intendedSourceRole: candidateMetadata.intendedSourceRole } : {}),
+  };
   const evidences: Array<{ id: string }> = [];
   for (const slice of slices) {
     const evidenceKey = buildResearchEvidenceKey({ canonicalKey: identity.canonicalKey, contentHash, locator: slice.locator, excerpt: slice.excerpt, evidenceType });
@@ -187,7 +193,7 @@ export async function ingestResearchReadSource(input: {
         excerpt: slice.excerpt,
         evidenceType,
         evidenceKey,
-        provenance: json(slice.provenance),
+        provenance: json({ ...slice.provenance, ...triageProvenance }),
       },
       update: {},
     });
