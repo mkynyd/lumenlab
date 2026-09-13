@@ -78,6 +78,34 @@ describe("research model stage contracts", () => {
     expect(prisma.message.findUnique).not.toHaveBeenCalled();
   });
 
+  it("routes the stage through the per-run commander model override", async () => {
+    vi.mocked(runAgentRuntime).mockResolvedValue({
+      metadata: {},
+      events: events([{ type: "completed" }]),
+      completion: Promise.resolve({
+        status: "completed",
+        conversationId: "conversation-1",
+        messageId: "message-1",
+        provider: "bailian",
+        model: "qwen3.8-max",
+        usage: null,
+        sources: [],
+      }),
+    } as never);
+    vi.mocked(prisma.message.findUnique).mockResolvedValue({
+      content: '{"status":"resolved"}',
+    } as never);
+
+    const result = await runResearchModelStage<{ status: string }>({ ...stageInput, modelOverride: "qwen3.8-max" });
+
+    expect(runAgentRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({ requestedModel: "qwen3.8-max", reasoningEffort: "high" }),
+      })
+    );
+    expect(result.model).toBe("qwen3.8-max");
+  });
+
   it("extracts bounded JSON from a fenced model response", () => {
     expect(parseStructuredJson<{ queries: string[] }>("说明\n```json\n{\"queries\":[\"a\"]}\n```"))
       .toEqual({ queries: ["a"] });

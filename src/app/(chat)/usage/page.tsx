@@ -133,6 +133,7 @@ export default function UsagePage() {
     if (model === "deepseek-v4-pro") return "DeepSeek · 深度";
     if (model === "minimax-m3") return "MiniMax";
     if (model === "qwen3.8-flash") return "Qwen · 快速";
+    if (model === "qwen3.8-max") return "Qwen · 旗舰";
     if (model === "qwen3.7-plus") return "Qwen";
     return model;
   };

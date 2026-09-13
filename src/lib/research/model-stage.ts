@@ -5,6 +5,7 @@ import type { ServerFileAttachment } from "@/lib/chat/router";
 import { logger } from "@/lib/logger";
 import type { ResearchPriority, ResearchRole } from "./contracts";
 import { selectResearchModel } from "./model-routing";
+import type { ChatModel } from "@/lib/chat/model-catalog";
 
 export interface ResearchModelStageInput {
   role: ResearchRole;
@@ -13,6 +14,8 @@ export interface ResearchModelStageInput {
   projectId: string | null;
   signal: AbortSignal;
   prompt: string;
+  /** Per-run 指挥模型：非空时优先于 env 覆盖与默认路由。 */
+  modelOverride?: ChatModel | null;
   parse?: (content: string) => unknown;
   /**
    * 显式选中的多模态附件（视觉证据阶段专用）。只有调用方明确传入的字节会被
@@ -34,7 +37,7 @@ export interface ResearchModelStageResult<T> {
  * message; reasoning and tool events never cross this domain boundary.
  */
 export async function runResearchModelStage<T>(input: ResearchModelStageInput): Promise<ResearchModelStageResult<T>> {
-  const selection = selectResearchModel(input.role);
+  const selection = selectResearchModel(input.role, input.modelOverride);
   let attempted = false;
   try {
     attempted = true;

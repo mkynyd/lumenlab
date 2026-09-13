@@ -62,8 +62,11 @@ export const QWEN_CHAT_MODEL = "qwen3.8-flash" as const;
 
 export const DEFAULT_CHAT_MODEL = QWEN_CHAT_MODEL;
 
+export const QWEN_MAX_CHAT_MODEL = "qwen3.8-max" as const;
+
 export const ALL_CHAT_MODELS = [
   QWEN_CHAT_MODEL,
+  QWEN_MAX_CHAT_MODEL,
   ...DEFAULT_CHAT_MODELS,
 ] as const;
 
@@ -98,6 +101,24 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     inputTypes: ["text", "image"],
     contextWindowTokens: 1_000_000,
     // 百炼模型列表未给出输出上限，沿用平台既有预算口径
+    maxOutputTokens: 64_000,
+    // Qwen reasoning.effort 默认 medium；内部 high/max 映射为 medium/high
+    reasoningEffort: { high: "medium", max: "high" },
+    enabled: true,
+    billingVersion: MODEL_BILLING_VERSION,
+  },
+  {
+    id: "qwen3.8-max",
+    wireId: "qwen3.8-max",
+    provider: "bailian",
+    displayName: "Qwen3.8-Max",
+    vendor: "阿里云百炼",
+    // 简介与能力口径对齐 qwen3.8-flash 官方参数表的 Max 档；
+    // 上下文/输出上限百炼模型列表未单独给出，沿用 Flash 档平台口径。
+    description: "通义千问 Qwen3.8 系列的 Max 档模型，支持 Function Calling、结构化输出、联网搜索与缓存加速，输入覆盖文本、图片与视频。",
+    inputLabel: "文本 · 图片 · 视频",
+    inputTypes: ["text", "image"],
+    contextWindowTokens: 1_000_000,
     maxOutputTokens: 64_000,
     // Qwen reasoning.effort 默认 medium；内部 high/max 映射为 medium/high
     reasoningEffort: { high: "medium", max: "high" },

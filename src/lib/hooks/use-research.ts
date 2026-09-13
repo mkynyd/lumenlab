@@ -37,10 +37,21 @@ export function useCreateResearchWorkspace() {
   });
 }
 
+export function useUpdateResearchWorkspace(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { name?: string; description?: string | null; status?: "active" | "archived"; projectId?: string | null }) => (await fetchJson<{ workspace: unknown }>(`/api/research/workspaces/${id}`, { method: "PATCH", body: JSON.stringify(input) })).workspace,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.research.workspaces });
+    },
+  });
+}
+
 export function useCreateResearchRun(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { question: string; budgetProfile?: "quick" | "deep" | "comprehensive" }) => (await fetchJson<{ run: unknown }>(`/api/research/workspaces/${workspaceId}/runs`, { method: "POST", body: JSON.stringify(input) })).run,
+    mutationFn: async (input: { question: string; budgetProfile?: "quick" | "deep" | "comprehensive"; commanderModel?: string }) => (await fetchJson<{ run: unknown }>(`/api/research/workspaces/${workspaceId}/runs`, { method: "POST", body: JSON.stringify(input) })).run,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.research.workspaces });

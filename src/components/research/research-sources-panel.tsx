@@ -1,6 +1,7 @@
 "use client";
 
 import { NavArrowRight } from "iconoir-react";
+import { ResearchExpandableText } from "@/components/research/research-expandable-text";
 import {
   researchGraphProvenanceLabel,
   researchSourceBadges,
@@ -70,9 +71,9 @@ export function ResearchSourcesPanel({
       </ul>
       {selected ? (
         <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4">
-          <p className="text-sm font-medium leading-6 text-[var(--color-text-primary)]">{selected.title}</p>
+          <ResearchExpandableText text={selected.title} className="text-sm font-medium leading-6 text-[var(--color-text-primary)]" />
           <div className="mt-2 space-y-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">
-            {selected.authors.length > 0 ? <p>作者：{selected.authors.join(", ")}</p> : null}
+            {selected.authors.length > 0 ? <ResearchExpandableText text={`作者：${selected.authors.join(", ")}`} /> : null}
             {selected.year !== null ? <p>年份：{selected.year}</p> : null}
             {selected.venue ? <p>发表载体：{selected.venue}</p> : null}
             {selected.doi ? <p>DOI：{selected.doi}</p> : null}

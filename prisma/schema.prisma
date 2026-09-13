@@ -1333,13 +1333,13 @@ model UserToolPreference {
 }
 
 model LoginAttempt {
-  id        String   @id @default(cuid())
-  email     String? // legacy email audit; NULL for phone
-  identifier String? // normalized login alias; Expand nullable for old writers
+  id           String   @id @default(cuid())
+  email        String? // legacy email audit; NULL for phone
+  identifier   String? // normalized login alias; Expand nullable for old writers
   identityType String? // email | phone
-  ip        String
-  success   Boolean
-  createdAt DateTime @default(now())
+  ip           String
+  success      Boolean
+  createdAt    DateTime @default(now())
 
   @@index([email, createdAt])
   @@index([identifier, createdAt])
@@ -1758,6 +1758,7 @@ model ResearchRun {
   status             ResearchRunStatus @default(planning)
   budgetSnapshot     Json?
   modelConfiguration Json?
+  commanderModel     String?
   checkpoint         Json?
   metrics            Json?
   startedAt          DateTime?

@@ -3,7 +3,7 @@ import type { AgentModel } from "@/lib/agent/contracts";
 import { PrismaAgentExecutionStore } from "@/lib/agent/executions/prisma-agent-execution-store";
 import { parseAgentCheckpoint, type AgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
 import { prisma } from "@/lib/db";
-import { selectResearchModel, type ResearchModelSelection } from "./model-routing";
+import { selectResearchModel, resolveCommanderModel, type ResearchModelSelection } from "./model-routing";
 
 function researchCheckpoint(input: { runId: string; question: string; selection: ResearchModelSelection; stage: "planning" | "researching" }): AgentCheckpoint {
   return parseAgentCheckpoint({
@@ -49,7 +49,7 @@ export async function createResearchAgentExecution(userId: string, runId: string
   if (!run) throw new Error("Research Run 不存在或无权访问");
   if (run.agentExecutionId) return run.agentExecutionId;
 
-  const selection = selectResearchModel("research.worker");
+  const selection = selectResearchModel("research.worker", resolveCommanderModel(run.commanderModel));
   const model: AgentModel = selection.model;
   const checkpoint = researchCheckpoint({ runId: run.id, question: run.question, selection, stage: options?.stage ?? "researching" });
   const clientRunKey = `research:${run.id}:v1`;

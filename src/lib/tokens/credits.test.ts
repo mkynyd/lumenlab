@@ -19,6 +19,7 @@ describe("credits", () => {
     expect(getCreditWeights("minimax-m3")).toBeDefined();
     expect(getCreditWeights("qwen3.7-plus")).toBeDefined();
     expect(getCreditWeights("qwen3.8-flash")).toBeDefined();
+    expect(getCreditWeights("qwen3.8-max")).toBeDefined();
     expect(getCreditWeights("deepseek-flash")).toBeDefined();
     expect(getCreditWeights("deepseek-v4-flash-vision-exp")).toBeDefined();
     expect(getCreditWeights("unknown")).toBeUndefined();
@@ -109,6 +110,17 @@ describe("credits", () => {
     });
     // 300000 * 0.8 + 1000 * 2.7 = 242700 raw / 1000 = 242.7 → 243
     expect(credits).toBe(243);
+  });
+
+  it("calculates credits for qwen3.8-max with its flagship-tier flat weights", () => {
+    // hit 0.3 / miss 3 / out 12（元/百万 → 每 1K 信用点）
+    const credits = calculateCredits("qwen3.8-max", {
+      inputCacheHitTokens: 1_000,
+      inputCacheMissTokens: 1_000,
+      outputTokens: 1_000,
+    });
+    // 300 + 3000 + 12000 = 15300 raw / 1000 = 15.3 → 16
+    expect(credits).toBe(16);
   });
 
   it("rounds credits up", () => {

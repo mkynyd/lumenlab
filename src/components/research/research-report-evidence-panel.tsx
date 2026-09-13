@@ -61,11 +61,13 @@ function sourceLink(source: NonNullable<EvidenceItem["sourceSnapshot"]>["source"
   return null;
 }
 
+const LOCATOR_KEY_FIELDS = ["page", "chunk", "offset", "url"] as const;
+
+/** 定位信息只保留关键字段（page/chunk/offset/url），避免长 docId 撑破卡片。 */
 function locatorLabel(locator: Record<string, unknown> | null) {
   if (!locator) return "";
-  return Object.entries(locator)
-    .filter(([, value]) => value !== null && value !== undefined)
-    .map(([key, value]) => `${key}：${typeof value === "string" ? value : JSON.stringify(value)}`)
+  return LOCATOR_KEY_FIELDS.filter((key) => locator[key] !== null && locator[key] !== undefined)
+    .map((key) => `${key}：${typeof locator[key] === "string" ? locator[key] : JSON.stringify(locator[key])}`)
     .join(" · ");
 }
 
@@ -89,15 +91,15 @@ export function ResearchCitationCard({
         <span className="font-mono text-xs text-[var(--color-accent)]">{marker ?? "E"}</span>
         <span className="text-[11px] text-[var(--color-text-tertiary)]">{researchRelationLabel(entry.relation)}</span>
       </div>
-      <p className="mt-2 text-sm font-medium leading-6 text-[var(--color-text-primary)]">{entry.source.title ?? entry.source.id}</p>
+      <p className="mt-2 truncate text-sm font-medium leading-6 text-[var(--color-text-primary)]" title={entry.source.title ?? entry.source.id}>{entry.source.title ?? entry.source.id}</p>
       {authors || entry.source.year !== null ? (
-        <p className="mt-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">{[authors, entry.source.year ?? undefined].filter(Boolean).join(" · ")}</p>
+        <p className="mt-1 truncate text-[11px] leading-5 text-[var(--color-text-tertiary)]">{[authors, entry.source.year ?? undefined].filter(Boolean).join(" · ")}</p>
       ) : null}
-      {evidence ? <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">“{evidence.excerpt}”</p> : null}
+      {evidence ? <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)] line-clamp-4">“{evidence.excerpt}”</p> : null}
       <div className="mt-3 space-y-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">
-        {entry.source.doi ? <p>DOI：{entry.source.doi}</p> : null}
-        <p>定位：{locatorLabel(entry.locator) || "未提供"}</p>
-        <p>类型：{evidence?.evidenceType ?? "unknown"} · 来源种类：{entry.source.kind}{entry.source.provider ? ` · ${entry.source.provider}` : ""}</p>
+        {entry.source.doi ? <p className="truncate">DOI：{entry.source.doi}</p> : null}
+        <p className="truncate" title={locatorLabel(entry.locator) || undefined}>定位：{locatorLabel(entry.locator) || "未提供"}</p>
+        <p className="truncate">类型：{evidence?.evidenceType ?? "unknown"} · 来源种类：{entry.source.kind}{entry.source.provider ? ` · ${entry.source.provider}` : ""}</p>
       </div>
       {link ? <a href={link} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline">打开来源 <NavArrowRight width={13} height={13} /></a> : null}
     </div>
@@ -174,7 +176,7 @@ export function ResearchReportEvidencePanel({
                 ? <Check width={14} height={14} className={`mt-0.5 shrink-0 ${verificationToneClass[claim.verificationStatus] ?? ""}`} />
                 : <WarningTriangle width={14} height={14} className={`mt-0.5 shrink-0 ${verificationToneClass[claim.verificationStatus] ?? ""}`} />}
               <span className="min-w-0 flex-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-                {claim.statement}
+                <span className="block line-clamp-2">{claim.statement}</span>
                 <span className={`mt-1 block text-[11px] ${verificationToneClass[claim.verificationStatus] ?? "text-[var(--color-text-tertiary)]"}`}>
                   {researchVerificationLabel(claim.verificationStatus)} · {claim.evidenceRelations.length} 条关系
                 </span>
@@ -199,13 +201,13 @@ export function ResearchReportEvidencePanel({
         const entry = citationIndex.get(selectedEvidence.id);
         return entry ? (
           <ResearchCitationCard
-            className="mt-5 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4"
+            className="mt-5 max-h-[24rem] overflow-y-auto rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4"
             entry={entry}
             evidence={selectedEvidence}
             marker={markerByEvidenceId.get(selectedEvidence.id)}
           />
         ) : (
-          <div className="mt-5 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4">
+          <div className="mt-5 max-h-[24rem] overflow-y-auto rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-4">
             <span className="font-mono text-xs text-[var(--color-accent)]">{markerByEvidenceId.get(selectedEvidence.id) ?? "Evidence"}</span>
             <p className="mt-3 text-sm font-medium leading-6 text-[var(--color-text-primary)]">{selectedEvidence.statement}</p>
             <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">“{selectedEvidence.excerpt}”</p>

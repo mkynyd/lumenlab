@@ -68,6 +68,13 @@ export const CREDIT_WEIGHTS: Record<string, CreditWeights> = {
     miss: 0.8,
     out: 2.7,
   },
+  // Qwen3.8-Max：旗舰档按 Qwen 系旗舰档位计价（元/百万 tokens：
+  // 命中 0.3 / 未命中 3 / 输出 12），缓存命中按输入价 10%。
+  "qwen3.8-max": {
+    hit: 0.3,
+    miss: 3,
+    out: 12,
+  },
 };
 
 // DeepSeek 峰谷两档权重（元/百万 tokens，与信用点 1:1）。官方 2026-09-10

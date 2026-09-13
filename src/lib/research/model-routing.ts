@@ -15,7 +15,7 @@ export interface ResearchModelSelection {
   provider: ProviderName;
   model: ChatModel;
   reasoningEffort: "high" | "max";
-  source: "default" | "environment";
+  source: "default" | "environment" | "run_override";
 }
 
 const DEFAULTS: Record<ResearchRole, Omit<ResearchModelSelection, "role" | "source">> = {
@@ -37,7 +37,16 @@ export function isResearchRole(value: string): value is ResearchRole {
   return ROLES.includes(value as ResearchRole);
 }
 
-export function selectResearchModel(role: ResearchRole): ResearchModelSelection {
+export function selectResearchModel(role: ResearchRole, override?: ChatModel | null): ResearchModelSelection {
+  if (override) {
+    return {
+      role,
+      provider: providerForChatModel(override)!,
+      model: override,
+      reasoningEffort: role === "research.synthesizer" ? "max" : "high",
+      source: "run_override",
+    };
+  }
   const fallback = DEFAULTS[role];
   const environmentKey = `RESEARCH_MODEL_${role.replace(/[^A-Z0-9]+/gi, "_").toUpperCase()}`;
   const configured = process.env[environmentKey]?.trim();
@@ -53,8 +62,17 @@ export function selectResearchModel(role: ResearchRole): ResearchModelSelection 
   };
 }
 
-export function researchModelConfiguration(): Record<ResearchRole, ResearchModelSelection> {
-  return Object.fromEntries(ROLES.map((role) => [role, selectResearchModel(role)])) as Record<ResearchRole, ResearchModelSelection>;
+export function researchModelConfiguration(override?: ChatModel | null): Record<ResearchRole, ResearchModelSelection> {
+  return Object.fromEntries(ROLES.map((role) => [role, selectResearchModel(role, override)])) as Record<ResearchRole, ResearchModelSelection>;
+}
+
+/**
+ * Per-run 指挥模型只接受活跃目录模型：非法输入（非字符串、历史别名、未知
+ * ID）一律返回 null，由调用方决定拒绝或忽略，不走 resolveConfiguredModel
+ * 的 legacy 升级与抛错路径。
+ */
+export function resolveCommanderModel(value: unknown): ChatModel | null {
+  return typeof value === "string" && isActiveChatModel(value) ? value as ChatModel : null;
 }
 
 function resolveConfiguredModel(value: string, environmentKey: string): ChatModel {

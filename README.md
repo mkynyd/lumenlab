@@ -63,6 +63,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### Deep Research
 
+- 入口是聊天式输入框：像普通聊天一样输入研究问题即可发起，可上传文件（自动归入关联项目并进入证据链）、选择研究领域/强度与指挥模型（含 Qwen3.8-Max）；发送后先生成研究计划，用户在计划审阅卡中确认后才进入执行。
 - 研究运行按 Planner → 并行 Researcher → Evaluator/Replan → Synthesizer → Citation Verifier 的 durable 阶段执行，复用 AgentExecution 租约、checkpoint 与事件回放，报告冻结为不可变快照。
 - 检索分三条并列通道：Web（web.search/web.fetch）、学术（Sciverse 主通道，OpenAlex/Crossref/Semantic Scholar/PubMed 为回退，arXiv 为专项来源）、项目资料（project_rag/project_files）；评估发现证据缺口时，沿核心论文的引用关系（sciverse.paper_relations）做有界的 Citation Graph 扩展；学术检索支持 catalog-aware 高级筛选，图表视觉证据按需在硬预算内启用（sciverse.resource + research.visual_evaluator）。
 - Sciverse 证据按论文 docId 硬范围做段落级语义检索，再在命中位置读取有界原文切片；证据以 chunk 级 locator（docId/chunkId/offset/pageNo）和 provenance 落库，快照元数据明确记录读取范围，不冒充全文。

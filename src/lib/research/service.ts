@@ -13,7 +13,7 @@ import { createResearchAgentExecution, resumeResearchAgentExecution } from "./du
 import type { ResearchBudgetProfile, ResearchPlanSnapshot, ResearchRunStatus } from "./contracts";
 import { applyConfirmedScopeDirectives, assertBudgetExpansion } from "./scope-confirmation";
 import { assertEvidenceRevisionInput, normalizeEvidenceTags, isUserEditableEvidenceStatus } from "./evidence";
-import { researchModelConfiguration } from "./model-routing";
+import { researchModelConfiguration, resolveCommanderModel } from "./model-routing";
 import { resolveResearchDomainProfile } from "./domain-profile";
 
 export class ResearchServiceError extends Error {
@@ -216,15 +216,44 @@ export async function createResearchWorkspace(input: {
   });
 }
 
+export async function updateResearchWorkspace(input: {
+  userId: string;
+  workspaceId: string;
+  name?: string;
+  description?: string | null;
+  status?: "active" | "archived";
+  projectId?: string | null;
+}) {
+  const existing = await prisma.researchWorkspace.findFirst({ where: { id: input.workspaceId, userId: input.userId }, select: { id: true } });
+  if (!existing) throw new ResearchServiceError("NOT_FOUND", "研究工作区不存在或无权访问");
+  if (input.projectId) {
+    const project = await prisma.project.findFirst({ where: { id: input.projectId, userId: input.userId }, select: { id: true } });
+    if (!project) throw new ResearchServiceError("NOT_FOUND", "项目不存在或无权访问");
+  }
+  return prisma.researchWorkspace.update({
+    where: { id: existing.id },
+    data: {
+      name: input.name?.trim(),
+      description: input.description === undefined ? undefined : input.description?.trim() || null,
+      status: input.status,
+      projectId: input.projectId === undefined ? undefined : input.projectId || null,
+    },
+    include: { project: { select: { id: true, name: true } } },
+  });
+}
+
 export async function createResearchRun(input: {
   userId: string;
   workspaceId: string;
   question: string;
   budgetProfile?: ResearchBudgetProfile;
   followUpOfId?: string | null;
+  commanderModel?: string | null;
 }) {
   const workspace = await prisma.researchWorkspace.findFirst({ where: { id: input.workspaceId, userId: input.userId } });
   if (!workspace) throw new ResearchServiceError("NOT_FOUND", "研究工作区不存在或无权访问");
+  const commanderModel = input.commanderModel == null ? null : resolveCommanderModel(input.commanderModel);
+  if (input.commanderModel != null && !commanderModel) throw new ResearchServiceError("INVALID_INPUT", "指挥模型必须是当前可用的聊天模型");
   const profile = input.budgetProfile ?? workspace.budgetProfile;
   const plan = buildResearchPlan({ question: input.question, profile, domainProfileKey: workspace.domainProfileKey });
   const budget = getResearchBudget(profile);
@@ -238,7 +267,8 @@ export async function createResearchRun(input: {
         question: plan.researchGoal,
         status: "planning",
         budgetSnapshot: JSON.parse(JSON.stringify(budget)),
-        modelConfiguration: JSON.parse(JSON.stringify(researchModelConfiguration())),
+        modelConfiguration: JSON.parse(JSON.stringify(researchModelConfiguration(commanderModel))),
+        commanderModel,
       },
     });
     const maxPlanVersion = await tx.researchPlanVersion.aggregate({ where: { workspaceId: workspace.id }, _max: { version: true } });
@@ -745,12 +775,12 @@ export async function cancelResearchRun(userId: string, runId: string) {
 }
 
 export async function createFollowUpResearchRun(userId: string, runId: string, question: string) {
-  const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, select: { id: true, workspaceId: true, status: true } });
+  const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, select: { id: true, workspaceId: true, status: true, commanderModel: true } });
   if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
   if (run.status !== "completed" && run.status !== "failed") {
     throw new ResearchServiceError("INVALID_STATE", "只有已完成或失败的运行可以创建 Follow-up Run");
   }
-  const followUp = await createResearchRun({ userId, workspaceId: run.workspaceId, question, followUpOfId: run.id });
+  const followUp = await createResearchRun({ userId, workspaceId: run.workspaceId, question, followUpOfId: run.id, commanderModel: run.commanderModel });
   await inheritFollowUpResearchAssets({ userId, workspaceId: run.workspaceId, fromRunId: run.id, toRunId: followUp.id });
   return followUp;
 }
@@ -765,6 +795,7 @@ export async function getResearchRun(userId: string, runId: string) {
       followUpOfId: true,
       agentExecutionId: true,
       planVersionId: true,
+      commanderModel: true,
       question: true,
       status: true,
       budgetSnapshot: true,

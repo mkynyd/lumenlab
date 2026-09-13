@@ -179,8 +179,43 @@ describe("ResearchReportEvidencePanel citation interaction", () => {
     expect(screen.getByText("Sparse routing at scale")).toBeInTheDocument();
     expect(screen.getByText("Jane Doe · 2024")).toBeInTheDocument();
     expect(screen.getByText("DOI：10.1/x")).toBeInTheDocument();
-    expect(screen.getByText(/定位：kind：sciverse/)).toBeInTheDocument();
+    // locatorLabel 只保留关键字段（page/chunk/offset/url），不输出长 docId。
+    expect(screen.getByText("定位：offset：120")).toBeInTheDocument();
+    expect(screen.queryByText(/kind：sciverse/)).not.toBeInTheDocument();
     expect(screen.getAllByText("支持").length).toBeGreaterThan(0);
+  });
+
+  it("truncates the citation card title, excerpt and claim statements", () => {
+    render(
+      <ResearchReportEvidencePanel
+        claims={claims}
+        evidence={[evidence()]}
+        citationMap={citationMap}
+        evidenceRefs={["ev-1"]}
+        selectedEvidenceId="ev-1"
+        onSelectEvidence={() => undefined}
+      />,
+    );
+    expect(screen.getByText("Sparse routing at scale")).toHaveClass("truncate");
+    expect(screen.getByText(/MoE routing improves throughput by 1\.8x/)).toHaveClass("line-clamp-4");
+    expect(screen.getByText("Sparse routing raises throughput.")).toHaveClass("line-clamp-2");
+  });
+
+  it("bounds the selected evidence detail card with a scrollable max height", () => {
+    const { container } = render(
+      <ResearchReportEvidencePanel
+        claims={claims}
+        evidence={[evidence()]}
+        citationMap={citationMap}
+        evidenceRefs={["ev-1"]}
+        selectedEvidenceId="ev-1"
+        onSelectEvidence={() => undefined}
+      />,
+    );
+    const card = screen.getByText("Sparse routing at scale").closest("div");
+    expect(card).toHaveClass("max-h-[24rem]");
+    expect(card).toHaveClass("overflow-y-auto");
+    expect(container.querySelectorAll(".max-h-\\[24rem\\]").length).toBeGreaterThan(0);
   });
 
   it("lets keyboard users select an evidence entry", async () => {
@@ -229,5 +264,22 @@ describe("ResearchReportEvidencePanel citation interaction", () => {
     );
     const pressed = screen.getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true");
     expect(pressed.length).toBeGreaterThan(0);
+  });
+});
+
+describe("ResearchExpandableText", () => {
+  it("clamps long text by default and reveals it on expand", async () => {
+    const user = userEvent.setup();
+    const { ResearchExpandableText } = await import("./research-expandable-text");
+    render(<ResearchExpandableText text="很长的一段证据陈述，默认应该被截断到三行" className="text-sm" />);
+    const content = screen.getByText("很长的一段证据陈述，默认应该被截断到三行");
+    expect(content).toHaveClass("line-clamp-3");
+    const toggle = screen.getByRole("button", { name: "展开" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(toggle);
+    expect(content).not.toHaveClass("line-clamp-3");
+    expect(screen.getByRole("button", { name: "收起" })).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: "收起" }));
+    expect(content).toHaveClass("line-clamp-3");
   });
 });

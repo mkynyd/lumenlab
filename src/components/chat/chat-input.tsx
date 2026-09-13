@@ -35,6 +35,7 @@ interface ChatInputProps {
   attachments?: FileAttachment[];
   onAttachmentsChange?: (files: FileAttachment[]) => void;
   contextHint?: string;
+  placeholder?: string;
   blockedReason?: string;
   model?: string;
   onModelChange?: (model: string) => void;
@@ -127,6 +128,7 @@ export function ChatInput({
   attachments = [],
   onAttachmentsChange,
   contextHint,
+  placeholder = "问点什么",
   blockedReason,
   model,
   onModelChange,
@@ -299,7 +301,7 @@ export function ChatInput({
             value={currentValue}
             onChange={(e) => updateValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="问点什么"
+            placeholder={placeholder}
             rows={1}
             disabled={disabled}
             autoComplete="off"

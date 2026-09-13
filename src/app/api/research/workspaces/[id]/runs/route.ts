@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
+import { ALL_CHAT_MODELS } from "@/lib/chat/model-catalog";
 import { getResearchWorkspace, createResearchRun, ResearchServiceError } from "@/lib/research/service";
 import { researchErrorResponse } from "@/lib/research/http";
 
 const createSchema = z.object({
   question: z.string().trim().min(3).max(20_000),
   budgetProfile: z.enum(["quick", "deep", "comprehensive"]).optional(),
+  commanderModel: z.enum(ALL_CHAT_MODELS).optional(),
 }).strict();
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {

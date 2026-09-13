@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import type { AgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { AgentExecutionHandler, AgentExecutionHandlerContext, AgentExecutionHandlerResult } from "@/lib/agent/executions/agent-execution-runner";
-import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
+import { DEEPSEEK_CHAT_MODEL, type ChatModel } from "@/lib/chat/model-catalog";
 import { evaluateResearchStop, getResearchBudget, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
@@ -24,6 +24,7 @@ import { assertResearchRunTransition } from "./state-machine";
 import type { ResearchPlanSnapshot, ResearchQuestionStatus, ResearchRunStatus } from "./contracts";
 import { nextResearchTaskRetryStatus } from "./task-retry";
 import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
+import { resolveCommanderModel } from "./model-routing";
 import { applyResearchPlannerDecision } from "./plan";
 import { appendVerificationQualification, selectVerificationRepairTargets, verificationRepairInstruction, type VerificationRepairTarget } from "./verification-repair";
 import { buildResearchReportStructure } from "./report-document";
@@ -158,6 +159,7 @@ async function synthesizeWithExistingRuntime(input: {
   claims: SynthesisClaimInput[];
   evidence: SynthesisEvidenceInput[];
   useModel: boolean;
+  modelOverride?: ChatModel | null;
 }) {
   const evidenceText = formatEvidenceList(input.evidence);
   const claimsText = input.claims.map((claim) => {
@@ -201,6 +203,7 @@ async function synthesizeWithExistingRuntime(input: {
     projectId: input.projectId,
     signal: input.signal,
     prompt,
+    modelOverride: input.modelOverride,
     parse: (content) => content.trim() || null,
   }) : { value: null, usage: null, model: DEEPSEEK_CHAT_MODEL, attempted: false };
   if (stage.value) return { content: stage.value, usage: stage.usage, model: stage.model, attempted: stage.attempted };
@@ -245,6 +248,7 @@ async function repairReportWithExistingRuntime(input: {
   conflictedClaims: number;
   qualifiedClaims: number;
   useModel: boolean;
+  modelOverride?: ChatModel | null;
 }) {
   const evidenceText = input.evidence.map((item, index) => `E${index + 1}（${item.id}）. ${item.statement}\n来源：${item.source}\n摘录：${item.excerpt}`).join("\n\n").slice(0, 60_000);
   const prompt = [
@@ -264,6 +268,7 @@ async function repairReportWithExistingRuntime(input: {
     projectId: input.projectId,
     signal: input.signal,
     prompt,
+    modelOverride: input.modelOverride,
     parse: (content) => content.trim() || null,
   }) : { value: null, usage: null, model: DEEPSEEK_CHAT_MODEL, attempted: false };
   return {
@@ -322,6 +327,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       verificationRepairs: 0,
     };
     const limits = getResearchBudget(run.workspace.budgetProfile);
+    const modelOverride = resolveCommanderModel(run.commanderModel);
     // 收尾预算保留：visual_evidence 阶段读图与图表扫描都要占用 fetchCalls，但阅读
     // 阶段很容易把整个 fetch 预算吃满（生产 deep run 实测 40/40），使视觉阶段永远
     // 无法执行。因此只要视觉阶段还没跑完，就在发现/扩展阶段扣掉它需要的额度，等
@@ -378,6 +384,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         conversationId: context.execution.conversationId,
         projectId: run.workspace.projectId,
         signal: context.signal,
+        modelOverride,
         prompt: [
           "你是 LumenLab Research Planner。只返回 JSON，不要 Markdown，不要隐藏推理，不要联网。",
           "你只能在已有计划上做有限、可解释的规划修订，不能虚构来源或直接生成研究结论。",
@@ -465,6 +472,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             conversationId: context.execution.conversationId,
             projectId: run.workspace.projectId,
             signal: context.signal,
+            modelOverride,
             prompt: [
               "你是 LumenLab Research Worker 的 Query Generation 阶段。只返回 JSON，不要 Markdown，不要隐藏推理。",
               "JSON 格式：{\"queries\":[\"最多三个短而互补的检索词\"],\"rationale\":\"一句话\"}。",
@@ -559,6 +567,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             conversationId: context.execution.conversationId,
             projectId: run.workspace.projectId,
             signal: context.signal,
+            modelOverride,
             prompt: [
               "你是 LumenLab Research Evaluator。只返回 JSON，不要 Markdown，不要隐藏推理。",
               "格式：{\"status\":\"resolved|partially_resolved|unresolved|controversial\",\"coverage\":0到1,\"directness\":0到1,\"gap\":\"缺口\",\"followUpQueries\":[\"可选检索词\"]}。",
@@ -1007,6 +1016,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           conversationId: context.execution.conversationId,
           projectId: run.workspace.projectId,
           signal: context.signal,
+          modelOverride,
           prompt: buildVisualEvidencePrompt({ question: item.questionText, resources: promptResources, bodyContext: item.bodyContext }),
           attachments: resources.map((resource) => ({
             name: resource.fileName.split("/").pop() || "figure",
@@ -1109,6 +1119,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           conversationId: context.execution.conversationId,
           projectId: run.workspace.projectId,
           signal: context.signal,
+          modelOverride,
           prompt: buildClaimExtractionPrompt({
             question: { key: question.key, title: question.title, question: question.question, completionCriteria: question.completionCriteria },
             domainProfile,
@@ -1179,7 +1190,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         });
         return { id: claim.id, statement: claim.statement, status: precheck.status, reasonCode: precheck.reasonCode, qualifiers, markers: relations.map((relation) => relation.marker), relations };
       });
-      const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, domainProfile, claims: claimsInput, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, evidence: evidence.map((item) => ({ id: item.id, statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
+      const synthesis = await synthesizeWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, question: run.question, domainProfile, claims: claimsInput, useModel: state.modelCalls < limits.modelCalls && (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits, modelOverride, evidence: evidence.map((item) => ({ id: item.id, statement: item.statement, excerpt: item.excerpt, source: item.sourceSnapshot.source.title ?? item.sourceSnapshot.source.canonicalKey })) });
       state.draftReport = synthesis.content;
       recordResearchModelStage(state, synthesis);
       state.stage = "verifying";
@@ -1231,6 +1242,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         conversationId: context.execution.conversationId,
         projectId: run.workspace.projectId,
         signal: context.signal,
+        modelOverride,
         prompt: [
           "你是 LumenLab Citation Verifier。只返回 JSON，不要 Markdown，不要隐藏推理，也不要联网。",
           "格式：{\"claims\":{\"claimId\":{\"status\":\"verified|needs_qualification|unsupported|conflicted\",\"reasonCode\":\"sufficient_support|single_source_only|indirect_support|scope_mismatch|temporal_mismatch|mixed_evidence|contradicted|no_support|invalid_evidence|model_review\"}}}。",
@@ -1335,6 +1347,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         conflictedClaims: conflictedClaims.length,
         qualifiedClaims: qualifiedClaims.length,
         useModel: shouldUseRepairModel,
+        modelOverride,
       });
       state.draftReport = repair.content;
       recordResearchModelStage(state, repair);

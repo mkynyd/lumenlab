@@ -28,11 +28,12 @@ describe("chat model catalog", () => {
     expect(isChatModelEnabled("qwen3.8-flash", "true")).toBe(true);
   });
 
-  it("activates exactly the three migration target models", () => {
+  it("activates exactly the four migration target models", () => {
     expect(DEFAULT_CHAT_MODELS).toEqual(["deepseek-flash", "minimax-m3"]);
     expect(QWEN_CHAT_MODEL).toBe("qwen3.8-flash");
     expect(ALL_CHAT_MODELS).toEqual([
       "qwen3.8-flash",
+      "qwen3.8-max",
       "deepseek-flash",
       "minimax-m3",
     ]);
@@ -92,6 +93,17 @@ describe("chat model catalog", () => {
       reasoningEffort: { high: "medium", max: "high" },
       enabled: true,
     });
+    expect(getModelCatalogEntry("qwen3.8-max")).toMatchObject({
+      wireId: "qwen3.8-max",
+      provider: "bailian",
+      displayName: "Qwen3.8-Max",
+      inputTypes: ["text", "image"],
+      contextWindowTokens: 1_000_000,
+      maxOutputTokens: 64_000,
+      reasoningEffort: { high: "medium", max: "high" },
+      enabled: true,
+      billingVersion: MODEL_BILLING_VERSION,
+    });
   });
 
   it("resolves providers for both active and legacy models", () => {
@@ -99,6 +111,7 @@ describe("chat model catalog", () => {
     expect(providerForChatModel("deepseek-v4-flash-vision-exp")).toBe("deepseek");
     expect(providerForChatModel("minimax-m3")).toBe("minimax");
     expect(providerForChatModel("qwen3.8-flash")).toBe("bailian");
+    expect(providerForChatModel("qwen3.8-max")).toBe("bailian");
     expect(providerForChatModel("deepseek-v4-flash")).toBe("deepseek");
     expect(providerForChatModel("deepseek-v4-pro")).toBe("deepseek");
     expect(providerForChatModel("qwen3.7-plus")).toBe("bailian");
@@ -129,6 +142,7 @@ describe("chat model catalog", () => {
     );
     expect(chatModelLabel("deepseek-flash")).toBe("DeepSeek V4.1 Flash");
     expect(chatModelLabel("qwen3.8-flash")).toBe("Qwen3.8-Flash");
+    expect(chatModelLabel("qwen3.8-max")).toBe("Qwen3.8-Max");
     expect(chatModelLabel("some-old-model")).toBe("some-old-model");
   });
 });

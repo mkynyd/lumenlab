@@ -7,12 +7,24 @@ const hooks = {
   run: { data: undefined as unknown, isPending: false, isError: false, refetch: vi.fn() },
 };
 
+const navigation = {
+  runParam: null as string | null,
+  replace: vi.fn(),
+  push: vi.fn(),
+};
+
 const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: navigation.replace, push: navigation.push }),
+  useSearchParams: () => new URLSearchParams(navigation.runParam ? `run=${navigation.runParam}` : ""),
+}));
 
 vi.mock("@/lib/hooks/use-research", () => ({
   useResearchWorkspace: () => hooks.workspace,
   useResearchRun: () => hooks.run,
   useCreateResearchRun: mutation,
+  useUpdateResearchWorkspace: mutation,
   useCancelResearchRun: mutation,
   useCreateResearchFollowUp: mutation,
   useConfirmResearchPlan: mutation,
@@ -25,6 +37,16 @@ vi.mock("@/lib/hooks/use-research", () => ({
   useUpdateResearchClaim: mutation,
   useReassessResearchClaim: mutation,
   useUpsertClaimEvidenceRelation: mutation,
+}));
+
+vi.mock("@/lib/hooks/use-research-launch", () => ({
+  uploadResearchAttachments: vi.fn(async () => 0),
+}));
+
+// ResearchComposer 有自己的测试；这里用保持 placeholder 合同的轻量替身，
+// 避免拉入 ChatInput 的文本测量与 Tooltip 依赖。
+vi.mock("./research-composer", () => ({
+  ResearchComposer: () => <textarea aria-label="消息内容" placeholder="输入一个研究问题，例如：比较两种方法在近五年公开证据中的适用边界" />,
 }));
 
 const { ResearchWorkspaceView } = await import("./research-workspace");
@@ -51,6 +73,7 @@ function runDetail(overrides: Record<string, unknown> = {}) {
     startedAt: "2026-01-01T00:00:00.000Z",
     completedAt: null,
     agentExecutionId: null,
+    commanderModel: null,
     questions: [{ id: "q1", key: "q1", title: "路由方法", question: "有哪些路由方法？", priority: "critical", status: "partially_resolved", completionCriteria: [] }],
     tasks: [],
     directives: [],
@@ -64,7 +87,23 @@ function runDetail(overrides: Record<string, unknown> = {}) {
   } as never;
 }
 
+function planDetail() {
+  return {
+    researchGoal: "评估 MoE 路由",
+    scope: "近五年公开证据",
+    timeRange: "2021-2026",
+    sourceStrategy: ["原始论文"],
+    completionCriteria: ["给出对比表"],
+    expectedOutputs: ["研究报告"],
+    researchIntensity: "deep",
+    domainProfile: { name: "计算机科学", sourcePriorities: [], evidenceStandards: [], citationRules: [], outputStructure: [], preferredProviders: [] },
+  };
+}
+
 beforeEach(() => {
+  navigation.runParam = null;
+  navigation.replace.mockClear();
+  navigation.push.mockClear();
   hooks.workspace = { data: workspace, isPending: false, isError: false, refetch: vi.fn() };
   hooks.run = { data: runDetail(), isPending: false, isError: false, refetch: vi.fn() };
 });
@@ -80,6 +119,12 @@ describe("ResearchWorkspaceView status and progress", () => {
     hooks.run = { ...hooks.run, data: runDetail({ stage: { key: "claim_extraction", label: "提炼并核验命题" } }) };
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
     expect(screen.getByText("提炼并核验命题")).toBeInTheDocument();
+  });
+
+  it("shows the commander model display name in the status row when present", () => {
+    hooks.run = { ...hooks.run, data: runDetail({ commanderModel: "qwen3.8-flash" }) };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(screen.getByText(/指挥模型 Qwen3\.8-Flash/i)).toBeInTheDocument();
   });
 
   it("keeps the workspace usable after a run completes and puts the report first", () => {
@@ -100,12 +145,12 @@ describe("ResearchWorkspaceView status and progress", () => {
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
     const report = screen.getByRole("region", { name: "研究报告" });
     expect(within(report).getByText("研究报告：MoE 路由")).toBeInTheDocument();
-    // 报告出现在调试面板之前。
+    // 报告出现在来源面板之前。
     const sourcesPanel = screen.getByRole("region", { name: "研究来源" });
     expect(report.compareDocumentPosition(sourcesPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // Workspace 仍然存在（Run 历史 + 新建表单 + 完成后的 Follow-up 入口）。
+    // Workspace 仍然存在（Run 历史 + 新研究 composer + 完成后的 Follow-up 入口）。
     expect(screen.getByText("MoE 路由研究")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/输入研究问题/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/输入一个研究问题/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建 Follow-up Run" })).toBeInTheDocument();
   });
 
@@ -149,7 +194,8 @@ describe("ResearchWorkspaceView status and progress", () => {
     expect(screen.getByRole("button", { name: "创建 Follow-up Run" })).toBeInTheDocument();
   });
 
-  it("renders an empty state when the run has no evidence yet", () => {
+  it("renders an empty sources state for a terminal run without evidence", () => {
+    hooks.run = { ...hooks.run, data: runDetail({ status: "cancelled", stage: { key: "cancelled", label: "已取消" } }) };
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
     expect(screen.getByText("当前 Run 还没有已读取的来源。")).toBeInTheDocument();
   });
@@ -176,30 +222,72 @@ describe("ResearchWorkspaceView loading and error states", () => {
   });
 });
 
-describe("ResearchWorkspaceView plan confirmation", () => {
-  it("shows the plan and the confirmation action only while awaiting confirmation", () => {
+describe("ResearchWorkspaceView stage-driven layout", () => {
+  it("shows a planning skeleton while the plan is being generated", () => {
+    hooks.run = { ...hooks.run, data: runDetail({ status: "planning", stage: { key: "planning", label: "正在规划" }, activePlanVersion: null }) };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(screen.getByText("正在生成研究计划")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "研究计划" })).not.toBeInTheDocument();
+  });
+
+  it("makes the plan review card the primary content while awaiting confirmation", () => {
     hooks.run = {
       ...hooks.run,
       data: runDetail({
         status: "awaiting_confirmation",
         stage: { key: "awaiting_confirmation", label: "等待确认计划" },
-        activePlanVersion: {
-          plan: {
-            researchGoal: "评估 MoE 路由",
-            scope: "近五年公开证据",
-            timeRange: "2021-2026",
-            sourceStrategy: ["原始论文"],
-            completionCriteria: ["给出对比表"],
-            expectedOutputs: ["研究报告"],
-            researchIntensity: "deep",
-            domainProfile: { name: "计算机科学", sourcePriorities: [], evidenceStandards: [], citationRules: [], outputStructure: [], preferredProviders: [] },
-          },
-        },
+        activePlanVersion: { plan: planDetail() },
       }),
     };
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
-    expect(screen.getByText("研究计划")).toBeInTheDocument();
-    expect(screen.getByText("2021-2026")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /确认计划并开始研究/ })).toBeInTheDocument();
+    const card = screen.getByRole("region", { name: "研究计划" });
+    expect(within(card).getByText("1 个研究问题")).toBeInTheDocument();
+    expect(within(card).getByText("2021-2026")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: /确认计划并开始研究/ })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "提交调整" })).toBeInTheDocument();
+    // awaiting_confirmation 不渲染进行中分组（进度摘要 / 当前任务）。
+    expect(screen.queryByText("进度摘要")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前任务")).not.toBeInTheDocument();
+  });
+
+  it("groups in-progress sections for active runs", () => {
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(screen.getByText("进度摘要")).toBeInTheDocument();
+    expect(screen.getByText("Question 完成度")).toBeInTheDocument();
+    expect(screen.getByText("当前任务")).toBeInTheDocument();
+    expect(screen.getByText("公开执行事件")).toBeInTheDocument();
+  });
+
+  it("keeps advanced operations collapsed by default for terminal runs", () => {
+    hooks.run = { ...hooks.run, data: runDetail({ status: "completed", stage: { key: "completed", label: "已完成" } }) };
+    const { container } = render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    const details = container.querySelector("details[data-testid='advanced-operations']");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText(/Evidence \/ Claims \/ 追加方向/)).toBeInTheDocument();
+  });
+
+  it("does not render advanced operations for active runs", () => {
+    const { container } = render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(container.querySelector("details[data-testid='advanced-operations']")).toBeNull();
+  });
+});
+
+describe("ResearchWorkspaceView run selection via URL", () => {
+  it("selects the run named by ?run= and marks it current", () => {
+    navigation.runParam = "run-2";
+    hooks.workspace = {
+      ...hooks.workspace,
+      data: {
+        ...workspace,
+        runs: [
+          { id: "run-1", question: "比较 MoE 路由方法", status: "researching", createdAt: "2026-01-01T00:00:00.000Z" },
+          { id: "run-2", question: "补充反方证据", status: "completed", createdAt: "2026-01-02T00:00:00.000Z" },
+        ],
+      },
+    };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(screen.getByRole("button", { name: /补充反方证据/ })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: /比较 MoE 路由方法/ })).not.toHaveAttribute("aria-current");
   });
 });
