@@ -1,8 +1,12 @@
 /**
  * 腾讯云 SES（香港 ap-hongkong）HTTPS API 发信客户端。
  *
- * 未启用（SES_ENABLED !== "1"）、缺凭据或缺模板 ID 时降级为 dry-run：
- * 打印邮件内容并返回成功（bulkId 为空），保证本地开发与未建模板时不崩溃。
+ * 未启用（SES_ENABLED !== "1"）、缺凭据或缺模板 ID 时：
+ * - 非生产环境降级为 dry-run（bulkId 为空、返回成功），保证本地开发不崩溃；
+ * - 生产环境 fail closed。静默 dry-run 会让验证邮件全部丢失却仍向用户报成功，
+ *   且把验证码写进 journal，因此生产必须暴露失败而不是伪装成功。
+ * 日志永不输出模板变量的取值，只输出字段名；本地需要真实取值时显式设置
+ * SES_DRY_RUN_VERBOSE=1（生产环境忽略该开关）。
  * 邮件发送走官方 SDK（tencentcloud-sdk-nodejs-ses），不依赖 SMTP。
  */
 
@@ -36,6 +40,19 @@ function hasCredentials(): boolean {
   );
 }
 
+/** dry-run 是本地开发兜底，生产环境必须 fail closed。 */
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+/** 默认只输出模板变量名；本地调试需要真实取值时显式开启，生产环境忽略该开关。 */
+function dryRunDataDetail(templateData: Record<string, string>): string {
+  if (process.env.SES_DRY_RUN_VERBOSE === "1" && !isProductionRuntime()) {
+    return `data=${JSON.stringify(templateData)}`;
+  }
+  return `dataKeys=${Object.keys(templateData).join(",")}`;
+}
+
 let clientInstance: InstanceType<typeof ses.v20201002.Client> | null = null;
 
 function getClient() {
@@ -55,8 +72,11 @@ export async function sendTemplateEmail(
   input: SendTemplateEmailInput
 ): Promise<SendTemplateEmailResult> {
   if (!sesEnabled() || !hasCredentials() || !input.templateId) {
+    if (isProductionRuntime()) {
+      return { ok: false, error: "SES_NOT_CONFIGURED" };
+    }
     console.log(
-      `[email-dry-run] to=${input.to} subject=${input.subject} templateId=${input.templateId ?? "none"} data=${JSON.stringify(
+      `[email-dry-run] to=${input.to} subject=${input.subject} templateId=${input.templateId ?? "none"} ${dryRunDataDetail(
         input.templateData
       )} messageId=${input.smtpMessageId ?? "none"}`
     );

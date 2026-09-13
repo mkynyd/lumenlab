@@ -118,4 +118,67 @@ describe("sendTemplateEmail", () => {
     expect(result).toEqual({ ok: true, bulkId: null, dryRun: true });
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
+
+  it("fails closed in production instead of silently dry-running", async () => {
+    vi.stubEnv("SES_ENABLED", "0");
+    // 即使显式打开了 verbose 开关，生产环境也不得 dry-run、不得打印任何内容
+    vi.stubEnv("SES_DRY_RUN_VERBOSE", "1");
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { sendTemplateEmail } = await load();
+
+    const result = await sendTemplateEmail({
+      to: "user@example.com",
+      subject: "LumenLab 邮箱验证",
+      templateId: "100091",
+      templateData: { code: "123456" },
+    });
+
+    expect(result).toEqual({ ok: false, error: "SES_NOT_CONFIGURED" });
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("never prints template variable values in the dry-run log by default", async () => {
+    vi.stubEnv("SES_ENABLED", "0");
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { sendTemplateEmail } = await load();
+
+    await sendTemplateEmail({
+      to: "user@example.com",
+      subject: "LumenLab 邮箱验证",
+      templateId: "100091",
+      templateData: { code: "123456", verifyToken: "challenge-1.rawsecret" },
+    });
+
+    const line = consoleSpy.mock.calls
+      .map((call) => String(call[0]))
+      .find((message) => message.includes("[email-dry-run]"));
+    expect(line).toBeDefined();
+    expect(line).toContain("dataKeys=code,verifyToken");
+    expect(line).not.toContain("123456");
+    expect(line).not.toContain("challenge-1.rawsecret");
+    consoleSpy.mockRestore();
+  });
+
+  it("prints template variable values when SES_DRY_RUN_VERBOSE=1 outside production", async () => {
+    vi.stubEnv("SES_ENABLED", "0");
+    vi.stubEnv("SES_DRY_RUN_VERBOSE", "1");
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { sendTemplateEmail } = await load();
+
+    await sendTemplateEmail({
+      to: "user@example.com",
+      subject: "LumenLab 邮箱验证",
+      templateId: "100091",
+      templateData: { code: "123456" },
+    });
+
+    const line = consoleSpy.mock.calls
+      .map((call) => String(call[0]))
+      .find((message) => message.includes("[email-dry-run]"));
+    expect(line).toContain('data={"code":"123456"}');
+    consoleSpy.mockRestore();
+  });
 });

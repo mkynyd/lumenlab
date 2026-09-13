@@ -18,12 +18,11 @@ import { normalizeEmail } from "@/lib/auth/identifier";
 import { authChallengeRepository } from "@/lib/data/auth-challenge-repository";
 import { sendTemplateEmail } from "@/lib/email/ses-client";
 import {
+  buildBindSubject,
   buildResetSubject,
   buildResetTemplateData,
-  buildResetUrl,
   buildVerifySubject,
   buildVerifyTemplateData,
-  buildVerifyUrl,
   getTemplateId,
 } from "@/lib/email/templates";
 
@@ -85,7 +84,8 @@ async function deliverTemplateEmail(input: {
   templateId: string;
   subject: string;
   templateData: Record<string, string>;
-  rendered: Record<string, string>;
+  /** 落库的非敏感审计字段。验证码明文与一次性 token 绝不写入 EmailLog。 */
+  audit: Record<string, string>;
 }): Promise<{ ok: true } | { ok: false; reason: "send_failed" }> {
   const log = await prisma.emailLog.create({
     data: {
@@ -122,8 +122,8 @@ async function deliverTemplateEmail(input: {
       event: "sent",
       bulkId: result.bulkId,
       payload: result.dryRun
-        ? { dryRun: true, rendered: input.rendered }
-        : { rendered: input.rendered },
+        ? { dryRun: true, ...input.audit }
+        : { ...input.audit },
     },
   });
   return { ok: true };
@@ -158,21 +158,15 @@ export async function sendVerificationEmail(
   // 模板链接域名固定为生产域名，变量只承载 token
   const verifyToken = start.rawToken ? `${start.challengeId}.${start.rawToken}` : "";
   const templateData = input.purpose === "bind_identity" ? { code: start.code } : buildVerifyTemplateData(start.code, verifyToken);
-  const rendered = {
-    code: start.code,
-    verifyToken,
-    verifyUrl: start.rawToken ? buildVerifyUrl(start.challengeId, start.rawToken) : "",
-    expiresAt: start.codeExpiresAt.toISOString(),
-  };
 
   return deliverTemplateEmail({
     kind: input.purpose ?? "register",
     challengeId: start.challengeId,
     email,
     templateId: getTemplateId(input.purpose === "bind_identity" ? "bind_identity" : "verify") ?? "",
-    subject: buildVerifySubject(),
+    subject: input.purpose === "bind_identity" ? buildBindSubject() : buildVerifySubject(),
     templateData,
-    rendered,
+    audit: { expiresAt: start.codeExpiresAt.toISOString() },
   });
 }
 
@@ -206,10 +200,6 @@ export async function sendPasswordResetEmail(
     templateId: getTemplateId("reset") ?? "",
     subject: buildResetSubject(),
     templateData,
-    rendered: {
-      resetToken,
-      resetUrl: buildResetUrl(start.challengeId, start.rawToken!),
-      expiresAt: start.tokenExpiresAt!.toISOString(),
-    },
+    audit: { expiresAt: start.tokenExpiresAt!.toISOString() },
   });
 }

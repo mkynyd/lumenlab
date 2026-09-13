@@ -73,6 +73,7 @@ describe("sendVerificationEmail", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllEnvs();
   });
 
   it("creates a challenge, sends the email, and records the EmailLog lifecycle", async () => {
@@ -110,14 +111,42 @@ describe("sendVerificationEmail", () => {
       smtpMessageId: "<verify-challenge-1@mail.mkynstudio.top>",
       headers: { "X-Tencentcloudses-Cb-Kind": "verify" },
     });
+    // 落库 payload 只允许非敏感审计字段：验证码明文与一次性 token 绝不进入 EmailLog
     expect(emailLog.update).toHaveBeenCalledWith({
       where: { id: "log-1" },
       data: {
         event: "sent",
         bulkId: "qcloud-ses-messageid",
-        payload: expect.any(Object),
+        payload: { expiresAt: expect.any(String) },
       },
     });
+  });
+
+  it("sends the bind_identity mail with its own subject and a secret-free payload", async () => {
+    vi.stubEnv("SES_TEMPLATE_BIND_IDENTITY", "218388");
+
+    const result = await sendVerificationEmail({
+      email: "bind@example.com",
+      ip: "1.2.3.4",
+      purpose: "bind_identity",
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(sendTemplateEmail).toHaveBeenCalledWith({
+      to: "bind@example.com",
+      subject: "LumenLab 邮箱绑定",
+      templateId: "218388",
+      // 绑定模板只承载验证码，不含一次性链接 token
+      templateData: { code: expect.stringMatching(/^\d{6}$/) },
+      smtpMessageId: "<verify-challenge-1@mail.mkynstudio.top>",
+      headers: { "X-Tencentcloudses-Cb-Kind": "verify" },
+    });
+
+    const payload = emailLog.update.mock.calls[0][0].data.payload;
+    expect(payload).toEqual({ expiresAt: expect.any(String) });
+    expect(payload).not.toHaveProperty("code");
+    expect(payload).not.toHaveProperty("verifyToken");
   });
 
   it("rejects with rate_limited when the email-level limit is hit", async () => {

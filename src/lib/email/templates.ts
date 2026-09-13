@@ -54,6 +54,11 @@ export function buildVerifySubject(): string {
   return "LumenLab 邮箱验证";
 }
 
+/** 绑定邮箱与注册验证是两件事，主题必须与模板正文一致，否则收件人无法判断邮件含义。 */
+export function buildBindSubject(): string {
+  return "LumenLab 邮箱绑定";
+}
+
 export function buildResetSubject(): string {
   return "LumenLab 密码重设";
 }
