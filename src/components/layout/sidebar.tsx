@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import Image from "next/image";
@@ -10,7 +10,10 @@ import { emitNewChat } from "@/lib/chat/new-chat-event";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { SettingsPanel } from "@/components/settings/settings-panel";
+import {
+  SettingsPanel,
+  type SettingsTabId,
+} from "@/components/settings/settings-panel";
 import { ProfileDialog } from "@/components/user/profile-dialog";
 import { useHashDialog } from "@/lib/hooks/use-hash-dialog";
 import { AvatarMark } from "@/components/user/avatar-mark";
@@ -65,7 +68,6 @@ import {
   Xmark,
 } from "iconoir-react";
 import {
-  BarChart3,
   CalendarCheck2,
   ChevronDown,
   LogOut,
@@ -119,9 +121,7 @@ export function Sidebar({
       ? "projects"
       : pathname.startsWith("/tools")
         ? "tools"
-        : pathname.startsWith("/usage")
-          ? "usage"
-          : "chat";
+        : "chat";
   const conversationsQuery = useConversations();
   const projectsQuery = useProjects();
   const conversionsQuery = useConversions();
@@ -133,6 +133,22 @@ export function Sidebar({
   // 两个 useHashDialog 的声明顺序影响互斥切换时的 strip/push 时序：
   // 先声明者的 effect 先执行（先清旧 hash 再 push 新 hash），不要调换。
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] =
+    useState<SettingsTabId>("alpha");
+  // 旧 /usage 页已并入设置的「用量统计」：#settings-usage 深链打开设置并定位到该标签。
+  // 挂载期深链通过 ref 调用 setter，与 useHashDialog 的深链写法保持一致。
+  // useState 的 setter 引用稳定，ref 初始化一次即可。
+  const settingsDeepLinkRef = useRef({ setSettingsInitialTab, setSettingsOpen });
+  useEffect(() => {
+    if (window.location.hash !== "#settings-usage") return;
+    settingsDeepLinkRef.current.setSettingsInitialTab("tokens");
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search + "#settings"
+    );
+    settingsDeepLinkRef.current.setSettingsOpen(true);
+  }, []);
   const [profileOpen, setProfileOpen] = useState(false);
   const { closeDialog: closeSettingsDialog } = useHashDialog(
     "#settings",
@@ -474,22 +490,6 @@ export function Sidebar({
                   转换
                 </span>
               </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <Link href="/usage" onClick={onClose}>
-                <SidebarMenuButton
-                  type="button"
-                  isActive={activeSection === "usage"}
-                  className={cn("h-11 w-full font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
-                  aria-current={activeSection === "usage" ? "page" : undefined}
-                  title={collapsed ? "用量统计" : undefined}
-                >
-                  <BarChart3 strokeWidth={1.8} size={20} />
-                  <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
-                    用量
-                  </span>
-                </SidebarMenuButton>
-              </Link>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
@@ -991,7 +991,10 @@ export function Sidebar({
         >
           <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none [&>[data-slot=dialog-close]]:right-[max(0.5rem,env(safe-area-inset-right))] [&>[data-slot=dialog-close]]:top-[max(0.5rem,env(safe-area-inset-top))] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-auto sm:max-w-[960px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[20px] sm:pb-0 sm:pt-0 sm:[&>[data-slot=dialog-close]]:right-2 sm:[&>[data-slot=dialog-close]]:top-2">
             <DialogTitle className="sr-only">设置</DialogTitle>
-            <SettingsPanel onOpenProfile={() => openAccountSurface("profile")} />
+            <SettingsPanel
+              initialTab={settingsInitialTab}
+              onOpenProfile={() => openAccountSurface("profile")}
+            />
           </DialogContent>
         </Dialog>
         <ProfileDialog

@@ -163,6 +163,136 @@ describe("SettingsPanel token usage", () => {
 });
 
 
+describe("SettingsPanel account usage", () => {
+  const usageResponse = {
+    tier: "premium",
+    cycle: {
+      start: "2026-07-01T00:00:00.000Z",
+      end: "2026-07-31T23:59:59.999Z"
+    },
+    quota: {
+      total: 10_000,
+      used: 2_500,
+      remaining: 7_500,
+      enforced: true
+    },
+    usage: {
+      currentCycleCredits: 2_500,
+      currentCycleTokens: 125_000,
+      last24hCredits: 80,
+      last7dCredits: 640,
+      last5hCredits: 24,
+      modelDistribution: [
+        { model: "deepseek-v4-pro", credits: 2_000, tokens: 100_000 },
+        { model: "minimax-m3", credits: 500, tokens: 25_000 }
+      ],
+      recentRecords: [
+        {
+          id: "usage-1",
+          model: "deepseek-v4-pro",
+          provider: "deepseek",
+          totalTokens: 2_048,
+          creditsConsumed: 42,
+          createdAt: "2026-07-24T08:00:00.000Z"
+        }
+      ],
+      nextCursor: null
+    }
+  };
+
+  function mockUsageFetch(usage: unknown = usageResponse) {
+    mocks.fetch.mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/me/usage")) {
+        return jsonResponse(usage);
+      }
+      if (url === "/api/user/persona") {
+        return jsonResponse({});
+      }
+      return jsonResponse({ error: "not found" }, 404);
+    });
+  }
+
+  it("renders quota, cycle stats, model distribution and recent requests", async () => {
+    mockUsageFetch();
+    render(<SettingsPanel initialTab="tokens" />);
+
+    expect(
+      await screen.findByRole("region", { name: "账户用量概览" })
+    ).toHaveTextContent("7,500 / 10,000");
+    expect(
+      screen.getByRole("progressbar", { name: "已使用 25% 额度" })
+    ).toBeInTheDocument();
+
+    const terms = screen.getAllByRole("term").map((el) => el.textContent);
+    expect(terms).toEqual([
+      "周期 Credits",
+      "周期 tokens",
+      "最近 5 小时",
+      "最近 24 小时",
+      "最近 7 天"
+    ]);
+
+    expect(
+      screen.getByRole("heading", { name: "模型分布" })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("DeepSeek · 深度").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("heading", { name: "最近请求" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("2,048")).toBeInTheDocument();
+  });
+
+  it("appends more recent records via 加载更多 and hides the button at the end", async () => {
+    const firstPage = {
+      ...usageResponse,
+      usage: { ...usageResponse.usage, nextCursor: "usage-1" }
+    };
+    const secondPage = {
+      ...usageResponse,
+      usage: {
+        ...usageResponse.usage,
+        recentRecords: [
+          {
+            id: "usage-2",
+            model: "minimax-m3",
+            provider: "minimax",
+            totalTokens: 512,
+            creditsConsumed: 8,
+            createdAt: "2026-07-23T08:00:00.000Z"
+          }
+        ],
+        nextCursor: null
+      }
+    };
+    mocks.fetch.mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/me/usage")) {
+        return jsonResponse(url.includes("cursor=") ? secondPage : firstPage);
+      }
+      return jsonResponse({});
+    });
+
+    render(<SettingsPanel initialTab="tokens" />);
+
+    const loadMore = await screen.findByRole("button", { name: "加载更多" });
+    fireEvent.click(loadMore);
+
+    expect(await screen.findByText("512")).toBeInTheDocument();
+    expect(screen.getByText("2,048")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "加载更多" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows an inline error with retry when usage fails to load", async () => {
+    mocks.fetch.mockImplementation(async () =>
+      jsonResponse({ error: "boom" }, 500)
+    );
+    render(<SettingsPanel initialTab="tokens" />);
+
+    expect(await screen.findByText("额度用量加载失败")).toBeInTheDocument();
+  });
+});
+
 describe("PersonalizationSection persistence", () => {
   it("loads saved persona fields and the existing profile prompt", async () => {
     mockPersonaFetch();

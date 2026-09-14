@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Bell } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -10,18 +11,27 @@ import { useNotifications } from "./notification-provider";
 import { NotificationPanel } from "./notification-panel";
 
 function Badge({ count }: { count: number }) {
-  if (count <= 0) return null;
+  const reduceMotion = useReducedMotion();
   return (
-    <span
-      className={cn(
-        "pointer-events-none absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center",
-        "rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-medium leading-none",
-        "text-[var(--color-accent-contrast)]"
+    <AnimatePresence initial={false}>
+      {count > 0 && (
+        <motion.span
+          key="badge"
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.6 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0, scale: 0.6 }}
+          transition={{ type: "spring", stiffness: 500, damping: 28 }}
+          className={cn(
+            "pointer-events-none absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center",
+            "rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-medium leading-none",
+            "text-[var(--color-accent-contrast)]"
+          )}
+          aria-hidden
+        >
+          {count > 99 ? "99+" : count}
+        </motion.span>
       )}
-      aria-hidden
-    >
-      {count > 99 ? "99+" : count}
-    </span>
+    </AnimatePresence>
   );
 }
 

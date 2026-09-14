@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   Bell,
   CheckCheck,
@@ -18,6 +19,12 @@ import {
 } from "@/lib/notifications/contracts";
 import { taskProgressLabel, type TaskSnapshot } from "@/lib/tasks/contracts";
 import { useNotifications } from "./notification-provider";
+
+type Filter = "all" | "unread";
+const FILTER_TABS: ReadonlyArray<{ value: Filter; label: string }> = [
+  { value: "all", label: "全部" },
+  { value: "unread", label: "未读" },
+];
 
 function relativeTime(value: string, now = Date.now()): string {
   const time = Date.parse(value);
@@ -53,24 +60,39 @@ function TaskStatusIcon({ status }: { status: TaskSnapshot["status"] }) {
   return <Loader2 size={14} className="animate-spin text-[var(--color-text-tertiary)]" aria-hidden />;
 }
 
+function IconChip({ unread, children }: { unread?: boolean; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-[8px] transition-colors duration-150",
+        unread
+          ? "bg-[color-mix(in_oklch,var(--color-accent)_14%,transparent)]"
+          : "bg-[var(--color-panel-muted)]"
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 function ActiveTaskRow({ task }: { task: TaskSnapshot }) {
   return (
     <div
-      className="flex items-start gap-2 rounded-[var(--radius-md)] px-2 py-1.5"
+      className="flex items-start gap-2.5 rounded-[var(--radius-md)] px-2 py-2"
       data-task-status={task.status}
     >
-      <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center">
+      <IconChip>
         <TaskStatusIcon status={task.status} />
-      </span>
+      </IconChip>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium text-[var(--color-text-primary)]">
+        <span className="block truncate text-[13px] leading-5 font-medium text-[var(--color-text-primary)]">
           {task.title}
         </span>
-        <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">
+        <span className="block truncate text-xs leading-5 text-[var(--color-text-tertiary)]">
           {taskProgressLabel(task)}
         </span>
       </span>
-      <span className="shrink-0 text-[11px] text-[var(--color-text-tertiary)]">
+      <span className="shrink-0 text-xs leading-5 text-[var(--color-text-tertiary)] tabular-nums">
         {relativeTime(task.updatedAt)}
       </span>
     </div>
@@ -89,7 +111,9 @@ export function NotificationPanel({ onNavigate }: { onNavigate?: () => void }) {
     markRead,
     openNotification,
   } = useNotifications();
-  const [filter, setFilter] = useState<"all" | "unread">("all");
+  const uid = useId();
+  const reduceMotion = useReducedMotion();
+  const [filter, setFilter] = useState<Filter>("all");
   const [busy, setBusy] = useState(false);
   const visible = filter === "unread"
     ? notifications.filter((notification) => !notification.readAt)
@@ -108,55 +132,62 @@ export function NotificationPanel({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex max-h-[min(70vh,32rem)] w-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 px-1 pb-2">
-        <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-          通知
-        </span>
-        {unreadCount > 0 && (
-          <span className="rounded-full bg-[var(--color-panel-muted)] px-1.5 text-[11px] text-[var(--color-text-secondary)]">
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
-        )}
-        <span className="flex-1" />
+      <div className="flex shrink-0 items-center justify-between gap-2 px-1 pb-2">
+        <div
+          role="tablist"
+          aria-label="通知筛选"
+          className="inline-flex rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] p-0.5"
+        >
+          {FILTER_TABS.map(({ value, label }) => {
+            const selected = filter === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setFilter(value)}
+                className={cn(
+                  "relative inline-flex h-7 items-center rounded-[8px] px-2.5 text-xs",
+                  "transition-colors duration-150 motion-reduce:transition-none",
+                  "focus-visible:outline-none focus-visible:bg-[var(--color-interaction-active)]",
+                  selected
+                    ? "font-medium text-[var(--color-text-primary)]"
+                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                )}
+              >
+                {selected && (
+                  <motion.span
+                    layoutId={`${uid}-filter-pill`}
+                    transition={
+                      reduceMotion
+                        ? { duration: 0 }
+                        : { type: "spring", stiffness: 420, damping: 34 }
+                    }
+                    className="absolute inset-0 rounded-[8px] bg-[var(--color-surface)]"
+                  />
+                )}
+                <span className="relative">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+
         <button
           type="button"
           disabled={busy || unreadCount === 0}
           onClick={() => void run(markAllRead)}
           className={cn(
-            "inline-flex h-7 items-center gap-1 rounded-[var(--radius-md)] px-2 text-xs",
-            "text-[var(--color-text-secondary)] transition-colors",
+            "inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--radius-md)] px-2 text-xs",
+            "text-[var(--color-text-secondary)] transition-colors duration-150 motion-reduce:transition-none",
             "hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]",
+            "focus-visible:bg-[var(--color-interaction-active)] focus-visible:outline-none",
             "disabled:opacity-40 disabled:hover:bg-transparent"
           )}
         >
           <CheckCheck size={13} aria-hidden />
           全部已读
         </button>
-      </div>
-
-      <div className="flex shrink-0 gap-1 px-1 pb-2" role="tablist" aria-label="通知筛选">
-        {(
-          [
-            ["all", "全部"],
-            ["unread", "未读"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={filter === value}
-            onClick={() => setFilter(value)}
-            className={cn(
-              "h-7 rounded-[var(--radius-md)] px-2.5 text-xs transition-colors",
-              filter === value
-                ? "bg-[var(--color-interaction-active)] font-medium text-[var(--color-text-primary)]"
-                : "text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
-            )}
-          >
-            {label}
-          </button>
-        ))}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-1">
@@ -211,19 +242,20 @@ export function NotificationPanel({ onNavigate }: { onNavigate?: () => void }) {
                   void openNotification(notification.id);
                 }}
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-[var(--radius-md)] px-2 py-2 text-left",
-                  "transition-colors hover:bg-[var(--color-interaction-hover)]",
-                  "focus-visible:bg-[var(--color-interaction-active)]"
+                  "flex w-full items-start gap-2.5 rounded-[var(--radius-md)] px-2 py-2 text-left",
+                  "transition-colors duration-150 motion-reduce:transition-none",
+                  "hover:bg-[var(--color-interaction-hover)]",
+                  "focus-visible:bg-[var(--color-interaction-active)] focus-visible:outline-none"
                 )}
               >
-                <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center">
+                <IconChip unread={!notification.readAt}>
                   <KindIcon kind={notification.kind} />
-                </span>
+                </IconChip>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span
                       className={cn(
-                        "truncate text-xs",
+                        "truncate text-[13px] leading-5",
                         notification.readAt
                           ? "text-[var(--color-text-secondary)]"
                           : "font-medium text-[var(--color-text-primary)]"
@@ -238,12 +270,12 @@ export function NotificationPanel({ onNavigate }: { onNavigate?: () => void }) {
                       />
                     )}
                   </span>
-                  <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">
+                  <span className="block truncate text-xs leading-5 text-[var(--color-text-tertiary)]">
                     {NOTIFICATION_KIND_LABELS[notification.kind]}
                     {notification.summary ? ` · ${notification.summary}` : ""}
                   </span>
                 </span>
-                <span className="shrink-0 text-[11px] text-[var(--color-text-tertiary)]">
+                <span className="shrink-0 text-xs leading-5 text-[var(--color-text-tertiary)] tabular-nums">
                   {relativeTime(notification.createdAt)}
                 </span>
               </button>
@@ -253,8 +285,10 @@ export function NotificationPanel({ onNavigate }: { onNavigate?: () => void }) {
 
         {status !== "loading" && visible.length === 0 && tasks.length === 0 ? (
           <div className="flex min-h-[11rem] flex-col items-center justify-center gap-1 px-4 py-6 text-center">
-            <Bell size={18} className="text-[var(--color-text-tertiary)]" aria-hidden />
-            <p className="text-xs text-[var(--color-text-secondary)]">
+            <span className="flex size-9 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-panel-muted)]">
+              <Bell size={16} className="text-[var(--color-text-tertiary)]" aria-hidden />
+            </span>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
               {filter === "unread" ? "没有未读通知" : "还没有通知"}
             </p>
             <p className="text-[11px] text-[var(--color-text-tertiary)]">
@@ -274,7 +308,7 @@ export function NotificationPanel({ onNavigate }: { onNavigate?: () => void }) {
                 markRead(visible.map((notification) => notification.id))
               )
             }
-            className="h-7 w-full rounded-[var(--radius-md)] text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-40"
+            className="h-8 w-full rounded-[var(--radius-md)] text-xs text-[var(--color-text-secondary)] transition-colors duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-40 motion-reduce:transition-none"
           >
             标记当前未读为已读
           </button>

@@ -100,6 +100,48 @@ git pull origin main          # 同步远端
 4. **卡片层级靠留白和内容层级**：卡片之间用间距、背景明度、内容密度和标题权重区分，不使用边框分割，也不使用 hover 上浮。
 5. **例外范围要很窄**：输入框、表格、Markdown 代码块、模态容器、分隔线等非按钮/非卡片元素可以按可读性保留细线；如果一个元素视觉上承担按钮或卡片角色，即使底层是 `div`、`Link` 或 shadcn 组件，也按本规则处理。
 
+## ReactBits 组件库
+
+项目已通过 shadcn registry 协议接入 ReactBits Pro，可安装动画组件、营销区块、App UI 区块与 Agent Kit。官方集成手册是 `src/SKILL.md`（source of truth，安装、导入、定制、排障都先查它），本节记录项目本地的配置与约定。
+
+### 配置位置
+
+- Registry 声明：`components.json` 的 `registries` 字段（`@reactbits-starter`、`@reactbits-pro`）
+- License key：`.env.local` 的 `REACTBITS_LICENSE_KEY`，已 gitignore；禁止提交、硬编码或外泄
+- 授权等级：实测覆盖 Pro 层（150 个组件、280 个营销区块、300 个 App UI 区块可安装）
+- 在线目录：https://pro.reactbits.dev/docs/components ，区块见 /docs/blocks、/docs/app-ui
+
+### 安装命令
+
+```bash
+npx shadcn@latest add @reactbits-starter/<slug>-tw   # 动画组件；本项目用 Tailwind，固定 -tw 变体
+npx shadcn@latest add @reactbits-pro/<slug>          # 营销区块或 App UI 区块（无后缀）
+```
+
+### 落盘路径与导入
+
+| 类型 | 路径 | 导入 |
+|------|------|------|
+| 动画组件 | `src/components/react-bits/<slug>.tsx` | 默认导出 |
+| 营销区块 | `src/components/blocks/<slug>.tsx` | 导出方式混合，先 `grep -E "^export (default )?function " <file>` 确认再导入 |
+| App UI 区块 | `src/components/blocks/<slug>.tsx` | 默认导出 |
+
+### 必须遵守
+
+1. 全部组件和区块都是客户端组件，`"use client"` 不可删；App Router 中可从 Server Component 直接导入。
+2. WebGL / shader / 3D / 粒子组件需要显式尺寸的父容器，首屏外建议 `dynamic(() => import(...), { ssr: false })` 懒加载。
+3. App UI 区块根节点带 `h-full min-h-[Npx]`，父容器必须有高度约束，否则内部滚动区塌陷。
+4. 区块是起点而非成品：接入现有页面必须对齐本项目的字号、颜色、间距与容器宽度；上文「UI 设计语言」的禁止边框、禁止深灰 hover 等约束同样适用于 reactbits 区块的改造。
+5. 基础 UI 原语（Button、Dialog 等）走标准 shadcn registry，不用 reactbits。
+6. 依赖由 CLI 自动安装（motion 从 `motion/react` 导入，另有 three、gsap、lucide-react 等）；动态 `import()` 的包可能漏装，运行时 module not found 就手动补装。
+7. 只在 `components.json` 合并 `registries`，不改其他字段。
+
+### 已安装
+
+- `globe-tw` → `src/components/react-bits/globe.tsx`（3D 地球，运行时经 CDN 动态加载第三方库）
+- `hero-17` → `src/components/blocks/hero-17.tsx`（导出 `Hero17`，默认导出与命名导入均可）
+- `.mcp.json` 已配置 shadcn MCP server（重启会话后可用它浏览 registry）
+
 ## 前端样式修改的影响确认
 
 为了调整某个组件的显示效果而修改 CSS（含 Tailwind class、CSS 变量、design token、`globals.css`）时，**必须先确认该样式是否被其他组件共享**：

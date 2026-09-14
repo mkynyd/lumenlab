@@ -21,6 +21,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
+import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AvatarMark } from "@/components/user/avatar-mark";
@@ -28,7 +29,13 @@ import { useCacheMetrics } from "@/lib/hooks/use-cache-metrics";
 import { DEFAULT_AVATAR_PRESET } from "@/lib/user-profile";
 import { cn } from "@/lib/utils";
 
-type TabId = "alpha" | "tokens" | "personalization" | "security" | "appearance";
+export type SettingsTabId =
+  | "alpha"
+  | "tokens"
+  | "personalization"
+  | "security"
+  | "appearance";
+type TabId = SettingsTabId;
 const TOKEN_CHART_COLORS = {
   hit: "color-mix(in oklch, var(--color-accent) 24%, var(--color-surface))",
   miss: "color-mix(in oklch, var(--color-accent) 42%, var(--color-surface))",
@@ -83,11 +90,13 @@ function buildDateRange(startDate: string, endDate: string) {
 }
 
 export function SettingsPanel({
-  onOpenProfile
+  onOpenProfile,
+  initialTab
 }: {
   onOpenProfile?: () => void;
+  initialTab?: SettingsTabId;
 }) {
-  const [tab, setTab] = useState<TabId>("alpha");
+  const [tab, setTab] = useState<TabId>(initialTab ?? "alpha");
   // 移动端：菜单页 → 详情页（ChatGPT 式 push 导航）；桌面端恒为分栏
   const [mobileDetail, setMobileDetail] = useState(false);
   const { data: session } = useSession();
@@ -398,6 +407,320 @@ function AlphaSection() {
   );
 }
 
+type UsageRecord = {
+  id: string;
+  model: string;
+  provider: string;
+  totalTokens: number;
+  creditsConsumed: number;
+  createdAt: string;
+};
+
+type AccountUsageResponse = {
+  tier: string;
+  cycle: { start: string; end: string };
+  quota: {
+    total: number | null;
+    used: number;
+    remaining: number | null;
+    enforced: boolean;
+  };
+  usage: {
+    currentCycleCredits: number;
+    currentCycleTokens: number;
+    last24hCredits: number;
+    last7dCredits: number;
+    last5hCredits: number;
+    modelDistribution: Array<{
+      model: string;
+      credits: number;
+      tokens: number;
+    }>;
+    recentRecords: UsageRecord[];
+    nextCursor: string | null;
+  };
+};
+
+function usageModelLabel(model: string) {
+  if (model === "deepseek-flash") return "DeepSeek · 快速";
+  if (model === "deepseek-v4-flash-vision-exp") return "DeepSeek · 快速";
+  if (model === "deepseek-v4-flash") return "DeepSeek · 快速";
+  if (model === "deepseek-v4-pro") return "DeepSeek · 深度";
+  if (model === "minimax-m3") return "MiniMax";
+  if (model === "qwen3.8-flash") return "Qwen · 快速";
+  if (model === "qwen3.8-max") return "Qwen · 旗舰";
+  if (model === "qwen3.7-plus") return "Qwen";
+  return model;
+}
+
+function formatUsageDate(iso: string) {
+  return new Date(iso).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+}
+
+async function fetchAccountUsage(cursor?: string) {
+  const url = cursor
+    ? `/api/me/usage?cursor=${encodeURIComponent(cursor)}&limit=20`
+    : "/api/me/usage";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("load failed");
+  return (await res.json()) as AccountUsageResponse;
+}
+
+function AccountUsageSection() {
+  const [data, setData] = useState<AccountUsageResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [moreRecords, setMoreRecords] = useState<UsageRecord[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAccountUsage()
+      .then((json) => {
+        if (cancelled) return;
+        setData(json);
+        setNextCursor(json.usage.nextCursor ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function retry() {
+    setLoading(true);
+    setFailed(false);
+    fetchAccountUsage()
+      .then((json) => {
+        setData(json);
+        setNextCursor(json.usage.nextCursor ?? null);
+      })
+      .catch(() => setFailed(true))
+      .finally(() => setLoading(false));
+  }
+
+  async function loadMoreRecords() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const json = await fetchAccountUsage(nextCursor);
+      setMoreRecords((prev) => [...prev, ...json.usage.recentRecords]);
+      setNextCursor(json.usage.nextCursor ?? null);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  if (loading) {
+    return <Skeleton className="h-24 rounded-lg" />;
+  }
+
+  if (failed || !data) {
+    return (
+      <div className="flex items-center gap-3 border-y border-[var(--color-border-light)] py-4">
+        <p className="text-sm text-[var(--color-error)]" role="alert">
+          额度用量加载失败
+        </p>
+        <button
+          type="button"
+          onClick={retry}
+          className="inline-flex h-7 items-center rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+        >
+          重试
+        </button>
+      </div>
+    );
+  }
+
+  const tierLabel = data.tier === "premium" ? "A 测用户" : data.tier;
+  const totalModelCredits = Math.max(
+    data.usage.modelDistribution.reduce((sum, item) => sum + item.credits, 0),
+    1
+  );
+  const recentRecords = [...data.usage.recentRecords, ...moreRecords];
+  const quotaUsage =
+    data.quota.enforced && data.quota.total
+      ? Math.min(100, (data.quota.used / data.quota.total) * 100)
+      : null;
+
+  return (
+    <div className="space-y-8">
+      <section
+        aria-label="账户用量概览"
+        className="grid border-y border-[var(--color-border-light)] sm:grid-cols-3 sm:divide-x sm:divide-[var(--color-border-light)]"
+      >
+        <div className="border-b border-[var(--color-border-light)] py-3.5 sm:border-b-0 sm:px-4 sm:first:pl-0">
+          <p className="text-xs text-[var(--color-text-tertiary)]">当前等级</p>
+          <p className="mt-1 text-base font-medium text-[var(--color-text-primary)]">
+            {tierLabel}
+          </p>
+        </div>
+        <div className="border-b border-[var(--color-border-light)] py-3.5 sm:border-b-0 sm:px-4">
+          <p className="text-xs text-[var(--color-text-tertiary)]">统计周期</p>
+          <p className="mt-1 text-sm font-medium tabular-nums text-[var(--color-text-primary)]">
+            {formatUsageDate(data.cycle.start)} – {formatUsageDate(data.cycle.end)}
+          </p>
+        </div>
+        <div className="py-3.5 sm:px-4 sm:last:pr-0">
+          <p className="text-xs text-[var(--color-text-tertiary)]">
+            {data.quota.enforced ? "剩余额度" : "已用额度 · A 测不限额"}
+          </p>
+          <p className="mt-1 text-base font-medium tabular-nums text-[var(--color-text-primary)]">
+            {data.quota.enforced
+              ? `${(data.quota.remaining ?? 0).toLocaleString()} / ${(data.quota.total ?? 0).toLocaleString()}`
+              : data.quota.used.toLocaleString()}{" "}
+            <span className="text-xs font-normal text-[var(--color-text-tertiary)]">
+              Credits
+            </span>
+          </p>
+          {quotaUsage !== null && (
+            <Progress
+              value={quotaUsage}
+              size="sm"
+              color="accent"
+              label={`已使用 ${Math.round(quotaUsage)}% 额度`}
+              className="mt-2.5"
+            />
+          )}
+        </div>
+      </section>
+
+      <section aria-labelledby="settings-cycle-usage">
+        <h3
+          id="settings-cycle-usage"
+          className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]"
+        >
+          本期用量
+        </h3>
+        <dl className="grid grid-cols-2 gap-x-6 border-y border-[var(--color-border-light)] sm:grid-cols-5">
+          {[
+            ["周期 Credits", data.usage.currentCycleCredits, "Credits"],
+            ["周期 tokens", data.usage.currentCycleTokens, "tokens"],
+            ["最近 5 小时", data.usage.last5hCredits, "Credits"],
+            ["最近 24 小时", data.usage.last24hCredits, "Credits"],
+            ["最近 7 天", data.usage.last7dCredits, "Credits"]
+          ].map(([label, value, unit]) => (
+            <div key={String(label)} className="py-3">
+              <dt className="text-xs text-[var(--color-text-tertiary)]">
+                {label}
+              </dt>
+              <dd className="mt-1 text-base font-medium tabular-nums text-[var(--color-text-primary)]">
+                {Number(value).toLocaleString()}{" "}
+                <span className="text-xs font-normal text-[var(--color-text-tertiary)]">
+                  {unit}
+                </span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      {data.usage.modelDistribution.length > 0 && (
+        <section aria-labelledby="settings-model-distribution">
+          <h3
+            id="settings-model-distribution"
+            className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]"
+          >
+            模型分布
+          </h3>
+          <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
+            {data.usage.modelDistribution.map((item) => (
+              <div
+                key={item.model}
+                className="grid gap-2 py-3 sm:grid-cols-[minmax(8rem,0.8fr)_minmax(10rem,1fr)_auto] sm:items-center sm:gap-5"
+              >
+                <span className="text-sm font-medium text-[var(--color-text-primary)]">
+                  {usageModelLabel(item.model)}
+                </span>
+                <Progress
+                  value={(item.credits / totalModelCredits) * 100}
+                  size="sm"
+                  color="accent"
+                  label={`${usageModelLabel(item.model)} 占模型用量 ${Math.round(
+                    (item.credits / totalModelCredits) * 100
+                  )}%`}
+                />
+                <div className="flex gap-3 text-xs tabular-nums text-[var(--color-text-secondary)] sm:block sm:min-w-24 sm:text-right">
+                  <span>{item.credits.toLocaleString()} Credits</span>
+                  <span className="text-[var(--color-text-tertiary)] sm:block">
+                    {item.tokens.toLocaleString()} tokens
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {recentRecords.length > 0 && (
+        <section aria-labelledby="settings-recent-requests">
+          <h3
+            id="settings-recent-requests"
+            className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]"
+          >
+            最近请求
+          </h3>
+          <div className="overflow-x-auto border-y border-[var(--color-border-light)]">
+            <table className="w-full min-w-[32rem] text-left text-sm">
+              <thead className="text-xs text-[var(--color-text-tertiary)]">
+                <tr>
+                  <th className="py-2.5 font-medium">时间</th>
+                  <th className="py-2.5 font-medium">模型</th>
+                  <th className="py-2.5 text-right font-medium">tokens</th>
+                  <th className="py-2.5 text-right font-medium">Credits</th>
+                </tr>
+              </thead>
+              <tbody className="text-[var(--color-text-primary)]">
+                {recentRecords.map((record) => (
+                  <tr
+                    key={record.id}
+                    className="border-t border-[var(--color-border-light)]"
+                  >
+                    <td className="py-2.5 pr-4 tabular-nums text-[var(--color-text-secondary)]">
+                      {new Date(record.createdAt).toLocaleString("zh-CN")}
+                    </td>
+                    <td className="py-2.5 pr-4">{usageModelLabel(record.model)}</td>
+                    <td className="py-2.5 text-right tabular-nums">
+                      {record.totalTokens.toLocaleString()}
+                    </td>
+                    <td className="py-2.5 text-right tabular-nums">
+                      {record.creditsConsumed.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {nextCursor && (
+            <div className="mt-3 flex justify-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadMoreRecords()}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "加载中…" : "加载更多"}
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
 function TokensSection() {
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const cacheMetrics = useCacheMetrics("cycle");
@@ -447,8 +770,10 @@ function TokensSection() {
   return (
     <SectionShell id="settings-panel-tokens" title="用量统计">
       <p className="-mt-4 text-sm text-[var(--color-text-secondary)]">
-        本期 Token 使用情况
+        本计费周期的额度、Token 与缓存命中情况
       </p>
+
+      <AccountUsageSection />
 
       {cacheMetrics.isPending ? (
         <Skeleton className="h-24 rounded-lg" />
