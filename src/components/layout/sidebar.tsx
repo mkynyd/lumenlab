@@ -98,6 +98,36 @@ interface SidebarProps {
   onCollapse?: () => void;
 }
 
+/**
+ * 侧边栏品牌标记：浅色 / 深色模式分别使用线稿版 logo。
+ * 两张图同时渲染，由 `.dark` 变体（next-themes 的 class 策略）控制显隐，
+ * 保证 hydration 前后与手动切换主题时都不会闪图；被隐藏的一张因 `loading="lazy"`
+ * 不会发起请求，所以这里按官方建议用 `fetchPriority` 而不是 `priority` / `preload`
+ * （后者会让两张图一起下载）。
+ */
+function SidebarBrandMark({ size }: { size: number }) {
+  return (
+    <>
+      <Image
+        src="/LumenLab-mark-light.png"
+        alt=""
+        width={size}
+        height={size}
+        fetchPriority="high"
+        className="dark:hidden"
+      />
+      <Image
+        src="/LumenLab-mark-dark.png"
+        alt=""
+        width={size}
+        height={size}
+        fetchPriority="high"
+        className="hidden dark:block"
+      />
+    </>
+  );
+}
+
 export function Sidebar({
   mobileOpen,
   collapsed,
@@ -335,13 +365,7 @@ export function Sidebar({
             aria-label="LumenLab 首页"
           >
             <span className="relative flex size-7 shrink-0 items-center justify-center">
-              <Image
-                src="/LumenLab.png"
-                alt=""
-                width={28}
-                height={28}
-                priority
-              />
+              <SidebarBrandMark size={28} />
             </span>
             <span className="truncate">LumenLab</span>
           </Link>
@@ -355,13 +379,7 @@ export function Sidebar({
               title="展开侧边栏"
             >
               <span className="relative flex size-6 items-center justify-center transition-opacity group-hover:opacity-0">
-                <Image
-                  src="/LumenLab.png"
-                  alt=""
-                  width={24}
-                  height={24}
-                  priority
-                />
+                <SidebarBrandMark size={24} />
               </span>
               <PanelLeftOpen
                 size={17}
