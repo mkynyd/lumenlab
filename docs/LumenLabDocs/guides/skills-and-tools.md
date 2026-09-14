@@ -18,10 +18,13 @@ Skill 与 Tool 是 Agent 模式的两层能力描述：Tool 是 AI 可调用的�
 
 当前 Skill 包存放在 `.lumenlab/skills`，每个 Skill 由 `SKILL.md` 和 `policy.json` 组成。`policy.json` 声明显示名称、分类、允许 Tool、风险上限、默认审批策略、数据处理策略和触发词。
 
+Deep Research 是特殊消费者：它只读取受信 Skill 的研究方法论章节，经服务器按阶段裁剪后加入 structured prompt，不激活普通 Agent Skill，也不读取其 `allowed_tools` 作为 Research 权限。Research 的 checkpoint 始终 `skillOff: true` 且没有 user-facing `skillId`，工具面仍由 checkpoint、Tool Registry、L1 policy、预算与 provider/runtime 限制。
+
 ## 内置 Skill 概览
 
 | 分类 | Skill | 显示名 | 典型用途 | 风险上限 |
 |------|-------|--------|----------|----------|
+| academic | `deep-research-core` | 深度研究核心方法 | 所有 Deep Research Run 的默认方法论 | L1（无 Tool） |
 | academic | `paper-reader` | 论文速读 | 论文速读、精读、多论文对比 | L3 |
 | academic | `paper-writer` | 论文写作助手 | 论文初稿、报告结构、引用组织 | L2 |
 | academic | `literature-review` | 文献综述 | 研究现状、方法对比、研究空白 | L2 |
@@ -37,6 +40,14 @@ Skill 与 Tool 是 Agent 模式的两层能力描述：Tool 是 AI 可调用的�
 | learning | `socratic-tutor` | 苏格拉底导师 | 启发式提问和学习辅导 | L2 |
 
 Skill Router 会根据提问、隐藏快捷任务提示、选中文件、项目上下文和联网意图自动选择 Skill。手动选择 Skill 或关闭 Skill 的优先级最高。
+
+## Skill 来源与版本
+
+运行时按 `project > user > managed > bundled` 合并 Skill；同 ID override 会在 catalog 中显示 active source 与被覆盖来源。`.lumenlab/skills` 是随 release 发布的 bundled layer，后台只检测 upstream，不写 Git 目录。Managed layer 位于 `LUMENLAB_MANAGED_SKILLS_DIR` 的共享目录；user/project layer 默认不参与自动更新。
+
+Managed updater 与 CLI 共用一套 service。候选先下载到隔离 staging，校验 frontmatter、policy、路径、文件大小、symlink、可执行资源、Tool ID、scope、risk、approval 与资源规则，再比较实际 policy。新增 Tool、提高风险、扩大 scope/resource、放宽审批、允许外发、trust/identity 变化或可执行资源都会进入 `review_required`；纯说明修订与权限收紧可自动 promotion。Promotion 与 rollback 都通过原子 manifest 切换，失败不改变 current，随后热刷新 catalog，无需重启服务。
+
+默认每 24 小时检查一次，并有 0–60 分钟确定性 jitter、最小 1 小时周期和最长 6 小时退避；共享目录租约防止多个进程同时 promotion。`GET /api/skills/managed` 提供认证后的脱敏状态，operator 可通过 API 或 `npx tsx scripts/skills-managed.ts status|check|update|approve|rollback [skillId]` 操作。API operator 由 `SKILL_UPDATE_ADMIN_EMAILS` 明确配置；只有显式 `approve` 能启用已审阅的权限扩张，普通用户不能修改 trust 或绕过审核。
 
 ## 内置 Tool 概览
 

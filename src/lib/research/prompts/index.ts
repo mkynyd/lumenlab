@@ -14,7 +14,11 @@ export const RESEARCH_PROMPT_VERSIONS = {
   reportAuditor: "research-report-auditor-v2",
 } as const;
 
-export function buildPlannerPrompt(input: { plan: ResearchPlanSnapshot; profile: string; domainProfile: unknown }) {
+function methodology(value: string | undefined): string[] {
+  return value?.trim() ? ["## Compiled methodology", value.trim()] : [];
+}
+
+export function buildPlannerPrompt(input: { plan: ResearchPlanSnapshot; profile: string; domainProfile: unknown; methodology?: string }) {
   return [
     "你是 LumenLab Research Planner。只返回严格 JSON，不联网，不调用工具，不输出隐藏推理。",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.planner}`,
@@ -26,10 +30,11 @@ export function buildPlannerPrompt(input: { plan: ResearchPlanSnapshot; profile:
     `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
     `当前 Research Brief：${JSON.stringify(input.plan)}`,
     "分析/综述型 deep 问题通常拆为 3–6 个互补问题；窄事实问题允许 1–2 个，不机械凑数，最多 8 个。",
+    ...methodology(input.methodology),
   ].join("\n");
 }
 
-export function buildQueryStrategyPrompt(input: { plan: ResearchPlanSnapshot; questionKey: string; question: string; task: string; domainProfile: unknown; directiveContext: string }) {
+export function buildQueryStrategyPrompt(input: { plan: ResearchPlanSnapshot; questionKey: string; question: string; task: string; domainProfile: unknown; directiveContext: string; methodology?: string }) {
   return [
     "你是 LumenLab Research Worker 的 Retrieval Strategy 阶段。只返回严格 JSON，不联网，不调用工具，不输出隐藏推理。",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.queryStrategy}`,
@@ -41,10 +46,11 @@ export function buildQueryStrategyPrompt(input: { plan: ResearchPlanSnapshot; qu
     `当前 Task：${input.task}`,
     `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
     `追加约束：${input.directiveContext || "无"}`,
+    ...methodology(input.methodology),
   ].join("\n");
 }
 
-export function buildSourceTriagePrompt(input: { plan: ResearchPlanSnapshot; question: string; strategy: ResearchQueryStrategyItem; candidates: Array<{ id: string; candidate: ResearchCandidate }> }) {
+export function buildSourceTriagePrompt(input: { plan: ResearchPlanSnapshot; question: string; strategy: ResearchQueryStrategyItem; candidates: Array<{ id: string; candidate: ResearchCandidate }>; methodology?: string }) {
   return [
     "你是 LumenLab Source Triage。只返回严格 JSON，不联网，不调用工具，不输出隐藏推理。",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.sourceTriage}`,
@@ -55,10 +61,11 @@ export function buildSourceTriagePrompt(input: { plan: ResearchPlanSnapshot; que
     `Research Question：${input.question}`,
     `Query purpose=${input.strategy.purpose}，期望角色=${input.strategy.sourceRole}`,
     `候选：${JSON.stringify(input.candidates.map(({ id, candidate }) => ({ id, title: candidate.title, abstractPreview: typeof candidate.metadata.abstract === "string" ? candidate.metadata.abstract.slice(0, 800) : typeof candidate.metadata.abstractPreview === "string" ? candidate.metadata.abstractPreview.slice(0, 800) : null, year: candidate.metadata.year ?? null, venue: candidate.metadata.venue ?? null, provider: candidate.provider, identifiers: { doi: candidate.metadata.doi ?? null, externalId: candidate.externalId } })))}`,
+    ...methodology(input.methodology),
   ].join("\n");
 }
 
-export function buildEvaluatorPrompt(input: { plan: ResearchPlanSnapshot; question: { question: string; completionCriteria: unknown }; domainProfile: unknown; evidence: unknown[] }) {
+export function buildEvaluatorPrompt(input: { plan: ResearchPlanSnapshot; question: { question: string; completionCriteria: unknown }; domainProfile: unknown; evidence: unknown[]; methodology?: string }) {
   return [
     "你是 LumenLab Research Evaluator。只返回严格 JSON，不联网，不调用工具，不输出隐藏推理。",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.evaluator}`,
@@ -69,10 +76,11 @@ export function buildEvaluatorPrompt(input: { plan: ResearchPlanSnapshot; questi
     `完成标准：${JSON.stringify(input.question.completionCriteria)}`,
     `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
     `Evidence packets：${JSON.stringify(input.evidence)}`,
+    ...methodology(input.methodology),
   ].join("\n");
 }
 
-export function buildVerifierPrompt(input: { plan: ResearchPlanSnapshot; domainProfile: unknown; claims: unknown[] }) {
+export function buildVerifierPrompt(input: { plan: ResearchPlanSnapshot; domainProfile: unknown; claims: unknown[]; methodology?: string }) {
   return [
     "你是 LumenLab Claim Verifier。只返回严格 JSON，不联网，不调用工具，不输出隐藏推理。",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.verifier}`,
@@ -81,6 +89,7 @@ export function buildVerifierPrompt(input: { plan: ResearchPlanSnapshot; domainP
     `Research Brief：${JSON.stringify(input.plan)}`,
     `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
     `Claims：${JSON.stringify(input.claims)}`,
+    ...methodology(input.methodology),
   ].join("\n");
 }
 
@@ -92,7 +101,7 @@ export interface ReportClaimPacket {
   evidence: Array<{ marker: string; relation: string; statement: string; excerpt: string; source: unknown }>;
 }
 
-export function buildReportArchitectPrompt(input: { plan: ResearchPlanSnapshot; questions: unknown[]; claims: ReportClaimPacket[]; coverageGaps: string[] }) {
+export function buildReportArchitectPrompt(input: { plan: ResearchPlanSnapshot; questions: unknown[]; claims: ReportClaimPacket[]; coverageGaps: string[]; methodology?: string }) {
   return [
     "你是 LumenLab Deep Research Report Architect。只返回严格 JSON，不联网，不调用工具，不自由补充事实。",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.reportArchitect}`,
@@ -102,10 +111,11 @@ export function buildReportArchitectPrompt(input: { plan: ResearchPlanSnapshot; 
     `Questions：${JSON.stringify(input.questions)}`,
     `最终 Claim packets：${JSON.stringify(input.claims)}`,
     `Coverage gaps：${JSON.stringify(input.coverageGaps)}`,
+    ...methodology(input.methodology),
   ].join("\n");
 }
 
-export function buildReportWriterPrompt(input: { plan: ResearchPlanSnapshot; architecture: unknown; claims: ReportClaimPacket[]; profile: string }) {
+export function buildReportWriterPrompt(input: { plan: ResearchPlanSnapshot; architecture: unknown; claims: ReportClaimPacket[]; profile: string; methodology?: string }) {
   return [
     "You are LumenLab Deep Research Report Writer. Your job is not to summarize the retrieved papers one by one. Your job is to answer the user's original research question by synthesizing verified evidence across sources.",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.reportWriter}`,
@@ -117,10 +127,11 @@ export function buildReportWriterPrompt(input: { plan: ResearchPlanSnapshot; arc
     `Research Brief：${JSON.stringify(input.plan)}`,
     `Report Architecture：${JSON.stringify(input.architecture)}`,
     `Final Claim packets：${JSON.stringify(input.claims)}`,
+    ...methodology(input.methodology),
   ].join("\n");
 }
 
-export function buildReportAuditorPrompt(input: { plan: ResearchPlanSnapshot; report: string; architecture: unknown; claims: ReportClaimPacket[]; bibliographySourceIds: string[] }) {
+export function buildReportAuditorPrompt(input: { plan: ResearchPlanSnapshot; report: string; architecture: unknown; claims: ReportClaimPacket[]; bibliographySourceIds: string[]; methodology?: string }) {
   return [
     "你是 LumenLab Report Quality Auditor。只返回严格 JSON，不联网、不重新研究、不调用工具。",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.reportAuditor}`,
@@ -131,6 +142,7 @@ export function buildReportAuditorPrompt(input: { plan: ResearchPlanSnapshot; re
     `Claims：${JSON.stringify(input.claims)}`,
     `Bibliography sourceIds：${JSON.stringify(input.bibliographySourceIds)}`,
     `Report：\n${input.report}`,
+    ...methodology(input.methodology),
   ].join("\n");
 }
 

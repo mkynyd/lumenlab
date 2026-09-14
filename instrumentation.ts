@@ -85,4 +85,14 @@ export async function register() {
       });
     }
   }
+
+  try {
+    const { startManagedSkillsUpdateScheduler } = await import("@/lib/skills/update-scheduler");
+    const result = startManagedSkillsUpdateScheduler();
+    logger.info("Managed Skills updater ready", result);
+  } catch (error) {
+    logger.error("Failed to start Managed Skills updater", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }

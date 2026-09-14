@@ -84,4 +84,11 @@ describe("GET skills catalog route", () => {
     const slugs = body.categories.map((c: { slug: string }) => c.slug);
     expect(slugs).toEqual(["multimodal", "uncategorized"]);
   });
+
+  it("exposes active source and overridden layers", async () => {
+    mocks.list.mockReturnValue([skill({ skillId: "paper-reader", source: "managed", overriddenSources: ["bundled"] })]);
+    const response = await GET();
+    const body = await response.json();
+    expect(body.categories[0].skills[0]).toMatchObject({ source: "managed", overriddenSources: ["bundled"] });
+  });
 });

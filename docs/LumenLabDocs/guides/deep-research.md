@@ -20,6 +20,10 @@
 
 深度研究是一次有边界的调查过程，而不是一次问答。它先完整保留你的原始问题与研究意图，再按语义拆成互补的研究问题；随后筛选真正相关的来源、抽取证据、形成并核验命题，最后按主题组织和审计报告。过程留下的链路是 Source Snapshot（来源快照）→ Evidence（证据）→ Claim（命题）→ 关系（支持 / 反驳 / 限定 / 背景）→ 核验状态，因此报告里的事实性断言都能回到具体来源。
 
+每个 Run 创建时都会锁定一份 Research methodology snapshot：`deep-research-core` 始终启用；综述、趋势、技术评述、方法比较与研究空白会补充 `literature-review`；只有明确要求精读具体论文、方法、实验或图表数据时才补充 `paper-reader`。Planner、检索、来源筛选、评估、Claim/Verifier、报告组织/写作和审计分别只接收相关章节，避免重复注入整份 Skill。
+
+这些 Skill 是“compiled methodology”，不是普通 Agent Skill runtime。它们不能改变 Tool、network、scope、risk、approval、budget、schema、附件/Project data 或 Evidence ID 边界；Research 的 structured stage 仍保持 `skillOff: true`，ToolRunner 不携带 `skillId`。运行中即使 managed Skill 更新，当前 Run 仍使用启动时的 version/content hash 和编译内容；新 Run 才使用已 promotion 的新版本。最终 ReportSnapshot 记录 Skill ID/version/hash/source/stages，不保存完整 prompt。
+
 入口在侧边栏的 **深度研究**，对应 `/research` 页面；每个工作区有自己的详情页 `/research/[id]`。运行由服务器继续推进，关闭页面不会中断已确认的运行。
 
 ## 发起研究

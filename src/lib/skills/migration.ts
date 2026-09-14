@@ -35,6 +35,8 @@ export function discoveredToMetadata(skill: DiscoveredSkill): SkillMetadata {
     triggers: policy.triggers,
     category: skill.category,
     displayName: skill.displayName,
+    source: skill.source,
+    overriddenSources: skill.overriddenSources,
   } as SkillMetadata & { triggers: unknown; category: string; displayName: string };
 }
 

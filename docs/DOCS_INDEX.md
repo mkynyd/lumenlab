@@ -12,7 +12,7 @@
 | [PROJECT_SUMMARY](../../PROJECT_SUMMARY.md)（工作区根目录，本地文档） | 当前实现与生产状态摘要 |
 | [PRODUCT](../PRODUCT.md) | 产品定位、目标用户与设计原则 |
 | [DESIGN](../DESIGN.md) | 前端视觉与动效规范 |
-| [SKILLS](../SKILLS.md) | 13 个内置 Skill、20 个非学习类 Tool（含 3 个 Sciverse 工具）与审批模型 |
+| [SKILLS](../SKILLS.md) | 14 个 bundled Skill、Research methodology compiler、Managed updater、Tool 与审批模型 |
 | [AGENTS](../AGENTS.md) | 仓库协作、Git 与 UI 约束 |
 
 `REPOSITORY_INDEX.md` 是 gitignored 的本地 Agent 索引，不会显示在 GitHub；需要以当前工作区副本为准。`PROJECT_SUMMARY.md` 现在位于工作区根目录，属本地记录、不随仓库分发；原先的 `IMPLEMENTATION.md` 与 `agent-orchestrator-diff.md` 已不再单独维护，四层缓存与 Runtime 迁移说明见 `README.md` 与根目录 `PROJECT_SUMMARY.md`。

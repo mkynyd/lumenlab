@@ -70,6 +70,8 @@ export interface SkillMetadata {
   category?: string;
   /** Agent Skills 扩展：展示名称 */
   displayName?: string;
+  source?: "bundled" | "builtin" | "managed" | "user" | "project";
+  overriddenSources?: Array<"bundled" | "builtin" | "managed" | "user" | "project">;
 }
 
 export interface AffectedResource {

@@ -15,6 +15,7 @@ import { applyConfirmedScopeDirectives, assertBudgetExpansion } from "./scope-co
 import { assertEvidenceRevisionInput, normalizeEvidenceTags, isUserEditableEvidenceStatus } from "./evidence";
 import { researchModelConfiguration, resolveCommanderModel } from "./model-routing";
 import { resolveResearchDomainProfile } from "./domain-profile";
+import { buildResearchSkillRunConfiguration } from "./research-skills";
 
 export class ResearchServiceError extends Error {
   constructor(public readonly code: "NOT_FOUND" | "INVALID_STATE" | "INVALID_INPUT", message: string) {
@@ -257,6 +258,8 @@ export async function createResearchRun(input: {
   const profile = input.budgetProfile ?? workspace.budgetProfile;
   const plan = buildResearchPlan({ question: input.question, profile, domainProfileKey: workspace.domainProfileKey });
   const budget = getResearchBudget(profile);
+  const researchSkills = await buildResearchSkillRunConfiguration(plan);
+  const modelConfiguration = { ...researchModelConfiguration(commanderModel), researchSkills };
 
   const created = await prisma.$transaction(async (tx) => {
     const run = await tx.researchRun.create({
@@ -267,7 +270,7 @@ export async function createResearchRun(input: {
         question: plan.researchGoal,
         status: "planning",
         budgetSnapshot: JSON.parse(JSON.stringify(budget)),
-        modelConfiguration: JSON.parse(JSON.stringify(researchModelConfiguration(commanderModel))),
+        modelConfiguration: JSON.parse(JSON.stringify(modelConfiguration)),
         commanderModel,
       },
     });

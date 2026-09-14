@@ -1,18 +1,19 @@
 # LumenLab Agent Skills
 
-> 更新日期：2026-07-17
+> 更新日期：2026-09-14
 
-LumenLab 当前从 `.lumenlab/skills` 发现 13 个内置 Skill。每个 Skill 由 `SKILL.md` 和 `policy.json` 组成；服务端把声明转换为 `SkillMetadata`，再由 Policy Engine 按 Tool allowlist、风险上限、用户 scope、资源归属和审批策略逐次校验。
+LumenLab 当前发现 14 个 bundled Skill。每个 Skill 由 `SKILL.md` 和 `policy.json` 组成；服务端把声明转换为 `SkillMetadata`，再由 Policy Engine 按 Tool allowlist、风险上限、用户 scope、资源归属和审批策略逐次校验。
 
 ## 内置 Skill
 
 | 分类 | Skill ID | 版本 | 风险上限 | 典型用途 |
 |---|---|---:|---:|---|
+| academic | `deep-research-core` | 1.0.0 | L1（无 Tool） | Deep Research 的意图保真、证据边界、综合与审计方法论 |
 | academic | `paper-reader` | 1.0.0 | L3 | 论文速读、精读、多论文对比、引用与 DOCX 导出 |
-| academic | `paper-writer` | 1.0.0 | L2 | 论文初稿、报告结构、资料检索与草稿保存 |
-| academic | `literature-review` | 1.0.0 | L2 | 文献综述、研究现状、方法对比与研究空白 |
+| academic | `paper-writer` | 1.1.0 | L2 | 论文初稿、报告结构、资料检索与草稿保存 |
+| academic | `literature-review` | 1.1.0 | L2 | 文献综述、研究现状、方法对比与研究空白 |
 | academic | `figure-style` | 1.0.0 | L2 | 科学图表规范、配色和反模式检查 |
-| academic | `humanizer-zh` | 1.0.0 | L2 | 中文润色、降低 AI 痕迹 |
+| academic | `humanizer-zh` | 1.1.0 | L2 | 用户显式要求后的最终中文风格修订 |
 | exam | `exam-extract` | 1.0.0 | L2 | 考点抽取、考试范围与题型整理 |
 | exam | `exam-coach` | 1.2.0 | L2 | 复习计划、速记卡、自测题与复盘 |
 | coding | `code-reader` | 1.0.0 | L2 | 公开代码库、架构与调用路径理解 |
@@ -23,6 +24,26 @@ LumenLab 当前从 `.lumenlab/skills` 发现 13 个内置 Skill。每个 Skill �
 | learning | `socratic-tutor` | 1.1.0 | L2 | 启发式追问与学习辅导 |
 
 Skill Router 的决策顺序为：用户手动选择或关闭、`policy.json` 的 `triggers.include/exclude`、兼容关键词规则、通用模式。手动选择优先级最高；缺少所需项目资料时，Skill 可以进入 `awaiting_context`，不会伪造上下文继续执行。
+
+## Deep Research 方法论编译
+
+Deep Research 不激活普通 Agent Skill。所有 structured stage 继续使用 `skillOff: true`，Research ToolRunner 不携带 `skillId`，工具集合只由 checkpoint `allowedToolIds`、Tool Registry、L1 policy、预算和 provider/runtime 边界决定。
+
+Run 创建时，服务器按 Research Brief 选择受信 Skill，并只编译当前阶段相关章节：Planner 使用意图与规划，Retrieval 使用查询与来源，Triage 使用相关性与质量，Evaluator 使用完成度，Claim/Verifier 使用证据边界，Architect/Writer 使用综合与组织，Auditor 使用最终质量标准。`deep-research-core` 必选；综述、趋势、技术评述与方法比较选择 `literature-review`；只有明确论文精读才选择 `paper-reader`。`paper-writer`、`humanizer-zh` 和 `figure-style` 不会机械进入事实推理。
+
+Run 的 `modelConfiguration.researchSkills` 保存 `{skillId, version, contentHash, source, selectedStages}` 与已编译阶段文本，使运行中版本固定。ReportSnapshot 只保存前述元数据，不保存方法论 prompt 正文。
+
+## 来源与自动更新
+
+Skill 来源 precedence 为 `project > user > managed > bundled`。同 ID override 会进入 catalog 元数据；高层来源仍不能放宽 Tool 的平台风险上限。
+
+- `bundled`：仓库 `.lumenlab/skills`，随 release 发布；updater 只检测和 staging，不覆盖 Git 工作树。
+- `managed`：位于 `LUMENLAB_MANAGED_SKILLS_DIR` 指向的共享目录，可由受控 updater 管理。
+- `user` / `project`：可分别由 `LUMENLAB_USER_SKILLS_DIR`、`LUMENLAB_PROJECT_SKILLS_DIR` 提供，默认不进入 updater。
+
+Managed manifest 为共享目录下的 `skills.lock.json`，记录来源 URL/路径/ref、revision、Skill/policy/content hash、安装与检查时间、autoUpdate、状态、candidate 与 previous。更新流程为远端 revision 检查、隔离下载、包校验、语义安全 diff、staging、原子 manifest promotion、catalog 热刷新与 rollback。新增 Tool、提高风险、扩大 scope/resource、放宽审批、允许外发、增加可执行文件、改变 identity/trust 或无效 schema 一律进入 `review_required`；纯 instruction 修订和权限收紧可自动 promotion。
+
+默认 scheduler 每 24 小时检查，并按 Skill ID 添加 0–60 分钟确定性 jitter；最小周期 1 小时，失败采用最长 6 小时的有界退避。共享目录的原子文件租约保证同一时刻只有一个进程 promotion。设置 `LUMENLAB_SKILLS_AUTO_UPDATE=false` 可停用。
 
 ## 内置 Tool 与风险
 
@@ -64,6 +85,9 @@ L4 为预留的阻断级风险，当前没有生产 Tool 使用。Skill 只能�
 ## 注册与维护
 
 - Skill discovery：`src/lib/skills/discovery.ts`
+- 来源 precedence：`src/lib/skills/layers.ts`
+- Managed updater / scheduler：`src/lib/skills/managed-updater.ts`、`src/lib/skills/update-scheduler.ts`
+- Research compiler：`src/lib/research/research-skills.ts`
 - metadata 转换：`src/lib/skills/migration.ts`
 - 注册入口与兼容层：`src/lib/skills/registry.ts`
 - Tool 元数据与 handler：`src/lib/tools/registry.ts`
@@ -71,5 +95,7 @@ L4 为预留的阻断级风险，当前没有生产 Tool 使用。Skill 只能�
 - 执行状态机：`src/lib/agent/tools/tool-runner.ts`
 
 新增 Skill 时创建 `.lumenlab/skills/<category>/<skill-id>/SKILL.md` 与 `policy.json`，声明触发词、允许 Tool、风险上限、required scopes、输入输出契约和数据处理策略，并补 discovery、router 或集成测试。新增 Tool 时在 `src/lib/tools/registry.ts` 注册元数据与 handler，同时补参数、归属、风险和失败路径测试。
+
+运维 CLI 与 scheduler 共用同一 service：`npx tsx scripts/skills-managed.ts status|check|update|approve|rollback [skillId]`。受认证状态 API 为 `GET /api/skills/managed`；`POST` 的 check/update/approve/rollback 仅允许 `SKILL_UPDATE_ADMIN_EMAILS` 中的 operator。只有显式 `approve` 才能 promotion 已审阅的 `review_required` candidate，定时任务和普通 `update` 都不能越过审核。
 
 面向用户的完整说明见 [Skills 与 Tools](docs/LumenLabDocs/guides/skills-and-tools.md)，审批状态机见 [Policy Engine](docs/LumenLabDocs/architecture/policy-engine.md)。

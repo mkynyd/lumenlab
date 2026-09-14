@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "category": "academic",
+  "display_name": "深度研究核心方法",
+  "trust_level": "builtin",
+  "enabled": true,
+  "allowed_tools": [],
+  "allowed_risk_level": ["L1"],
+  "default_approval_policy": "block",
+  "required_scopes": [],
+  "input_contract": {},
+  "output_contract": {},
+  "data_handling": {
+    "may_send_to_external": false,
+    "may_persist": false
+  },
+  "triggers": {
+    "include": [],
+    "exclude": []
+  },
+  "resources": {
+    "allow": [],
+    "deny": ["**/*"]
+  }
+}

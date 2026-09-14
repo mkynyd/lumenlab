@@ -43,9 +43,12 @@ describe("createResearchRun commander model", () => {
 
     const createData = prisma.researchRun.create.mock.calls[0][0].data;
     expect(createData.commanderModel).toBe("qwen3.8-max");
-    const configuration = createData.modelConfiguration as Record<string, { model: string; source: string; reasoningEffort: string }>;
-    expect(Object.keys(configuration)).toHaveLength(10);
-    for (const [role, selection] of Object.entries(configuration)) {
+    const configuration = createData.modelConfiguration as Record<string, unknown>;
+    const { researchSkills, ...roleConfiguration } = configuration;
+    expect(Object.keys(roleConfiguration)).toHaveLength(10);
+    expect(researchSkills).toMatchObject({ snapshotVersion: 1, skills: expect.arrayContaining([expect.objectContaining({ skillId: "deep-research-core", version: "1.0.0" })]) });
+    for (const [role, rawSelection] of Object.entries(roleConfiguration)) {
+      const selection = rawSelection as { model: string; source: string; reasoningEffort: string };
       expect(selection).toMatchObject({ model: "qwen3.8-max", source: "run_override" });
       expect(selection.reasoningEffort).toBe(role === "research.synthesizer" ? "max" : "high");
     }
@@ -56,8 +59,10 @@ describe("createResearchRun commander model", () => {
 
     const createData = prisma.researchRun.create.mock.calls[0][0].data;
     expect(createData.commanderModel).toBeNull();
-    const configuration = createData.modelConfiguration as Record<string, { source: string }>;
-    expect(Object.values(configuration).every((selection) => selection.source === "default")).toBe(true);
+    const configuration = createData.modelConfiguration as Record<string, unknown>;
+    const { researchSkills, ...roleConfiguration } = configuration;
+    expect(Object.values(roleConfiguration).every((value) => (value as { source: string }).source === "default")).toBe(true);
+    expect(researchSkills).toMatchObject({ snapshotVersion: 1 });
   });
 
   it("rejects legacy or unknown commander models before touching the database", async () => {

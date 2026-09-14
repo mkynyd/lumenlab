@@ -35,6 +35,7 @@ export async function GET() {
         description: string;
         version: string;
         source: string;
+        overriddenSources: string[];
         riskSummary: {
           ceiling: string;
           approval: string;
@@ -70,7 +71,8 @@ export async function GET() {
       displayName: skill.displayName || skill.skillId,
       description: skill.description,
       version: skill.version,
-      source: skill.category ? "builtin" : "legacy",
+      source: skill.source ?? (skill.category ? "builtin" : "legacy"),
+      overriddenSources: skill.overriddenSources ?? [],
       riskSummary: {
         ceiling: maxRiskLevel(skill.allowedRiskLevel),
         approval: skill.defaultApprovalPolicy,

@@ -5,7 +5,7 @@ import { parseAgentCheckpoint, type AgentCheckpoint } from "@/lib/agent/executio
 import { prisma } from "@/lib/db";
 import { selectResearchModel, resolveCommanderModel, type ResearchModelSelection } from "./model-routing";
 
-function researchCheckpoint(input: { runId: string; question: string; selection: ResearchModelSelection; stage: "planning" | "researching" }): AgentCheckpoint {
+export function buildResearchCheckpoint(input: { runId: string; question: string; selection: ResearchModelSelection; stage: "planning" | "researching" }): AgentCheckpoint {
   return parseAgentCheckpoint({
     version: 2,
     items: [
@@ -51,7 +51,7 @@ export async function createResearchAgentExecution(userId: string, runId: string
 
   const selection = selectResearchModel("research.worker", resolveCommanderModel(run.commanderModel));
   const model: AgentModel = selection.model;
-  const checkpoint = researchCheckpoint({ runId: run.id, question: run.question, selection, stage: options?.stage ?? "researching" });
+  const checkpoint = buildResearchCheckpoint({ runId: run.id, question: run.question, selection, stage: options?.stage ?? "researching" });
   const clientRunKey = `research:${run.id}:v1`;
   const requestHash = createHash("sha256").update(JSON.stringify({ runId: run.id, question: run.question, planVersionId: run.planVersionId })).digest("hex");
   const result = await new PrismaAgentExecutionStore().createOrGetByClientRunKey({

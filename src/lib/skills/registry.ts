@@ -17,14 +17,10 @@ let discoveryPromise: Promise<void> | null = null;
  * 先触发同步注册占位，等待后续 discovery 刷新。
  */
 export async function registerFromDiscovery(): Promise<number> {
-  const { discoverAll } = await import("./discovery");
+  const { discoverEffectiveSkills } = await import("./layers");
   const { discoveredToMetadata } = await import("./migration");
-  const path = await import("path");
-
-  const baseDir = path.join(process.cwd(), ".lumenlab/skills");
-
   try {
-    const result = await discoverAll(baseDir);
+    const result = await discoverEffectiveSkills();
 
     for (const err of result.errors) {
       console.error(`[SkillRegistry] Discovery error [${err.skill}]: ${err.message}`);
@@ -68,6 +64,14 @@ export async function ensureDiscovery(): Promise<void> {
   discoveryStarted = true;
   discoveryPromise = registerFromDiscovery().then(() => {});
   await discoveryPromise;
+}
+
+/** Safely reload active/promoted layers without restarting the application. */
+export async function refreshSkillDiscovery(): Promise<number> {
+  discoveryStarted = true;
+  discoveryPromise = registerFromDiscovery().then(() => {});
+  await discoveryPromise;
+  return skillRegistry.list().length;
 }
 
 /**

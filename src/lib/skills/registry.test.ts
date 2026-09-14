@@ -118,13 +118,21 @@ describe("skill allowlists align with registered tools (via discovery)", () => {
 
   it("all built-in skills have required metadata", () => {
     const skills = skillRegistry.list();
-    expect(skills.length).toBeGreaterThanOrEqual(6);
+    expect(skills.map((skill) => skill.skillId).sort()).toEqual([
+      "code-reader", "deep-research-core", "docx", "exam-coach", "exam-extract", "figure-style", "humanizer-zh",
+      "literature-review", "paper-reader", "paper-writer", "pdf", "pptx", "socratic-tutor", "xlsx",
+    ]);
 
     for (const skill of skills) {
       expect(skill.skillId).toBeTruthy();
       expect(skill.version).toMatch(/^\d+\.\d+\.\d+$/);
       expect(skill.instructions.length).toBeGreaterThan(100);
-      expect(skill.allowedTools.length).toBeGreaterThan(0);
+      if (skill.skillId === "deep-research-core") {
+        expect(skill.allowedTools).toEqual([]);
+        expect(skill.defaultApprovalPolicy).toBe("block");
+      } else {
+        expect(skill.allowedTools.length).toBeGreaterThan(0);
+      }
       expect(skill.dataHandlingPolicy.mayPersist).toBeDefined();
     }
   });

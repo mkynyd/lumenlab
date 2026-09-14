@@ -85,3 +85,17 @@ Candidate 在 bounded read 前经过独立的 Source Relevance/Quality triage。
 最终链路改为 Claim Extraction → deterministic/model Verifier → 有界 verification repair research → Report Architect → Report Writer → deterministic/model Report Auditor → 最多一次 Writer repair → 冻结。Architect 只组织可报告 Claim，按主题/机制/比较维度而非论文列表输出 JSON；Writer 只能使用 outline 与最终 Claim packets，unsupported Claim 不进入肯定性正文，引用只能取对应关系内的 `[E#]`；Auditor 检查原问题覆盖、跨来源综合、证据强度、时间与可比性、引用关系、限定/冲突、模板语言和 bibliography。ReportSnapshot 的 `evidenceIds`、`sourceSnapshotIds`、`citationMap` 与导出 bibliography 均由报告实际出现的合法 Evidence marker 派生，并按首次引用顺序冻结。
 
 预算从 Run 开始拆为 exploration 与 finalization 两部分；research/evaluator replan/citation graph/visual evidence 只能消耗 exploration 上限，finalization reserve 同时保留 model calls、tokens 与 credits，覆盖 verifier、architect、writer、auditor 及一次受控 repair/re-audit。旧 deterministic synthesis bullet fallback 被删除；Provider 或 Writer 真正不可用时只生成明确的 degraded diagnostic artifact，并记录 `research_synthesis_unavailable` / quality gate degradation，UI 不将其呈现为正常高质量报告。关键阶段 prompt 统一版本化并写入 ReportSnapshot `modelConfiguration.promptVersions`，便于生产回归定位。
+
+## Addendum 2026-09-14 — Research Skill Compilation & Managed Skills Update v1
+
+Deep Research 消费 Skill 的方式定义为服务器端 Research Instruction Compilation。所有 structured stage 继续 `skillOff: true`，checkpoint Skill ID 为空，ToolRunner 不接收普通 Agent `skillId`。因此 Skill `allowed_tools`、approval、scope、risk 与 data policy 不会扩展 Research 工具面；Research 只使用 checkpoint `allowedToolIds`、Tool Registry、L1 policy、预算和 provider/runtime 边界。
+
+所有 Run 必选 bundled `deep-research-core`。Resolver 按启动时 Research Brief 精确选择补充方法论：综述、趋势、技术评述、比较与研究空白选择 `literature-review`；具体论文、方法、实验或图表数据精读选择 `paper-reader`；`paper-writer` 与 `humanizer-zh` 不进入事实推理，`figure-style` 只在明确科研图表制作/审查的报告阶段使用。Compiler 使用普通 Markdown heading 的确定性 section selection，不新增专用 DSL。
+
+`ResearchRun.modelConfiguration.researchSkills` 保存 `{skillId, version, contentHash, source, selectedStages}` 与 `compiledByStage`，使 Durable Run 在更新期间仍使用启动快照。`ResearchReportSnapshot.modelConfiguration` 只保存元数据与 promptVersions，不复制方法论正文。该设计复用现有 JSON 配置字段，不新增 Prisma schema。
+
+Skill discovery 改为四层 precedence：`project > user > managed > bundled`。Bundled 仍是 Git 管理的 `.lumenlab/skills`；managed 使用 `LUMENLAB_MANAGED_SKILLS_DIR` 共享目录；user/project 只参与 discovery，不被 updater 覆盖。同 ID override 可观察，高层 policy 仍受 Tool Registry 与 Policy Engine 上限约束。
+
+Managed updater 采用共享目录 `skills.lock.json` 与 content-addressed `versions/`。远端候选经过 isolated staging、路径/大小/symlink/可执行资源/frontmatter/policy/Tool/scope/risk/approval/resource 校验与语义 security diff。纯 instruction 修订或权限收紧可 auto-promote；新增 Tool、提高风险、扩大 scope/resource、放宽审批、允许外发、trust/identity 变化、可执行资源与无效包进入 `review_required`。原子 manifest rename 切换 current，保留 previous 供 rollback，promotion 后热刷新 discovery。
+
+本轮不复用 `AgentExecution`：它是用户拥有的会话执行与通知模型，系统级 updater 没有合法 user/conversation owner，强行复用会污染用户任务与审批语义。也不新增 DB 表：单机生产共享目录本身必须持久保存版本包，原子 manifest 已覆盖 current/review/history/status，O_EXCL 文件租约在共享卷上提供跨进程 single-run guard。调度器使用可停止的异步 sleep loop，不使用 `setInterval` 或 shell crontab；默认 24 小时加 0–60 分钟确定性 jitter，最小 1 小时，失败最长退避 6 小时。

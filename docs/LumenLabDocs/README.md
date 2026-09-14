@@ -19,7 +19,7 @@
 - [资料与 RAG](./guides/files-and-rag.md) — 上传、MiniMax / MinerU 解析、资料图谱、关键词与语义检索
 - [成果与导出](./guides/artifacts.md) — Artifact 库、Markdown / DOCX / PDF 导出
 - [Agent 模式](./guides/agent-mode.md) — Skill Router、Tool、审批流程与使用场景
-- [Skills 与 Tools](./guides/skills-and-tools.md) — 13 个内置 Skill、Tool 调用与风险等级
+- [Skills 与 Tools](./guides/skills-and-tools.md) — 14 个 bundled Skill、多来源 discovery、Managed 更新、Tool 调用与风险等级
 - [深度研究](./guides/deep-research.md) — 研究工作区、计划确认、来源与证据、报告引用追溯
 - [论文排版](./guides/papers.md) — 学校模板、原稿上传、结构确认、PDF 预览与下载
 

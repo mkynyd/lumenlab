@@ -122,7 +122,11 @@ response-stream.ts
 
 ## Skill 与 Tool 注册
 
-运行时从 `.lumenlab/skills` 发现 Skill 包，读取每个 `SKILL.md` 和 `policy.json` 并转换为 `SkillMetadata`。Tool 元数据和 handler 在 `src/lib/tools/registry.ts` 注册，`PolicyEngine` 会在执行前统一检查 Skill allowlist、风险上限、scope、所有权和参数。
+运行时从 bundled、managed、user、project 四层发现 Skill 包，按 `project > user > managed > bundled` 合并并把 override 写入 catalog 元数据。Bundled 位于 `.lumenlab/skills`；managed 位于 release tree 外的共享目录。读取 `SKILL.md` 和 `policy.json` 后转换为 `SkillMetadata`。Tool 元数据和 handler 在 `src/lib/tools/registry.ts` 注册，`PolicyEngine` 会在执行前统一检查 Skill allowlist、风险上限、scope、所有权和参数。
+
+Managed updater 使用共享目录 manifest 与跨进程文件租约。远端候选经过隔离 staging、包校验、实际 policy diff 后，安全 instruction 更新才能原子 promotion；权限扩大进入 review，bundled/user/project 永不被覆盖。Promotion 后重新 discovery，无需重启。该状态无需数据库模型：共享目录的原子 manifest 同时提供当前指针、审核状态、历史版本和调度审计，文件租约提供同机多进程或共享卷多副本 arbitration。
+
+Deep Research 的 `research-skills.ts` 只编译 methodology instruction。Run 的 `modelConfiguration` 锁定 Skill 元数据和 stage text；ReportSnapshot 仅复制元数据。该路径不向普通 Agent Skill runtime 传 `skillId`，也不参与 Tool permission 计算。
 
 ## 与其他文档的关联
 

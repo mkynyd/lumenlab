@@ -151,6 +151,7 @@ export function buildClaimExtractionPrompt(input: {
   question: { key: string; title: string; question: string; completionCriteria: unknown };
   domainProfile?: unknown;
   evidence: ClaimExtractionEvidencePromptItem[];
+  methodology?: string;
 }): string {
   const evidenceText = input.evidence.map((item) => JSON.stringify({
     evidenceId: item.id,
@@ -173,5 +174,6 @@ export function buildClaimExtractionPrompt(input: {
     `领域 Profile：${JSON.stringify(input.domainProfile ?? {})}`,
     "本 Question 的 Evidence：",
     evidenceText || "（本 Question 没有可用 Evidence，应返回空 claims）",
+    ...(input.methodology?.trim() ? ["## Compiled methodology", input.methodology.trim()] : []),
   ].join("\n");
 }

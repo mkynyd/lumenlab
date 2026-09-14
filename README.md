@@ -64,7 +64,8 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 ### Deep Research
 
 - 入口是聊天式输入框：像普通聊天一样输入研究问题即可发起，可上传文件（自动归入关联项目并进入证据链）、选择研究领域/强度与指挥模型（含 Qwen3.8-Max）；发送后先生成研究计划，用户在计划审阅卡中确认后才进入执行。
-- 研究运行按 Planner → 并行 Researcher → Evaluator/Replan → Synthesizer → Citation Verifier 的 durable 阶段执行，复用 AgentExecution 租约、checkpoint 与事件回放，报告冻结为不可变快照。
+- 研究运行按 Planner → Retrieval / Source Triage → Evaluator → Claim / Verifier → Report Architect / Writer / Auditor 的 durable 阶段执行，复用 AgentExecution 租约、checkpoint 与事件回放，报告冻结为不可变快照。
+- 每个 Run 默认加载 `deep-research-core`，并按 Research Brief 选择 `literature-review` 或 `paper-reader` 的相关方法论章节。它们只作为低优先级的 compiled methodology 注入 structured prompt；Research 保持 `skillOff: true`、不向 ToolRunner 传 `skillId`，不会改变工具、联网、scope、风险、审批、预算或 Evidence 边界。Run 创建时锁定 Skill version/content hash，ReportSnapshot 仅记录可审计元数据。
 - 检索分三条并列通道：Web（web.search/web.fetch）、学术（Sciverse 主通道，OpenAlex/Crossref/Semantic Scholar/PubMed 为回退，arXiv 为专项来源）、项目资料（project_rag/project_files）；评估发现证据缺口时，沿核心论文的引用关系（sciverse.paper_relations）做有界的 Citation Graph 扩展；学术检索支持 catalog-aware 高级筛选，图表视觉证据按需在硬预算内启用（sciverse.resource + research.visual_evaluator）。
 - Sciverse 证据按论文 docId 硬范围做段落级语义检索，再在命中位置读取有界原文切片；证据以 chunk 级 locator（docId/chunkId/offset/pageNo）和 provenance 落库，快照元数据明确记录读取范围，不冒充全文。
 - 系统证据带确定性幂等键，任务重跑或租约恢复不会产生重复 Evidence；对象存储短暂失败时保留有界摘录并标注 rawContentPersisted=false。
@@ -73,7 +74,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### 受控 Agent 模式
 
-入口处的 Skill Router 先识别用户意图，自动从 13 个内置 Skill 中选择一个激活；用户也可在 UI 手动切换 Skill 或关闭 Skill，手动选择优先级最高。后续统一进入 `AgentRuntime`：DeepSeek、MiniMax 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
+入口处的 Skill Router 先识别用户意图，从 bundled catalog 中选择普通 Agent Skill；用户也可手动切换或关闭 Skill。Deep Research 使用独立的服务器端方法论编译路径，不走普通 Skill 激活与审批链。普通 Agent 后续统一进入 `AgentRuntime`：DeepSeek、MiniMax 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
 
 服务端 Policy Engine 拦截所有 `tool_use`，按 L0–L4 风险等级决定执行、预批准或逐次确认。
 
@@ -87,10 +88,11 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### 内置 Skills
 
-当前 Skill 包从 `.lumenlab/skills` 发现并注册，按学习场景分为 13 个内置 Skill：
+当前 `.lumenlab/skills` 提供 14 个 bundled Skill：
 
 | 分类 | Skill | 典型用途 | 风险上限 |
 |------|-------|----------|----------|
+| academic | deep-research-core | Deep Research 默认研究方法论 | L1（无 Tool） |
 | academic | paper-reader | 论文速读、精读、多论文对比 | L3 |
 | academic | paper-writer | 论文初稿、报告结构、引用组织 | L2 |
 | academic | literature-review | 文献综述、研究现状、方法对比 | L2 |
@@ -106,6 +108,8 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 | learning | socratic-tutor | 苏格拉底式启发辅导 | L2 |
 
 每个 Skill 由 `SKILL.md` 和 `policy.json` 组成，包含工具白名单、风险上限、默认审批策略、必需 scopes、输入输出契约、数据处理策略和触发词。
+
+动态 Skill 按 `project > user > managed > bundled` 合并，同 ID override 在 catalog 中可观察。生产 managed 版本存放在 `LUMENLAB_MANAGED_SKILLS_DIR` 的共享目录，更新器每天检查一次并加入 0–60 分钟 jitter；候选先隔离 staging、校验并比较 policy，再决定自动 promotion 或 `review_required`。Bundled、user 与 project Skill 均不会被后台覆盖，更新失败不会改变 current；managed Skill 保留 previous 供原子 rollback，并在 promotion 后无重启刷新 discovery cache。
 
 ### 内置 Tools
 
@@ -266,8 +270,12 @@ src/
 │   │   ├── grading/                    # 确定性与结构化判分
 │   │   ├── freshness/                  # 资料变化适配器
 │   │   └── evals/                      # Golden fixtures 与安全门禁
-│   ├── skills/                         # Skill discovery / migration / Provider-aware tools
-│   │   ├── discovery.ts                # 从 .lumenlab/skills 读取 SKILL.md + policy.json
+│   ├── skills/                         # 多来源 Skill discovery、迁移与 Managed updater
+│   │   ├── discovery.ts                # 读取并校验 SKILL.md + policy.json
+│   │   ├── layers.ts                   # project > user > managed > bundled precedence
+│   │   ├── managed-updater.ts          # staging / security diff / promotion / rollback
+│   │   ├── managed-service.ts          # CLI、API、scheduler 共享装配
+│   │   ├── update-scheduler.ts         # 24h+jitter 调度与共享租约
 │   │   ├── migration.ts                # DiscoveredSkill → SkillMetadata
 │   │   └── registry.ts                 # Skill 注册与元数据装配
 │   ├── tools/                          # 内置 Tool 实现
@@ -502,7 +510,7 @@ npm run dev
 
 ### 使用 Agent 模式
 
-1. Skill Router 会在 13 个内置 Skill 中自动选择合适能力；用户也可手动切换或关闭 Skill。
+1. 普通 Agent 的 Skill Router 会在 bundled catalog 中选择合适能力；Deep Research 单独编译研究方法论。用户仍可手动切换或关闭普通 Skill。
 2. 模型需要调用 Tool 时，Agent 事件流会把工具调用以时间线方式展示在对话中。
 3. L3 Tool（如 `project_files.delete`）会在执行前弹出审批卡片，展示受影响资源、可逆性与样本。
 4. 选择「仅本次允许」会立即兑换一次性审批令牌；选择「本会话同类允许」会预批准该 Skill 的同类 L1/L2 Tool。

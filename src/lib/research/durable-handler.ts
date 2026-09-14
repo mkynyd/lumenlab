@@ -44,6 +44,7 @@ import {
 } from "./prompts";
 import { deterministicReportAudit, evidenceMarkersInReport, fallbackReportArchitecture, normalizeReportArchitecture, normalizeReportAuditDecision } from "./report-quality";
 import { deterministicEvaluatorDecision } from "./evaluator";
+import { methodologyForStage, publicResearchSkillSnapshot } from "./research-skills";
 import {
   buildVisualEvidenceFingerprint,
   buildVisualEvidencePrompt,
@@ -152,6 +153,7 @@ async function architectReportWithExistingRuntime(input: {
   claims: ReportClaimPacket[];
   coverageGaps: string[];
   modelOverride?: ChatModel | null;
+  methodology?: string;
 }) {
   return runResearchModelStage({
     role: "research.report_architect",
@@ -160,7 +162,7 @@ async function architectReportWithExistingRuntime(input: {
     projectId: input.projectId,
     signal: input.signal,
     modelOverride: input.modelOverride,
-    prompt: buildReportArchitectPrompt({ plan: input.plan, questions: input.questions, claims: input.claims, coverageGaps: input.coverageGaps }),
+    prompt: buildReportArchitectPrompt({ plan: input.plan, questions: input.questions, claims: input.claims, coverageGaps: input.coverageGaps, methodology: input.methodology }),
     parse: (content) => normalizeReportArchitecture(JSON.parse(content.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "")), new Set(input.claims.map((claim) => claim.id))),
   });
 }
@@ -176,8 +178,9 @@ async function writeFinalReportWithExistingRuntime(input: {
   profile: string;
   modelOverride?: ChatModel | null;
   repair?: { draft: string; instructions: string[] };
+  methodology?: string;
 }) {
-  const prompt = buildReportWriterPrompt({ plan: input.plan, architecture: input.architecture, claims: input.claims, profile: input.profile });
+  const prompt = buildReportWriterPrompt({ plan: input.plan, architecture: input.architecture, claims: input.claims, profile: input.profile, methodology: input.methodology });
   return runResearchModelStage<string>({
     role: "research.synthesizer",
     userId: input.userId,
@@ -201,6 +204,7 @@ async function auditFinalReportWithExistingRuntime(input: {
   report: string;
   bibliographySourceIds: string[];
   modelOverride?: ChatModel | null;
+  methodology?: string;
 }) {
   return runResearchModelStage({
     role: "research.report_auditor",
@@ -209,7 +213,7 @@ async function auditFinalReportWithExistingRuntime(input: {
     projectId: input.projectId,
     signal: input.signal,
     modelOverride: input.modelOverride,
-    prompt: buildReportAuditorPrompt({ plan: input.plan, report: input.report, architecture: input.architecture, claims: input.claims, bibliographySourceIds: input.bibliographySourceIds }),
+    prompt: buildReportAuditorPrompt({ plan: input.plan, report: input.report, architecture: input.architecture, claims: input.claims, bibliographySourceIds: input.bibliographySourceIds, methodology: input.methodology }),
     parse: (content) => normalizeReportAuditDecision(JSON.parse(content.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, ""))),
   });
 }
@@ -281,6 +285,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       : explorationLimits;
     const domainProfile = (run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined)?.domainProfile;
     const planSnapshot = run.activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined;
+    const methodology = (stage: Parameters<typeof methodologyForStage>[1]) =>
+      methodologyForStage(run.modelConfiguration, stage);
     // 有界收集 Sciverse advanced filter 的生效情况（诊断与 run.metrics 用）。
     const scholarlyFilterAccumulator = {
       applied: new Set<string>(state.scholarlyFilters?.applied ?? []),
@@ -322,7 +328,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         projectId: run.workspace.projectId,
         signal: context.signal,
         modelOverride,
-        prompt: buildPlannerPrompt({ plan: currentPlan, profile: run.workspace.budgetProfile, domainProfile }),
+        prompt: buildPlannerPrompt({ plan: currentPlan, profile: run.workspace.budgetProfile, domainProfile, methodology: methodology("planner") }),
       });
       recordResearchModelStage(state, plannerResult);
       const revisedPlan = applyResearchPlannerDecision(currentPlan, normalizeResearchPlannerDecision(plannerResult.value));
@@ -408,6 +414,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
               task: task.instructions ?? "沿用 Research Question，优先补充独立来源。",
               domainProfile,
               directiveContext,
+              methodology: methodology("retrieval"),
             }),
           });
           recordResearchModelStage(state, workerResult, { modelCallReserved: true });
@@ -429,7 +436,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
                 projectId: run.workspace.projectId,
                 signal: context.signal,
                 modelOverride,
-                prompt: buildSourceTriagePrompt({ plan: planSnapshot!, question: task.question.question, strategy, candidates: prioritized.map((candidate, index) => ({ id: String(index), candidate })) }),
+                prompt: buildSourceTriagePrompt({ plan: planSnapshot!, question: task.question.question, strategy, candidates: prioritized.map((candidate, index) => ({ id: String(index), candidate })), methodology: methodology("source_triage") }),
               });
               recordResearchModelStage(state, triageResult, { modelCallReserved: true });
               modelAssessments = normalizeSourceTriageDecision(triageResult.value, new Set(prioritized.map((_, index) => String(index))));
@@ -529,7 +536,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             projectId: run.workspace.projectId,
             signal: context.signal,
             modelOverride,
-            prompt: buildEvaluatorPrompt({ plan: planSnapshot!, question: { question: question.question, completionCriteria: question.completionCriteria }, domainProfile, evidence: evidencePackets }),
+            prompt: buildEvaluatorPrompt({ plan: planSnapshot!, question: { question: question.question, completionCriteria: question.completionCriteria }, domainProfile, evidence: evidencePackets, methodology: methodology("evaluator") }),
           });
           recordResearchModelStage(state, evaluatorResult);
           decision = normalizeResearchEvaluatorDecision(evaluatorResult.value, fallbackDecision);
@@ -1092,6 +1099,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
                 canonicalUrl: evidence.sourceSnapshot.source.canonicalUrl,
               },
             })),
+            methodology: methodology("claim"),
           }),
         });
         recordResearchModelStage(state, extractorResult, { modelCallReserved: true });
@@ -1192,7 +1200,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
                 canonicalUrl: relation.evidence.sourceSnapshot.source.canonicalUrl,
               },
             })),
-          })) }),
+          })), methodology: methodology("verifier") }),
       });
       recordResearchModelStage(state, verifierResult, { modelCallReserved: true });
       verifierDecision = normalizeResearchVerifierDecision(verifierResult.value);
@@ -1279,7 +1287,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     let architecture = fallbackReportArchitecture({ objective: planSnapshot?.objective ?? run.question, intentType: planSnapshot?.intentType, claims: claimPackets });
     let architectureAvailable = false;
     if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
-      const architect = await architectReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, plan: planSnapshot!, questions: reportQuestions, claims: claimPackets, coverageGaps, modelOverride });
+      const architect = await architectReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, plan: planSnapshot!, questions: reportQuestions, claims: claimPackets, coverageGaps, modelOverride, methodology: methodology("report_architect") });
       recordResearchModelStage(state, architect, { modelCallReserved: true });
       const normalized = normalizeReportArchitecture(architect.value, allowedClaimIds);
       if (normalized) {
@@ -1291,7 +1299,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     let reportBody = "";
     let synthesisAvailable = false;
     if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
-      const writer = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile });
+      const writer = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile, methodology: methodology("writer") });
       recordResearchModelStage(state, writer, { modelCallReserved: true });
       if (writer.value) {
         reportBody = writer.value;
@@ -1308,7 +1316,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     let modelAudit = { pass: false, issues: [] as Array<{ code: string; severity: "error" | "warning"; message: string }>, repairInstructions: [] as string[] };
     let auditorAvailable = false;
     if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
-      const audit = await auditFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, report: reportBody, bibliographySourceIds: bibliographySourceIdsFor(reportBody) });
+      const audit = await auditFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, report: reportBody, bibliographySourceIds: bibliographySourceIdsFor(reportBody), methodology: methodology("auditor") });
       recordResearchModelStage(state, audit, { modelCallReserved: true });
       if (audit.value) {
         modelAudit = normalizeReportAuditDecision(audit.value);
@@ -1319,12 +1327,12 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     let reportAuditPass = synthesisAvailable && deterministicAudit.pass && auditorAvailable && modelAudit.pass;
     if (!reportAuditPass && synthesisAvailable && auditorAvailable && state.verificationRepairs < limits.maxVerificationRepairs && canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
       state.verificationRepairs += 1;
-      const repair = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile, repair: { draft: reportBody, instructions: [...deterministicAudit.issues.map((issue) => issue.message), ...modelAudit.repairInstructions] } });
+      const repair = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile, repair: { draft: reportBody, instructions: [...deterministicAudit.issues.map((issue) => issue.message), ...modelAudit.repairInstructions] }, methodology: methodology("writer") });
       recordResearchModelStage(state, repair, { modelCallReserved: true });
       if (repair.value) reportBody = repair.value;
       deterministicAudit = deterministicReportAudit({ report: reportBody, evidenceRefs: evidence.map((item) => item.id), claims: claimPackets });
       if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
-        const reaudit = await auditFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, report: reportBody, bibliographySourceIds: bibliographySourceIdsFor(reportBody) });
+        const reaudit = await auditFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, report: reportBody, bibliographySourceIds: bibliographySourceIdsFor(reportBody), methodology: methodology("auditor") });
         recordResearchModelStage(state, reaudit, { modelCallReserved: true });
         if (reaudit.value) modelAudit = normalizeReportAuditDecision(reaudit.value);
       }
@@ -1392,7 +1400,9 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       verificationSummary,
     };
     const existingModelConfiguration = run.modelConfiguration && typeof run.modelConfiguration === "object" && !Array.isArray(run.modelConfiguration) ? run.modelConfiguration as Record<string, unknown> : {};
-    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: citedEvidenceIds, sourceSnapshotIds: citedSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: reportQuestions.length, evidenceCount: evidence.length, citedEvidenceCount: citedEvidenceIds.length, sourceCount: canonicalSourceCount, citedSourceSnapshotCount: citedSnapshots.length, graph: graphMetrics, visual: visualMetrics, scholarlyFilters: scholarlyFilterMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json({ ...existingModelConfiguration, promptVersions: RESEARCH_PROMPT_VERSIONS }), contentHash } });
+    const { researchSkills: _privateResearchSkills, ...publicModelConfiguration } = existingModelConfiguration;
+    void _privateResearchSkills;
+    const report = await prisma.researchReportSnapshot.create({ data: { workspaceId: run.workspaceId, runId: run.id, planVersionId: run.planVersionId, reportDocument: json(reportDocument), claimSnapshots: json(claims.map((claim) => ({ id: claim.id, statement: claim.statement, verificationStatus: claimStatuses[claim.id]?.status ?? "unsupported", reasonCode: claimStatuses[claim.id]?.reasonCode }))), evidenceIds: citedEvidenceIds, sourceSnapshotIds: citedSnapshots, citationMap: json(citationMap), coverageSummary: json({ questionCount: reportQuestions.length, evidenceCount: evidence.length, citedEvidenceCount: citedEvidenceIds.length, sourceCount: canonicalSourceCount, citedSourceSnapshotCount: citedSnapshots.length, graph: graphMetrics, visual: visualMetrics, scholarlyFilters: scholarlyFilterMetrics }), verificationSummary: json(verificationSummary), modelConfiguration: json({ ...publicModelConfiguration, promptVersions: RESEARCH_PROMPT_VERSIONS, researchSkills: publicResearchSkillSnapshot(existingModelConfiguration) }), contentHash } });
     await prisma.researchRun.update({ where: { id: run.id }, data: { status: "completed", completedAt: new Date(), metrics: json({ ...unifiedMetrics, scholarlyFilters: scholarlyFilterMetrics, degradations: [...degradationCodes] }) } });
     await appendPublicEvent(context, { key: "research:report:completed", kind: "report_completed", runId: run.id, message: reportAuditPass ? "研究报告已通过质量核验并冻结为不可修改快照" : "研究资料已冻结；最终综合或质量核验未完整通过", publicData: { reportId: report.id, evidenceCount: citedEvidenceIds.length, sourceCount: citedSnapshots.length, verificationSummary, qualityState } });
     return { kind: "completed", checkpoint };

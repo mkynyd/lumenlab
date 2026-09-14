@@ -18,7 +18,7 @@ export interface SkillPolicy {
   version: string;
   category: string;
   display_name: string;
-  trust_level: "builtin" | "user" | "project";
+  trust_level: "builtin" | "managed" | "user" | "project";
   enabled: boolean;
   allowed_tools: string[];
   allowed_risk_level: string[];
@@ -53,7 +53,8 @@ export interface DiscoveredSkill {
   /** skill 目录绝对路径 */
   baseDirectory: string;
   policy: SkillPolicy;
-  source: "builtin" | "user" | "project";
+  source: "bundled" | "builtin" | "managed" | "user" | "project";
+  overriddenSources?: Array<"bundled" | "builtin" | "managed" | "user" | "project">;
 }
 
 export interface SkillCatalogCategory {
@@ -279,7 +280,7 @@ export async function scanSkillDirectories(
   return skills;
 }
 
-async function loadSkillFromDirectory(
+export async function loadSkillFromDirectory(
   skillDir: string,
   skillMdPath: string,
   categorySlug: string,
