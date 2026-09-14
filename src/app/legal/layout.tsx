@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { BrandWordmark } from "@/components/brand/brand-wordmark";
 
 export default function LegalLayout({ children }: { children: ReactNode }) {
   return (
@@ -8,9 +9,9 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between px-6">
           <Link
             href="/"
-            className="text-sm font-semibold tracking-tight text-[var(--color-text-primary)]"
+            className="text-sm text-[var(--color-text-primary)]"
           >
-            LumenLab
+            <BrandWordmark />
           </Link>
           <nav className="flex items-center gap-4 text-sm">
             <Link

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Xmark } from "iconoir-react";
+import { BrandWordmark } from "@/components/brand/brand-wordmark";
 import { cn } from "@/lib/utils";
 import { DOCS_NAV, type DocNavItem } from "@/lib/docs/docs-nav";
 
@@ -50,7 +51,7 @@ export function DocsSidebar({
               priority
             />
           </span>
-          <span>LumenLab</span>
+          <BrandWordmark />
         </Link>
         <button
           type="button"

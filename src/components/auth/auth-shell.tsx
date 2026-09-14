@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { AuthShowcase } from "@/components/auth/auth-showcase";
+import { BrandWordmark } from "@/components/brand/brand-wordmark";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 interface AuthShellProps {
@@ -30,7 +31,7 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
                 priority
                 className="size-9 rounded-[var(--radius-md)]"
               />
-              <span>LumenLab</span>
+              <BrandWordmark />
             </Link>
             <ThemeToggle />
           </header>

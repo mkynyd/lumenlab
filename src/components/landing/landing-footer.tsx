@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { BrandWordmark } from "@/components/brand/brand-wordmark";
 import { Button } from "@/components/ui/button";
 import { ScrollReveal } from "./scroll-reveal";
 
@@ -63,7 +64,7 @@ export function LandingFooter() {
                 aria-hidden
               />
             </span>
-            <span>LumenLab</span>
+            <BrandWordmark />
             <span aria-hidden>·</span>
             <span>学习工作台</span>
           </div>

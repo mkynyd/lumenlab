@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { BrandWordmark } from "@/components/brand/brand-wordmark";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
@@ -32,7 +33,7 @@ export function LandingNav({ showBrand = true }: LandingNavProps) {
                 priority
               />
             </span>
-            <span>LumenLab</span>
+            <BrandWordmark />
           </Link>
         ) : (
           <div aria-hidden />

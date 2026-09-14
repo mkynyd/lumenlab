@@ -7,6 +7,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { emitNewChat } from "@/lib/chat/new-chat-event";
+import { BrandWordmark } from "@/components/brand/brand-wordmark";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -367,7 +368,7 @@ export function Sidebar({
             <span className="relative flex size-7 shrink-0 items-center justify-center">
               <SidebarBrandMark size={28} />
             </span>
-            <span className="truncate">LumenLab</span>
+            <BrandWordmark />
           </Link>
           {collapsed && (
             <button
