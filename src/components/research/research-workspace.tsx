@@ -444,8 +444,8 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   );
 
   return (
-    <main className="h-full overflow-y-auto bg-[var(--color-bg)]">
-      <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8 sm:py-8">
+    <main className="h-full w-full min-w-0 overflow-x-clip overflow-y-auto bg-[var(--color-bg)]">
+      <div className="mx-auto w-full min-w-0 max-w-6xl px-5 py-6 sm:px-8 sm:py-8">
         <Link href="/research" className="inline-flex items-center gap-1 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"><ArrowLeft width={14} height={14} />深度研究</Link>
         <div className="mt-5 flex items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">{workspace.name}</h1><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{workspace.project?.name ? `关联项目：${workspace.project.name}` : "独立研究上下文"}</p></div><BrainResearch className="text-[var(--color-accent)]" width={26} height={26} strokeWidth={1.5} /></div>
 
@@ -629,28 +629,31 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
 
               {isTerminal && hasReport ? (
                 <>
-                  <section aria-label="研究报告" className="mt-5 bg-[var(--color-panel)] px-5 py-6">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{run.reportSnapshot?.reportDocument.title ?? `研究报告：${run.question}`}</h2>
-                      <span className="text-xs text-[var(--color-text-tertiary)]">不可修改快照 · {new Date(run.reportSnapshot!.generatedAt).toLocaleString("zh-CN")}</span>
+                  <section aria-label="研究报告" className="mt-5 min-w-0 max-w-full bg-[var(--color-panel)] px-4 py-6 sm:px-5">
+                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                      <h2 className="min-w-0 flex-1 [overflow-wrap:anywhere] text-lg font-semibold text-[var(--color-text-primary)]">{run.reportSnapshot?.reportDocument.title ?? `研究报告：${run.question}`}</h2>
+                      <span className="shrink-0 text-xs text-[var(--color-text-tertiary)]">不可修改快照 · {new Date(run.reportSnapshot!.generatedAt).toLocaleString("zh-CN")}</span>
                     </div>
-                    <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-                      <div className="relative min-w-0">
+                    <div className="mt-5 grid min-w-0 max-w-full gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+                      <div className="relative min-w-0 max-w-full">
                         <div
                           ref={reportContainerRef}
-                          className="relative"
+                          className="relative min-w-0 max-w-full"
                           onClick={handleReportCitationClick}
                           onMouseOver={showCitationPreview}
                           onMouseOut={hideCitationPreview}
                           onFocus={showCitationPreview}
                           onBlur={hideCitationPreview}
                         >
-                          <MarkdownContent content={reportBody} />
+                          <MarkdownContent
+                            content={reportBody}
+                            className="min-w-0 max-w-full [overflow-wrap:anywhere]"
+                          />
                         </div>
                         {hoveredMarker && hoveredCitation ? (
                           <div
                             role="tooltip"
-                            className="pointer-events-none absolute z-20 max-h-80 w-80 overflow-y-auto rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-3 shadow-lg"
+                            className="pointer-events-none absolute z-20 hidden max-h-80 w-80 overflow-y-auto rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-3 shadow-lg sm:block"
                             style={{
                               top: hoveredMarker.top,
                               left: hoveredMarker.left,
