@@ -12,11 +12,30 @@ import { useEffect, useRef, useState } from "react";
 
 type OfficeKind = "pptx" | "docx" | "sheet";
 
+/** pptx-preview 会把翻页控件渲染在幻灯片下方，测算可用高度时要把它留出来。 */
+const PAGE_CONTROLS_HEIGHT = 72;
+
 function officeKind(mimeType: string): OfficeKind | null {
   if (mimeType.includes("presentationml.presentation")) return "pptx";
   if (mimeType.includes("wordprocessingml.document")) return "docx";
   if (mimeType.includes("spreadsheetml.sheet")) return "sheet";
   return null;
+}
+
+/**
+ * 幻灯片要按「真正能用的那块区域」缩放。容器的直接父级高度是被内容撑开的，
+ * 量它等于没量；向上找最近的可滚动祖先才是可视区域。
+ */
+function measureAvailableHeight(element: HTMLElement): number {
+  let node: HTMLElement | null = element.parentElement;
+  while (node) {
+    const overflowY = window.getComputedStyle(node).overflowY;
+    if (/(auto|scroll)/.test(overflowY) && node.clientHeight > 200) {
+      return node.clientHeight;
+    }
+    node = node.parentElement;
+  }
+  return Math.round(window.innerHeight * 0.6);
 }
 
 export function OfficeCanvasViewer({
@@ -47,8 +66,16 @@ export function OfficeCanvasViewer({
 
         if (kind === "pptx") {
           const { init } = await import("pptx-preview");
-          // 幻灯片是 16:9，高度必须按容器宽度算；写死高度会把上下裁掉。
-          const width = container.clientWidth || 960;
+          // 整页适配可用区域：只按宽度铺满会让幻灯片高过视口，翻页控件被推到
+          // 屏幕外，用户得先往下滚才知道怎么翻页。取宽高两个方向的较小值，
+          // 并给幻灯片下方的翻页控件留出位置。
+          const availableWidth = container.clientWidth || 960;
+          const availableHeight =
+            measureAvailableHeight(container) - PAGE_CONTROLS_HEIGHT;
+          const width = Math.max(
+            320,
+            Math.min(availableWidth, Math.round(availableHeight * (16 / 9)))
+          );
           const previewer = init(container, {
             width,
             height: Math.round((width * 9) / 16),
