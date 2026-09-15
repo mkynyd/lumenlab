@@ -50,6 +50,11 @@ vi.mock("@/components/user/profile-dialog", () => ({
     return null;
   },
 }));
+vi.mock("@/components/search/global-search-dialog", () => ({
+  GlobalSearchDialog: ({ open }: { open: boolean }) => (
+    <div data-testid="global-search-dialog" data-open={open} />
+  ),
+}));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 import { Sidebar } from "@/components/layout/sidebar";
@@ -73,6 +78,23 @@ describe("main workspace navigation layout", () => {
     const collapsed = screen.getByRole("list", { name: "工作空间导航" });
     expect(collapsed).toHaveClass("flex-col");
     expect(collapsed).not.toHaveClass("grid");
+  });
+
+  it("opens global search from the sidebar button and Command-K", () => {
+    const props = { mobileOpen: false, onClose: vi.fn(), onExpand: vi.fn() };
+    render(<Sidebar {...props} collapsed={false} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "全局搜索" })[0]);
+    expect(screen.getByTestId("global-search-dialog")).toHaveAttribute(
+      "data-open",
+      "true"
+    );
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    expect(screen.getByTestId("global-search-dialog")).toHaveAttribute(
+      "data-open",
+      "true"
+    );
   });
 
   it("names the document conversion workspace as conversions", () => {

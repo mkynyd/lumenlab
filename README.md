@@ -47,6 +47,12 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 - 上传 PDF、Office/WPS/iWork 文档、图片、文本和代码文件，自动解析、分块、索引和知识增强。
 - 在对话中勾选项目文件作为上下文，AI 回答基于真实资料。
 
+### 全局搜索
+
+- 从侧边栏搜索入口或 `Command/Ctrl + K` 打开，统一检索当前账号的普通对话、图片、文档和项目。
+- 对话覆盖标题与消息正文；资料复用文件中心索引，覆盖文件名、项目、分类、已解析正文、分块与摘要关键词。
+- 支持类型筛选、方向键选择与 Enter 打开；资料结果直接进入统一可信预览页。
+
 ### 可恢复学习闭环
 
 学习闭环已在生产环境开启，从主导航的独立「学习」工作区进入；自托管部署默认关闭，可通过 `LEARNING_LOOP_ROLLOUT=preview` 在本地或小范围环境开启：
@@ -231,6 +237,7 @@ src/
 │       ├── auth/register/              # 邮箱/手机号验证注册
 │       ├── projects/                   # 项目 CRUD
 │       ├── conversations/              # 对话管理
+│       ├── search/                     # 账号级全局搜索
 │       ├── files/                      # 文件上传、解析、下载、增强
 │       ├── artifacts/                  # 成果库 CRUD 与导出
 │       ├── tools/                      # PDF 转换、图片导出
@@ -239,6 +246,7 @@ src/
 │       ├── health/                     # 健康检查
 │       └── metrics/cache/              # 缓存指标
 ├── lib/
+│   ├── search/                         # 全局搜索聚合与结果合同
 │   ├── deepseek.ts                     # DeepSeek Responses 非流式兼容封装
 │   ├── agent/                          # Agent 模式核心
 │   │   ├── contracts.ts                # AgentRuntime / AgentRun 输入输出合同

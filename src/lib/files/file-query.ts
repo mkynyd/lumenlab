@@ -246,6 +246,8 @@ export interface FileQueryInput {
   projectId?: string | null;
   category?: string | null;
   mimeGroup?: FileMimeGroup | null;
+  /** 内部聚合查询可一次覆盖多个类型；公开路由仍只接收单个 mimeGroup。 */
+  mimeGroups?: readonly FileMimeGroup[] | null;
   status?: FileQueryStatus | null;
   sort?: FileQuerySort | null;
   cursor?: string | null;
@@ -312,6 +314,13 @@ export async function queryFiles(
   if (input.mimeGroup) {
     conditions.push(
       Prisma.sql`f."mimeType" IN (${Prisma.join(GROUP_MIME_TYPES[input.mimeGroup])})`
+    );
+  } else if (input.mimeGroups?.length) {
+    const mimeTypes = uniqueMimeTypes(
+      input.mimeGroups.flatMap((group) => GROUP_MIME_TYPES[group])
+    );
+    conditions.push(
+      Prisma.sql`f."mimeType" IN (${Prisma.join(mimeTypes)})`
     );
   }
   if (input.status) {

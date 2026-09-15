@@ -23,6 +23,7 @@ export const config = {
     "/api/learning/:path*",
     "/api/projects/:path*",
     "/api/files/:path*",
+    "/api/search/:path*",
     "/api/artifacts/:path*",
     "/api/conversations/:path*",
     "/api/user/:path*",

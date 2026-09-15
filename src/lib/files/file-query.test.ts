@@ -155,6 +155,21 @@ describe("文件查询 SQL 构造", () => {
     expect(queries[0].sql).toContain("parseReport");
   });
 
+  it("内部聚合查询可一次覆盖多个 MIME 分组", async () => {
+    const { client, queries } = createClient([]);
+    await queryFiles(
+      {
+        userId: "user-1",
+        mimeGroups: ["document", "text", "code"],
+      },
+      client
+    );
+
+    expect(queries[0].values).toContain("application/pdf");
+    expect(queries[0].values).toContain("text/markdown");
+    expect(queries[0].values).toContain("text/x-python");
+  });
+
   it("请求条数按 limit + 1 取，用于判断是否还有下一页", async () => {
     const { client, queries } = createClient([]);
     await queryFiles({ userId: "user-1", limit: 5 }, client);

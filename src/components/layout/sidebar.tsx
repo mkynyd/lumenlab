@@ -19,6 +19,7 @@ import {
 import { ProfileDialog } from "@/components/user/profile-dialog";
 import { useHashDialog } from "@/lib/hooks/use-hash-dialog";
 import { AvatarMark } from "@/components/user/avatar-mark";
+import { GlobalSearchDialog } from "@/components/search/global-search-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,6 +68,7 @@ import {
   MultiplePages,
   PageEdit,
   Plus,
+  Search,
   Trash,
   Xmark,
 } from "iconoir-react";
@@ -259,6 +261,17 @@ export function Sidebar({
     settingsDeepLinkRef.current.setSettingsOpen(true);
   }, []);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  useEffect(() => {
+    function handleGlobalSearchShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setGlobalSearchOpen(true);
+      }
+    }
+    window.addEventListener("keydown", handleGlobalSearchShortcut);
+    return () => window.removeEventListener("keydown", handleGlobalSearchShortcut);
+  }, []);
   const { closeDialog: closeSettingsDialog } = useHashDialog(
     "#settings",
     settingsOpen,
@@ -449,36 +462,58 @@ export function Sidebar({
             </span>
             <BrandWordmark />
           </Link>
-          {collapsed && (
+          <div className="hidden items-center gap-0.5 lg:flex">
             <button
               type="button"
-              onClick={onExpand}
-              className="group relative hidden h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] transition-colors hover:bg-[var(--color-interaction-hover)] lg:inline-flex"
-              aria-label="展开侧边栏"
-              aria-expanded="false"
-              title="展开侧边栏"
+              onClick={() => setGlobalSearchOpen(true)}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] active:scale-[0.97]",
+                collapsed && "lg:hidden"
+              )}
+              aria-label="全局搜索"
+              title="全局搜索 (⌘K)"
             >
-              <span className="relative flex size-6 items-center justify-center transition-opacity group-hover:opacity-0">
-                <SidebarBrandMark size={24} />
-              </span>
-              <PanelLeftOpen
-                size={17}
-                strokeWidth={1.8}
-                className="absolute text-[var(--color-text-tertiary)] opacity-0 transition-opacity group-hover:opacity-100"
-              />
+              <Search width={18} height={18} strokeWidth={1.8} />
             </button>
-          )}
-          {!collapsed && onCollapse && (
-            <button
-              type="button"
-              onClick={onCollapse}
-              className="hidden h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] active:scale-[0.97] lg:inline-flex"
-              aria-label="收起侧边栏"
-              aria-expanded="true"
-            >
-              <PanelLeftClose size={17} strokeWidth={1.8} />
-            </button>
-          )}
+            {collapsed && (
+              <button
+                type="button"
+                onClick={onExpand}
+                className="group relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] transition-colors hover:bg-[var(--color-interaction-hover)]"
+                aria-label="展开侧边栏"
+                aria-expanded="false"
+                title="展开侧边栏"
+              >
+                <PanelLeftOpen
+                  size={17}
+                  strokeWidth={1.8}
+                  className="text-[var(--color-text-tertiary)]"
+                />
+              </button>
+            )}
+            {!collapsed && onCollapse && (
+              <button
+                type="button"
+                onClick={onCollapse}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] active:scale-[0.97]"
+                aria-label="收起侧边栏"
+                aria-expanded="true"
+              >
+                <PanelLeftClose size={17} strokeWidth={1.8} />
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setGlobalSearchOpen(true);
+              onClose();
+            }}
+            className="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] lg:hidden"
+            aria-label="全局搜索"
+          >
+            <Search width={19} height={19} strokeWidth={1.8} />
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -1141,6 +1176,10 @@ export function Sidebar({
               closeProfileDialog();
             }
           }}
+        />
+        <GlobalSearchDialog
+          open={globalSearchOpen}
+          onOpenChange={setGlobalSearchOpen}
         />
       </aside>
     </SidebarProvider>
