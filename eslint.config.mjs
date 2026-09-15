@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 上面的 ".next/**" 只匹配根级目录，匹配不到嵌套的 worktree。每个 worktree
+    // 都会带一份自己的 .next 产物，漏掉这里会让 eslint 扫进十几万条构建噪声。
+    // test 脚本已用 --exclude '.worktrees/**' 排除同一目录，这里与之对齐。
+    ".worktrees/**",
   ]),
 ]);
 
