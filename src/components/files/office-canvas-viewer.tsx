@@ -86,6 +86,12 @@ export function OfficeCanvasViewer({
             mode: isNarrow ? "list" : "slide",
           });
           await previewer.preview(buffer);
+          if (isNarrow) {
+            // list 模式下传进去的 height 是容器高度，幻灯片是被裁在里面的；
+            // 放开高度与溢出，让整叠幻灯片自然铺开、由页面统一纵向滚动。
+            previewer.wrapper.style.height = "auto";
+            previewer.wrapper.style.overflow = "visible";
+          }
           dispose = () => previewer.destroy();
         } else if (kind === "docx") {
           const { renderAsync } = await import("docx-preview");
