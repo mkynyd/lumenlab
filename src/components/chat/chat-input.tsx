@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ArrowUp, FileText, Globe, Paperclip, Plus, StopCircle, X } from "lucide-react";
+import { createElement, useEffect, useRef, useState } from "react";
+import { ArrowUp, Globe, Paperclip, Plus, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
+import {
+  ACCEPT_ATTRIBUTE,
+  validateUploadBatch,
+  validateUploadFile,
+} from "@/lib/files/allowed-extensions";
+import { attachmentIconFor } from "@/lib/files/attachment-icon";
+import { formatFileSize } from "@/lib/files/format-file-size";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -62,7 +69,7 @@ const MOBILE_EFFORT_OPTIONS = [
 
 /**
  * 任务 08：上传期间的本地预览。图片用 blob URL 显示缩略图（随预览退出回收），
- * 其他附件保持文件名标签。
+ * 其他附件保持文件名标签；文件名悬停浮层与类型图标见下方 hover 覆盖层。
  */
 function AttachmentPreviewChip({
   attachment,
@@ -76,8 +83,8 @@ function AttachmentPreviewChip({
   if (isImage) {
     return (
       <span
-        className="relative block size-16 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-panel-muted)]"
-        title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
+        className="group relative block size-16 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-panel-muted)]"
+        title={`${attachment.name} · ${formatFileSize(attachment.size)}`}
       >
         {attachment.previewUrl && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -87,6 +94,9 @@ function AttachmentPreviewChip({
             className="size-full object-cover"
           />
         )}
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-[var(--color-overlay)]/80 to-transparent px-1 pb-0.5 pt-3 text-[10px] leading-3 text-[var(--color-surface)] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {attachment.name}
+        </span>
         <button
           type="button"
           onClick={onRemove}
@@ -102,10 +112,16 @@ function AttachmentPreviewChip({
   return (
     <span
       className="inline-flex h-7 max-w-56 items-center gap-1 px-1.5 text-xs text-[var(--color-text-secondary)]"
-      title={`${attachment.name} · ${(attachment.size / 1024).toFixed(1)} KB`}
+      title={`${attachment.name} · ${formatFileSize(attachment.size)}`}
     >
-      <FileText size={12} className="shrink-0 text-[var(--color-text-tertiary)]" />
+      {createElement(attachmentIconFor(attachment.name, attachment.mimeType), {
+        size: 12,
+        className: "shrink-0 text-[var(--color-text-tertiary)]",
+      })}
       <span className="truncate">{attachment.name}</span>
+      <span className="shrink-0 text-[var(--color-text-tertiary)]">
+        {formatFileSize(attachment.size)}
+      </span>
       <button
         type="button"
         onClick={onRemove}
@@ -159,6 +175,16 @@ export function ChatInput({
   const latestDraft = useRef({ value: "", attachments });
   const [internalValue, setInternalValue] = useState("");
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  // 附件校验的非阻断提示：自动消隐，不阻塞输入与发送。
+  const [attachmentNotice, setAttachmentNotice] = useState<string[]>([]);
+  useEffect(() => {
+    if (attachmentNotice.length === 0) return;
+    const timer = setTimeout(() => setAttachmentNotice([]), 6000);
+    return () => clearTimeout(timer);
+  }, [attachmentNotice]);
+  // 拖拽悬停覆盖层：用计数器避免子元素间的 dragenter/dragleave 抖动。
+  const [isDragActive, setIsDragActive] = useState(false);
+  const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const currentValue = value ?? internalValue;
   useEffect(() => {
@@ -207,29 +233,93 @@ export function ChatInput({
     }
   }
 
-  function addFiles(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const nextFiles = Array.from(files).map((file) => {
-      const mimeType = file.type || "application/octet-stream";
-      const attachment: FileAttachment = {
-        id:
-          globalThis.crypto?.randomUUID?.() ||
-          `attachment-${Date.now()}-${file.name}`,
-        name: file.name,
-        mimeType,
-        size: file.size,
-        data: file,
-      };
-      // 任务 08：本地预览 URL 在事件期创建，避免渲染期副作用与过早回收。
-      if (mimeType.startsWith("image/")) {
-        attachment.previewUrl = URL.createObjectURL(file);
+  // 文件选择、拖拽、粘贴三条路径共用的唯一入口：逐个预校验 + 批量上限校验，
+  // 非法文件不进入附件列表，原因以非阻断提示展示（提示 6 秒后自动消隐）。
+  function addFiles(files: Iterable<File> | FileList | null) {
+    if (!files) return;
+    const incoming = Array.from(files);
+    if (incoming.length === 0) return;
+    const rejected: string[] = [];
+    const accepted: File[] = [];
+    for (const file of incoming) {
+      const error = validateUploadFile(file);
+      if (error) {
+        rejected.push(`${file.name}: ${error}`);
+      } else {
+        accepted.push(file);
       }
-      return attachment;
-    });
-    onAttachmentsChange?.([...attachments, ...nextFiles]);
+    }
+    if (accepted.length > 0) {
+      const batch = validateUploadBatch([...attachments, ...accepted]);
+      if (batch.ok) {
+        const nextFiles = accepted.map((file) => {
+          const mimeType = file.type || "application/octet-stream";
+          const attachment: FileAttachment = {
+            id:
+              globalThis.crypto?.randomUUID?.() ||
+              `attachment-${Date.now()}-${file.name}`,
+            name: file.name,
+            mimeType,
+            size: file.size,
+            data: file,
+          };
+          // 任务 08：本地预览 URL 在事件期创建，避免渲染期副作用与过早回收。
+          if (mimeType.startsWith("image/")) {
+            attachment.previewUrl = URL.createObjectURL(file);
+          }
+          return attachment;
+        });
+        onAttachmentsChange?.([...attachments, ...nextFiles]);
+      } else {
+        // 追加后超批量限制：整批不追加，文件不落附件列表。
+        rejected.unshift(batch.error);
+      }
+    }
+    if (rejected.length > 0) setAttachmentNotice(rejected);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return;
+    // 截图/文件直接粘贴是高频入口；只接管含文件的粘贴，纯文本走默认行为。
+    e.preventDefault();
+    if (disabled || isStreaming) return;
+    addFiles(files);
+  }
+
+  function hasFilesInTransfer(dataTransfer: DataTransfer) {
+    return Array.from(dataTransfer.types).includes("Files");
+  }
+
+  function handleDragEnter(e: React.DragEvent) {
+    if (disabled || isStreaming || !hasFilesInTransfer(e.dataTransfer)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setIsDragActive(true);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (disabled || isStreaming || !hasFilesInTransfer(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (!hasFilesInTransfer(e.dataTransfer)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setIsDragActive(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    if (!hasFilesInTransfer(e.dataTransfer)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setIsDragActive(false);
+    if (disabled || isStreaming) return;
+    addFiles(e.dataTransfer.files);
   }
 
   function releasePreview(attachment: FileAttachment) {
@@ -271,7 +361,46 @@ export function ChatInput({
           </span>
         </div>
       )}
-      <div className="workbench-input-dock rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-control)] transition-colors focus-within:border-[var(--color-border-strong)]">
+      {attachmentNotice.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex min-h-7 flex-wrap items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-warning-muted)] px-2 py-1"
+        >
+          <span className="min-w-0 flex-1 text-xs text-[var(--color-warning)]">
+            {attachmentNotice.map((notice) => (
+              <span key={notice} className="mr-2 inline-block">
+                {notice}
+              </span>
+            ))}
+          </span>
+          <button
+            type="button"
+            onClick={() => setAttachmentNotice([])}
+            className="shrink-0 text-xs text-[var(--color-warning)]"
+            aria-label="关闭附件提示"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+      <div
+        className="workbench-input-dock relative rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-control)] transition-colors focus-within:border-[var(--color-border-strong)]"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {isDragActive && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-overlay)]/50"
+          >
+            <span className="text-sm font-medium text-[var(--color-surface)]">
+              释放以上传文件
+            </span>
+          </div>
+        )}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">
             {attachments.map((attachment) => (
@@ -287,6 +416,7 @@ export function ChatInput({
           ref={fileInputRef}
           type="file"
           multiple
+          accept={ACCEPT_ATTRIBUTE}
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
@@ -301,6 +431,7 @@ export function ChatInput({
             value={currentValue}
             onChange={(e) => updateValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={placeholder}
             rows={1}
             disabled={disabled}

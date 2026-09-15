@@ -1,9 +1,11 @@
 /**
  * 任务 08.6：历史图片在新回合按资源 ID 重新鉴权组装。
  *
- * 已持久化的图片附件只保存资源定位；新回合需要"接着上次那张图继续问"时，
- * 按用户当前问题、历史范围与请求预算重新读取原图，交给同一个 Responses
- * serializer。规则保持确定性：
+ * 已持久化的附件会保存全部展示类型（图片/视频/文档），但只有历史图片
+ * 参与这里的重新组装；文档仍走请求内提取链路，视频不自动回传，二者
+ * 持久化只服务于历史展示，不进入历史媒体预算，也不会被重新喂给模型。
+ * 新回合需要"接着上次那张图继续问"时，按用户当前问题、历史范围与请求
+ * 预算重新读取原图，交给同一个 Responses serializer。规则保持确定性：
  *   1) 当前问题提到文件名的历史图片优先；
  *   2) 其余按时间倒序取最近的，直到数量/字节预算用完；
  *   3) 不无限回传全部历史图片，超出部分只体现在覆盖说明里。
@@ -42,6 +44,8 @@ export function historyMediaRefs(
   for (const message of [...history].reverse()) {
     if (message.role !== "user" || !message.attachments?.length) continue;
     for (const attachment of message.attachments) {
+      // 持久化已覆盖视频/文档等展示类型，这里只让图片进入历史媒体预算。
+      if (!attachment.mimeType.startsWith("image/")) continue;
       refs.push({
         source: "message-attachment",
         id: attachment.id,

@@ -56,9 +56,19 @@ function imageAttachment(name = "red.png"): ServerFileAttachment {
   };
 }
 
+function pdfAttachment(name = "notes.pdf"): ServerFileAttachment {
+  return {
+    name,
+    mimeType: "application/pdf",
+    size: 9,
+    data: Buffer.from("pdf-bytes"),
+  };
+}
+
 function row(overrides: Record<string, unknown> = {}) {
   return {
     id: "att-1",
+    kind: "image" as const,
     originalName: "red.png",
     mimeType: "image/png",
     size: 8,
@@ -95,23 +105,110 @@ describe("persistChatAttachments", () => {
     }));
   });
 
-  it("ignores non-image attachments", async () => {
+  it("persists a PDF as kind file without a thumbnail or image probe", async () => {
+    const result = await persistChatAttachments({
+      userId: "user-1",
+      clientRunKey: "run-1",
+      attachments: [pdfAttachment()],
+    });
+
+    // 非图片只上传原对象：不生成缩略图，也不走 sharp 探测。
+    expect(mocks.uploadObjectBuffer).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadObjectBuffer).toHaveBeenCalledWith({
+      key: expect.stringMatching(
+        /^chat-attachments\/user-1\/run-1\/0-[a-f0-9]{16}\.pdf$/
+      ),
+      mimeType: "application/pdf",
+      buffer: Buffer.from("pdf-bytes"),
+    });
+    expect(mocks.sharp).not.toHaveBeenCalled();
+    expect(mocks.attachmentUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          kind: "file",
+          width: null,
+          height: null,
+          thumbnailProvider: null,
+          thumbnailPath: null,
+          status: "pending",
+        }),
+        update: expect.objectContaining({ kind: "file" }),
+      })
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      kind: "file",
+      hasThumbnail: false,
+      width: null,
+      height: null,
+    });
+  });
+
+  it("persists an mp4 as kind video without a thumbnail", async () => {
     const result = await persistChatAttachments({
       userId: "user-1",
       clientRunKey: "run-1",
       attachments: [
         {
-          name: "notes.pdf",
-          mimeType: "application/pdf",
-          size: 4,
-          data: Buffer.from("pdf"),
+          name: "clip.mp4",
+          mimeType: "video/mp4",
+          size: 9,
+          data: Buffer.from("mp4-bytes"),
         },
       ],
     });
 
-    expect(result).toEqual([]);
-    expect(mocks.uploadObjectBuffer).not.toHaveBeenCalled();
-    expect(mocks.attachmentUpsert).not.toHaveBeenCalled();
+    expect(mocks.uploadObjectBuffer).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadObjectBuffer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: expect.stringMatching(
+          /^chat-attachments\/user-1\/run-1\/0-[a-f0-9]{16}\.mp4$/
+        ),
+        mimeType: "video/mp4",
+      })
+    );
+    expect(mocks.sharp).not.toHaveBeenCalled();
+    expect(mocks.attachmentUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ kind: "video", thumbnailPath: null }),
+      })
+    );
+    expect(result[0]).toMatchObject({ kind: "video", hasThumbnail: false });
+  });
+
+  it("counts all attachments when reclaiming stale rows on a mixed retry", async () => {
+    mocks.attachmentCount.mockResolvedValue(0);
+    mocks.fileCount.mockResolvedValue(0);
+    mocks.resourceCount.mockResolvedValue(0);
+
+    await persistChatAttachments({
+      userId: "user-1",
+      clientRunKey: "run-1",
+      attachments: [imageAttachment(), pdfAttachment()],
+    });
+
+    // 图片 + 文件各占一个 position：stale 阈值按附件总数（2）而不是图片数。
+    expect(mocks.attachmentFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          position: { gte: 2 },
+        }),
+      })
+    );
+    expect(mocks.attachmentUpsert).toHaveBeenCalledTimes(2);
+    expect(mocks.attachmentUpsert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          userId_clientRunKey_position: {
+            userId: "user-1",
+            clientRunKey: "run-1",
+            position: 1,
+          },
+        },
+        create: expect.objectContaining({ kind: "file" }),
+      })
+    );
   });
 
   it("uploads original and thumbnail under deterministic keys and upserts the row", async () => {
@@ -241,6 +338,7 @@ describe("attachment DTO", () => {
     });
     expect(dto).toMatchObject({
       id: "att-1",
+      kind: "image",
       name: "red.png",
       url: "/api/chat/attachments/att-1?variant=original",
       thumbnailUrl: "/api/chat/attachments/att-1",
@@ -252,6 +350,21 @@ describe("attachment DTO", () => {
         ])
       )
     ).toEqual([dto]);
+  });
+
+  it("infers kind from the MIME type so legacy rows render correctly", () => {
+    const dto = toChatAttachmentDto({
+      id: "att-pdf",
+      originalName: "notes.pdf",
+      mimeType: "application/pdf",
+      size: 9,
+      width: null,
+      height: null,
+      status: "bound",
+      hasThumbnail: false,
+    });
+    expect(dto.kind).toBe("file");
+    expect(dto.thumbnailUrl).toBe("/api/chat/attachments/att-pdf");
   });
 });
 

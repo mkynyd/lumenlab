@@ -13,6 +13,7 @@ import {
 } from "@/lib/chat-request";
 import type { FileAttachment } from "@/lib/chat/router";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
+import { attachmentKindFromMimeType } from "@/lib/files/attachment-kind";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { queryKeys } from "@/lib/query-keys";
 import type { AgentEvent, ApprovalScope } from "@/lib/agent/types";
@@ -72,8 +73,8 @@ export interface ChatMessage {
   /** Persisted, replayable public process state for this assistant response. */
   process?: AssistantProcessTrace;
   /**
-   * 任务 08：图片附件。上传期间是本地 blob 预览（status: "uploading"），
-   * 发送成功后替换为服务端持久化附件的同源鉴权 URL。
+   * 任务 08：附件。上传期间是本地乐观 DTO（图片/视频为 blob 预览，
+   * status: "uploading"），发送成功后替换为服务端持久化附件的同源鉴权 URL。
    */
   attachments?: ChatAttachmentDto[];
 }
@@ -307,21 +308,19 @@ export function useChat(options: UseChatOptions = {}) {
       setError(null);
       setIsStreaming(true);
 
-      // 任务 08.4：图片用本地 blob 预览进入乐观消息，发送成功后替换为
-      // 服务端持久化附件；非图片附件仍以文本标记说明，避免重复展示。
-      const imageAttachments = attachments.filter((attachment) =>
-        attachment.mimeType.startsWith("image/")
-      );
-      const otherAttachments = attachments.filter(
-        (attachment) => !attachment.mimeType.startsWith("image/")
-      );
+      // 任务 08.4：全部附件都建乐观 DTO 进入消息——图片/视频用本地 blob 预览，
+      // 文件没有本地可预览 URL（url/thumbnailUrl 为空串，渲染端按 kind 走卡片
+      // 分支，不读 url）；发送成功后统一替换为服务端持久化附件。
       const previewUrls: string[] = [];
-      const optimisticAttachments: ChatAttachmentDto[] = imageAttachments.map(
+      const optimisticAttachments: ChatAttachmentDto[] = attachments.map(
         (attachment) => {
-          const url = URL.createObjectURL(attachment.data);
-          previewUrls.push(url);
+          const kind = attachmentKindFromMimeType(attachment.mimeType);
+          const url =
+            kind === "file" ? "" : URL.createObjectURL(attachment.data);
+          if (url) previewUrls.push(url);
           return {
             id: attachment.id,
+            kind,
             name: attachment.name,
             mimeType: attachment.mimeType,
             size: attachment.size,
@@ -338,12 +337,7 @@ export function useChat(options: UseChatOptions = {}) {
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         role: "user",
-        content:
-          otherAttachments.length > 0
-            ? `${content.trim()}\n\n${otherAttachments
-                .map((attachment) => `[附件] ${attachment.name}`)
-                .join("\n")}`
-            : content.trim(),
+        content: content.trim(),
         ...(optimisticAttachments.length > 0
           ? { attachments: optimisticAttachments }
           : {}),

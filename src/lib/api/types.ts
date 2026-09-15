@@ -79,7 +79,7 @@ export interface ConversationMessage {
   cacheMissTokens?: number | null;
   sources?: AgentSource[] | null;
   process?: AssistantProcessTrace;
-  /** 任务 08：已持久化的图片附件（含同源鉴权 URL）。 */
+  /** 任务 08：已持久化的附件（含同源鉴权 URL 与 kind 分类）。 */
   attachments?: ChatAttachmentDto[];
   createdAt?: string;
 }

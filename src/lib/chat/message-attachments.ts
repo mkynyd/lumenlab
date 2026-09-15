@@ -1,12 +1,16 @@
 /**
- * 任务 08.1—08.3：聊天图片附件的持久化、消息绑定与补偿清理。
+ * 任务 08.1—08.3：聊天附件的持久化、消息绑定与补偿清理。
+ *
+ * 所有允许的展示类型（图片/视频/文档等）都会落库，刷新后历史消息仍能展示；
+ * 仅图片探测尺寸并生成 webp 缩略图，视频与文档只保存原对象，不生成缩略图。
+ * 落库不等于进入模型上下文：文档仍走请求内提取链路，模型输入语义不变。
  *
  * 写入顺序：对象先落对象存储（键由 userId + clientRunKey + position + 内容哈希
  * 决定，重试覆盖同一对象，不产生重复副本），行先以 `pending` 状态存在；用户消息
  * 落库后再绑定 messageId 并置为 `bound`。重复提交（相同 clientRunKey）复用同一批
  * 行与对象，因此重试不会重复用户消息、附件或计费。
  *
- * 普通对话不会为了存图创建虚假 Project：附件只归属用户与消息，不依赖 FileAsset
+ * 普通对话不会为了存附件创建虚假 Project：附件只归属用户与消息，不依赖 FileAsset
  * 的解析语义；但读取与删除复用同一个对象存储适配器。
  */
 import { createHash } from "node:crypto";
@@ -21,6 +25,10 @@ import {
 } from "@/lib/storage/object-storage";
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import type { MediaRef } from "@/lib/agent/context/media-ref";
+import {
+  attachmentKindFromMimeType,
+  type AttachmentKind,
+} from "@/lib/files/attachment-kind";
 
 /** 缩略图长边上限；与展示尺寸匹配，不改变原图。 */
 export const CHAT_ATTACHMENT_THUMBNAIL_MAX_EDGE = 512;
@@ -30,6 +38,7 @@ export const UNBOUND_ATTACHMENT_TTL_HOURS = 24;
 
 export interface PersistedChatAttachment {
   id: string;
+  kind: AttachmentKind;
   originalName: string;
   mimeType: string;
   size: number;
@@ -46,6 +55,7 @@ export interface PersistedChatAttachment {
 /** 前端/历史接口使用的附件 DTO；URL 始终指向同源鉴权响应。 */
 export interface ChatAttachmentDto {
   id: string;
+  kind: AttachmentKind;
   name: string;
   mimeType: string;
   size: number;
@@ -69,6 +79,8 @@ export function toChatAttachmentDto(row: {
   const base = `/api/chat/attachments/${row.id}`;
   return {
     id: row.id,
+    // kind 由 MIME 推断而不读数据库字段：旧行没有 kind 也能正确渲染。
+    kind: attachmentKindFromMimeType(row.mimeType),
     name: row.originalName,
     mimeType: row.mimeType,
     size: row.size,
@@ -96,6 +108,7 @@ export const CHAT_ATTACHMENT_SELECT = {
   orderBy: { position: "asc" },
   select: {
     id: true,
+    kind: true,
     originalName: true,
     mimeType: true,
     size: true,
@@ -110,6 +123,7 @@ export const CHAT_ATTACHMENT_SELECT = {
 export function toChatAttachmentDtos(
   rows: Array<{
     id: string;
+    kind: string;
     originalName: string;
     mimeType: string;
     size: number;
@@ -211,6 +225,7 @@ function toPersisted(row: {
 }): PersistedChatAttachment {
   return {
     id: row.id,
+    kind: attachmentKindFromMimeType(row.mimeType),
     originalName: row.originalName,
     mimeType: row.mimeType,
     size: row.size,
@@ -239,23 +254,23 @@ export function toMediaRef(row: PersistedChatAttachment): MediaRef {
 }
 
 /**
- * 持久化本轮图片附件。仅处理图片；文本/PDF/DOCX 仍走既有的请求内提取链路，
- * 不在这里落库（历史纯文本消息的 attachments 因此默认为空）。
+ * 持久化本轮全部附件（图片/视频/文档等展示类型都会落库）。
+ * 仅图片探测尺寸并生成缩略图；视频与文档只保存原对象，
+ * width/height/thumbnailPath 均为 null。文档仍走既有的请求内提取链路，
+ * 落库只服务于历史展示，不改变模型输入语义。
  */
 export async function persistChatAttachments(input: {
   userId: string;
   clientRunKey: string;
   attachments: ServerFileAttachment[];
 }): Promise<PersistedChatAttachment[]> {
-  const images = input.attachments.filter((attachment) =>
-    attachment.mimeType.startsWith("image/")
-  );
-  if (images.length === 0) return [];
+  if (input.attachments.length === 0) return [];
 
   const provider = activeStorageProvider();
   const persisted: PersistedChatAttachment[] = [];
 
-  for (const [position, attachment] of images.entries()) {
+  for (const [position, attachment] of input.attachments.entries()) {
+    const kind = attachmentKindFromMimeType(attachment.mimeType);
     const contentHash = createHash("sha256")
       .update(attachment.data)
       .digest("hex");
@@ -274,7 +289,11 @@ export async function persistChatAttachments(input: {
       buffer: attachment.data,
     });
 
-    const probe = await probeImage(attachment.data);
+    // 仅图片探测尺寸并生成缩略图；视频/文档跳过 probe，只保留原对象。
+    const probe =
+      kind === "image"
+        ? await probeImage(attachment.data)
+        : { width: null, height: null, thumbnail: null };
     let thumbnailPath: string | null = null;
     if (probe.thumbnail) {
       thumbnailPath = attachmentObjectKey({
@@ -304,6 +323,7 @@ export async function persistChatAttachments(input: {
       create: {
         userId: input.userId,
         clientRunKey: input.clientRunKey,
+        kind,
         originalName: attachment.name,
         mimeType: attachment.mimeType,
         size: attachment.data.length,
@@ -318,6 +338,7 @@ export async function persistChatAttachments(input: {
         status: "pending",
       },
       update: {
+        kind,
         originalName: attachment.name,
         mimeType: attachment.mimeType,
         size: attachment.data.length,
@@ -331,6 +352,7 @@ export async function persistChatAttachments(input: {
       },
       select: {
         id: true,
+        kind: true,
         originalName: true,
         mimeType: true,
         size: true,
@@ -347,12 +369,12 @@ export async function persistChatAttachments(input: {
     persisted.push(toPersisted(row));
   }
 
-  // 重试时若本轮图片变少，回收多出来的未绑定行与对象，避免附件数与消息不符。
+  // 重试时若本轮附件变少，回收多出来的未绑定行与对象，避免附件数与消息不符。
   const stale = await prisma.messageAttachment.findMany({
     where: {
       userId: input.userId,
       clientRunKey: input.clientRunKey,
-      position: { gte: images.length },
+      position: { gte: input.attachments.length },
       messageId: null,
     },
     select: {

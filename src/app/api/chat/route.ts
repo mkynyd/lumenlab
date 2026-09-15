@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
           userId: session.user.id,
         });
         return NextResponse.json(
-          { error: "图片附件保存失败，请重试；草稿与附件已保留" },
+          { error: "附件保存失败，请重试；草稿与附件已保留" },
           { status: 503 }
         );
       }
@@ -98,7 +98,11 @@ export async function POST(request: NextRequest) {
     });
     if (persistedAttachments.length > 0) {
       // 任务 08.7：Checkpoint 只保存资源引用，Worker 恢复时按资源 ID 重新鉴权。
-      runInput.prompt.mediaRefs = persistedAttachments.map(toMediaRef);
+      // 只有图片进入 mediaRefs：文档/视频仅持久化用于历史展示，模型输入语义
+      // 保持不变（文档走请求内提取，视频由本轮 serializer 处理，历史不自动回传）。
+      runInput.prompt.mediaRefs = persistedAttachments
+        .filter((attachment) => attachment.kind === "image")
+        .map(toMediaRef);
     }
     if (learningFeatureFlags.durableExecutionEnabled) {
       if (!parsed.body.clientRunKey) {

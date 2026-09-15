@@ -19,6 +19,7 @@ import { GET } from "@/app/api/chat/attachments/[id]/route";
 
 function attachment(overrides: Record<string, unknown> = {}) {
   return {
+    originalName: "red.png",
     mimeType: "image/png",
     storageProvider: "local",
     storagePath: "chat-attachments/user-1/run-1/0-abc.png",
@@ -45,6 +46,7 @@ describe("GET /api/chat/attachments/[id]", () => {
     expect(mocks.attachmentFindFirst).toHaveBeenCalledWith({
       where: { id: "att-1", userId: "user-1" },
       select: {
+        originalName: true,
         mimeType: true,
         storageProvider: true,
         storagePath: true,
@@ -130,5 +132,73 @@ describe("GET /api/chat/attachments/[id]", () => {
     );
 
     expect(response.status).toBe(401);
+  });
+
+  it("sets an inline Content-Disposition with the original filename", async () => {
+    mocks.attachmentFindFirst.mockResolvedValue(
+      attachment({ originalName: "课设 报告.pdf", mimeType: "application/pdf" })
+    );
+    mocks.readStoredObject.mockResolvedValue(Buffer.from("pdf-bytes"));
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/chat/attachments/att-1?variant=original"
+      ),
+      { params: Promise.resolve({ id: "att-1" }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-disposition")).toBe(
+      `inline; filename*=UTF-8''${encodeURIComponent("课设 报告.pdf")}`
+    );
+  });
+
+  it("serves a 206 partial response for a valid Range request", async () => {
+    mocks.readStoredObject.mockResolvedValue(Buffer.from("0123456789"));
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/chat/attachments/att-1?variant=original",
+        { headers: { range: "bytes=2-5" } }
+      ),
+      { params: Promise.resolve({ id: "att-1" }) }
+    );
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-range")).toBe("bytes 2-5/10");
+    expect(response.headers.get("accept-ranges")).toBe("bytes");
+    expect(response.headers.get("content-length")).toBe("4");
+    await expect(response.text()).resolves.toBe("2345");
+  });
+
+  it("clamps the end of an open-ended or oversized Range", async () => {
+    mocks.readStoredObject.mockResolvedValue(Buffer.from("0123456789"));
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/chat/attachments/att-1?variant=original",
+        { headers: { range: "bytes=8-" } }
+      ),
+      { params: Promise.resolve({ id: "att-1" }) }
+    );
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-range")).toBe("bytes 8-9/10");
+    await expect(response.text()).resolves.toBe("89");
+  });
+
+  it("rejects an unsatisfiable Range with 416", async () => {
+    mocks.readStoredObject.mockResolvedValue(Buffer.from("0123456789"));
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost/api/chat/attachments/att-1?variant=original",
+        { headers: { range: "bytes=20-30" } }
+      ),
+      { params: Promise.resolve({ id: "att-1" }) }
+    );
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get("content-range")).toBe("bytes */10");
   });
 });

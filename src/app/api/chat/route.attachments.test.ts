@@ -111,6 +111,7 @@ function streamResponse() {
 function persistedRow() {
   return {
     id: "att-1",
+    kind: "image" as const,
     originalName: "red.png",
     mimeType: "image/png",
     size: PNG_BYTES.length,
@@ -180,10 +181,34 @@ describe("POST /api/chat attachment persistence", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringContaining("图片附件保存失败"),
+      error: expect.stringContaining("附件保存失败"),
     });
     expect(mocks.run).not.toHaveBeenCalled();
     expect(mocks.loggerError).toHaveBeenCalled();
+  });
+
+  it("does not put persisted non-image attachments into mediaRefs", async () => {
+    mocks.persistChatAttachments.mockResolvedValue([
+      persistedRow(),
+      {
+        ...persistedRow(),
+        id: "att-2",
+        kind: "file" as const,
+        originalName: "notes.pdf",
+        mimeType: "application/pdf",
+        hasThumbnail: false,
+      },
+    ]);
+
+    const response = await POST(chatRequest());
+
+    expect(response.status).toBe(200);
+    // 文档仅持久化用于历史展示；mediaRefs 只保留图片，模型输入语义不变。
+    const runInput = mocks.run.mock.calls[0][0];
+    expect(runInput.prompt.mediaRefs).toEqual([
+      mocks.toMediaRef.mock.results[0].value,
+    ]);
+    expect(mocks.toMediaRef).toHaveBeenCalledTimes(1);
   });
 
   it("does not persist or add a header when there are no attachments", async () => {
