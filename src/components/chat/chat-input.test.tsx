@@ -1,9 +1,30 @@
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { FileAttachment } from "@/lib/chat/router";
 import { ChatInput } from "@/components/chat/chat-input";
 
+function pasteFiles(textarea: HTMLElement, files: File[]) {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: { files, types: ["Files"] },
+  });
+  fireEvent(textarea, event);
+}
+
+function dropFiles(target: HTMLElement, files: File[]) {
+  fireEvent.drop(target, {
+    dataTransfer: { files, types: ["Files"] },
+  });
+}
+
 describe("ChatInput", () => {
+  beforeEach(() => {
+    // jsdom 不提供 blob URL API；本地预览的创建/回收在这里打桩。
+    URL.createObjectURL = vi.fn(() => "blob:mock-preview");
+    URL.revokeObjectURL = vi.fn();
+  });
+
   it("preserves draft and attachments on a failed send", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn().mockResolvedValue(false);
@@ -79,5 +100,88 @@ describe("ChatInput", () => {
     expect(onModelChange).toHaveBeenCalledWith("deepseek-v4-flash");
     // 选项变更不再自动关闭展开栏，由用户自行关闭
     expect(screen.getByRole("dialog", { name: "对话选项" })).toBeInTheDocument();
+  });
+
+  it("appends pasted image files as attachments with a local preview", () => {
+    const onAttachmentsChange = vi.fn();
+    render(<ChatInput onSend={vi.fn()} onAttachmentsChange={onAttachmentsChange} />);
+
+    const file = new File(["pixel"], "截图.png", { type: "image/png" });
+    pasteFiles(screen.getByRole("textbox"), [file]);
+
+    expect(onAttachmentsChange).toHaveBeenCalledTimes(1);
+    const next = onAttachmentsChange.mock.calls[0][0] as FileAttachment[];
+    expect(next).toHaveLength(1);
+    expect(next[0].name).toBe("截图.png");
+    expect(next[0].previewUrl).toBe("blob:mock-preview");
+  });
+
+  it("rejects pasted files with disallowed extensions and shows a non-blocking notice", () => {
+    const onAttachmentsChange = vi.fn();
+    render(<ChatInput onSend={vi.fn()} onAttachmentsChange={onAttachmentsChange} />);
+
+    const file = new File(["MZ"], "installer.exe", { type: "application/x-msdownload" });
+    pasteFiles(screen.getByRole("textbox"), [file]);
+
+    expect(onAttachmentsChange).not.toHaveBeenCalled();
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("installer.exe");
+    expect(notice).toHaveTextContent("不支持的文件类型");
+    // 提示非阻断：输入框仍可用
+    expect(screen.getByRole("textbox")).toBeEnabled();
+  });
+
+  it("rejects pasted files over the per-file size limit", () => {
+    const onAttachmentsChange = vi.fn();
+    render(<ChatInput onSend={vi.fn()} onAttachmentsChange={onAttachmentsChange} />);
+
+    const file = new File(["x"], "big.png", { type: "image/png" });
+    Object.defineProperty(file, "size", { value: 60 * 1024 * 1024 });
+    pasteFiles(screen.getByRole("textbox"), [file]);
+
+    expect(onAttachmentsChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("超过 50MB 限制");
+  });
+
+  it("blocks a batch that would exceed the per-request attachment limit", () => {
+    const onAttachmentsChange = vi.fn();
+    const existing: FileAttachment[] = Array.from({ length: 50 }, (_, index) => ({
+      id: `existing-${index}`,
+      name: `资料-${index}.txt`,
+      mimeType: "text/plain",
+      size: 0,
+      data: new File([], `资料-${index}.txt`, { type: "text/plain" }),
+    }));
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        attachments={existing}
+        onAttachmentsChange={onAttachmentsChange}
+      />
+    );
+
+    const file = new File(["note"], "补充.txt", { type: "text/plain" });
+    pasteFiles(screen.getByRole("textbox"), [file]);
+
+    expect(onAttachmentsChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("单次最多上传 50 个文件");
+  });
+
+  it("accepts files dropped onto the composer dock", () => {
+    const onAttachmentsChange = vi.fn();
+    const { container } = render(
+      <ChatInput onSend={vi.fn()} onAttachmentsChange={onAttachmentsChange} />
+    );
+
+    const dock = container.querySelector(".workbench-input-dock");
+    expect(dock).not.toBeNull();
+    const file = new File(["%PDF-1.4"], "实验指导.pdf", { type: "application/pdf" });
+    dropFiles(dock as HTMLElement, [file]);
+
+    expect(onAttachmentsChange).toHaveBeenCalledTimes(1);
+    const next = onAttachmentsChange.mock.calls[0][0] as FileAttachment[];
+    expect(next.map((attachment) => attachment.name)).toEqual(["实验指导.pdf"]);
+    // 非图片不产生本地预览 URL
+    expect(next[0].previewUrl).toBeUndefined();
   });
 });

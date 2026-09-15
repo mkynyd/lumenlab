@@ -14,6 +14,9 @@ const qiniuImageSource = cspImageSourceFromDomain(process.env.QINIU_PRIVATE_DOMA
 const imageSources = ["'self'", "data:", "blob:", qiniuImageSource]
   .filter(Boolean)
   .join(" ");
+// 视频/音频不受 img-src 覆盖，缺 media-src 会回落到 default-src 'self'，
+// 导致上传中的附件本地 blob 预览被拦。已持久化的媒体走同源鉴权路由，'self' 即可。
+const mediaSources = ["'self'", "blob:"].join(" ");
 const scriptSources = [
   "'self'",
   "'unsafe-inline'",
@@ -78,7 +81,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              `default-src 'self'; script-src ${scriptSources}; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src ${imageSources}; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests`,
+              `default-src 'self'; script-src ${scriptSources}; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src ${imageSources}; media-src ${mediaSources}; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests`,
           },
         ],
       },

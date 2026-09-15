@@ -16,7 +16,7 @@ import {
 
 function historyMessage(
   id: string,
-  attachments: Array<{ id: string; originalName: string }>,
+  attachments: Array<{ id: string; originalName: string; mimeType?: string }>,
   role = "user"
 ): ConversationHistoryMessage {
   return {
@@ -25,7 +25,7 @@ function historyMessage(
     content: "看看这张图",
     attachments: attachments.map((attachment) => ({
       ...attachment,
-      mimeType: "image/png",
+      mimeType: attachment.mimeType ?? "image/png",
       storageProvider: "local",
       storagePath: `chat-attachments/user-1/${attachment.id}.png`,
       contentHash: "a".repeat(64),
@@ -46,6 +46,18 @@ describe("historyMediaRefs", () => {
 
     expect(refs.map((ref) => ref.id)).toEqual(["att-2", "att-3", "att-1"]);
     expect(refs.every((ref) => ref.source === "message-attachment")).toBe(true);
+  });
+
+  it("skips persisted non-image attachments (documents/videos stay out of the media budget)", () => {
+    const refs = historyMediaRefs([
+      historyMessage("m-1", [
+        { id: "att-doc", originalName: "notes.pdf", mimeType: "application/pdf" },
+        { id: "att-video", originalName: "clip.mp4", mimeType: "video/mp4" },
+        { id: "att-img", originalName: "diagram.png" },
+      ]),
+    ]);
+
+    expect(refs.map((ref) => ref.id)).toEqual(["att-img"]);
   });
 });
 
