@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activeStorageProvider,
   createSignedDownloadUrl,
   deleteStoredObject,
   readStoredObject,
+  readStoredObjectRange,
   uploadFileBuffer,
   uploadObjectBuffer,
 } from "@/lib/storage/object-storage";
@@ -87,6 +90,78 @@ describe("object storage adapter", () => {
       Buffer.from([1, 2, 3])
     );
     await expect(deleteStoredObject(stored)).resolves.toBeUndefined();
+  });
+
+  it("reads only the requested byte range", async () => {
+    const stored = await uploadObjectBuffer({
+      key: `users/user-1/ranges/${randomUUID()}.bin`,
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("0123456789"),
+    });
+
+    await expect(
+      readStoredObjectRange({ ...stored, start: 2, end: 5 })
+    ).resolves.toEqual({
+      data: Buffer.from("2345"),
+      totalSize: 10,
+      start: 2,
+      end: 5,
+    });
+
+    await deleteStoredObject(stored);
+  });
+
+  it("reads to the end when the range has no upper bound", async () => {
+    const stored = await uploadObjectBuffer({
+      key: `users/user-1/ranges/${randomUUID()}.bin`,
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("0123456789"),
+    });
+
+    await expect(
+      readStoredObjectRange({ ...stored, start: 7, end: null })
+    ).resolves.toEqual({
+      data: Buffer.from("789"),
+      totalSize: 10,
+      start: 7,
+      end: 9,
+    });
+
+    await deleteStoredObject(stored);
+  });
+
+  it("clamps an end offset that runs past the object", async () => {
+    const stored = await uploadObjectBuffer({
+      key: `users/user-1/ranges/${randomUUID()}.bin`,
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("abc"),
+    });
+
+    await expect(
+      readStoredObjectRange({ ...stored, start: 1, end: 999 })
+    ).resolves.toEqual({
+      data: Buffer.from("bc"),
+      totalSize: 3,
+      start: 1,
+      end: 2,
+    });
+
+    await deleteStoredObject(stored);
+  });
+
+  it("returns an empty range with the real size when the start is past the end", async () => {
+    const stored = await uploadObjectBuffer({
+      key: `users/user-1/ranges/${randomUUID()}.bin`,
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("abc"),
+    });
+
+    const range = await readStoredObjectRange({ ...stored, start: 99, end: null });
+
+    expect(range.totalSize).toBe(3);
+    expect(range.data).toHaveLength(0);
+
+    await deleteStoredObject(stored);
   });
 
   it("rejects object keys that escape the upload root", async () => {
