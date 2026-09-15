@@ -65,8 +65,13 @@ export async function GET(
 
   const isDownload = request.nextUrl.searchParams.get("download") === "1";
   const provider = file.storageProvider as StorageProvider;
+  const baseType = file.mimeType || "application/octet-stream";
+  // 文本类必须带 charset，否则用 iframe 预览中文源码会乱码。
+  const contentType = /^(text\/|application\/(json|xml|javascript))/.test(baseType)
+    ? `${baseType}; charset=utf-8`
+    : baseType;
   const headers = {
-    "Content-Type": file.mimeType || "application/octet-stream",
+    "Content-Type": contentType,
     "Content-Disposition": contentDisposition(
       isDownload ? "attachment" : "inline",
       file.originalName

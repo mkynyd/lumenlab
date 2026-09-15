@@ -86,7 +86,7 @@ interface ProjectSidebarProps {
   onBatchDelete: () => void;
   onBatchReparse: () => void;
   onBatchReparseFailed: () => void;
-  onBatchDownload: () => void;
+  onBatchExport: () => void;
   onFileAction: (action: "delete" | "reparse" | "download" | "preview", fileId: string) => void;
   onNewConversation: () => void;
   onConversationSelect: (id: string) => void;
@@ -112,7 +112,7 @@ export function ProjectSidebar({
   onBatchDelete,
   onBatchReparse,
   onBatchReparseFailed,
-  onBatchDownload,
+  onBatchExport,
   onFileAction,
   onNewConversation,
   onConversationSelect,
@@ -313,10 +313,10 @@ export function ProjectSidebar({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={selectedCount === 0}
-                  onSelect={onBatchDownload}
+                  onSelect={onBatchExport}
                 >
                   <Download strokeWidth={2} />
-                  下载
+                  导出解析内容
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"

@@ -30,7 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FileLibraryRow } from "@/components/files/file-library-row";
-import { FileContentDialog } from "@/components/project/file-content-dialog";
+import { FileDetailDialog } from "@/components/files/file-detail-dialog";
 import { FILE_CATEGORIES } from "@/lib/file-categories";
 import {
   fileLibrarySearchKey,
@@ -86,21 +86,6 @@ function isStatus(value: string | null): value is FileLibraryStatus {
 
 function isSort(value: string | null): value is FileLibrarySort {
   return value !== null && value in SORT_LABELS;
-}
-
-/** 把资料项补成预览弹窗需要的最小文件形状（详情接口自己会拉全文）。 */
-function toPreviewFile(file: FileLibraryItem) {
-  return {
-    id: file.id,
-    filename: file.filename,
-    originalName: file.originalName,
-    mimeType: file.mimeType,
-    size: file.size,
-    status: file.status,
-    category: file.category,
-    categoryConfidence: file.categoryConfidence,
-    createdAt: file.createdAt,
-  };
 }
 
 export function FileLibraryView() {
@@ -607,10 +592,10 @@ export function FileLibraryView() {
       </div>
 
       {previewFile && (
-        <FileContentDialog
-          file={toPreviewFile(previewFile)}
+        <FileDetailDialog
+          file={previewFile}
           onClose={() => setPreviewFile(null)}
-          onUpdated={() => void query.refetch()}
+          onChanged={() => void query.refetch()}
         />
       )}
 

@@ -30,7 +30,7 @@ import type {
   FileSelectionIntent,
   ProjectFile,
 } from "@/components/project/file-list";
-import { FileContentDialog } from "@/components/project/file-content-dialog";
+import { FileDetailDialog } from "@/components/files/file-detail-dialog";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { ArtifactLibrary } from "@/components/artifact/artifact-library";
 import { VectorLibraryView } from "@/components/vector-library/vector-library-view";
@@ -40,6 +40,7 @@ import {
   useDeleteConversation,
 } from "@/lib/hooks/use-conversations";
 import { useSaveArtifact } from "@/lib/hooks/use-artifacts";
+import { errorMessage } from "@/lib/api/client";
 import { queryKeys } from "@/lib/query-keys";
 import { toChatMessages } from "@/lib/chat/project-conversation-state";
 
@@ -335,11 +336,35 @@ export default function ProjectDetailPage() {
   }
 
   async function runBatchAction(
-    action: "delete" | "reparse" | "download",
+    action: "delete" | "reparse" | "export",
     explicitFileIds?: string[]
   ) {
     const fileIds = explicitFileIds || Array.from(selectedFileIds);
     if (fileIds.length === 0) return;
+
+    if (action === "export") {
+      // 与资料页共用同一个导出接口：zip 里每份资料一个目录，正文 .md 和同
+      // 相对路径的图片一起打包，没有解析正文的文件会在说明文件里列出来。
+      const res = await fetch("/api/files/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileIds }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setFileMessage(errorMessage(data, "导出失败，请稍后重试"));
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "资料导出.zip";
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
     const res = await fetch(`/api/projects/${projectId}/files/batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -350,15 +375,7 @@ export default function ProjectDetailPage() {
       setFileMessage(data.error || "批量操作失败");
       return;
     }
-    if (action === "download") {
-      const blob = new Blob([data.content], { type: "text/markdown;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = data.filename;
-      link.click();
-      URL.revokeObjectURL(url);
-    } else if (action === "delete") {
+    if (action === "delete") {
       setSelectedFileIds(new Set());
     }
     await projectQuery.refetch();
@@ -631,7 +648,7 @@ export default function ProjectDetailPage() {
             onBatchDelete={() => void runBatchAction("delete")}
             onBatchReparse={() => void runBatchAction("reparse")}
             onBatchReparseFailed={() => void handleBatchReparseFailed()}
-            onBatchDownload={() => void runBatchAction("download")}
+            onBatchExport={() => void runBatchAction("export")}
             onFileAction={(action, fileId) => void handleFileAction(action, fileId)}
             onNewConversation={handleNewConversation}
             onConversationSelect={handleConversationSelect}
@@ -831,10 +848,17 @@ export default function ProjectDetailPage() {
         />
       )}
       {previewFile && (
-        <FileContentDialog
-          file={previewFile}
+        <FileDetailDialog
+          file={{
+            ...previewFile,
+            projectId,
+            projectName: project?.name ?? null,
+          }}
           onClose={() => setPreviewFile(null)}
-          onUpdated={() => void projectQuery.refetch()}
+          onChanged={() => {
+            void projectQuery.refetch();
+            void queryClient.invalidateQueries({ queryKey: ["files"] });
+          }}
         />
       )}
     </div>

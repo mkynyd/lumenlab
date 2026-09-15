@@ -98,7 +98,7 @@ describe("project workspace color contract", () => {
       "src/app/(chat)/projects/[id]/page.tsx",
       "src/components/project/project-sidebar.tsx",
       "src/components/project/file-upload.tsx",
-      "src/components/project/file-content-dialog.tsx",
+      "src/components/files/file-detail-dialog.tsx",
     ];
     const offenders = buttonSources.flatMap((file) => {
       const source = readFileSync(file, "utf8");
@@ -131,7 +131,7 @@ describe("project workspace color contract", () => {
       "src/app/(chat)/projects/page.tsx",
       "src/app/(chat)/projects/new/page.tsx",
       "src/components/project/project-sidebar.tsx",
-      "src/components/project/file-content-dialog.tsx",
+      "src/components/files/file-detail-dialog.tsx",
     ];
 
     for (const file of primaryActionSources) {
@@ -154,7 +154,7 @@ describe("project workspace color contract", () => {
       "src/components/project/project-sidebar.tsx",
       "src/components/project/file-list.tsx",
       "src/components/project/file-upload.tsx",
-      "src/components/project/file-content-dialog.tsx",
+      "src/components/files/file-detail-dialog.tsx",
       "src/components/chat/quick-task-bar.tsx",
       "src/components/workbench/spotlight-card.tsx",
     ]

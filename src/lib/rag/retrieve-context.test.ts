@@ -100,7 +100,7 @@ describe("retrieveProjectContext", () => {
     });
 
     expect(result.context).toContain("增强后的资料");
-    expect(result.context).toContain("基于 OCR 原文整理的增强资料");
+    expect(result.context).toContain("基于解析原文整理的增强资料");
     expect(result.usedFileIds).toEqual(["file-1"]);
   });
 

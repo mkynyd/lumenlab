@@ -806,7 +806,7 @@ function parserNotice(file: {
   enhancementStatus: string;
 }) {
   if (file.enhancedContent && file.enhancementStatus === "enhanced") {
-    return "以下内容为基于 OCR 原文整理的增强资料，原始 OCR 可能存在识别误差。";
+    return "以下内容为基于解析原文整理的增强资料，解析原文可能存在识别误差。";
   }
 
   const metadata =
@@ -820,7 +820,7 @@ function parserNotice(file: {
     metadata.parser === "minimax-pdf-vision" ||
     file.mimeType.startsWith("image/")
   ) {
-    return "以下内容来自图片 OCR/视觉解析，可能存在识别误差。涉及数字、公式和单位时请提醒用户核对。";
+    return "以下内容来自图片视觉解析，可能存在识别误差。涉及数字、公式和单位时请提醒用户核对。";
   }
   return "以下资料来自用户选中文件或关键词检索。";
 }

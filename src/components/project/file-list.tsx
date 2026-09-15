@@ -210,14 +210,14 @@ export function FileList({
             onSelect={() => onFileAction?.("preview", file)}
           >
             <Eye strokeWidth={2} />
-            预览
+            查看
           </ContextMenuItem>
           <ContextMenuItem
             className="justify-start text-left"
             onSelect={() => onFileAction?.("download", file)}
           >
             <Download strokeWidth={2} />
-            下载
+            下载原件
           </ContextMenuItem>
           <ContextMenuItem
             className="justify-start text-left"

@@ -35,6 +35,9 @@ export async function GET(
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
   const { id } = await params;
+  // AI 整理内容可能和正文一样大，只有明确要看时才单独取一次。
+  const includeEnhanced =
+    new URL(request.url).searchParams.get("include") === "enhanced";
 
   const file = await prisma.fileAsset.findFirst({
     where: { id, userId: session.user.id },
@@ -50,6 +53,7 @@ export async function GET(
       status: true,
       category: true,
       categoryConfidence: true,
+      projectId: true,
       createdAt: true,
       updatedAt: true,
       resources: { select: { id: true, relativePath: true } },
@@ -60,6 +64,15 @@ export async function GET(
     return NextResponse.json({ error: "文件不存在" }, { status: 404 });
   }
 
+  const enhancedContent = includeEnhanced
+    ? (
+        await prisma.fileAsset.findUnique({
+          where: { id: file.id },
+          select: { enhancedContent: true },
+        })
+      )?.enhancedContent ?? null
+    : undefined;
+
   return NextResponse.json({
     file: {
       id: file.id,
@@ -69,10 +82,14 @@ export async function GET(
       size: file.size,
       textContent: file.textContent,
       enhancementStatus: file.enhancementStatus,
+      // stale 表示 AI 整理结果比正文旧，但仍是有内容的。
+      hasEnhancedContent: ["enhanced", "stale"].includes(file.enhancementStatus),
+      ...(includeEnhanced ? { enhancedContent } : {}),
       processingMetadata: file.processingMetadata,
       status: file.status,
       category: file.category,
       categoryConfidence: file.categoryConfidence,
+      projectId: file.projectId,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
       resources: file.resources.map((resource) => ({
@@ -113,7 +130,7 @@ export async function PATCH(
 
   if (parsed.data.textContent !== undefined && !["parsed", "partial"].includes(file.status)) {
     return NextResponse.json(
-      { error: "只有已解析文件可以编辑 OCR 原文" },
+      { error: "只有已解析文件可以修订解析内容" },
       { status: 400 }
     );
   }
