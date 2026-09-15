@@ -76,10 +76,14 @@ export function OfficeCanvasViewer({
             320,
             Math.min(availableWidth, Math.round(availableHeight * (16 / 9)))
           );
+          // 窄屏降级成纵向列表：单页模式在手机上会宽过高，只能左右拖着看。
+          const isNarrow =
+            typeof window !== "undefined" &&
+            window.matchMedia("(max-width: 640px)").matches;
           const previewer = init(container, {
             width,
             height: Math.round((width * 9) / 16),
-            mode: "slide",
+            mode: isNarrow ? "list" : "slide",
           });
           await previewer.preview(buffer);
           dispose = () => previewer.destroy();

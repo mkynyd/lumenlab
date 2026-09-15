@@ -429,6 +429,7 @@ export function FileDetailDialog({
               url={originalUrl}
               name={detail.originalName}
               status={detail.status}
+              onViewParsed={() => setTab("parsed")}
             />
           )}
         </div>
@@ -546,11 +547,13 @@ function OriginalView({
   url,
   name,
   status,
+  onViewParsed,
 }: {
   mimeType: string;
   url: string;
   name: string;
   status: string;
+  onViewParsed?: () => void;
 }) {
   if (status === "parsing" || status === "uploaded") {
     return (
@@ -562,7 +565,7 @@ function OriginalView({
 
   if (PDF_PATTERN.test(mimeType)) {
     // 不交给浏览器内置查看器：部分嵌入子集字体的 PDF 在它那里会整页空白。
-    return <PdfCanvasViewer url={url} title={name} />;
+    return <PdfCanvasViewer url={url} title={name} onViewParsed={onViewParsed} />;
   }
 
   if (IMAGE_PATTERN.test(mimeType)) {
