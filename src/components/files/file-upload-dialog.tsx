@@ -134,7 +134,7 @@ export function FileUploadDialog({
               >
                 <SelectValue placeholder="选择一个项目" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="start" className="duration-150">
                 {(projectsQuery.data ?? []).map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     {project.name}
@@ -158,7 +158,7 @@ export function FileUploadDialog({
               >
                 <SelectValue placeholder="选择分类" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" align="start" className="duration-150">
                 {FILE_CATEGORIES.map((item) => (
                   <SelectItem key={item} value={item}>
                     {item}

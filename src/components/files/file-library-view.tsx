@@ -260,7 +260,11 @@ export function FileLibraryView() {
           <SelectTrigger className={triggerClassName} aria-label="按项目筛选">
             <SelectValue placeholder="全部项目" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent
+            position="popper"
+            align="start"
+            className="duration-150"
+          >
             <SelectItem value={ALL}>全部项目</SelectItem>
             {(projectsQuery.data ?? []).map((project) => (
               <SelectItem key={project.id} value={project.id}>
@@ -279,7 +283,11 @@ export function FileLibraryView() {
           <SelectTrigger className={triggerClassName} aria-label="按分类筛选">
             <SelectValue placeholder="全部分类" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent
+            position="popper"
+            align="start"
+            className="duration-150"
+          >
             <SelectItem value={ALL}>全部分类</SelectItem>
             {FILE_CATEGORIES.map((item) => (
               <SelectItem key={item} value={item}>
@@ -298,7 +306,11 @@ export function FileLibraryView() {
           <SelectTrigger className={triggerClassName} aria-label="按类型筛选">
             <SelectValue placeholder="全部类型" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent
+            position="popper"
+            align="start"
+            className="duration-150"
+          >
             <SelectItem value={ALL}>全部类型</SelectItem>
             {Object.entries(MIME_GROUP_LABELS).map(([value, label]) => (
               <SelectItem key={value} value={value}>
@@ -317,7 +329,11 @@ export function FileLibraryView() {
           <SelectTrigger className={triggerClassName} aria-label="按状态筛选">
             <SelectValue placeholder="全部状态" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent
+            position="popper"
+            align="start"
+            className="duration-150"
+          >
             <SelectItem value={ALL}>全部状态</SelectItem>
             {Object.entries(STATUS_LABELS).map(([value, label]) => (
               <SelectItem key={value} value={value}>
@@ -334,7 +350,11 @@ export function FileLibraryView() {
           <SelectTrigger className={triggerClassName} aria-label="排序方式">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent
+            position="popper"
+            align="start"
+            className="duration-150"
+          >
             <SelectItem value="relevance" disabled={!urlQuery.trim()}>
               相关度
             </SelectItem>
