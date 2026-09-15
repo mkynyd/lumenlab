@@ -85,6 +85,16 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // 原件预览要靠同源 iframe 内嵌（PDF / 文本），而上面那条 `DENY` +
+        // `frame-ancestors 'none'` 会把响应本身也拒掉，预览就是一片空白。
+        // 这里只针对原件读取放宽到同源，其余路由仍然禁止被任何来源嵌套。
+        source: "/api/files/:id/content",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+        ],
+      },
     ];
   },
 
