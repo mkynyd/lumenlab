@@ -99,12 +99,12 @@ export function buildChunksFromBlocks(
       case "formula":
         chunks.push({
           id: crypto.randomUUID(),
-          content: `$$${block.content}$$`,
+          content: `$$\n${block.content}\n$$`,
           metadata: {
             sourceType: "formula",
             blockId: block.id,
-            blockKey: blockKeyFor(block.id, 0, `$$${block.content}$$`),
-            contentFingerprint: chunkFingerprint(`$$${block.content}$$`),
+            blockKey: blockKeyFor(block.id, 0, `$$\n${block.content}\n$$`),
+            contentFingerprint: chunkFingerprint(`$$\n${block.content}\n$$`),
             pageNumber: block.pageNumber,
             slideNumber: block.slideNumber,
           },

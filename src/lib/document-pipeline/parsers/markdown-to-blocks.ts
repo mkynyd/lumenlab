@@ -22,6 +22,7 @@ export function markdownToBlocks(markdown: string): DocumentBlock[] {
         type: "text",
         id: crypto.randomUUID(),
         content: text,
+        preserveMarkdown: true,
       });
     }
     buffer = [];
@@ -41,6 +42,7 @@ export function markdownToBlocks(markdown: string): DocumentBlock[] {
         id: crypto.randomUUID(),
         level: headingMatch[1].length,
         content: headingMatch[2].trim(),
+        preserveMarkdown: true,
       });
       i++;
       continue;

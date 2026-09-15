@@ -88,3 +88,49 @@ describe("MarkdownContent 结构化输出", () => {
     expect(container.querySelector(".markdown-table-wrap > table")).not.toBeNull();
   });
 });
+
+describe("MarkdownContent 数学公式", () => {
+  it("\\frac{a}{b} 渲染为真实分式（MathML mfrac）", () => {
+    const { container } = render(<MarkdownContent content={"$$\\frac{a}{b}$$"} />);
+
+    expect(container.querySelector("math mfrac")).not.toBeNull();
+  });
+
+  it("\\sqrt{x} 渲染为根式结构（MathML msqrt）", () => {
+    const { container } = render(<MarkdownContent content={"$$\\sqrt{x}$$"} />);
+
+    expect(container.querySelector("math msqrt")).not.toBeNull();
+  });
+
+  it("aligned 多行公式正常渲染且没有错误提示", () => {
+    const { container } = render(
+      <MarkdownContent content={"$$\\begin{aligned} a &= b \\\\\\\\ c &= d \\end{aligned}$$"} />
+    );
+
+    expect(container.querySelector(".math-render-error")).toBeNull();
+    expect(container.querySelector("math")).not.toBeNull();
+  });
+
+  it("中文与行内公式混排正常渲染", () => {
+    const { container } = render(
+      <MarkdownContent content={"质量 $m$ 与能量 $E=mc^2$ 的关系如下。"} />
+    );
+
+    expect(container.querySelector(".math-render-error")).toBeNull();
+    expect(container.querySelector("math")).not.toBeNull();
+  });
+
+  it("非法 LaTeX 显示可见错误状态，原始公式保留，其余内容不受影响", () => {
+    const { container, getByText } = render(
+      <MarkdownContent content={"# 标题\n\n$$\\frac{a}{$$\n\n后面的段落 **正常** 渲染。"} />
+    );
+
+    expect(getByText("公式渲染失败，请核对原文")).toBeTruthy();
+    const source = container.querySelector("span.math-render-error-source");
+    expect(source?.textContent).toContain("\\frac");
+
+    expect(container.querySelector("h1")?.textContent).toBe("标题");
+    expect(container.querySelector("strong")?.textContent).toBe("正常");
+    expect(container.textContent).toContain("后面的段落");
+  });
+});

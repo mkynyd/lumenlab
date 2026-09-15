@@ -10,12 +10,6 @@ function escapeMarkdown(text: string): string {
   return text.replace(/([\\`*_{}\[\]()#|])/g, "\\$1");
 }
 
-function escapeFormula(text: string): string {
-  return text
-    .replace(/([\\{}[\]()#|])/g, "\\$1")
-    .replace(/`/g, "\\`");
-}
-
 function encodeMarkdownUrl(path: string): string {
   // Encode characters that can break Markdown link syntax while preserving
   // forward slashes used as path separators.
@@ -38,11 +32,16 @@ function encodeMarkdownUrl(path: string): string {
 function renderBlock(block: DocumentBlock): string {
   switch (block.type) {
     case "text":
-      return escapeMarkdown(block.content);
+      return block.preserveMarkdown
+        ? block.content
+        : escapeMarkdown(block.content);
 
     case "heading": {
       const level = Math.max(1, Math.min(6, block.level));
-      return `${"#".repeat(level)} ${escapeMarkdown(block.content)}`;
+      const content = block.preserveMarkdown
+        ? block.content
+        : escapeMarkdown(block.content);
+      return `${"#".repeat(level)} ${content}`;
     }
 
     case "table": {
@@ -53,7 +52,14 @@ function renderBlock(block: DocumentBlock): string {
     }
 
     case "formula":
-      return `$$${escapeFormula(block.content)}$$`;
+      // 公式内容原样保留：反斜杠、花括号是 LaTeX 语义的一部分，
+      // 转义会让 KaTeX 无法解析（\frac 变成 \\frac）。
+      //
+      // 定界符必须独占一行。写成 `$$\begin{aligned}` 这种紧贴形式时，
+      // remark-math 会把 `\begin{aligned}` 连同定界符一起吃掉，多行环境
+      // （aligned / cases / 矩阵）整段解析失败，并且会一路吞到下一个 `$$`，
+      // 把中间的正文也带进公式里。
+      return `$$\n${block.content}\n$$`;
 
     case "code": {
       const language = block.language ?? "";

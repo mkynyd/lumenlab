@@ -68,7 +68,7 @@ describe("MiniMaxPdfParser", () => {
     expect(result.assets).toHaveLength(0);
     expect(result.metadata.parser).toBe("minimax-m3-pdf");
     expect(result.metadata.sourceKind).toBe("pdf");
-    expect(result.metadata.pipelineVersion).toBe("0.2.0");
+    expect(result.metadata.pipelineVersion).toBe("0.3.1");
     expect(result.metadata.assetCount).toBe(0);
   });
 });

@@ -49,7 +49,7 @@ describe("renderDocumentToMarkdown", () => {
       { type: "formula", id: "f1", content: "E = mc^2" },
     ];
 
-    expect(renderDocumentToMarkdown(blocks)).toBe("$$E = mc^2$$");
+    expect(renderDocumentToMarkdown(blocks)).toBe("$$\nE = mc^2\n$$");
   });
 
   it("renders a code block with language", () => {
@@ -234,8 +234,31 @@ describe("renderDocumentToMarkdown", () => {
     const output = renderDocumentToMarkdown(blocks);
     expect(output).toContain("\\*not bold\\*");
     expect(output).toContain("# \\# not a heading");
-    expect(output).toContain("$$x * y$$");
+    expect(output).toContain("$$\nx * y\n$$");
     expect(output).toContain("\\*not italic\\*");
+  });
+
+  it("preserves LaTeX commands in formula blocks verbatim", () => {
+    const blocks: DocumentBlock[] = [
+      { type: "formula", id: "f1", content: "\\frac{a}{b}" },
+      { type: "formula", id: "f2", content: "\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}" },
+    ];
+
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain("$$\n\\frac{a}{b}\n$$");
+    expect(output).toContain("$$\n\\begin{aligned}");
+    expect(output).not.toContain("\\\\frac");
+  });
+
+  it("keeps markdown formatting in text and heading blocks marked preserveMarkdown", () => {
+    const blocks: DocumentBlock[] = [
+      { type: "text", id: "t1", content: "Some **bold** and $x^2$ inline.", preserveMarkdown: true },
+      { type: "heading", id: "h1", level: 2, content: "标题 with *emphasis*", preserveMarkdown: true },
+    ];
+
+    const output = renderDocumentToMarkdown(blocks);
+    expect(output).toContain("Some **bold** and $x^2$ inline.");
+    expect(output).toContain("## 标题 with *emphasis*");
   });
 
   it("does not escape backticks inside code blocks", () => {

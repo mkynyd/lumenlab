@@ -227,7 +227,7 @@ describe("MinerUParser", () => {
     expect(result.metadata.assetCount).toBe(1);
     expect(result.metadata.parser).toBe("mineru-office");
     expect(result.metadata.sourceKind).toBe("office");
-    expect(result.metadata.pipelineVersion).toBe("0.2.0");
+    expect(result.metadata.pipelineVersion).toBe("0.3.1");
     expect(result.metadata.parseWarnings).toEqual([]);
   });
 

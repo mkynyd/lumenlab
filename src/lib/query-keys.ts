@@ -17,6 +17,8 @@ export const queryKeys = {
   },
   files: {
     detail: (id: string) => ["files", id] as const,
+    // 资料页的筛选条件参与 key，游标由 useInfiniteQuery 的 pageParam 管理。
+    library: (search: string) => ["files", "library", search] as const,
   },
   artifacts: {
     detail: (id: string) => ["artifacts", id] as const,

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { mkdir, readFile, unlink, writeFile } from "fs/promises";
+import { mkdir, open, readFile, stat, unlink, writeFile } from "fs/promises";
 import path from "path";
 
 export type StorageProvider = "local" | "qiniu";
@@ -206,6 +206,87 @@ export async function readStoredObject(input: StoredObjectRef): Promise<Buffer> 
     throw new Error(`七牛文件下载失败：${response.status}`);
   }
   return Buffer.from(await response.arrayBuffer());
+}
+
+export interface StoredObjectRange {
+  data: Buffer;
+  /** 对象总字节数，用于构造 Content-Range。 */
+  totalSize: number;
+  /** 实际返回的闭区间端点。 */
+  start: number;
+  end: number;
+}
+
+/**
+ * 读取对象的一个字节区间。原件预览（尤其是 PDF）会连续发 Range 请求，
+ * 每次都整块读入再切片既浪费带宽也浪费内存，所以本地文件走区间读、
+ * 七牛走 Range 头透传；存储端不认 Range 时回退成读全量再切片，语义不变。
+ */
+export async function readStoredObjectRange(
+  input: StoredObjectRef & { start: number; end: number | null }
+): Promise<StoredObjectRange> {
+  if (input.provider === "local") {
+    const filePath = resolveLocalPath(input.key);
+    const stats = await stat(filePath);
+    const totalSize = stats.size;
+    const start = Math.max(input.start, 0);
+    if (start >= totalSize) {
+      // 起点越界：返回空区间，由调用方决定是否回 416，不擅自截到最后一个字节。
+      return { data: Buffer.alloc(0), totalSize, start, end: start };
+    }
+    const lastByte = totalSize - 1;
+    const end =
+      input.end === null ? lastByte : Math.min(Math.max(input.end, start), lastByte);
+    const length = end - start + 1;
+    const handle = await open(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(length);
+      await handle.read(buffer, 0, length, start);
+      return { data: buffer, totalSize, start, end };
+    } finally {
+      await handle.close();
+    }
+  }
+
+  const url = createSignedDownloadUrl({
+    provider: input.provider,
+    key: input.key,
+    expiresInSeconds: DEFAULT_SIGNED_URL_TTL_SECONDS,
+  });
+  const response = await fetch(url, {
+    headers: { Range: `bytes=${input.start}-${input.end ?? ""}` },
+  });
+
+  if (response.status !== 206) {
+    if (!response.ok) {
+      throw new Error(`七牛文件下载失败：${response.status}`);
+    }
+    const full = Buffer.from(await response.arrayBuffer());
+    const lastByte = Math.max(full.length - 1, 0);
+    const start = Math.min(input.start, lastByte);
+    const end =
+      input.end === null ? lastByte : Math.min(Math.max(input.end, start), lastByte);
+    return {
+      data: full.subarray(start, end + 1),
+      totalSize: full.length,
+      start,
+      end,
+    };
+  }
+
+  const parsed = response.headers
+    .get("content-range")
+    ?.match(/^bytes (\d+)-(\d+)\/(\d+|\*)$/);
+  const start = parsed ? Number(parsed[1]) : input.start;
+  const end = parsed ? Number(parsed[2]) : (input.end ?? input.start);
+  // 总长度缺失（`*`）时用已读到的末尾兜底，至少让 Content-Range 自洽。
+  const totalSize = parsed && parsed[3] !== "*" ? Number(parsed[3]) : end + 1;
+  return {
+    data: Buffer.from(await response.arrayBuffer()),
+    totalSize,
+    start,
+    end,
+  };
 }
 
 export async function deleteStoredObject(input: StoredObjectRef): Promise<void> {

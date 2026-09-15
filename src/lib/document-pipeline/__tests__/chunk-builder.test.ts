@@ -97,7 +97,7 @@ describe("buildChunksFromBlocks", () => {
     expect(chunks[0].metadata?.sourceType).toBe("table");
     expect(chunks[0].content).toContain("| a | b |");
     expect(chunks[1].metadata?.sourceType).toBe("formula");
-    expect(chunks[1].content).toBe("$$E = mc^2$$");
+    expect(chunks[1].content).toBe("$$\nE = mc^2\n$$");
   });
 
   it("creates an image_fallback chunk when no vision summary or text exists", () => {
