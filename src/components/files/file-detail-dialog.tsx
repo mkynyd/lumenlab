@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { PdfCanvasViewer } from "@/components/files/pdf-canvas-viewer";
+import { OfficeCanvasViewer } from "@/components/files/office-canvas-viewer";
 import {
   needsLegacyUnescape,
   unescapeLegacyParsedMarkdown,
@@ -77,6 +78,9 @@ const TEXTUAL_PATTERN = /^(text\/|application\/(json|xml|javascript))/;
 /** Office / WPS / iWork：没有可靠的在线渲染，明确说明并给下载入口。 */
 const OFFICE_PATTERN =
   /(officedocument|msword|ms-excel|ms-powerpoint|wps-office|vnd\.apple\.)/;
+/** 浏览器端渲染库只吃 OOXML；.ppt/.doc/.xls 与 WPS 自有格式仍走下载。 */
+const OFFICE_OOXML_PATTERN =
+  /(presentationml\.presentation|wordprocessingml\.document|spreadsheetml\.sheet)/;
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -141,7 +145,11 @@ export function FileDetailDialog({
   const originalPreviewable = useMemo(() => {
     const mime = detail?.mimeType ?? file.mimeType;
     return (
-      PDF_PATTERN.test(mime) || IMAGE_PATTERN.test(mime) || TEXTUAL_PATTERN.test(mime)
+      PDF_PATTERN.test(mime) ||
+      IMAGE_PATTERN.test(mime) ||
+      TEXTUAL_PATTERN.test(mime) ||
+      // .pptx/.docx/.xlsx 由浏览器端渲染库接管，也算「可预览」
+      OFFICE_OOXML_PATTERN.test(mime)
     );
   }, [detail, file.mimeType]);
 
@@ -560,6 +568,10 @@ function OriginalView({
   }
 
   if (OFFICE_PATTERN.test(mimeType)) {
+    const office = <OfficeCanvasViewer url={url} mimeType={mimeType} title={name} />;
+    // 只覆盖 .pptx/.docx/.xlsx 这类 OOXML；旧二进制格式与 WPS 自有格式
+    // 仍然走「说明 + 下载原件」。
+    if (OFFICE_OOXML_PATTERN.test(mimeType)) return office;
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <p className="mb-1 text-sm font-medium text-[var(--color-text-primary)]">

@@ -8,6 +8,14 @@ import {
 } from "@/components/files/file-detail-dialog";
 
 // 单测只断言「按类型选对了查看器」；PDF.js 的真实渲染在浏览器验收里覆盖。
+vi.mock("@/components/files/office-canvas-viewer", () => ({
+  OfficeCanvasViewer: ({ url, title }: { url: string; title: string }) => (
+    <div data-testid="office-viewer" data-url={url}>
+      {title}
+    </div>
+  ),
+}));
+
 vi.mock("@/components/files/pdf-canvas-viewer", () => ({
   PdfCanvasViewer: ({ url, title }: { url: string; title: string }) => (
     <iframe src={url} title={`${title} 原件`} />
@@ -164,23 +172,32 @@ describe("FileDetailDialog", () => {
     expect(image).toHaveAttribute("src", "/api/files/file-1/content");
   });
 
-  it("Office 文档明确说明无法在线预览并给出下载入口", async () => {
+  it("pptx 走浏览器端渲染器，停在原始文件而不是退回解析内容", async () => {
+    const pptxMime =
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    renderDialog(
+      { ...BASE_FILE, originalName: "课件.pptx", mimeType: pptxMime },
+      detailResponse({ mimeType: pptxMime, originalName: "课件.pptx" })
+    );
+
+    const viewer = await screen.findByTestId("office-viewer");
+    expect(viewer).toHaveAttribute("data-url", "/api/files/file-1/content");
+    expect(screen.getByRole("tab", { name: "原始文件" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+  });
+
+  it("旧二进制格式仍然只能下载，并说明无法在线预览", async () => {
     const user = userEvent.setup();
     renderDialog(
-      {
-        ...BASE_FILE,
-        originalName: "课件.pptx",
-        mimeType:
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      },
+      { ...BASE_FILE, originalName: "旧课件.ppt", mimeType: "application/vnd.ms-powerpoint" },
       detailResponse({
-        mimeType:
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        originalName: "课件.pptx",
+        mimeType: "application/vnd.ms-powerpoint",
+        originalName: "旧课件.ppt",
       })
     );
     await waitForDetail();
-    // 默认视图是原始文件，但这一类型没法在线预览，应当自动退回解析内容
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "解析内容" })).toHaveAttribute(
         "aria-selected",
