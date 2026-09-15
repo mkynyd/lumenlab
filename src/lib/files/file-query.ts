@@ -1,5 +1,13 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import type {
+  FileLibraryItem,
+  FileLibraryMatchKind,
+  FileLibraryMimeGroup,
+  FileLibraryPage,
+  FileLibrarySort,
+  FileLibraryStatus,
+} from "@/lib/api/types";
 import {
   CODE_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
@@ -25,8 +33,8 @@ export const FILE_MIME_GROUPS = [
   "text",
   "data",
   "code",
-] as const;
-export type FileMimeGroup = (typeof FILE_MIME_GROUPS)[number];
+] as const satisfies readonly FileLibraryMimeGroup[];
+export type FileMimeGroup = FileLibraryMimeGroup;
 
 export const FILE_QUERY_STATUSES = [
   "parsing",
@@ -34,14 +42,14 @@ export const FILE_QUERY_STATUSES = [
   "warning",
   "index-incomplete",
   "failed",
-] as const;
-export type FileQueryStatus = (typeof FILE_QUERY_STATUSES)[number];
+] as const satisfies readonly FileLibraryStatus[];
+export type FileQueryStatus = FileLibraryStatus;
 
-export const FILE_QUERY_SORTS = ["relevance", "recent", "name"] as const;
-export type FileQuerySort = (typeof FILE_QUERY_SORTS)[number];
+export const FILE_QUERY_SORTS = ["relevance", "recent", "name"] as const satisfies
+  readonly FileLibrarySort[];
+export type FileQuerySort = FileLibrarySort;
 
-/** 命中来源，供前端决定高亮哪一段。 */
-export type FileMatchKind = "filename" | "project" | "category" | "content";
+export type FileMatchKind = FileLibraryMatchKind;
 
 export const FILE_QUERY_DEFAULT_LIMIT = 20;
 export const FILE_QUERY_MAX_LIMIT = 100;
@@ -244,31 +252,9 @@ export interface FileQueryInput {
   limit?: number | null;
 }
 
-export interface FileQueryItem {
-  id: string;
-  originalName: string;
-  filename: string;
-  mimeType: string;
-  size: number;
-  status: string;
-  category: string | null;
-  categoryConfidence: number | null;
-  projectId: string | null;
-  projectName: string | null;
-  createdAt: string;
-  updatedAt: string;
-  hasParsedContent: boolean;
-  hasEnhancedContent: boolean;
-  warningCount: number;
-  embeddingStatus: string | null;
-  matchKind: FileMatchKind | null;
-  snippet: string | null;
-}
-
-export interface FileQueryPage {
-  files: FileQueryItem[];
-  nextCursor: string | null;
-}
+/** 对外返回的形状就是客户端契约本身，避免两侧各写一份。 */
+export type FileQueryItem = FileLibraryItem;
+export type FileQueryPage = FileLibraryPage;
 
 interface FileQueryRow {
   id: string;

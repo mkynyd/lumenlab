@@ -45,6 +45,8 @@ export function MobileFloatingNav({
       ? "learning"
     : pathname?.startsWith("/projects")
       ? "projects"
+    : pathname?.startsWith("/files")
+      ? "files"
       : "chat";
   const navRef = useRef<HTMLElement>(null);
   const [modePill, setModePill] = useState<ModePillBox | null>(null);
@@ -72,13 +74,15 @@ export function MobileFloatingNav({
     observer.observe(nav);
     return () => observer.disconnect();
   }, [activeMode, learningNavigationVisible]);
+  // 加入「资料」后最多四项，收窄单项宽度让 390px 宽度下胶囊仍不与左侧
+  // 菜单按钮重叠（菜单按钮绝对定位在 left-3，胶囊居中）。
   const modeClassName = cn(
     "relative inline-flex h-9 items-center justify-center rounded-full px-3 text-[13px] font-medium transition-[color,transform] duration-200 active:scale-[0.98] motion-reduce:transition-none",
-    learningNavigationVisible ? "min-w-[4.25rem]" : "min-w-[5.5rem]"
+    learningNavigationVisible ? "min-w-[3.75rem]" : "min-w-[4.5rem]"
   );
 
   function renderModeLink(
-    mode: "learning" | "chat" | "projects",
+    mode: "learning" | "chat" | "projects" | "files",
     href: string,
     label: string
   ) {
@@ -141,6 +145,7 @@ export function MobileFloatingNav({
           renderModeLink("learning", "/learning", "学习")}
         {renderModeLink("chat", "/chat", "聊天")}
         {renderModeLink("projects", "/projects", "项目")}
+        {renderModeLink("files", "/files", "资料")}
       </motion.nav>
     </div>
   );

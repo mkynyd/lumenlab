@@ -64,6 +64,7 @@ import {
   BrainResearch,
   ChatLines,
   Folder,
+  MultiplePages,
   PageEdit,
   Plus,
   Trash,
@@ -191,6 +192,8 @@ export function Sidebar({
       ? "papers"
     : pathname.startsWith("/projects")
       ? "projects"
+    : pathname.startsWith("/files")
+      ? "files"
       : pathname.startsWith("/tools")
         ? "tools"
         : "chat";
@@ -321,7 +324,7 @@ export function Sidebar({
     setConversionDeleteTarget(conversion);
   }
 
-  function openSection(section: "learning" | "chat" | "projects" | "tools" | "research" | "papers") {
+  function openSection(section: "learning" | "chat" | "projects" | "tools" | "research" | "papers" | "files") {
     onExpand();
     onClose();
     if (section === "learning") router.push("/learning");
@@ -329,6 +332,7 @@ export function Sidebar({
     else if (section === "projects") router.push("/projects");
     else if (section === "research") router.push("/research");
     else if (section === "papers") router.push("/papers");
+    else if (section === "files") router.push("/files");
     else router.push("/tools");
   }
 
@@ -587,6 +591,21 @@ export function Sidebar({
                 <Folder strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
                   项目
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                type="button"
+                onClick={() => openSection("files")}
+                isActive={activeSection === "files"}
+                className={cn(WORKSPACE_NAV_BUTTON_CLASS, "h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
+                aria-current={activeSection === "files" ? "page" : undefined}
+                title={collapsed ? "资料" : undefined}
+              >
+                <MultiplePages strokeWidth={1.8} />
+                <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
+                  资料
                 </span>
               </SidebarMenuButton>
             </SidebarMenuItem>

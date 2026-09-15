@@ -336,3 +336,56 @@ export interface LearningTodayResponse {
   asOf: string;
   goals: LearningTodayGoalDto[];
 }
+
+/**
+ * 跨项目资料库（`GET /api/files`）的契约。
+ *
+ * 这几个联合类型是唯一真源：服务端查询层用 `satisfies` 把筛选常量绑过来，
+ * 客户端不再重复声明，任何一侧新增取值都会在编译期暴露。
+ */
+export type FileLibraryMimeGroup =
+  | "document"
+  | "image"
+  | "video"
+  | "text"
+  | "data"
+  | "code";
+
+export type FileLibraryStatus =
+  | "parsing"
+  | "parsed"
+  | "warning"
+  | "index-incomplete"
+  | "failed";
+
+export type FileLibrarySort = "relevance" | "recent" | "name";
+
+/** 命中来源，供列表决定高亮哪一段。 */
+export type FileLibraryMatchKind = "filename" | "project" | "category" | "content";
+
+export interface FileLibraryItem {
+  id: string;
+  originalName: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  status: string;
+  category: string | null;
+  categoryConfidence: number | null;
+  projectId: string | null;
+  projectName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  hasParsedContent: boolean;
+  hasEnhancedContent: boolean;
+  warningCount: number;
+  embeddingStatus: string | null;
+  matchKind: FileLibraryMatchKind | null;
+  /** 正文命中的上下文片段，只在正文命中时有值。 */
+  snippet: string | null;
+}
+
+export interface FileLibraryPage {
+  files: FileLibraryItem[];
+  nextCursor: string | null;
+}
