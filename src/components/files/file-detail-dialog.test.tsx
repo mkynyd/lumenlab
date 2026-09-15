@@ -149,8 +149,7 @@ describe("FileDetailDialog", () => {
     });
   });
 
-  it("PDF 原件用内嵌查看器打开同源接口", async () => {
-    const user = userEvent.setup();
+  it("PDF 原件交给 PDF.js 画布查看器", async () => {
     renderDialog();
     await waitForDetail();
 
@@ -160,7 +159,6 @@ describe("FileDetailDialog", () => {
   });
 
   it("图片原件用自适应图片查看器", async () => {
-    const user = userEvent.setup();
     renderDialog(
       { ...BASE_FILE, originalName: "截图.png", mimeType: "image/png" },
       detailResponse({ mimeType: "image/png", originalName: "截图.png" })

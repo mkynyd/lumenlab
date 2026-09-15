@@ -35,8 +35,9 @@ import { cn } from "@/lib/utils";
 
 export interface FileDetailTarget {
   id: string;
-  originalName: string;
-  mimeType: string;
+  /** 页面外壳只有 id，展示用的字段等详情接口回来再补。 */
+  originalName?: string;
+  mimeType?: string;
   size?: number;
   status?: string;
   projectId?: string | null;
@@ -100,12 +101,16 @@ export function FileDetailDialog({
   onClose,
   onChanged,
   defaultTab = "original",
+  shell = "dialog",
 }: {
   file: FileDetailTarget;
   onClose: () => void;
   onChanged?: () => void;
   defaultTab?: DetailTab;
+  /** `dialog` 自带遮罩与面板；`embedded` 只出内容，由页面外壳负责导航。 */
+  shell?: "dialog" | "embedded";
 }) {
+  const isEmbedded = shell === "embedded";
   const [tab, setTab] = useState<DetailTab>(defaultTab);
   const [variant, setVariant] = useState<ParsedVariant>("base");
   const [enhancedContent, setEnhancedContent] = useState<string | null>(null);
@@ -143,7 +148,7 @@ export function FileDetailDialog({
   }, [detail, pipelineVersion]);
 
   const originalPreviewable = useMemo(() => {
-    const mime = detail?.mimeType ?? file.mimeType;
+    const mime = detail?.mimeType ?? file.mimeType ?? "";
     return (
       PDF_PATTERN.test(mime) ||
       IMAGE_PATTERN.test(mime) ||
@@ -260,25 +265,39 @@ export function FileDetailDialog({
   const originalUrl = `/api/files/${file.id}/content`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] p-4">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-none">
-        <div className="flex items-start justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold">
-              {detail?.originalName ?? file.originalName}
-            </h2>
-            <p className="mt-0.5 truncate text-xs text-[var(--color-text-tertiary)]">
-              {meta.join(" · ")}
-            </p>
+    <div
+      className={
+        isEmbedded
+          ? "flex min-h-0 flex-1 flex-col"
+          : "fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-overlay)] p-4"
+      }
+    >
+      <div
+        className={
+          isEmbedded
+            ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+            : "flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-none"
+        }
+      >
+        {!isEmbedded && (
+          <div className="flex items-start justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-semibold">
+                {detail?.originalName ?? file.originalName}
+              </h2>
+              <p className="mt-0.5 truncate text-xs text-[var(--color-text-tertiary)]">
+                {meta.join(" · ")}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)] sm:size-8"
+              aria-label="关闭"
+            >
+              <Xmark width={16} height={16} strokeWidth={1.8} />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)] sm:size-8"
-            aria-label="关闭"
-          >
-            <Xmark width={16} height={16} strokeWidth={1.8} />
-          </button>
-        </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 px-4 pb-2">
           <div

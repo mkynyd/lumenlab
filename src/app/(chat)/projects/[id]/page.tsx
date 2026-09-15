@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
@@ -74,6 +74,38 @@ const SUGGESTED_PROMPTS: Record<ProjectType, string[]> = {
     "总结重点并标注优先级",
   ],
 };
+
+/**
+ * 从文件详情页的「询问关于此文件的问题」跳进来时，把文件与问题预填好。
+ * 单独拆一个组件是因为 useSearchParams 必须待在 Suspense 边界里。
+ *
+ * 回调是内联的、每次渲染都会变，所以用 ref 记住已经应用过的参数组合：
+ * 否则 effect 会反复 setState 直到 React 报「Maximum update depth exceeded」。
+ * 只应用一次也顺便保证用户手改输入框后不会被再一次覆盖。
+ */
+function IncomingFileContext({
+  onFile,
+  onQuestion,
+}: {
+  onFile: (fileId: string) => void;
+  onQuestion: (question: string) => void;
+}) {
+  const searchParams = useSearchParams();
+  const fileId = searchParams.get("file");
+  const question = searchParams.get("q");
+  const appliedKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!fileId && !question) return;
+    const key = `${fileId ?? ""}|${question ?? ""}`;
+    if (appliedKey.current === key) return;
+    appliedKey.current = key;
+    if (fileId) onFile(fileId);
+    if (question) onQuestion(question);
+  }, [fileId, question, onFile, onQuestion]);
+
+  return null;
+}
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -847,6 +879,12 @@ export default function ProjectDetailPage() {
           onReparseFile={(fileId) => void handleFileAction("reparse", fileId)}
         />
       )}
+      <Suspense fallback={null}>
+        <IncomingFileContext
+          onFile={(fileId) => setSelectedFileIds(new Set([fileId]))}
+          onQuestion={setChatInputValue}
+        />
+      </Suspense>
       {previewFile && (
         <FileDetailDialog
           file={{

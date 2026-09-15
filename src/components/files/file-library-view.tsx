@@ -30,7 +30,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FileLibraryRow } from "@/components/files/file-library-row";
-import { FileDetailDialog } from "@/components/files/file-detail-dialog";
 import { FILE_CATEGORIES } from "@/lib/file-categories";
 import {
   fileLibrarySearchKey,
@@ -107,7 +106,6 @@ export function FileLibraryView() {
     explicitSort ?? (urlQuery.trim() ? "relevance" : "recent");
 
   const [searchInput, setSearchInput] = useState(urlQuery);
-  const [previewFile, setPreviewFile] = useState<FileLibraryItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FileLibraryItem | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -568,7 +566,7 @@ export function FileLibraryView() {
                   query={urlQuery || undefined}
                   selected={selectedIds.has(file.id)}
                   onSelectedChange={toggleSelected}
-                  onPreview={setPreviewFile}
+                  onPreview={(target) => router.push(`/files/${target.id}`)}
                   onReparse={(target) => reparseMutation.mutate(target.id)}
                   onDelete={setDeleteTarget}
                 />
@@ -590,14 +588,6 @@ export function FileLibraryView() {
           </>
         )}
       </div>
-
-      {previewFile && (
-        <FileDetailDialog
-          file={previewFile}
-          onClose={() => setPreviewFile(null)}
-          onChanged={() => void query.refetch()}
-        />
-      )}
 
       <AlertDialog
         open={Boolean(deleteTarget)}

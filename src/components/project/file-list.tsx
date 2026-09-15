@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FileKindIcon } from "@/components/files/file-kind-icon";
 import { cn } from "@/lib/utils";
 import {
   CubeScan,
@@ -180,6 +181,13 @@ export function FileList({
         ) : (
           <Page width={14} height={14} strokeWidth={2} className="shrink-0 opacity-70" />
         )}
+        <span className="shrink-0" aria-hidden>
+          <FileKindIcon
+            mimeType={file.mimeType}
+            originalName={file.originalName}
+            size={14}
+          />
+        </span>
         <span className="min-w-0 flex-1 truncate text-xs font-medium" title={file.originalName}>
           {middleEllipsis(file.originalName)}
         </span>

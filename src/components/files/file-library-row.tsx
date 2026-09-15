@@ -9,6 +9,7 @@ import {
   Refresh,
   Trash,
 } from "iconoir-react";
+import { FileKindIcon } from "@/components/files/file-kind-icon";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -158,6 +159,10 @@ export function FileLibraryRow({
         onClick={() => onPreview(file)}
         className="flex min-w-0 flex-1 items-center gap-3 rounded-[var(--radius-md)] text-left focus-visible:outline-none"
       >
+        <span className="flex size-8 shrink-0 items-center justify-center">
+          <FileKindIcon mimeType={file.mimeType} originalName={file.originalName} />
+        </span>
+
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
             <Highlight text={file.originalName} query={query} />
