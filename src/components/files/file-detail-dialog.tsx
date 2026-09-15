@@ -18,6 +18,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { MarkdownContent } from "@/components/markdown/markdown-content";
+import { PdfCanvasViewer } from "@/components/files/pdf-canvas-viewer";
+import {
+  needsLegacyUnescape,
+  unescapeLegacyParsedMarkdown,
+} from "@/lib/document-pipeline/legacy-content";
 import { cn } from "@/lib/utils";
 
 /**
@@ -90,7 +95,7 @@ export function FileDetailDialog({
   file,
   onClose,
   onChanged,
-  defaultTab = "parsed",
+  defaultTab = "original",
 }: {
   file: FileDetailTarget;
   onClose: () => void;
@@ -115,6 +120,44 @@ export function FileDetailDialog({
   const detail = detailQuery.data?.file ?? null;
 
   const hasEnhanced = Boolean(detail?.hasEnhancedContent);
+
+  const pipelineVersion =
+    (detail?.processingMetadata?.pipelineVersion as string | undefined) ?? null;
+
+  // 0.3.0 之前写库的内容带着转义，直接渲染就是一堆裸星号；这里做等价还原，
+  // 不动数据库。手工修订保存后版本号会被写新，不会重复还原。
+  const parsedContent = useMemo(() => {
+    if (!detail?.textContent) return null;
+    return needsLegacyUnescape({
+      originalName: detail.originalName,
+      mimeType: detail.mimeType,
+      pipelineVersion,
+      hasTextContent: true,
+    })
+      ? unescapeLegacyParsedMarkdown(detail.textContent)
+      : detail.textContent;
+  }, [detail, pipelineVersion]);
+
+  const originalPreviewable = useMemo(() => {
+    const mime = detail?.mimeType ?? file.mimeType;
+    return (
+      PDF_PATTERN.test(mime) || IMAGE_PATTERN.test(mime) || TEXTUAL_PATTERN.test(mime)
+    );
+  }, [detail, file.mimeType]);
+
+  // 默认停在原始文件；类型确实没法在线预览时退回解析内容，而不是给一屏空白。
+  // 用 state 记录已经自动切换过的文件，避免渲染期碰 ref，也避免用户手动切回
+  // 「原始文件」后又被弹走。
+  const [autoSwitchedFor, setAutoSwitchedFor] = useState<string | null>(null);
+  if (
+    detail &&
+    autoSwitchedFor !== detail.id &&
+    !originalPreviewable &&
+    tab === "original"
+  ) {
+    setAutoSwitchedFor(detail.id);
+    setTab("parsed");
+  }
 
   // AI 整理内容按需拉取，不跟着详情接口一起传，避免每次预览都背着全文。
   useEffect(() => {
@@ -290,14 +333,14 @@ export function FileDetailDialog({
 
           <span className="flex-1" />
 
-          {tab === "parsed" && detail?.textContent && variant === "base" && (
+          {tab === "parsed" && parsedContent && variant === "base" && (
             <Button
               variant="ghost"
               size="sm"
               className="h-7 rounded-full text-xs text-[var(--color-text-secondary)]"
               onClick={() => {
                 // 每次进入编辑都从当前正文起步，避免沿用上一轮留下的草稿。
-                if (!editing) setDraft(detail?.textContent ?? "");
+                if (!editing) setDraft(parsedContent ?? "");
                 setEditing((value) => !value);
               }}
             >
@@ -341,9 +384,9 @@ export function FileDetailDialog({
               ) : (
                 <MarkdownContent content={enhancedContent} resolveImageUrl={resolveImageUrl} />
               )
-            ) : detail.textContent ? (
+            ) : parsedContent ? (
               <MarkdownContent
-                content={detail.textContent}
+                content={parsedContent}
                 resolveImageUrl={resolveImageUrl}
               />
             ) : (
@@ -491,13 +534,8 @@ function OriginalView({
   }
 
   if (PDF_PATTERN.test(mimeType)) {
-    return (
-      <iframe
-        src={url}
-        title={`${name} 原件`}
-        className="h-[65vh] w-full rounded-[var(--radius-md)] bg-[var(--color-panel)]"
-      />
-    );
+    // 不交给浏览器内置查看器：部分嵌入子集字体的 PDF 在它那里会整页空白。
+    return <PdfCanvasViewer url={url} title={name} />;
   }
 
   if (IMAGE_PATTERN.test(mimeType)) {

@@ -16,6 +16,7 @@ import { logger } from "@/lib/logger";
 import { deleteFileAsset } from "@/lib/files/delete-file-asset";
 import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
 import { recordFileContentChange } from "@/lib/learning/services";
+import { PIPELINE_VERSION } from "@/lib/document-pipeline/version";
 
 const updateFileSchema = z
   .object({
@@ -159,6 +160,8 @@ export async function PATCH(
             ? file.processingMetadata
             : {}),
           ...correctedIndexMetadata,
+          // 手工修订后的内容已经是当前格式，写新版本号避免展示层再当旧格式还原一次
+          pipelineVersion: PIPELINE_VERSION,
           correctedAt: new Date().toISOString(),
         },
       }),

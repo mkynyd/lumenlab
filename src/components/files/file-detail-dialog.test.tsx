@@ -7,6 +7,13 @@ import {
   type FileDetailTarget,
 } from "@/components/files/file-detail-dialog";
 
+// 单测只断言「按类型选对了查看器」；PDF.js 的真实渲染在浏览器验收里覆盖。
+vi.mock("@/components/files/pdf-canvas-viewer", () => ({
+  PdfCanvasViewer: ({ url, title }: { url: string; title: string }) => (
+    <iframe src={url} title={`${title} 原件`} />
+  ),
+}));
+
 const BASE_FILE: FileDetailTarget = {
   id: "file-1",
   originalName: "数据结构讲义.pdf",
@@ -38,6 +45,17 @@ function detailResponse(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** 详情加载完成的标志：解析质量区总是存在。 */
+async function waitForDetail() {
+  await screen.findByRole("button", { name: /解析质量/ });
+}
+
+/** 默认视图是原始文件，要看正文得先切过去。 */
+async function switchToParsed(user: ReturnType<typeof userEvent.setup>) {
+  await waitForDetail();
+  await user.click(screen.getByRole("tab", { name: "解析内容" }));
+}
+
 function renderDialog(file: FileDetailTarget = BASE_FILE, detail = detailResponse()) {
   vi.stubGlobal(
     "fetch",
@@ -67,29 +85,42 @@ describe("FileDetailDialog", () => {
     vi.clearAllMocks();
   });
 
-  it("默认展示解析内容而不是原件", async () => {
+  it("默认停在原始文件，而不是解析内容", async () => {
     renderDialog();
 
-    expect(await screen.findByText("线性表")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "解析内容" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "原始文件" })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      );
+    });
     expect(screen.getByText("408 复习 · 讲义 · 2.0 KB · 已解析")).toBeInTheDocument();
   });
 
-  it("元信息里的措辞是解析内容，不再出现 OCR 原文", async () => {
+  it("切到解析内容才看到正文", async () => {
+    const user = userEvent.setup();
     renderDialog();
-    await screen.findByText("线性表");
+
+    await screen.findByText("408 复习 · 讲义 · 2.0 KB · 已解析");
+    await user.click(screen.getByRole("tab", { name: "解析内容" }));
+
+    expect(await screen.findByText("线性表")).toBeInTheDocument();
+  });
+
+  it("元信息里的措辞是解析内容，不再出现 OCR 原文", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await switchToParsed(user);
 
     expect(screen.getByRole("button", { name: "手工修订解析内容" })).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("OCR 原文");
   });
 
   it("没有 AI 整理内容时不出现二级切换", async () => {
+    const user = userEvent.setup();
     renderDialog();
+    await switchToParsed(user);
 
-    await screen.findByText("线性表");
     expect(screen.queryByRole("tab", { name: "AI 整理" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "基础解析" })).not.toBeInTheDocument();
   });
@@ -98,7 +129,7 @@ describe("FileDetailDialog", () => {
     const user = userEvent.setup();
     renderDialog(BASE_FILE, detailResponse({ enhancementStatus: "enhanced", hasEnhancedContent: true }));
 
-    await screen.findByText("线性表");
+    await switchToParsed(user);
     const enhancedTab = screen.getByRole("tab", { name: "AI 整理" });
     await user.click(enhancedTab);
 
@@ -113,9 +144,7 @@ describe("FileDetailDialog", () => {
   it("PDF 原件用内嵌查看器打开同源接口", async () => {
     const user = userEvent.setup();
     renderDialog();
-    await screen.findByText("线性表");
-
-    await user.click(screen.getByRole("tab", { name: "原始文件" }));
+    await waitForDetail();
 
     const frame = await screen.findByTitle("数据结构讲义.pdf 原件");
     expect(frame.tagName).toBe("IFRAME");
@@ -128,9 +157,7 @@ describe("FileDetailDialog", () => {
       { ...BASE_FILE, originalName: "截图.png", mimeType: "image/png" },
       detailResponse({ mimeType: "image/png", originalName: "截图.png" })
     );
-    await screen.findByText("线性表");
-
-    await user.click(screen.getByRole("tab", { name: "原始文件" }));
+    await waitForDetail();
 
     const image = await screen.findByAltText("截图.png 原件");
     expect(image.tagName).toBe("IMG");
@@ -152,10 +179,16 @@ describe("FileDetailDialog", () => {
         originalName: "课件.pptx",
       })
     );
-    await screen.findByText("线性表");
+    await waitForDetail();
+    // 默认视图是原始文件，但这一类型没法在线预览，应当自动退回解析内容
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "解析内容" })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      );
+    });
 
     await user.click(screen.getByRole("tab", { name: "原始文件" }));
-
     expect(await screen.findByText("这类文件暂不支持在线预览")).toBeInTheDocument();
     const download = screen.getAllByRole("link", { name: /下载原件/ })[0];
     expect(download).toHaveAttribute("href", "/api/files/file-1/content?download=1");
@@ -164,7 +197,7 @@ describe("FileDetailDialog", () => {
   it("解析质量默认折叠，展开后展示解析器与结构统计", async () => {
     const user = userEvent.setup();
     renderDialog();
-    await screen.findByText("线性表");
+    await waitForDetail();
 
     expect(screen.queryByText("解析器")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /解析质量/ }));
