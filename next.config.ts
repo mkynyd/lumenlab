@@ -85,16 +85,20 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      {
-        // 原件预览要靠同源 iframe 内嵌（PDF / 文本），而上面那条 `DENY` +
-        // `frame-ancestors 'none'` 会把响应本身也拒掉，预览就是一片空白。
-        // 这里只针对原件读取放宽到同源，其余路由仍然禁止被任何来源嵌套。
-        source: "/api/files/:id/content",
+      // 原件预览要靠同源 iframe 内嵌（PDF / 文本），而上面那条 `DENY` +
+      // `frame-ancestors 'none'` 会把响应本身也拒掉，预览就是一片空白。
+      // 只对同源字节读取端点放宽到同源，其余路由（含页面）仍禁止被任何来源嵌套。
+      ...[
+        "/api/files/:id/content",
+        // 聊天附件的 PDF 预览同样内嵌在查看器 iframe 里，漏掉这条会渲染成空白。
+        "/api/chat/attachments/:id",
+      ].map((source) => ({
+        source,
         headers: [
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
         ],
-      },
+      })),
     ];
   },
 
