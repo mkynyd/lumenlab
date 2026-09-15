@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Page, Search, Filter } from "iconoir-react";
+import { CloudUpload, Page, Search, Filter } from "iconoir-react";
 import { Button } from "@/components/ui/button";
+import { FileUploadDialog } from "@/components/files/file-upload-dialog";
 import {
   Sheet,
   SheetContent,
@@ -39,6 +40,7 @@ import {
   type FileLibraryFilters,
 } from "@/lib/hooks/use-file-library";
 import { useProjects } from "@/lib/hooks/use-projects";
+import { errorMessage } from "@/lib/api/client";
 import type {
   FileLibraryItem,
   FileLibraryMimeGroup,
@@ -123,6 +125,8 @@ export function FileLibraryView() {
   const [previewFile, setPreviewFile] = useState<FileLibraryItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FileLibraryItem | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // URL 是筛选的真源：返回键或外部跳转会同步回输入框。这是「外部值变了就调整
   // state」的场景，放在渲染期比较即可，不必用 effect 多跑一轮级联渲染。
@@ -208,6 +212,40 @@ export function FileLibraryView() {
     if (!deleteTarget) return;
     await deleteMutation.mutateAsync(deleteTarget.id).catch(() => {});
     setDeleteTarget(null);
+  }
+
+  /**
+   * 批量导出走同源 POST，拿到 zip 后用 blob 下载：不把文件 id 拼进 GET URL，
+   * 也避免批量选择多时超出 URL 长度。
+   */
+  async function exportSelected() {
+    if (selectedIds.size === 0 || exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const response = await fetch("/api/files/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileIds: [...selectedIds] }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(errorMessage(payload, "导出失败，请稍后重试"));
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "资料导出.zip";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (exportFailure) {
+      setExportError(
+        exportFailure instanceof Error ? exportFailure.message : "导出失败，请稍后重试"
+      );
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function confirmBatchDelete() {
@@ -340,7 +378,25 @@ export function FileLibraryView() {
               跨项目找到、核对并使用你上传的每一份资料
             </p>
           </div>
+          <FileUploadDialog
+            trigger={
+              <Button
+                variant="primary"
+                size="sm"
+                className="bg-[var(--color-project-action)] text-[var(--color-project-action-contrast)] hover:bg-[var(--color-project-action-hover)] focus-visible:bg-[var(--color-project-action-hover)]"
+              >
+                <CloudUpload width={16} height={16} strokeWidth={2} />
+                上传
+              </Button>
+            }
+          />
         </div>
+
+        {exportError && (
+          <p role="alert" className="mb-3 text-xs text-[var(--color-error)]">
+            {exportError}
+          </p>
+        )}
 
         <div className="mb-3 flex items-center gap-2 rounded-full bg-[var(--color-project-control)] px-3 py-2">
           <Search
@@ -385,14 +441,25 @@ export function FileLibraryView() {
           <span className="flex-1" />
 
           {selectedIds.size > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setBatchDeleteOpen(true)}
-              className="h-8 rounded-full text-xs text-[var(--color-error)]"
-            >
-              删除所选 {selectedIds.size} 项
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={exporting}
+                onClick={() => void exportSelected()}
+                className="h-8 rounded-full text-xs text-[var(--color-text-secondary)]"
+              >
+                {exporting ? "导出中…" : `导出解析内容 ${selectedIds.size} 项`}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setBatchDeleteOpen(true)}
+                className="h-8 rounded-full text-xs text-[var(--color-error)]"
+              >
+                删除所选 {selectedIds.size} 项
+              </Button>
+            </>
           )}
         </div>
 
@@ -435,14 +502,25 @@ export function FileLibraryView() {
           <span className="flex-1" />
 
           {selectedIds.size > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setBatchDeleteOpen(true)}
-              className="h-8 rounded-full text-xs text-[var(--color-error)]"
-            >
-              删除所选 {selectedIds.size} 项
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={exporting}
+                onClick={() => void exportSelected()}
+                className="h-8 rounded-full text-xs text-[var(--color-text-secondary)]"
+              >
+                {exporting ? "导出中…" : `导出解析内容 ${selectedIds.size} 项`}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setBatchDeleteOpen(true)}
+                className="h-8 rounded-full text-xs text-[var(--color-error)]"
+              >
+                删除所选 {selectedIds.size} 项
+              </Button>
+            </>
           )}
         </div>
 
