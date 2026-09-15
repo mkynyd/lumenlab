@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
+import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { emitNewChat } from "@/lib/chat/new-chat-event";
 import { BrandWordmark } from "@/components/brand/brand-wordmark";
@@ -128,6 +129,43 @@ function SidebarBrandMark({ size }: { size: number }) {
     </>
   );
 }
+
+/**
+ * 工作空间导航选中态的滑动高亮：六项导航共享同一个 layoutId，
+ * 切换模式时高亮块平滑滑动到新位置（跨多项同样滑动）；
+ * 用户开启减弱动态时退化为瞬移。
+ */
+function SidebarNavPill() {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.span
+      layoutId="sidebar-mode-pill"
+      transition={
+        reduceMotion
+          ? { duration: 0 }
+          : { type: "spring", stiffness: 520, damping: 42 }
+      }
+      className="absolute inset-0 rounded-md bg-[var(--color-accent)]"
+      aria-hidden
+    />
+  );
+}
+
+/**
+ * 工作空间导航按钮的配色（参考 HeroUI Tabs 的自定义模式）：
+ *  - 选中项背景完全交给滑动的 accent pill，按钮自身保持透明，避免 hover/选中底色与 pill 重叠
+ *  - 仅未选中项有 hover / pressed 反馈（accent-soft 浅蓝底 + accent 文字），选中项不再响应 hover
+ *  - data-active=false 也会被 React 渲染到 DOM，选择器必须显式区分 true / false
+ */
+const WORKSPACE_NAV_BUTTON_CLASS = cn(
+  "relative [&[data-active=true]]:bg-transparent",
+  // 内容层抬到 pill 之上：pill 是 absolute 元素，static 内容会被它盖住
+  "[&_svg]:relative [&>span:last-child]:relative",
+  "text-[var(--color-text-secondary)]",
+  "[&[data-active=true]]:text-[var(--color-accent-contrast)] [&[data-active=true]_svg]:text-[var(--color-accent-contrast)] [&[data-active=true]_svg]:opacity-100",
+  "[&[data-active=false]]:hover:bg-[var(--color-accent-soft)] [&[data-active=false]]:hover:text-[var(--color-accent)]",
+  "[&[data-active=false]]:active:bg-[var(--color-accent-muted)]"
+);
 
 export function Sidebar({
   mobileOpen,
@@ -419,6 +457,7 @@ export function Sidebar({
                   onClick={() => openSection("learning")}
                   isActive={activeSection === "learning"}
                   className={cn(
+                    WORKSPACE_NAV_BUTTON_CLASS,
                     "h-11 font-normal lg:h-9",
                     collapsed && "lg:justify-center lg:px-0"
                   )}
@@ -427,6 +466,7 @@ export function Sidebar({
                   }
                   title={collapsed ? "学习" : undefined}
                 >
+                  {activeSection === "learning" && <SidebarNavPill />}
                   <CalendarCheck2 strokeWidth={1.8} />
                   <span
                     className={cn(
@@ -444,10 +484,11 @@ export function Sidebar({
                 type="button"
                 onClick={() => openSection("chat")}
                 isActive={activeSection === "chat"}
-                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
+                className={cn(WORKSPACE_NAV_BUTTON_CLASS, "h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                 aria-current={activeSection === "chat" ? "page" : undefined}
                 title={collapsed ? "展开聊天" : undefined}
               >
+                {activeSection === "chat" && <SidebarNavPill />}
                 <ChatLines strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
                   聊天
@@ -459,10 +500,11 @@ export function Sidebar({
                 type="button"
                 onClick={() => openSection("research")}
                 isActive={activeSection === "research"}
-                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
+                className={cn(WORKSPACE_NAV_BUTTON_CLASS, "h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                 aria-current={activeSection === "research" ? "page" : undefined}
                 title={collapsed ? "深度研究" : undefined}
               >
+                {activeSection === "research" && <SidebarNavPill />}
                 <BrainResearch strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>深度研究</span>
               </SidebarMenuButton>
@@ -472,10 +514,11 @@ export function Sidebar({
                 type="button"
                 onClick={() => openSection("papers")}
                 isActive={activeSection === "papers"}
-                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
+                className={cn(WORKSPACE_NAV_BUTTON_CLASS, "h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                 aria-current={activeSection === "papers" ? "page" : undefined}
                 title={collapsed ? "论文" : undefined}
               >
+                {activeSection === "papers" && <SidebarNavPill />}
                 <BookStack strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>论文</span>
               </SidebarMenuButton>
@@ -485,10 +528,11 @@ export function Sidebar({
                 type="button"
                 onClick={() => openSection("projects")}
                 isActive={activeSection === "projects"}
-                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
+                className={cn(WORKSPACE_NAV_BUTTON_CLASS, "h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                 aria-current={activeSection === "projects" ? "page" : undefined}
                 title={collapsed ? "展开项目" : undefined}
               >
+                {activeSection === "projects" && <SidebarNavPill />}
                 <Folder strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
                   项目
@@ -500,10 +544,11 @@ export function Sidebar({
                 type="button"
                 onClick={() => openSection("tools")}
                 isActive={activeSection === "tools"}
-                className={cn("h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
+                className={cn(WORKSPACE_NAV_BUTTON_CLASS, "h-11 font-normal lg:h-9", collapsed && "lg:justify-center lg:px-0")}
                 aria-current={activeSection === "tools" ? "page" : undefined}
                 title={collapsed ? "展开转换" : undefined}
               >
+                {activeSection === "tools" && <SidebarNavPill />}
                 <PageEdit strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
                   转换

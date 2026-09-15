@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftOpen } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 interface MobileFloatingNavProps {
@@ -16,6 +17,7 @@ interface MobileFloatingNavProps {
  *  - 只渲染在移动端（lg:hidden）；桌面端由侧边栏承担模式切换，不需要胶囊
  *  - 不占据文档流高度，悬浮在内容上方，纵向空间全部留给正文
  *  - 项目内部页面（/projects/[id]）有自己的顶栏，由布局层决定不渲染本组件
+ *  - 选中态由共享 layoutId 的滑动 pill 表达，未命中具体模式时默认选中「聊天」
  */
 export function MobileFloatingNav({
   onMenuToggle,
@@ -23,18 +25,51 @@ export function MobileFloatingNav({
   learningNavigationVisible = false,
 }: MobileFloatingNavProps) {
   const pathname = usePathname();
+  const reduceMotion = useReducedMotion();
+  // 未命中具体模式的路由默认选中「聊天」，保证胶囊始终有一个选中态
   const activeMode =
     pathname?.startsWith("/learning") || pathname?.startsWith("/today")
       ? "learning"
     : pathname?.startsWith("/projects")
       ? "projects"
-      : pathname?.startsWith("/chat")
-        ? "chat"
-        : null;
+      : "chat";
+  const pillTransition = reduceMotion
+    ? { duration: 0 }
+    : { type: "spring" as const, stiffness: 520, damping: 42 };
   const modeClassName = cn(
-    "inline-flex h-9 items-center justify-center rounded-full px-3 text-[13px] font-medium transition-[background-color,color,transform] duration-200 active:scale-[0.98] motion-reduce:transition-none",
+    "relative inline-flex h-9 items-center justify-center rounded-full px-3 text-[13px] font-medium transition-[color,transform] duration-200 active:scale-[0.98] motion-reduce:transition-none",
     learningNavigationVisible ? "min-w-[4.25rem]" : "min-w-[5.5rem]"
   );
+
+  function renderModeLink(
+    mode: "learning" | "chat" | "projects",
+    href: string,
+    label: string
+  ) {
+    const isActive = activeMode === mode;
+    return (
+      <Link
+        href={href}
+        aria-current={isActive ? "page" : undefined}
+        className={cn(
+          modeClassName,
+          isActive
+            ? "text-[var(--color-text-primary)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+        )}
+      >
+        {isActive && (
+          <motion.span
+            layoutId="mobile-mode-pill"
+            transition={pillTransition}
+            className="absolute inset-0 rounded-full bg-[var(--color-panel)]"
+            aria-hidden
+          />
+        )}
+        <span className="relative">{label}</span>
+      </Link>
+    );
+  }
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-3 z-40 flex items-center justify-center px-3 lg:hidden">
@@ -52,49 +87,18 @@ export function MobileFloatingNav({
         <PanelLeftOpen size={17} strokeWidth={1.8} />
       </button>
 
-      <nav
+      <motion.nav
         aria-label="主要工作模式"
+        initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
         className="pointer-events-auto flex items-center rounded-full bg-[var(--color-interaction-active)] p-0.5 shadow-[var(--shadow-pill)]"
       >
-        {learningNavigationVisible && (
-          <Link
-            href="/learning"
-            aria-current={activeMode === "learning" ? "page" : undefined}
-            className={cn(
-              modeClassName,
-              activeMode === "learning"
-                ? "bg-[var(--color-panel)] text-[var(--color-text-primary)]"
-                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            )}
-          >
-            学习
-          </Link>
-        )}
-        <Link
-          href="/chat"
-          aria-current={activeMode === "chat" ? "page" : undefined}
-          className={cn(
-            modeClassName,
-            activeMode === "chat"
-              ? "bg-[var(--color-panel)] text-[var(--color-text-primary)]"
-              : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          聊天
-        </Link>
-        <Link
-          href="/projects"
-          aria-current={activeMode === "projects" ? "page" : undefined}
-          className={cn(
-            modeClassName,
-            activeMode === "projects"
-              ? "bg-[var(--color-panel)] text-[var(--color-text-primary)]"
-              : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-          )}
-        >
-          项目
-        </Link>
-      </nav>
+        {learningNavigationVisible &&
+          renderModeLink("learning", "/learning", "学习")}
+        {renderModeLink("chat", "/chat", "聊天")}
+        {renderModeLink("projects", "/projects", "项目")}
+      </motion.nav>
     </div>
   );
 }

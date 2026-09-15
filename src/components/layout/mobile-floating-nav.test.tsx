@@ -26,12 +26,13 @@ describe("MobileFloatingNav", () => {
     );
   });
 
-  it("only marks a primary mode current on its own route", () => {
+  it("marks 聊天 current by default on routes outside the primary modes", () => {
     navigation.pathname = "/usage";
     render(<MobileFloatingNav />);
 
-    expect(screen.getByRole("link", { name: "聊天" })).not.toHaveAttribute(
-      "aria-current"
+    expect(screen.getByRole("link", { name: "聊天" })).toHaveAttribute(
+      "aria-current",
+      "page"
     );
     expect(screen.getByRole("link", { name: "项目" })).not.toHaveAttribute(
       "aria-current"
