@@ -49,7 +49,7 @@ describe("renderDocumentToMarkdown", () => {
       { type: "formula", id: "f1", content: "E = mc^2" },
     ];
 
-    expect(renderDocumentToMarkdown(blocks)).toBe("$$E = mc^2$$");
+    expect(renderDocumentToMarkdown(blocks)).toBe("$$\nE = mc^2\n$$");
   });
 
   it("renders a code block with language", () => {
@@ -234,7 +234,7 @@ describe("renderDocumentToMarkdown", () => {
     const output = renderDocumentToMarkdown(blocks);
     expect(output).toContain("\\*not bold\\*");
     expect(output).toContain("# \\# not a heading");
-    expect(output).toContain("$$x * y$$");
+    expect(output).toContain("$$\nx * y\n$$");
     expect(output).toContain("\\*not italic\\*");
   });
 
@@ -245,8 +245,8 @@ describe("renderDocumentToMarkdown", () => {
     ];
 
     const output = renderDocumentToMarkdown(blocks);
-    expect(output).toContain("$$\\frac{a}{b}$$");
-    expect(output).toContain("$$\\begin{aligned}");
+    expect(output).toContain("$$\n\\frac{a}{b}\n$$");
+    expect(output).toContain("$$\n\\begin{aligned}");
     expect(output).not.toContain("\\\\frac");
   });
 

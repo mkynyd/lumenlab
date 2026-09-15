@@ -126,7 +126,7 @@ describe("MarkdownContent 数学公式", () => {
     );
 
     expect(getByText("公式渲染失败，请核对原文")).toBeTruthy();
-    const source = container.querySelector("code.math-render-error-source");
+    const source = container.querySelector("span.math-render-error-source");
     expect(source?.textContent).toContain("\\frac");
 
     expect(container.querySelector("h1")?.textContent).toBe("标题");

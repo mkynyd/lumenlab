@@ -82,8 +82,10 @@ function rehypeKatexErrorFallback() {
               children: [{ type: "text", value: "公式渲染失败，请核对原文" }],
             },
             {
+              // 用 span 而不是 code：`code` 会被本组件的 components 映射接管，
+              // 渲染成代码块（还会吃掉 class），错误原文就丢了。
               type: "element",
-              tagName: "code",
+              tagName: "span",
               properties: { className: ["math-render-error-source"] },
               children: [{ type: "text", value: source }],
             },

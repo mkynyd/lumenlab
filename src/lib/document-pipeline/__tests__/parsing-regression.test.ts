@@ -3,6 +3,9 @@
 import { readFileSync } from "fs";
 import path from "path";
 import { describe, expect, it } from "vitest";
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkMath from "remark-math";
 import { TextLocalParser } from "../parsers/text-local-parser";
 import { markdownToBlocks } from "../parsers/markdown-to-blocks";
 import { renderDocumentToMarkdown } from "../renderer";
@@ -64,8 +67,35 @@ describe("解析回归夹具：公式可信度", () => {
 
   it("损坏的 LaTeX 原样透传，渲染层不崩溃（错误在展示层可见提示）", async () => {
     const rendered = await renderFixture("latex-cases.md");
-    expect(rendered).toContain("$$\\frac{a}{$$");
-    expect(rendered).toContain("$$\\sqrtx$$");
+    expect(rendered).toContain("$$\n\\frac{a}{");
+    expect(rendered).toContain("$$\n\\sqrtx");
+  });
+
+  /**
+   * 渲染产物最终要再被 Markdown 解析器读一遍（展示层走 remark-math）。
+   * 公式定界符若与内容紧贴成 `$$\begin{aligned}`，解析器会把 `\begin{aligned}`
+   * 连同定界符一起吃掉，并一路吞到下一个 `$$`，把中间的正文也并进公式里。
+   * 这个用例把「解析 → 渲染 → 再解析」整条链路固定下来。
+   */
+  it("渲染后的公式能被 Markdown 解析器完整还原，不吞并后续内容", async () => {
+    const rendered = await renderFixture("latex-cases.md");
+    const tree = unified().use(remarkParse).use(remarkMath).parse(rendered);
+    const mathNodes = tree.children.filter(
+      (node): node is { type: "math"; value: string } => node.type === "math"
+    );
+
+    expect(mathNodes.length).toBeGreaterThan(0);
+    for (const node of mathNodes) {
+      // 内容里不该再出现定界符或后续正文：出现即说明解析器吞到了别的块
+      expect(node.value).not.toContain("$$");
+      expect(node.value).not.toContain("##");
+    }
+
+    const aligned = mathNodes.find((node) =>
+      node.value.includes("\\begin{aligned}")
+    );
+    expect(aligned).toBeDefined();
+    expect(aligned!.value).toContain("\\end{aligned}");
   });
 });
 
