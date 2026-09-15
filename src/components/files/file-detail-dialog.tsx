@@ -577,13 +577,9 @@ function OriginalView({
   }
 
   if (TEXTUAL_PATTERN.test(mimeType)) {
-    return (
-      <iframe
-        src={url}
-        title={`${name} 原件`}
-        className="h-[65vh] w-full rounded-[var(--radius-md)] bg-[var(--color-panel)]"
-      />
-    );
+    // 不能交给 iframe：`text/markdown` 这类类型配合 nosniff 不会被浏览器当作
+    // 可渲染文档，iframe 会静默地什么都不加载（框架在、内容是空白）。
+    return <TextOriginalView url={url} name={name} />;
   }
 
   if (OFFICE_PATTERN.test(mimeType)) {
@@ -624,5 +620,51 @@ function OriginalView({
         </a>
       </Button>
     </div>
+  );
+}
+
+/** 文本/代码类原件的原文查看器：自己取文本渲染，避免 iframe 对 text/* 的处理差异。 */
+function TextOriginalView({ url, name }: { url: string; name: string }) {
+  const [state, setState] = useState<{ text: string } | { error: true } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch(url)
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        return response.text();
+      })
+      .then((text) => {
+        if (active) setState({ text });
+      })
+      .catch(() => {
+        if (active) setState({ error: true });
+      });
+    return () => {
+      active = false;
+    };
+  }, [url]);
+
+  if (!state) {
+    return (
+      <p className="py-12 text-center text-sm text-[var(--color-text-secondary)]">
+        正在读取原件…
+      </p>
+    );
+  }
+  if ("error" in state) {
+    return (
+      <p className="py-12 text-center text-sm text-[var(--color-text-secondary)]">
+        无法读取原件，可以下载后用本机应用打开。
+      </p>
+    );
+  }
+  return (
+    <pre
+      aria-label={`${name} 原件`}
+      className="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-md)] bg-[var(--color-panel)] p-4 font-mono text-xs leading-relaxed text-[var(--color-text-primary)]"
+    >
+      {state.text}
+    </pre>
   );
 }
