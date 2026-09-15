@@ -134,3 +134,36 @@ describe("MarkdownContent 数学公式", () => {
     expect(container.textContent).toContain("后面的段落");
   });
 });
+
+describe("代码块与行内代码的 DOM 合法性", () => {
+  it("跨行行内代码不会渲染成 div 塞进 p", () => {
+    const { container } = render(
+      <MarkdownContent content={"前 `code\nmore` 后"} />
+    );
+    const paragraph = container.querySelector("p");
+    expect(paragraph).not.toBeNull();
+    // <p> 里如果出现 div 就是非法嵌套
+    expect(paragraph!.querySelector("div")).toBeNull();
+    expect(paragraph!.querySelector("code")?.textContent).toContain("code");
+  });
+
+  it("真正的代码块仍然渲染为代码块组件", () => {
+    const { container } = render(
+      <MarkdownContent content={"```json\n{\"a\":1}\n```"} />
+    );
+    expect(container.querySelector(".markdown-code-block")).not.toBeNull();
+  });
+
+  it("无语言标记的代码块同样走代码块组件", () => {
+    const { container } = render(
+      <MarkdownContent content={"```\nplain code\n```"} />
+    );
+    expect(container.querySelector(".markdown-code-block")).not.toBeNull();
+  });
+
+  it("普通行内代码保持行内", () => {
+    const { container } = render(<MarkdownContent content={"前 `code` 后"} />);
+    expect(container.querySelector("p code")).not.toBeNull();
+    expect(container.querySelector(".markdown-code-block")).toBeNull();
+  });
+});

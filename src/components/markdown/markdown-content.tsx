@@ -201,7 +201,12 @@ export function MarkdownContent({
             if (match?.[1] === "lumenflow") {
               return <LumenFlowDiagram code={code} isStreaming={isStreaming} />;
             }
-            if (node?.position?.start.line !== node?.position?.end.line || code.includes("\n")) {
+            // 判断块级不能靠「是否跨行」：CommonMark 允许行内代码跨行，那种
+            // 情况会渲染出 <div> 塞进 <p>，触发 hydration 报错。GFM 代码块的
+            // children 末尾一定带换行，行内代码不带。
+            const isBlockCode =
+              Boolean(match?.[1]) || String(children).endsWith("\n");
+            if (isBlockCode) {
               return <CodeBlock code={code} language={match?.[1]} />;
             }
             return (
