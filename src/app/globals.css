@@ -888,6 +888,35 @@ html {
   overflow-y: hidden;
 }
 
+/* KaTeX 解析失败的公式：可见错误状态（扁平低饱和色块），保留原始公式供核对 */
+.markdown-body .math-render-error {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--color-warning) 14%, transparent);
+  color: var(--color-text-primary);
+}
+
+.markdown-body .math-render-error-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-warning);
+}
+
+.markdown-body .math-render-error-source {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text-primary);
+}
+
 .mermaid svg {
   width: 100% !important;
   max-width: 100%;

@@ -57,6 +57,48 @@ function elementText(node: Element): string {
     .join("");
 }
 
+// rehype-katex 以 throwOnError:false 渲染，非法公式会退化成 .katex-error
+// 红字源码，看起来像普通内容一样静默。把错误节点替换成显式错误状态：
+// 提示文案 + 原始公式文本，公式问题可见且不影响文档其余部分。
+function rehypeKatexErrorFallback() {
+  return (tree: Root) => {
+    const walk = (node: Root | RootContent) => {
+      if (node.type === "element") {
+        const className = node.properties?.className;
+        const isKatexError =
+          Array.isArray(className) &&
+          className.some(
+            (name) => typeof name === "string" && name.includes("katex-error")
+          );
+        if (isKatexError) {
+          const source = elementText(node);
+          node.tagName = "span";
+          node.properties = { className: ["math-render-error"], role: "alert" };
+          node.children = [
+            {
+              type: "element",
+              tagName: "span",
+              properties: { className: ["math-render-error-label"] },
+              children: [{ type: "text", value: "公式渲染失败，请核对原文" }],
+            },
+            {
+              type: "element",
+              tagName: "code",
+              properties: { className: ["math-render-error-source"] },
+              children: [{ type: "text", value: source }],
+            },
+          ];
+          return;
+        }
+      }
+      if ("children" in node) {
+        for (const child of node.children) walk(child);
+      }
+    };
+    walk(tree);
+  };
+}
+
 export function MarkdownContent({
   content,
   isStreaming = false,
@@ -119,7 +161,10 @@ export function MarkdownContent({
           rehypeScopeFootnoteIds(footnotePrefix),
           // KaTeX 走宽松模式:遇到中英混排等 strict 警告时只在控制台 warn,
           // 不抛错、不影响 markdown 渲染,让前端始终拿到可读内容。
-          [rehypeKatex, { strict: "ignore", throwOnError: false, output: "html" }],
+          // htmlAndMathml 同时输出视觉 HTML 与语义 MathML,
+          // \frac 等结构在 DOM 中保留真实的 mfrac 节点。
+          [rehypeKatex, { strict: "ignore", throwOnError: false, output: "htmlAndMathml" }],
+          rehypeKatexErrorFallback,
           rehypeHighlight,
         ]}
         components={{

@@ -16,25 +16,65 @@ function makeInput(filename: string, mimeType: string, data: Buffer): ParseInput
 }
 
 describe("TextLocalParser", () => {
-  it("parses a text file into a single text block", async () => {
+  it("parses a .md file into structured Markdown blocks", async () => {
     const parser = new TextLocalParser();
-    const input = makeInput("notes.md", "text/markdown", Buffer.from("# Hello\n\nWorld"));
+    const input = makeInput("notes.md", "text/markdown", Buffer.from("# Hello\n\nWorld with **bold**"));
 
     expect(parser.canParse(input)).toBe(true);
 
     const result = await parser.parse(input);
 
-    expect(result.blocks).toHaveLength(1);
-    expect(result.blocks[0].type).toBe("text");
-    expect((result.blocks[0] as Extract<typeof result.blocks[number], { type: "text" }>).content).toBe(
-      "# Hello\n\nWorld"
-    );
+    expect(result.blocks.map((b) => b.type)).toEqual(["heading", "text"]);
+    const heading = result.blocks[0] as Extract<typeof result.blocks[number], { type: "heading" }>;
+    expect(heading.content).toBe("Hello");
+    expect(heading.preserveMarkdown).toBe(true);
+    const text = result.blocks[1] as Extract<typeof result.blocks[number], { type: "text" }>;
+    expect(text.content).toBe("World with **bold**");
+    expect(text.preserveMarkdown).toBe(true);
     expect(result.assets).toHaveLength(0);
     expect(result.metadata.parser).toBe("text-local");
     expect(result.metadata.sourceKind).toBe("text");
-    expect(result.metadata.pipelineVersion).toBe("0.2.0");
+    expect(result.metadata.pipelineVersion).toBe("0.3.0");
     expect(result.metadata.assetCount).toBe(0);
     expect(result.metadata.parseWarnings).toEqual([]);
+  });
+
+  it("keeps .md image references as plain text lines (no parse assets)", async () => {
+    const parser = new TextLocalParser();
+    const input = makeInput("notes.md", "text/markdown", Buffer.from("See ![chart](pics/chart.png)\n\nText."));
+
+    const result = await parser.parse(input);
+
+    expect(result.blocks).toHaveLength(1);
+    expect(result.blocks[0].type).toBe("text");
+    const imageText = result.blocks[0] as Extract<typeof result.blocks[number], { type: "text" }>;
+    expect(imageText.content).toContain("![chart](pics/chart.png)");
+  });
+
+  it("parses source code files into a code block", async () => {
+    const parser = new TextLocalParser();
+    const input = makeInput("main.ts", "application/octet-stream", Buffer.from("const x: number = 1;"));
+
+    const result = await parser.parse(input);
+
+    expect(result.blocks).toHaveLength(1);
+    const code = result.blocks[0] as Extract<typeof result.blocks[number], { type: "code" }>;
+    expect(code.type).toBe("code");
+    expect(code.language).toBe("ts");
+    expect(code.content).toBe("const x: number = 1;");
+  });
+
+  it("parses a .txt file into a single escaped text block", async () => {
+    const parser = new TextLocalParser();
+    const input = makeInput("notes.txt", "text/plain", Buffer.from("# not a heading"));
+
+    const result = await parser.parse(input);
+
+    expect(result.blocks).toHaveLength(1);
+    const text = result.blocks[0] as Extract<typeof result.blocks[number], { type: "text" }>;
+    expect(text.type).toBe("text");
+    expect(text.preserveMarkdown).toBeUndefined();
+    expect(text.content).toBe("# not a heading");
   });
 
   it.each([

@@ -16,8 +16,22 @@ export interface BaseBlock {
   slideNumber?: number;
 }
 
-export interface TextBlock extends BaseBlock { type: "text"; content: string; }
-export interface HeadingBlock extends BaseBlock { type: "heading"; level: number; content: string; }
+export interface TextBlock extends BaseBlock {
+  type: "text";
+  content: string;
+  /**
+   * content 是可信的 Markdown 源码（.md 文件或模型产出的 Markdown），
+   * 渲染回 Markdown 时不做转义，保留行内格式与行内公式。
+   * 未设置时按纯文本处理，转义所有 Markdown 特殊字符。
+   */
+  preserveMarkdown?: boolean;
+}
+export interface HeadingBlock extends BaseBlock {
+  type: "heading";
+  level: number;
+  content: string;
+  preserveMarkdown?: boolean;
+}
 export interface TableBlock extends BaseBlock { type: "table"; markdown: string; caption?: string; }
 export interface FormulaBlock extends BaseBlock { type: "formula"; content: string; }
 export interface ImageBlock extends BaseBlock {
