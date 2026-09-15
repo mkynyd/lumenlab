@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useLayoutEffect, useRef, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
@@ -12,12 +13,24 @@ interface MobileFloatingNavProps {
   learningNavigationVisible?: boolean;
 }
 
+interface ModePillBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// 与侧边栏保持同一弹簧手感：胶囊行程短（约 88px），同样收在 250ms 量级，
+// 避免文字配色（150ms）先于指示器到位而出现白字白底的空窗。
+const MODE_PILL_SPRING = { type: "spring" as const, stiffness: 1300, damping: 70 };
+
 /**
  * 移动端悬浮式导航：左侧悬浮菜单按钮 + 居中的「聊天 / 项目」胶囊。
  *  - 只渲染在移动端（lg:hidden）；桌面端由侧边栏承担模式切换，不需要胶囊
  *  - 不占据文档流高度，悬浮在内容上方，纵向空间全部留给正文
  *  - 项目内部页面（/projects/[id]）有自己的顶栏，由布局层决定不渲染本组件
- *  - 选中态由共享 layoutId 的滑动 pill 表达，未命中具体模式时默认选中「聊天」
+ *  - 选中态是与 HeroUI Tabs.Indicator 同构的单个滑动 pill（测量目标位置后
+ *    弹簧移动，跨项跳转也是一段连续位移），未命中具体模式时默认选中「聊天」
  */
 export function MobileFloatingNav({
   onMenuToggle,
@@ -33,9 +46,32 @@ export function MobileFloatingNav({
     : pathname?.startsWith("/projects")
       ? "projects"
       : "chat";
-  const pillTransition = reduceMotion
-    ? { duration: 0 }
-    : { type: "spring" as const, stiffness: 520, damping: 42 };
+  const navRef = useRef<HTMLElement>(null);
+  const [modePill, setModePill] = useState<ModePillBox | null>(null);
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const measure = () => {
+      const active = nav.querySelector<HTMLElement>('a[aria-current="page"]');
+      const navRect = nav.getBoundingClientRect();
+      const activeRect = active?.getBoundingClientRect();
+      setModePill(
+        activeRect
+          ? {
+              x: activeRect.left - navRect.left,
+              y: activeRect.top - navRect.top,
+              width: activeRect.width,
+              height: activeRect.height,
+            }
+          : null
+      );
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [activeMode, learningNavigationVisible]);
   const modeClassName = cn(
     "relative inline-flex h-9 items-center justify-center rounded-full px-3 text-[13px] font-medium transition-[color,transform] duration-200 active:scale-[0.98] motion-reduce:transition-none",
     learningNavigationVisible ? "min-w-[4.25rem]" : "min-w-[5.5rem]"
@@ -58,15 +94,7 @@ export function MobileFloatingNav({
             : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
         )}
       >
-        {isActive && (
-          <motion.span
-            layoutId="mobile-mode-pill"
-            transition={pillTransition}
-            className="absolute inset-0 rounded-full bg-[var(--color-panel)]"
-            aria-hidden
-          />
-        )}
-        <span className="relative">{label}</span>
+        {label}
       </Link>
     );
   }
@@ -88,12 +116,27 @@ export function MobileFloatingNav({
       </button>
 
       <motion.nav
+        ref={navRef}
         aria-label="主要工作模式"
         initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.25, ease: "easeOut" }}
-        className="pointer-events-auto flex items-center rounded-full bg-[var(--color-interaction-active)] p-0.5 shadow-[var(--shadow-pill)]"
+        className="pointer-events-auto relative flex items-center rounded-full bg-[var(--color-interaction-active)] p-0.5 shadow-[var(--shadow-pill)]"
       >
+        {modePill && (
+          <motion.span
+            initial={false}
+            animate={{
+              x: modePill.x,
+              y: modePill.y,
+              width: modePill.width,
+              height: modePill.height,
+            }}
+            transition={reduceMotion ? { duration: 0 } : MODE_PILL_SPRING}
+            className="pointer-events-none absolute left-0 top-0 rounded-full bg-[var(--color-panel)]"
+            aria-hidden
+          />
+        )}
         {learningNavigationVisible &&
           renderModeLink("learning", "/learning", "学习")}
         {renderModeLink("chat", "/chat", "聊天")}

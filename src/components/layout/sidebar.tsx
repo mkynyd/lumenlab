@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import Image from "next/image";
@@ -131,36 +131,39 @@ function SidebarBrandMark({ size }: { size: number }) {
 }
 
 /**
- * 工作空间导航选中态的滑动高亮：六项导航共享同一个 layoutId，
- * 切换模式时高亮块平滑滑动到新位置（跨多项同样滑动）；
- * 用户开启减弱动态时退化为瞬移。
+ * 工作空间导航选中态的滑动高亮（与 HeroUI Tabs.Indicator 同构）：
+ * 整个列表只有这一个指示器元素，切换时测量目标按钮的位置并用弹簧
+ * 连续移动过去——跨多项跳转也是同一段位移，不是新旧按钮各自出现/消失。
  */
-function SidebarNavPill() {
-  const reduceMotion = useReducedMotion();
-  return (
-    <motion.span
-      layoutId="sidebar-mode-pill"
-      transition={
-        reduceMotion
-          ? { duration: 0 }
-          : { type: "spring", stiffness: 520, damping: 42 }
-      }
-      className="absolute inset-0 rounded-md bg-[var(--color-accent)]"
-      aria-hidden
-    />
-  );
+interface WorkspaceNavPillBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
+
+/**
+ * 指示器弹簧参数。刻意压到与按钮自身的 `transition-colors`（150ms）同一量级：
+ * 文字配色由 data-active 驱动、指示器由本弹簧驱动，两者是两条独立的时钟。
+ * 指示器若走得比配色慢太多，就会出现「新选中项已经变白、指示器还没滑到」
+ * 的白字白底窗口。实测 520/42 走完 152px 要约 440ms，窗口近 300ms 肉眼可见；
+ * 1300/70 约 250ms，窗口收敛到一帧以内。
+ */
+const WORKSPACE_NAV_PILL_SPRING = {
+  type: "spring" as const,
+  stiffness: 1300,
+  damping: 70,
+};
 
 /**
  * 工作空间导航按钮的配色（参考 HeroUI Tabs 的自定义模式）：
  *  - 选中项背景完全交给滑动的 accent pill，按钮自身保持透明，避免 hover/选中底色与 pill 重叠
  *  - 仅未选中项有 hover / pressed 反馈（accent-soft 浅蓝底 + accent 文字），选中项不再响应 hover
  *  - data-active=false 也会被 React 渲染到 DOM，选择器必须显式区分 true / false
+ *  - 按钮保持 relative：pill 在 DOM 中位于列表之前，按钮需定位才能压在 pill 上方
  */
 const WORKSPACE_NAV_BUTTON_CLASS = cn(
   "relative [&[data-active=true]]:bg-transparent",
-  // 内容层抬到 pill 之上：pill 是 absolute 元素，static 内容会被它盖住
-  "[&_svg]:relative [&>span:last-child]:relative",
   "text-[var(--color-text-secondary)]",
   "[&[data-active=true]]:text-[var(--color-accent-contrast)] [&[data-active=true]_svg]:text-[var(--color-accent-contrast)] [&[data-active=true]_svg]:opacity-100",
   "[&[data-active=false]]:hover:bg-[var(--color-accent-soft)] [&[data-active=false]]:hover:text-[var(--color-accent)]",
@@ -191,6 +194,40 @@ export function Sidebar({
       : pathname.startsWith("/tools")
         ? "tools"
         : "chat";
+  const reduceMotion = useReducedMotion();
+  // 滑动选中指示器：全列表共享一个元素，activeSection 变化后测量目标按钮
+  // 的位置并弹簧移动过去；ResizeObserver 让侧边栏宽度动画期间也能跟随。
+  const workspaceNavRef = useRef<HTMLDivElement>(null);
+  const [workspaceNavPill, setWorkspaceNavPill] =
+    useState<WorkspaceNavPillBox | null>(null);
+  useLayoutEffect(() => {
+    const container = workspaceNavRef.current;
+    if (!container) return;
+    const measure = () => {
+      const active = container.querySelector<HTMLElement>(
+        '[data-active="true"]'
+      );
+      // 不能用 offsetLeft/offsetTop：SidebarMenuItem 是 relative，
+      // offsetTop 永远是相对 li 的 0。改用视口 rect 与容器的差值。
+      const containerRect = container.getBoundingClientRect();
+      const activeRect = active?.getBoundingClientRect();
+      setWorkspaceNavPill(
+        activeRect
+          ? {
+              x: activeRect.left - containerRect.left,
+              y: activeRect.top - containerRect.top,
+              width: activeRect.width,
+              height: activeRect.height,
+            }
+          : null
+      );
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [activeSection, learningNavigationVisible, collapsed]);
   const conversationsQuery = useConversations();
   const projectsQuery = useProjects();
   const conversionsQuery = useConversions();
@@ -448,7 +485,26 @@ export function Sidebar({
           </button>
         </SidebarHeader>
 
-        <SidebarGroup className="mx-2 mb-1 mt-1 w-auto shrink-0 p-0">
+        <SidebarGroup
+          className="mx-2 mb-1 mt-1 w-auto shrink-0 p-0"
+          ref={workspaceNavRef}
+        >
+          {workspaceNavPill && (
+            <motion.span
+              initial={false}
+              animate={{
+                x: workspaceNavPill.x,
+                y: workspaceNavPill.y,
+                width: workspaceNavPill.width,
+                height: workspaceNavPill.height,
+              }}
+              transition={
+                reduceMotion ? { duration: 0 } : WORKSPACE_NAV_PILL_SPRING
+              }
+              className="pointer-events-none absolute left-0 top-0 rounded-md bg-[var(--color-accent)]"
+              aria-hidden
+            />
+          )}
           <SidebarMenu aria-label="工作空间导航" className="gap-0.5">
             {learningNavigationVisible && (
               <SidebarMenuItem>
@@ -466,7 +522,6 @@ export function Sidebar({
                   }
                   title={collapsed ? "学习" : undefined}
                 >
-                  {activeSection === "learning" && <SidebarNavPill />}
                   <CalendarCheck2 strokeWidth={1.8} />
                   <span
                     className={cn(
@@ -488,7 +543,6 @@ export function Sidebar({
                 aria-current={activeSection === "chat" ? "page" : undefined}
                 title={collapsed ? "展开聊天" : undefined}
               >
-                {activeSection === "chat" && <SidebarNavPill />}
                 <ChatLines strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
                   聊天
@@ -504,7 +558,6 @@ export function Sidebar({
                 aria-current={activeSection === "research" ? "page" : undefined}
                 title={collapsed ? "深度研究" : undefined}
               >
-                {activeSection === "research" && <SidebarNavPill />}
                 <BrainResearch strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>深度研究</span>
               </SidebarMenuButton>
@@ -518,7 +571,6 @@ export function Sidebar({
                 aria-current={activeSection === "papers" ? "page" : undefined}
                 title={collapsed ? "论文" : undefined}
               >
-                {activeSection === "papers" && <SidebarNavPill />}
                 <BookStack strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>论文</span>
               </SidebarMenuButton>
@@ -532,7 +584,6 @@ export function Sidebar({
                 aria-current={activeSection === "projects" ? "page" : undefined}
                 title={collapsed ? "展开项目" : undefined}
               >
-                {activeSection === "projects" && <SidebarNavPill />}
                 <Folder strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
                   项目
@@ -548,7 +599,6 @@ export function Sidebar({
                 aria-current={activeSection === "tools" ? "page" : undefined}
                 title={collapsed ? "展开转换" : undefined}
               >
-                {activeSection === "tools" && <SidebarNavPill />}
                 <PageEdit strokeWidth={1.8} />
                 <span className={cn("whitespace-nowrap", collapsed && "lg:hidden")}>
                   转换
