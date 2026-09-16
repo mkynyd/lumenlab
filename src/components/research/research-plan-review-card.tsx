@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check } from "iconoir-react";
+import { Check, Circle } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 
 export interface ResearchPlanView {
@@ -97,14 +97,16 @@ export function ResearchPlanReviewCard({
   const [directive, setDirective] = useState("");
 
   return (
-    <section aria-label="研究计划" className="bg-[var(--color-panel)] px-5 py-5">
+    <section aria-label="研究计划" className="rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 sm:px-6 sm:py-6">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-[var(--color-text-primary)]">研究计划</h2>
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">研究方案</p>
+          <h2 className="mt-1 truncate text-lg font-semibold text-[var(--color-text-primary)]">{plan.objective ?? plan.researchGoal}</h2>
+        </div>
         <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-tertiary)]">{questions.length} 个研究问题</span>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <PlanMeta label="研究目标" value={plan.objective ?? plan.researchGoal} />
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <PlanMeta label="研究强度" value={plan.researchIntensity} />
         <PlanMeta label="目标时间" value={plan.targetTimeRange ?? plan.timeRange ?? "未限定"} />
         {plan.evidenceTimeRange ? <PlanMeta label="证据时间" value={plan.evidenceTimeRange} /> : null}
@@ -114,20 +116,20 @@ export function ResearchPlanReviewCard({
       <div className="relative mt-5">
         <ol ref={listRef} onScroll={onListScroll} className="max-h-72 space-y-1 overflow-y-auto overscroll-contain">
           {questions.map((item, index) => (
-            <li key={item.id} className="flex items-start gap-3 rounded-[var(--radius-md)] px-2 py-2 hover:bg-[var(--color-surface-hover)]">
-              <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-panel-muted)] text-[11px] tabular-nums text-[var(--color-text-tertiary)]">
-                {index + 1}
+            <li key={item.id} className="flex items-start gap-3 rounded-[var(--radius-md)] px-2 py-2.5 hover:bg-[var(--color-surface-hover)]">
+              <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center text-[var(--color-text-tertiary)]" aria-hidden="true">
+                {item.status === "resolved" || item.status === "completed" ? <Check width={18} height={18} /> : <Circle width={18} height={18} />}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium leading-6 text-[var(--color-text-primary)]" title={item.title}>{item.title}</span>
+                <span className="block text-sm font-medium leading-6 text-[var(--color-text-primary)]" title={item.title}>{item.title}</span>
                 <span className="mt-0.5 block text-[11px] leading-5 text-[var(--color-text-tertiary)] line-clamp-2">{item.question}</span>
               </span>
-              <span className="mt-1 shrink-0 rounded-full bg-[var(--color-interaction-selected)] px-2 py-0.5 text-[10px] text-[var(--color-accent)]">{item.priority} · {item.status}</span>
+              <span className="mt-1 shrink-0 text-[10px] tabular-nums text-[var(--color-text-tertiary)]">{String(index + 1).padStart(2, "0")}</span>
             </li>
           ))}
         </ol>
-        <div aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-[var(--color-panel)] to-transparent transition-opacity duration-200 ${listEdges.start ? "opacity-100" : "opacity-0"}`} />
-        <div aria-hidden="true" className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[var(--color-panel)] to-transparent transition-opacity duration-200 ${listEdges.end ? "opacity-100" : "opacity-0"}`} />
+        <div aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-[var(--color-panel-muted)] to-transparent transition-opacity duration-200 ${listEdges.start ? "opacity-100" : "opacity-0"}`} />
+        <div aria-hidden="true" className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[var(--color-panel-muted)] to-transparent transition-opacity duration-200 ${listEdges.end ? "opacity-100" : "opacity-0"}`} />
       </div>
 
       <details className="mt-4">
@@ -160,10 +162,7 @@ export function ResearchPlanReviewCard({
       </details>
 
       {showActions ? (
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <Button type="button" variant="primary" size="sm" onClick={onConfirm} disabled={confirming}>
-            <Check width={16} height={16} />确认计划并开始研究
-          </Button>
+        <div className="mt-6 flex flex-wrap items-center gap-2">
           <input
             value={directive}
             onChange={(event) => setDirective(event.target.value)}
@@ -183,6 +182,9 @@ export function ResearchPlanReviewCard({
             disabled={revising || !directive.trim()}
           >
             提交调整
+          </Button>
+          <Button type="button" variant="primary" size="sm" className="sm:ml-auto" onClick={onConfirm} disabled={confirming}>
+            <Check width={16} height={16} />开始研究
           </Button>
         </div>
       ) : null}

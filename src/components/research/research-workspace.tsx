@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, BrainResearch, Check, Copy } from "iconoir-react";
+import { ArrowLeft, BrainResearch, Check, Circle, Copy, List } from "iconoir-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +32,7 @@ import { ResearchClaimsPanel } from "@/components/research/research-claims-panel
 import { ResearchPaperTransferPanel } from "@/components/research/research-paper-transfer-panel";
 import { ResearchReportEvidencePanel, ResearchCitationCard } from "@/components/research/research-report-evidence-panel";
 import { ResearchSourcesPanel } from "@/components/research/research-sources-panel";
+import { ResearchActivityPanel } from "@/components/research/research-activity-panel";
 import { fetchJson } from "@/lib/api/client";
 import { MODEL_CATALOG_ENTRIES } from "@/lib/chat/model-catalog";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -127,6 +128,17 @@ const TERMINAL_STATUSES = ["completed", "failed", "cancelled"];
 /** 悬浮引用卡的估计高度，用于判断是否向上翻转。 */
 const TOOLTIP_ESTIMATED_HEIGHT = 320;
 
+function researchReportOutline(markdown: string): Array<{ level: number; title: string }> {
+  return markdown
+    .split("\n")
+    .flatMap((line) => {
+      const match = /^(#{2,3})\s+(.+?)\s*$/.exec(line);
+      if (!match) return [];
+      return [{ level: match[1].length, title: match[2].replace(/\[(.*?)\]\(.*?\)/g, "$1").replace(/[*_`]/g, "") }];
+    })
+    .slice(0, 16);
+}
+
 function ProgressStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
@@ -187,6 +199,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const [selectedReportEvidenceId, setSelectedReportEvidenceId] = useState<string | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(true);
   const [exported, setExported] = useState(false);
   // hover/焦点预览卡：键盘 Tab 到引用时同样可见；触屏（hover: none）不渲染悬浮卡。
   const [hoveredMarker, setHoveredMarker] = useState<{ evidenceId: string; top: number; left: number; placement: "below" | "above" } | null>(null);
@@ -215,6 +228,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const reportBody = run?.reportSnapshot
     ? linkifyResearchEvidenceMarkers(run.reportSnapshot.reportDocument.body ?? "", run.reportSnapshot.reportDocument.evidenceRefs ?? [])
     : "";
+  const reportOutline = useMemo(() => researchReportOutline(run?.reportSnapshot?.reportDocument.body ?? ""), [run?.reportSnapshot?.reportDocument.body]);
   const visiblePublicEvents = publicEventsRunId === run?.id ? publicEvents : [];
 
   const citationIndex = useMemo(() => {
@@ -261,6 +275,11 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
     };
   }, [activeRunStatus]);
   const elapsed = nowMs === null ? null : formatResearchElapsed(run?.startedAt, run?.completedAt, nowMs);
+
+  function scrollToReportHeading(index: number) {
+    const headings = reportContainerRef.current?.querySelectorAll("h2, h3");
+    headings?.item(index)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function citationFromEvent(event: React.MouseEvent<HTMLDivElement> | React.FocusEvent<HTMLDivElement>): { anchor: HTMLAnchorElement; evidenceId: string } | null {
     const anchor = (event.target as HTMLElement).closest("a");
@@ -398,6 +417,9 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const commanderLabel = run?.commanderModel
     ? MODEL_CATALOG_ENTRIES.find((entry) => entry.id === run.commanderModel)?.displayName ?? run.commanderModel
     : null;
+  const overallProgress = run?.questions.length
+    ? Math.round(run.questions.reduce((sum, question) => sum + researchQuestionCompletion(question.status), 0) / run.questions.length)
+    : 0;
 
   const publicEventsPanel = (
     <div className="mt-5 bg-[var(--color-panel)] px-5 py-5">
@@ -445,42 +467,35 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
 
   return (
     <main className="h-full w-full min-w-0 overflow-x-clip overflow-y-auto bg-[var(--color-bg)]">
-      <div className="mx-auto w-full min-w-0 max-w-6xl px-5 py-6 sm:px-8 sm:py-8">
-        <Link href="/research" className="inline-flex items-center gap-1 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"><ArrowLeft width={14} height={14} />深度研究</Link>
-        <div className="mt-5 flex items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">{workspace.name}</h1><p className="mt-1 text-sm text-[var(--color-text-secondary)]">{workspace.project?.name ? `关联项目：${workspace.project.name}` : "独立研究上下文"}</p></div><BrainResearch className="text-[var(--color-accent)]" width={26} height={26} strokeWidth={1.5} /></div>
+      <div className="mx-auto w-full min-w-0 max-w-[90rem] px-5 py-5 sm:px-8 sm:py-6">
+        <header className="flex items-center gap-3">
+          <Link href="/research" aria-label="返回深度研究" className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><ArrowLeft width={16} height={16} /></Link>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workspace.name}</h1>
+            <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-tertiary)]">{workspace.project?.name ? `关联项目：${workspace.project.name}` : "深度研究"}</p>
+          </div>
+          <BrainResearch className="text-[var(--color-accent)]" width={20} height={20} strokeWidth={1.5} />
+        </header>
 
-        <div className="mt-8 max-w-3xl">
-          <ResearchComposer onSend={sendFromComposer} disabled={createRunMutation.isPending} contextHint={workspace.project?.name ? `新研究将读取项目「${workspace.project.name}」的资料作为证据` : undefined} />
-          {composerUploads.length > 0 ? (
-            <ul aria-label="附件上传状态" className="mt-2 space-y-1 px-2">
-              {composerUploads.map((item) => (
-                <li key={item.id} className="flex items-center justify-between gap-3 text-xs">
-                  <span className="min-w-0 truncate text-[var(--color-text-secondary)]">{item.name}</span>
-                  <span className={item.status === "failed" ? "shrink-0 text-[var(--color-danger)]" : "shrink-0 text-[var(--color-text-tertiary)]"}>
-                    {item.status === "uploading" ? "上传中…" : item.status === "done" ? "完成" : "失败"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {composerNotice ? <p role="status" className="mt-2 px-2 text-xs text-[var(--color-text-tertiary)]">{composerNotice}</p> : null}
-          {composerError ? <p role="alert" className="mt-2 px-2 text-xs text-[var(--color-danger)]">{composerError}（修改后重新发送即可重试，草稿已保留）</p> : null}
-        </div>
-
-        <div className="mt-8 grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
-          <aside aria-label="研究运行历史">
-            <p className="mb-2 px-1 text-xs text-[var(--color-text-tertiary)]">研究运行</p>
-            <div className="space-y-1">
+        {workspace.runs.length > 1 ? (
+          <nav aria-label="研究运行历史" className="mt-5 flex gap-1 overflow-x-auto pb-1">
               {workspace.runs.map((item) => (
-                <button key={item.id} type="button" aria-current={activeRunId === item.id ? "true" : undefined} onClick={() => selectRun(item.id)} className={`block w-full rounded-[var(--radius-md)] px-3 py-3 text-left ${activeRunId === item.id ? "bg-[var(--color-interaction-selected)] text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"}`}>
-                  <span className="block truncate text-xs font-medium">{item.question}</span>
-                  <span className="mt-1 block text-[11px] text-[var(--color-text-tertiary)]">{item.status}</span>
+                <button key={item.id} type="button" aria-current={activeRunId === item.id ? "true" : undefined} onClick={() => selectRun(item.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs ${activeRunId === item.id ? "bg-[var(--color-interaction-selected)] text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"}`}>
+                  <span className="max-w-52 truncate">{item.question}</span>
                 </button>
               ))}
-            </div>
-          </aside>
+          </nav>
+        ) : null}
 
-          <section className="min-w-0">
+        <div className="mx-auto mt-8 w-full max-w-6xl">
+          {run ? (
+            <div className="ml-auto max-w-3xl rounded-[var(--radius-lg)] bg-[var(--color-accent-muted)] px-5 py-4 sm:px-6">
+              <p className="text-[11px] font-medium text-[var(--color-accent)]">深度研究</p>
+              <p className="mt-1 text-sm leading-6 text-[var(--color-text-primary)]">{run.question}</p>
+            </div>
+          ) : null}
+
+          <section className="mt-7 min-w-0">
             {runQuery.isError ? (
               <div className="py-20 text-center">
                 <p role="alert" className="text-sm text-[var(--color-danger)]">这次 Research Run 加载失败，请稍后重试。</p>
@@ -491,11 +506,12 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
             ) : !run ? (
               <div className="py-20 text-center text-sm text-[var(--color-text-tertiary)]">选择一次运行，查看计划、报告与公开进度。</div>
             ) : <>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 px-1">
                 <span className="rounded-full bg-[var(--color-interaction-selected)] px-3 py-1 text-xs text-[var(--color-accent)]" data-stage={run.stage?.key ?? run.status}>{stageLabel}</span>
                 {elapsed ? <span className="text-xs text-[var(--color-text-tertiary)]">用时 {elapsed}</span> : null}
                 {commanderLabel ? <span className="text-xs text-[var(--color-text-tertiary)]">指挥模型 {commanderLabel}</span> : null}
                 <span className="ml-auto text-xs text-[var(--color-text-tertiary)]">{run._count.sourceSnapshots} 来源 · {run._count.evidence} Evidence · {run._count.claims} Claim</span>
+                {isWorking ? <Button type="button" variant="ghost" size="sm" aria-expanded={activityOpen} onClick={() => setActivityOpen((open) => !open)}><List width={14} height={14} />{activityOpen ? "收起活动" : "研究活动"}</Button> : null}
                 {!isTerminal ? <Button type="button" variant="ghost" size="sm" onClick={() => setCancelDialogOpen(true)} disabled={cancelRun.isPending}>取消运行</Button> : null}
                 {hasReport ? (
                   <Button type="button" variant="secondary" size="sm" onClick={exportReport}>
@@ -545,7 +561,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
               {run.status === "planning" ? <PlanningSkeleton /> : null}
 
               {run.status === "awaiting_confirmation" && plan ? (
-                <div className="mt-5">
+                <div className="mx-auto mt-5 max-w-4xl">
                   <ResearchPlanReviewCard
                     plan={plan}
                     questions={run.questions}
@@ -577,65 +593,99 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
               ) : null}
 
               {isWorking ? (
-                <>
-                  <div className="mt-5 bg-[var(--color-panel)] px-5 py-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">进度摘要</h2>
-                      <span className="text-xs text-[var(--color-text-tertiary)]">仅公开状态与计数，不含隐藏推理</span>
+                <div className={`mt-5 grid gap-5 ${activityOpen ? "xl:grid-cols-[minmax(0,1fr)_22rem]" : ""}`}>
+                  <div className="min-w-0 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 sm:px-6 sm:py-6">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">正在研究</p>
+                        <h2 className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{plan?.objective ?? run.question}</h2>
+                      </div>
+                      <span className="text-xs tabular-nums text-[var(--color-text-tertiary)]">{overallProgress}%</span>
                     </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                      <ProgressStat label="Research Questions" value={`${progress.questionsResolved}/${progress.questionTotal} 已解决`} />
-                      <ProgressStat label="待处理任务" value={String(progress.activeTasks)} />
-                      <ProgressStat label="已读取来源" value={String(progress.sourceCount)} />
-                      <ProgressStat label="Evidence" value={String(progress.evidenceCount)} />
-                      <ProgressStat label="Claim" value={String(progress.claimCount)} />
-                      <ProgressStat label="引用图扩展" value={progress.citationExpansionEdges > 0 ? `${progress.citationExpansionEdges} 条边 · ${progress.citationExpansionSources} 个来源` : "本次未发生"} />
-                      <ProgressStat label="图表视觉证据" value={progress.visualObservations > 0 ? `${progress.visualObservations} 条观察` : "本次未使用"} />
-                      <ProgressStat label="检索 / 读取 / 模型" value={`${progress.searchCalls} / ${progress.fetchCalls} / ${progress.modelCalls}`} />
+
+                    <div className="mt-5 space-y-1">
+                      {run.questions.map((item) => {
+                        const completion = researchQuestionCompletion(item.status);
+                        return (
+                          <div key={item.id} className="flex items-start gap-3 rounded-[var(--radius-md)] px-2 py-2.5">
+                            <span className={completion === 100 ? "mt-0.5 text-[var(--color-text-primary)]" : completion > 0 ? "mt-0.5 text-[var(--color-accent)]" : "mt-0.5 text-[var(--color-text-tertiary)]"} aria-hidden="true">
+                              {completion === 100 ? <Check width={18} height={18} /> : <Circle width={18} height={18} />}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm leading-6 text-[var(--color-text-primary)]">{item.title}</span>
+                              <span className="block text-[11px] leading-5 text-[var(--color-text-tertiary)]">{completion === 100 ? "已完成" : completion > 0 ? "正在处理" : "等待开始"}</span>
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
+
+                    <div className="mt-6 flex items-center justify-between gap-4 text-xs text-[var(--color-text-tertiary)]">
+                      <span className="min-w-0 truncate">{liveMessage || "系统正在按计划检索、阅读与核验来源"}</span>
+                      <span className="shrink-0 tabular-nums">{progress.searchCalls} 次检索 · {progress.sourceCount} 个来源</span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--color-bg)]" role="progressbar" aria-label="研究总体进度" aria-valuenow={overallProgress} aria-valuemin={0} aria-valuemax={100}>
+                      <div className="h-full rounded-full bg-[var(--color-text-primary)] transition-[width] duration-500" style={{ width: `${Math.max(3, overallProgress)}%` }} />
+                    </div>
+
+                    <details className="mt-6">
+                      <summary className="cursor-pointer select-none text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">查看详细计数与追加研究方向</summary>
+                      <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">仅公开状态与计数，不含隐藏推理</p>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                        <ProgressStat label="Research Questions" value={`${progress.questionsResolved}/${progress.questionTotal} 已解决`} />
+                        <ProgressStat label="待处理任务" value={String(progress.activeTasks)} />
+                        <ProgressStat label="Evidence" value={String(progress.evidenceCount)} />
+                        <ProgressStat label="Claim" value={String(progress.claimCount)} />
+                        <ProgressStat label="引用图扩展" value={progress.citationExpansionEdges > 0 ? `${progress.citationExpansionEdges} 条边 · ${progress.citationExpansionSources} 个来源` : "本次未发生"} />
+                        <ProgressStat label="图表视觉证据" value={progress.visualObservations > 0 ? `${progress.visualObservations} 条观察` : "本次未使用"} />
+                        <ProgressStat label="检索 / 读取 / 模型" value={`${progress.searchCalls} / ${progress.fetchCalls} / ${progress.modelCalls}`} />
+                      </div>
+                      {directivePanel}
+                    </details>
                   </div>
 
-                  <div className="mt-5 grid gap-5 xl:grid-cols-2">
-                    <div className="bg-[var(--color-panel)] px-5 py-5">
-                      <h2 className="text-base font-semibold text-[var(--color-text-primary)]">Question 完成度</h2>
-                      <div className="mt-3 space-y-3">
-                        {run.questions.map((item) => {
-                          const completion = researchQuestionCompletion(item.status);
-                          return (
-                            <div key={item.id}>
-                              <div className="flex items-center justify-between gap-3 text-xs"><span className="truncate text-[var(--color-text-secondary)]">{item.title}</span><span className="shrink-0 text-[var(--color-text-tertiary)]">{completion}% · {item.status}</span></div>
-                              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-hover)]"><div className="h-full rounded-full bg-[var(--color-accent)] transition-[width]" style={{ width: `${completion}%` }} /></div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="bg-[var(--color-panel)] px-5 py-5">
-                      <h2 className="text-base font-semibold text-[var(--color-text-primary)]">当前任务</h2>
-                      <div className="mt-3 space-y-2">
-                        {run.tasks.filter((task) => ["running", "retrying", "pending"].includes(task.status)).slice(0, 8).map((task) => (
-                          <div key={task.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate text-[var(--color-text-secondary)]">{task.title}</span><span className="shrink-0 text-xs text-[var(--color-text-tertiary)]">{task.status}</span></div>
-                        ))}
-                        {run.tasks.every((task) => !["running", "retrying", "pending"].includes(task.status)) ? <p className="text-xs text-[var(--color-text-tertiary)]">当前没有待处理任务。</p> : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  {directivePanel}
-
-                  {publicEventsPanel}
-                </>
+                  {activityOpen ? (
+                    <ResearchActivityPanel stageLabel={stageLabel ?? run.status} liveMessage={liveMessage} events={visiblePublicEvents} sources={sources} onClose={() => setActivityOpen(false)} />
+                  ) : null}
+                </div>
               ) : null}
 
               {isTerminal && hasReport ? (
                 <>
-                  <section aria-label="研究报告" className="mt-5 min-w-0 max-w-full bg-[var(--color-panel)] px-4 py-6 sm:px-5">
+                  <section aria-label="研究报告" className="mt-5 min-w-0 max-w-full rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-4 py-6 sm:px-6 sm:py-7">
                     <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-                      <h2 className="min-w-0 flex-1 [overflow-wrap:anywhere] text-lg font-semibold text-[var(--color-text-primary)]">{run.reportSnapshot?.reportDocument.title ?? `研究报告：${run.question}`}</h2>
-                      <span className="shrink-0 text-xs text-[var(--color-text-tertiary)]">不可修改快照 · {new Date(run.reportSnapshot!.generatedAt).toLocaleString("zh-CN")}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">研究成果</p>
+                        <h2 className="mt-1 min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-[var(--color-text-primary)]">{run.reportSnapshot?.reportDocument.title ?? `研究报告：${run.question}`}</h2>
+                      </div>
+                      <span className="shrink-0 text-xs text-[var(--color-text-tertiary)]">{elapsed ? `${elapsed} · ` : ""}{run._count.sourceSnapshots} 来源 · {run._count.evidence} 条证据</span>
                     </div>
-                    <div className="mt-5 grid min-w-0 max-w-full gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-                      <div className="relative min-w-0 max-w-full">
+                    <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">不可修改快照 · {new Date(run.reportSnapshot!.generatedAt).toLocaleString("zh-CN")}</p>
+
+                    {reportOutline.length > 0 ? (
+                      <details className="mt-5 lg:hidden">
+                        <summary className="cursor-pointer select-none text-xs text-[var(--color-text-secondary)]">报告目录</summary>
+                        <div className="mt-2 space-y-1">
+                          {reportOutline.map((item, index) => <button key={`${item.title}-${index}`} type="button" onClick={() => scrollToReportHeading(index)} className="block w-full rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)]">{item.title}</button>)}
+                        </div>
+                      </details>
+                    ) : null}
+
+                    <div className={`mt-6 grid min-w-0 max-w-full gap-6 ${reportOutline.length > 0 ? "lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[13rem_minmax(0,1fr)_20rem]" : "xl:grid-cols-[minmax(0,1fr)_20rem]"}`}>
+                      {reportOutline.length > 0 ? (
+                        <nav aria-label="报告目录" className="hidden min-w-0 lg:block">
+                          <p className="px-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">目录</p>
+                          <div className="mt-3 space-y-1 lg:sticky lg:top-6">
+                            {reportOutline.map((item, index) => (
+                              <button key={`${item.title}-${index}`} type="button" onClick={() => scrollToReportHeading(index)} className={`block w-full rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-xs leading-5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] ${item.level === 3 ? "pl-5" : "font-medium"}`}>
+                                {item.title}
+                              </button>
+                            ))}
+                          </div>
+                        </nav>
+                      ) : null}
+
+                      <div className="relative min-w-0 max-w-full rounded-[var(--radius-lg)] bg-[var(--color-bg)] px-5 py-6 sm:px-8 sm:py-8">
                         <div
                           ref={reportContainerRef}
                           className="relative min-w-0 max-w-full"
@@ -664,14 +714,16 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                           </div>
                         ) : null}
                       </div>
-                      <ResearchReportEvidencePanel
-                        claims={run.claims}
-                        evidence={run.evidence as never}
-                        citationMap={run.reportSnapshot?.citationMap}
-                        evidenceRefs={run.reportSnapshot?.reportDocument.evidenceRefs ?? []}
-                        selectedEvidenceId={selectedReportEvidenceId}
-                        onSelectEvidence={setSelectedReportEvidenceId}
-                      />
+                      <div className={reportOutline.length > 0 ? "lg:col-start-2 xl:col-start-auto" : ""}>
+                        <ResearchReportEvidencePanel
+                          claims={run.claims}
+                          evidence={run.evidence as never}
+                          citationMap={run.reportSnapshot?.citationMap}
+                          evidenceRefs={run.reportSnapshot?.reportDocument.evidenceRefs ?? []}
+                          selectedEvidenceId={selectedReportEvidenceId}
+                          onSelectEvidence={setSelectedReportEvidenceId}
+                        />
+                      </div>
                     </div>
                   </section>
 
@@ -721,6 +773,25 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                 </details>
               ) : null}
             </>}
+          </section>
+
+          <section aria-label="开始新的研究" className="mx-auto mt-10 max-w-3xl pb-10">
+            <p className="mb-2 px-2 text-[11px] font-medium text-[var(--color-text-tertiary)]">开始新的研究</p>
+            <ResearchComposer onSend={sendFromComposer} disabled={createRunMutation.isPending} contextHint={workspace.project?.name ? `新研究将读取项目「${workspace.project.name}」的资料作为证据` : undefined} />
+            {composerUploads.length > 0 ? (
+              <ul aria-label="附件上传状态" className="mt-2 space-y-1 px-2">
+                {composerUploads.map((item) => (
+                  <li key={item.id} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="min-w-0 truncate text-[var(--color-text-secondary)]">{item.name}</span>
+                    <span className={item.status === "failed" ? "shrink-0 text-[var(--color-danger)]" : "shrink-0 text-[var(--color-text-tertiary)]"}>
+                      {item.status === "uploading" ? "上传中…" : item.status === "done" ? "完成" : "失败"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {composerNotice ? <p role="status" className="mt-2 px-2 text-xs text-[var(--color-text-tertiary)]">{composerNotice}</p> : null}
+            {composerError ? <p role="alert" className="mt-2 px-2 text-xs text-[var(--color-danger)]">{composerError}（修改后重新发送即可重试，草稿已保留）</p> : null}
           </section>
         </div>
       </div>

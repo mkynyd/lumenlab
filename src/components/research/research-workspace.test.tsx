@@ -1,6 +1,7 @@
 import { render as rtlRender, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 const hooks = {
   workspace: { data: undefined as unknown, isPending: false, isError: false, refetch: vi.fn() },
@@ -164,6 +165,25 @@ describe("ResearchWorkspaceView status and progress", () => {
     expect(screen.getByRole("button", { name: "创建 Follow-up Run" })).toBeInTheDocument();
   });
 
+  it("builds a navigable outline from completed report headings", () => {
+    hooks.run = {
+      ...hooks.run,
+      data: runDetail({
+        status: "completed",
+        stage: { key: "completed", label: "已完成" },
+        reportSnapshot: {
+          generatedAt: "2026-01-01T01:00:00.000Z",
+          reportDocument: { title: "研究报告：MoE 路由", body: "## 执行摘要\n\n结论。\n\n## 主要发现\n\n### 路由策略\n\n正文。", evidenceRefs: [] },
+          citationMap: {},
+        },
+      }),
+    };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(screen.getByRole("navigation", { name: "报告目录" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "执行摘要" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "路由策略" }).length).toBeGreaterThan(0);
+  });
+
   it("does not present a failed final synthesis as a normal-quality report", () => {
     hooks.run = { ...hooks.run, data: runDetail({
       status: "completed",
@@ -266,7 +286,7 @@ describe("ResearchWorkspaceView stage-driven layout", () => {
     expect(within(card).getByText("2025 年 MoE 路由方法的主要改进")).toBeInTheDocument();
     expect(card).toHaveTextContent("generic LLM request routing");
     expect(card).toHaveTextContent("按机制分类并比较证据强度的报告");
-    expect(within(card).getByRole("button", { name: /确认计划并开始研究/ })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "开始研究" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "提交调整" })).toBeInTheDocument();
     // awaiting_confirmation 不渲染进行中分组（进度摘要 / 当前任务）。
     expect(screen.queryByText("进度摘要")).not.toBeInTheDocument();
@@ -275,10 +295,18 @@ describe("ResearchWorkspaceView stage-driven layout", () => {
 
   it("groups in-progress sections for active runs", () => {
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
-    expect(screen.getByText("进度摘要")).toBeInTheDocument();
-    expect(screen.getByText("Question 完成度")).toBeInTheDocument();
-    expect(screen.getByText("当前任务")).toBeInTheDocument();
-    expect(screen.getByText("公开执行事件")).toBeInTheDocument();
+    expect(screen.getByText("正在研究")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "研究总体进度" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: /研究活动/ })).toBeInTheDocument();
+  });
+
+  it("lets users collapse and reopen the research activity panel", async () => {
+    const user = userEvent.setup();
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    await user.click(screen.getByRole("button", { name: "收起活动" }));
+    expect(screen.queryByRole("complementary", { name: /研究活动/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "研究活动" }));
+    expect(screen.getByRole("complementary", { name: /研究活动/ })).toBeInTheDocument();
   });
 
   it("keeps advanced operations collapsed by default for terminal runs", () => {

@@ -40,3 +40,45 @@
 - Browser console: 0 warnings, 0 errors during the final desktop/mobile runs.
 
 final result: passed
+
+---
+
+# Deep Research State UI Design QA
+
+## Source of truth
+
+- Reference folder: `/Users/yinjunhang/Documents/course-ai-lab/深度思考UI参考`
+- Product rationale: `deep-research-report.md`
+- Primary references: `深度研究-确认方案.png` (1742 × 1662), `深度研究-进行状态的右侧研究来源和状态.png` (2550 × 1684), `深度研究-成果详情.png` (2972 × 1678)
+- Supporting references: the remaining planning, working, completed-report, and outline screenshots in the same folder
+
+## Implementation evidence
+
+- Plan confirmation: `output/playwright/deep-research-ui/plan.png` (1910 × 1074)
+- Working state: `output/playwright/deep-research-ui/working.png` (1910 × 1074)
+- Report reader: `output/playwright/deep-research-ui/report.png` (1888 × 1062)
+- Density-normalized comparisons: `compare-plan.jpg`, `compare-working.jpg`, `compare-report.jpg` in the same evidence folder; each keeps the reference above the implementation and preserves aspect ratio.
+- The inspected account used dark mode. The implementation maps all surfaces, text, accents, and progress states to existing semantic theme tokens rather than reference-specific hardcoded colors, so the same hierarchy is preserved in light mode.
+
+## Comparison history
+
+1. The first working-state capture had insufficient separation between the progress surface and the page in dark mode. The state cards and activity drawer were moved to `--color-panel-muted`, then all three states were recaptured.
+2. The original workspace exposed run history, event diagnostics, plan metadata, and result content as similarly weighted blocks. The final layout keeps those capabilities but establishes one primary state surface at a time: plan, progress, or report.
+3. The report originally lacked the reference's reading navigation. Markdown headings are now parsed into a sticky left outline, while source/evidence inspection remains on the right.
+
+## Visual checks
+
+- Typography and copy use the existing LumenLab hierarchy and terminology; internal stage jargon is kept out of the primary flow.
+- Cards and controls follow the repository's borderless visual language, with restrained rounded surfaces and Iconoir icons.
+- The working state matches the reference's main-progress-plus-side-activity composition without fabricating backend data.
+- The completed state preserves a readable center column, a generated outline, and a dedicated evidence/source rail.
+- Narrow layouts collapse the outline into a disclosure and move side content below the primary column.
+
+## Interaction checks
+
+- Plan confirmation and adjustment keep their existing API-backed actions and disabled states.
+- Activity details can be closed and reopened; covered by the workspace component test.
+- Report outline entries scroll to generated heading anchors; covered by the workspace component test and inspected in the browser.
+- Browser console during the final state captures: 0 errors.
+
+final result: passed
