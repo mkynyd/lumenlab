@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Circle } from "iconoir-react";
+import { useState } from "react";
+import { Check, EditPencil } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 
 export interface ResearchPlanView {
@@ -41,34 +41,7 @@ interface ResearchPlanReviewCardProps {
   revising?: boolean;
   onConfirm?: () => void;
   onRevise?: (directive: string) => void;
-}
-
-/** 滚动渐隐：清单顶部/底部有更多内容时显示渐变提示。 */
-function useScrollFade<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  const [edges, setEdges] = useState({ start: false, end: false });
-
-  const update = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { scrollTop, scrollHeight, clientHeight } = el;
-    setEdges({
-      start: scrollTop > 1,
-      end: Math.ceil(scrollTop + clientHeight) < scrollHeight - 1,
-    });
-  }, []);
-
-  useEffect(() => {
-    update();
-    const el = ref.current;
-    const view = el?.ownerDocument.defaultView;
-    if (!el || !view?.ResizeObserver) return;
-    const observer = new view.ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [update]);
-
-  return { ref, edges, onScroll: update };
+  onCancel?: () => void;
 }
 
 function PlanMeta({ label, value }: { label: string; value: string }) {
@@ -80,9 +53,14 @@ function PlanMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
+function questionDone(status: string) {
+  return status === "resolved" || status === "completed";
+}
+
 /**
- * Plan 审阅卡（awaiting_confirmation 首屏主角）：编号 Research Questions 清单 +
- * 底部确认条。布局参考 agent-plan-2，全部使用项目 token（无边框、扁平状态）。
+ * Plan 审阅卡（awaiting_confirmation 首屏主角）：标题 + 极简步骤清单 +
+ * 底部「编辑 / 取消 / 开始」确认条，结构对齐深度研究参考 UI 的确认方案态。
+ * 元数据与范围细节收进「计划详情」折叠区，不抢占首屏。
  */
 export function ResearchPlanReviewCard({
   plan,
@@ -92,49 +70,45 @@ export function ResearchPlanReviewCard({
   revising = false,
   onConfirm,
   onRevise,
+  onCancel,
 }: ResearchPlanReviewCardProps) {
-  const { ref: listRef, edges: listEdges, onScroll: onListScroll } = useScrollFade<HTMLOListElement>();
+  const [editing, setEditing] = useState(false);
   const [directive, setDirective] = useState("");
 
   return (
-    <section aria-label="研究计划" className="rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 sm:px-6 sm:py-6">
+    <section aria-label="研究计划" className="rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 sm:px-7 sm:py-6">
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">研究方案</p>
-          <h2 className="mt-1 truncate text-lg font-semibold text-[var(--color-text-primary)]">{plan.objective ?? plan.researchGoal}</h2>
-        </div>
+        <h2 className="min-w-0 truncate text-lg font-semibold text-[var(--color-text-primary)]">{plan.objective ?? plan.researchGoal}</h2>
         <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-tertiary)]">{questions.length} 个研究问题</span>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <PlanMeta label="研究强度" value={plan.researchIntensity} />
-        <PlanMeta label="目标时间" value={plan.targetTimeRange ?? plan.timeRange ?? "未限定"} />
-        {plan.evidenceTimeRange ? <PlanMeta label="证据时间" value={plan.evidenceTimeRange} /> : null}
-        <PlanMeta label="领域 Profile" value={plan.domainProfile?.name ?? "通用研究"} />
-      </div>
-
-      <div className="relative mt-5">
-        <ol ref={listRef} onScroll={onListScroll} className="max-h-72 space-y-1 overflow-y-auto overscroll-contain">
-          {questions.map((item, index) => (
-            <li key={item.id} className="flex items-start gap-3 rounded-[var(--radius-md)] px-2 py-2.5 hover:bg-[var(--color-surface-hover)]">
-              <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center text-[var(--color-text-tertiary)]" aria-hidden="true">
-                {item.status === "resolved" || item.status === "completed" ? <Check width={18} height={18} /> : <Circle width={18} height={18} />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium leading-6 text-[var(--color-text-primary)]" title={item.title}>{item.title}</span>
-                <span className="mt-0.5 block text-[11px] leading-5 text-[var(--color-text-tertiary)] line-clamp-2">{item.question}</span>
-              </span>
-              <span className="mt-1 shrink-0 text-[10px] tabular-nums text-[var(--color-text-tertiary)]">{String(index + 1).padStart(2, "0")}</span>
+      <ol className="mt-5 space-y-1">
+        {questions.map((item) => {
+          const done = questionDone(item.status);
+          return (
+            <li key={item.id} className="flex items-center gap-3 rounded-[var(--radius-md)] px-2 py-2.5" title={item.question}>
+              {done ? (
+                <span className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--color-text-primary)] text-[var(--color-bg)]" aria-hidden="true">
+                  <Check width={12} height={12} />
+                </span>
+              ) : (
+                <span className="inline-flex size-[18px] shrink-0 rounded-full border border-dashed border-[var(--color-text-tertiary)]" aria-hidden="true" />
+              )}
+              <span className={`min-w-0 flex-1 truncate text-sm leading-6 ${done ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"}`}>{item.title}</span>
             </li>
-          ))}
-        </ol>
-        <div aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-[var(--color-panel-muted)] to-transparent transition-opacity duration-200 ${listEdges.start ? "opacity-100" : "opacity-0"}`} />
-        <div aria-hidden="true" className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[var(--color-panel-muted)] to-transparent transition-opacity duration-200 ${listEdges.end ? "opacity-100" : "opacity-0"}`} />
-      </div>
+          );
+        })}
+      </ol>
 
       <details className="mt-4">
         <summary className="cursor-pointer select-none text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">计划详情（范围 / 来源策略 / 预期产出 / 完成标准）</summary>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <PlanMeta label="研究强度" value={plan.researchIntensity} />
+          <PlanMeta label="目标时间" value={plan.targetTimeRange ?? plan.timeRange ?? "未限定"} />
+          {plan.evidenceTimeRange ? <PlanMeta label="证据时间" value={plan.evidenceTimeRange} /> : null}
+          <PlanMeta label="领域 Profile" value={plan.domainProfile?.name ?? "通用研究"} />
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {plan.originalRequest ? <div className="min-w-0"><p className="text-[11px] text-[var(--color-text-tertiary)]">原始请求</p><p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.originalRequest}</p></div> : null}
           {plan.intentType ? <div className="min-w-0"><p className="text-[11px] text-[var(--color-text-tertiary)]">研究意图</p><p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{plan.intentType}</p></div> : null}
           <div className="min-w-0">
@@ -162,30 +136,42 @@ export function ResearchPlanReviewCard({
       </details>
 
       {showActions ? (
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <input
-            value={directive}
-            onChange={(event) => setDirective(event.target.value)}
-            placeholder="可选：先调整计划，例如缩小范围或补充来源"
-            aria-label="计划调整意见"
-            className="min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]"
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              if (!directive.trim()) return;
-              onRevise?.(directive.trim());
-              setDirective("");
-            }}
-            disabled={revising || !directive.trim()}
-          >
-            提交调整
-          </Button>
-          <Button type="button" variant="primary" size="sm" className="sm:ml-auto" onClick={onConfirm} disabled={confirming}>
-            <Check width={16} height={16} />开始研究
-          </Button>
+        <div className="mt-6">
+          {editing ? (
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!directive.trim()) return;
+                onRevise?.(directive.trim());
+                setDirective("");
+                setEditing(false);
+              }}
+            >
+              <input
+                value={directive}
+                onChange={(event) => setDirective(event.target.value)}
+                placeholder="先调整计划，例如缩小范围或补充来源"
+                aria-label="计划调整意见"
+                className="min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]"
+              />
+              <Button type="submit" variant="secondary" size="sm" disabled={revising || !directive.trim()}>提交调整</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>收起</Button>
+            </form>
+          ) : null}
+          <div className="mt-2 flex items-center gap-2">
+            <Button type="button" variant="secondary" size="sm" aria-expanded={editing} onClick={() => setEditing((open) => !open)}>
+              <EditPencil width={14} height={14} />编辑
+            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              {onCancel ? (
+                <Button type="button" variant="secondary" size="sm" onClick={onCancel}>取消</Button>
+              ) : null}
+              <Button type="button" variant="primary" size="sm" onClick={onConfirm} disabled={confirming}>
+                <Check width={16} height={16} />开始研究
+              </Button>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

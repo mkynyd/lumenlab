@@ -122,14 +122,15 @@ beforeEach(() => {
 describe("ResearchWorkspaceView status and progress", () => {
   it("renders the fine-grained durable stage instead of a vague run status", () => {
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
-    expect(screen.getByText("沿引用关系扩展来源")).toBeInTheDocument();
+    // 阶段标签同时出现在状态行与研究活动面板。
+    expect(screen.getAllByText("沿引用关系扩展来源").length).toBeGreaterThan(0);
     expect(screen.queryByText("evaluating")).not.toBeInTheDocument();
   });
 
   it("shows other internal stages distinctly", () => {
     hooks.run = { ...hooks.run, data: runDetail({ stage: { key: "claim_extraction", label: "提炼并核验命题" } }) };
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
-    expect(screen.getByText("提炼并核验命题")).toBeInTheDocument();
+    expect(screen.getAllByText("提炼并核验命题").length).toBeGreaterThan(0);
   });
 
   it("shows the commander model display name in the status row when present", () => {
@@ -165,7 +166,7 @@ describe("ResearchWorkspaceView status and progress", () => {
     expect(screen.getByRole("button", { name: "创建 Follow-up Run" })).toBeInTheDocument();
   });
 
-  it("builds a navigable outline from completed report headings", () => {
+  it("builds a navigable outline from completed report headings", async () => {
     hooks.run = {
       ...hooks.run,
       data: runDetail({
@@ -179,9 +180,13 @@ describe("ResearchWorkspaceView status and progress", () => {
       }),
     };
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
-    expect(screen.getByRole("navigation", { name: "报告目录" })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "执行摘要" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: "路由策略" }).length).toBeGreaterThan(0);
+    // 目录收进全屏阅读器，对齐参考 UI 的成果详情态。
+    await userEvent.setup().click(screen.getByRole("button", { name: "展开阅读" }));
+    const reader = screen.getByRole("dialog", { name: /阅读报告/ });
+    // 目录在窄屏折叠区与宽屏浮动卡各渲染一份。
+    expect(within(reader).getAllByRole("navigation", { name: "报告目录" }).length).toBeGreaterThan(0);
+    expect(within(reader).getAllByRole("button", { name: "执行摘要" }).length).toBeGreaterThan(0);
+    expect(within(reader).getAllByRole("button", { name: "路由策略" }).length).toBeGreaterThan(0);
   });
 
   it("does not present a failed final synthesis as a normal-quality report", () => {
@@ -270,7 +275,7 @@ describe("ResearchWorkspaceView stage-driven layout", () => {
     expect(screen.queryByRole("region", { name: "研究计划" })).not.toBeInTheDocument();
   });
 
-  it("makes the plan review card the primary content while awaiting confirmation", () => {
+  it("makes the plan review card the primary content while awaiting confirmation", async () => {
     hooks.run = {
       ...hooks.run,
       data: runDetail({
@@ -287,6 +292,8 @@ describe("ResearchWorkspaceView stage-driven layout", () => {
     expect(card).toHaveTextContent("generic LLM request routing");
     expect(card).toHaveTextContent("按机制分类并比较证据强度的报告");
     expect(within(card).getByRole("button", { name: "开始研究" })).toBeInTheDocument();
+    // 调整入口收进「编辑」开关，对齐参考 UI 的确认方案态。
+    await userEvent.setup().click(within(card).getByRole("button", { name: "编辑" }));
     expect(within(card).getByRole("button", { name: "提交调整" })).toBeInTheDocument();
     // awaiting_confirmation 不渲染进行中分组（进度摘要 / 当前任务）。
     expect(screen.queryByText("进度摘要")).not.toBeInTheDocument();

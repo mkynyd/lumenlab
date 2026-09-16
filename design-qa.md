@@ -49,36 +49,39 @@ final result: passed
 
 - Reference folder: `/Users/yinjunhang/Documents/course-ai-lab/深度思考UI参考`
 - Product rationale: `deep-research-report.md`
-- Primary references: `深度研究-确认方案.png` (1742 × 1662), `深度研究-进行状态的右侧研究来源和状态.png` (2550 × 1684), `深度研究-成果详情.png` (2972 × 1678)
-- Supporting references: the remaining planning, working, completed-report, and outline screenshots in the same folder
+- Primary references: `深度研究-确认方案.png` (1742 × 1662), `深度研究-进行状态2.png` (2552 × 1686), `深度研究-进行状态的右侧研究来源和状态.png` (2550 × 1684), `深度研究-完成状态.png` (2962 × 1690), `深度研究-成果详情.png` (2972 × 1678), `深度研究-成果详情界面中的侧边大纲.png` (1188 × 1360)
 
-## Implementation evidence
+## Implementation evidence (2026-09-16 rework)
 
-- Plan confirmation: `output/playwright/deep-research-ui/plan.png` (1910 × 1074)
-- Working state: `output/playwright/deep-research-ui/working.png` (1910 × 1074)
-- Report reader: `output/playwright/deep-research-ui/report.png` (1888 × 1062)
-- Density-normalized comparisons: `compare-plan.jpg`, `compare-working.jpg`, `compare-report.jpg` in the same evidence folder; each keeps the reference above the implementation and preserves aspect ratio.
-- The inspected account used dark mode. The implementation maps all surfaces, text, accents, and progress states to existing semantic theme tokens rather than reference-specific hardcoded colors, so the same hierarchy is preserved in light mode.
+- Plan confirmation: `.playwright-cli/page-2026-09-16T05-06-50-835Z.png`（浅色，1600 × 1000）
+- Working state with docked activity panel: `.playwright-cli/page-2026-09-16T05-03-06-712Z.png` 与局部放大 `page-2026-09-16T05-05-30-673Z.png`
+- Completed report card: `.playwright-cli/page-2026-09-16T05-08-11-356Z.png`
+- Full-screen reader with floating outline: `.playwright-cli/page-2026-09-16T04-44-20-363Z.png`
+- All captures: real authenticated session on `localhost:3000` dev server, account `1053300241@qq.com`, light mode, 1600 × 1000.
 
 ## Comparison history
 
-1. The first working-state capture had insufficient separation between the progress surface and the page in dark mode. The state cards and activity drawer were moved to `--color-panel-muted`, then all three states were recaptured.
-2. The original workspace exposed run history, event diagnostics, plan metadata, and result content as similarly weighted blocks. The final layout keeps those capabilities but establishes one primary state surface at a time: plan, progress, or report.
-3. The report originally lacked the reference's reading navigation. Markdown headings are now parsed into a sticky left outline, while source/evidence inspection remains on the right.
+1. First pass (codex, commit `7423c3d`) kept heavy metadata surfaces: status chip rows with 来源/Evidence/Claim counters, plan metadata grid, numbered questions, inline revise input, inline activity column, and an always-expanded three-column report. User feedback: 效果不好. Reworked to follow the reference structure state by state.
+2. Plan confirmation now matches 确认方案: title + dashed-circle step checklist + 计划详情 disclosure (metadata moved inside) + bottom 编辑/取消/开始研究 action row. 编辑 toggles the revise input; 取消 opens the cancel dialog.
+3. Working state now matches 进行状态: single card with title + 收起活动 toggle, tri-state checklist (filled check / solid ring / dashed), footer status text + 「N 次搜索」, full-width progress bar with a square stop button (cancel) at the right end. The activity record moved from an inline grid column to a right slide-over panel (portal, z-[60], 22rem) with 研究活动 narrative, public event stream, and 研究来源 chips with 「再显示 N 个」 expansion; on xl screens the content column docks left (`xl:pr-[23rem]`) so the panel never covers the card.
+4. Completed state now matches 完成状态 + 成果详情: a「研究完成情况：用时 · N 次引用 · N 次搜索」summary line, then a report card (doc icon + title + copy/expand actions) with a faded 24rem preview; 展开阅读全文 opens `research-report-reader.tsx`, a full-screen portal overlay (z-[110]) with X close, 复制报告 Markdown, floating left 目录 card (headings parsed from Markdown), centered article, and the citation-aware 来源与证据 rail. Narrow screens collapse the outline into a disclosure.
+5. Stacking bug found during verification: the workbench main column's `view-enter` animation (fill mode `both`) keeps a persistent stacking context, so an inline `fixed` overlay was trapped under the z-50 sidebar. Reader and activity panel now render through `createPortal` to `document.body`.
+6. Card surfaces use `--color-panel-muted` because both `--color-bg` and `--color-panel` are pure white in light mode; white cards on white pages had no visible boundary (borders are forbidden by the design language).
 
 ## Visual checks
 
-- Typography and copy use the existing LumenLab hierarchy and terminology; internal stage jargon is kept out of the primary flow.
-- Cards and controls follow the repository's borderless visual language, with restrained rounded surfaces and Iconoir icons.
-- The working state matches the reference's main-progress-plus-side-activity composition without fabricating backend data.
-- The completed state preserves a readable center column, a generated outline, and a dedicated evidence/source rail.
-- Narrow layouts collapse the outline into a disclosure and move side content below the primary column.
+- Typography and copy use the existing LumenLab hierarchy and terminology; internal stage jargon stays in the slim status row (stage pill / 用时 / 指挥模型).
+- All state cards are borderless `--color-panel-muted` surfaces with `rounded-[var(--radius-lg)]`; states are expressed by fill and icon weight only.
+- Checklist icons are pure CSS circles (filled with check / solid ring / dashed ring), no emoji, Iconoir elsewhere.
+- The working state matches the reference's main-progress-card plus right-activity-panel composition without fabricating backend data.
+- The completed state preserves citation hover/focus preview cards and click-to-select evidence inside the reader.
 
 ## Interaction checks
 
-- Plan confirmation and adjustment keep their existing API-backed actions and disabled states.
-- Activity details can be closed and reopened; covered by the workspace component test.
-- Report outline entries scroll to generated heading anchors; covered by the workspace component test and inspected in the browser.
-- Browser console during the final state captures: 0 errors.
+- Plan confirmation, revision (编辑 → 提交调整), and cancellation keep their existing API-backed mutations and disabled states.
+- Activity panel can be closed (收起活动 / X) and reopened (研究活动); covered by the workspace component test.
+- Report outline entries scroll to generated heading anchors; reader opens from both the header expand button and 展开阅读全文; Escape closes the reader. Covered by the workspace component test and verified in the browser.
+- `npx tsc --noEmit` clean; `npx vitest run src/components/research/` 39/39 passed; eslint 0 errors.
+- Browser console during the final captures: 0 page errors (only pre-existing notification-polling noise).
 
 final result: passed

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, BrainResearch, Check, Circle, Copy, List } from "iconoir-react";
+import { ArrowLeft, BrainResearch, Copy, Expand, List, Page, Check } from "iconoir-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,15 +30,15 @@ import { ResearchPlanReviewCard } from "@/components/research/research-plan-revi
 import { ResearchEvidencePanel } from "@/components/research/research-evidence-panel";
 import { ResearchClaimsPanel } from "@/components/research/research-claims-panel";
 import { ResearchPaperTransferPanel } from "@/components/research/research-paper-transfer-panel";
-import { ResearchReportEvidencePanel, ResearchCitationCard } from "@/components/research/research-report-evidence-panel";
 import { ResearchSourcesPanel } from "@/components/research/research-sources-panel";
 import { ResearchActivityPanel } from "@/components/research/research-activity-panel";
+import { ResearchReportReader } from "@/components/research/research-report-reader";
 import { fetchJson } from "@/lib/api/client";
 import { MODEL_CATALOG_ENTRIES } from "@/lib/chat/model-catalog";
 import type { FileAttachment } from "@/lib/chat/router";
 import { uploadResearchAttachments, type ResearchAttachmentState } from "@/lib/hooks/use-research-launch";
 import { useAppendResearchDirective, useCancelResearchRun, useConfirmResearchPlan, useConfirmResearchScope, useCreateResearchFollowUp, useCreateResearchRun, useResearchRun, useResearchWorkspace, useReviseResearchPlan, useUpdateResearchWorkspace } from "@/lib/hooks/use-research";
-import { buildResearchReportMarkdown, buildResearchBibliography, linkifyResearchEvidenceMarkers, researchEvidenceIdFromAnchor } from "@/lib/research/report-citations";
+import { buildResearchReportMarkdown, buildResearchBibliography, linkifyResearchEvidenceMarkers } from "@/lib/research/report-citations";
 import {
   buildResearchProgressSummary,
   buildResearchSourceViews,
@@ -125,19 +125,6 @@ interface ResearchPlan {
 }
 
 const TERMINAL_STATUSES = ["completed", "failed", "cancelled"];
-/** 悬浮引用卡的估计高度，用于判断是否向上翻转。 */
-const TOOLTIP_ESTIMATED_HEIGHT = 320;
-
-function researchReportOutline(markdown: string): Array<{ level: number; title: string }> {
-  return markdown
-    .split("\n")
-    .flatMap((line) => {
-      const match = /^(#{2,3})\s+(.+?)\s*$/.exec(line);
-      if (!match) return [];
-      return [{ level: match[1].length, title: match[2].replace(/\[(.*?)\]\(.*?\)/g, "$1").replace(/[*_`]/g, "") }];
-    })
-    .slice(0, 16);
-}
 
 function ProgressStat({ label, value }: { label: string; value: string }) {
   return (
@@ -150,7 +137,7 @@ function ProgressStat({ label, value }: { label: string; value: string }) {
 
 function PlanningSkeleton() {
   return (
-    <div aria-busy="true" className="mt-5 bg-[var(--color-panel)] px-5 py-5">
+    <div aria-busy="true" className="mt-5 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 sm:px-7 sm:py-6">
       <div className="flex items-center gap-2.5">
         <span className="size-4 animate-spin rounded-full border-2 border-[var(--color-border-light)] border-t-[var(--color-accent)]" />
         <p className="text-sm font-medium text-[var(--color-text-primary)]">正在生成研究计划</p>
@@ -196,14 +183,11 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const [liveBudget, setLiveBudget] = useState<{ runId: string; counters: ResearchBudgetCounters } | null>(null);
   const [publicEvents, setPublicEvents] = useState<ResearchPublicEvent[]>([]);
   const [publicEventsRunId, setPublicEventsRunId] = useState<string | null>(null);
-  const [selectedReportEvidenceId, setSelectedReportEvidenceId] = useState<string | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(true);
+  const [readerOpen, setReaderOpen] = useState(false);
   const [exported, setExported] = useState(false);
-  // hover/焦点预览卡：键盘 Tab 到引用时同样可见；触屏（hover: none）不渲染悬浮卡。
-  const [hoveredMarker, setHoveredMarker] = useState<{ evidenceId: string; top: number; left: number; placement: "below" | "above" } | null>(null);
-  const reportContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!run?.agentExecutionId) return;
@@ -228,22 +212,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const reportBody = run?.reportSnapshot
     ? linkifyResearchEvidenceMarkers(run.reportSnapshot.reportDocument.body ?? "", run.reportSnapshot.reportDocument.evidenceRefs ?? [])
     : "";
-  const reportOutline = useMemo(() => researchReportOutline(run?.reportSnapshot?.reportDocument.body ?? ""), [run?.reportSnapshot?.reportDocument.body]);
   const visiblePublicEvents = publicEventsRunId === run?.id ? publicEvents : [];
-
-  const citationIndex = useMemo(() => {
-    const index = new Map<string, NonNullable<ResearchCitationMap[string]>[number]>();
-    for (const entries of Object.values(run?.reportSnapshot?.citationMap ?? {})) {
-      for (const entry of entries) if (!index.has(entry.evidenceId)) index.set(entry.evidenceId, entry);
-    }
-    return index;
-  }, [run?.reportSnapshot?.citationMap]);
-
-  const evidenceById = useMemo(() => new Map((run?.evidence ?? []).map((item) => [item.id, item])), [run?.evidence]);
-  const markerByEvidenceId = useMemo(
-    () => new Map((run?.reportSnapshot?.reportDocument.evidenceRefs ?? []).map((id, index) => [id, `E${index + 1}`])),
-    [run?.reportSnapshot?.reportDocument.evidenceRefs],
-  );
 
   const sources = useMemo(
     () => buildResearchSourceViews({ evidence: (run?.evidence ?? []) as never, relations: run?.sourceRelations ?? [] }),
@@ -275,53 +244,6 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
     };
   }, [activeRunStatus]);
   const elapsed = nowMs === null ? null : formatResearchElapsed(run?.startedAt, run?.completedAt, nowMs);
-
-  function scrollToReportHeading(index: number) {
-    const headings = reportContainerRef.current?.querySelectorAll("h2, h3");
-    headings?.item(index)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function citationFromEvent(event: React.MouseEvent<HTMLDivElement> | React.FocusEvent<HTMLDivElement>): { anchor: HTMLAnchorElement; evidenceId: string } | null {
-    const anchor = (event.target as HTMLElement).closest("a");
-    if (!(anchor instanceof HTMLAnchorElement)) return null;
-    const evidenceId = researchEvidenceIdFromAnchor(anchor.getAttribute("href") ?? "");
-    if (!evidenceId) return null;
-    return { anchor, evidenceId };
-  }
-
-  function handleReportCitationClick(event: React.MouseEvent<HTMLDivElement>) {
-    const found = citationFromEvent(event);
-    if (!found) return;
-    event.preventDefault();
-    setSelectedReportEvidenceId(found.evidenceId);
-    setHoveredMarker(null);
-  }
-
-  function showCitationPreview(event: React.MouseEvent<HTMLDivElement> | React.FocusEvent<HTMLDivElement>) {
-    // 触屏设备没有稳定 hover：点击仍然选中侧栏详情，但不渲染悬浮卡。
-    if (typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches) return;
-    const found = citationFromEvent(event);
-    if (!found) return;
-    const container = reportContainerRef.current;
-    if (!container) return;
-    const anchorRect = found.anchor.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    const belowTop = anchorRect.bottom - containerRect.top + 8;
-    // 锚点接近容器底部时向上展开，避免悬浮卡溢出容器。
-    const flipsUp = belowTop + TOOLTIP_ESTIMATED_HEIGHT > containerRect.height;
-    setHoveredMarker({
-      evidenceId: found.evidenceId,
-      top: flipsUp ? anchorRect.top - containerRect.top - 8 : belowTop,
-      left: Math.max(0, Math.min(anchorRect.left - containerRect.left, containerRect.width - 320)),
-      placement: flipsUp ? "above" : "below",
-    });
-  }
-
-  function hideCitationPreview(event: React.MouseEvent<HTMLDivElement> | React.FocusEvent<HTMLDivElement>) {
-    const found = citationFromEvent(event);
-    if (!found) return;
-    setHoveredMarker((current) => (current?.evidenceId === found.evidenceId ? null : current));
-  }
 
   function selectRun(id: string) {
     setChosenRunId(id);
@@ -413,13 +335,14 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const hasReport = Boolean(run?.reportSnapshot);
   const isTerminal = run ? TERMINAL_STATUSES.includes(run.status) : false;
   const isWorking = run ? !isTerminal && !["planning", "awaiting_confirmation", "awaiting_scope_confirmation"].includes(run.status) : false;
-  const hoveredCitation = hoveredMarker ? citationIndex.get(hoveredMarker.evidenceId) : undefined;
   const commanderLabel = run?.commanderModel
     ? MODEL_CATALOG_ENTRIES.find((entry) => entry.id === run.commanderModel)?.displayName ?? run.commanderModel
     : null;
   const overallProgress = run?.questions.length
     ? Math.round(run.questions.reduce((sum, question) => sum + researchQuestionCompletion(question.status), 0) / run.questions.length)
     : 0;
+  const reportTitle = run?.reportSnapshot?.reportDocument.title ?? (run ? `研究报告：${run.question}` : "");
+  const citationCount = run?.reportSnapshot?.reportDocument.evidenceRefs?.length ?? 0;
 
   const publicEventsPanel = (
     <div className="mt-5 bg-[var(--color-panel)] px-5 py-5">
@@ -467,7 +390,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
 
   return (
     <main className="h-full w-full min-w-0 overflow-x-clip overflow-y-auto bg-[var(--color-bg)]">
-      <div className="mx-auto w-full min-w-0 max-w-[90rem] px-5 py-5 sm:px-8 sm:py-6">
+      <div className={`mx-auto w-full min-w-0 max-w-[90rem] px-5 py-5 transition-[padding] duration-300 sm:px-8 sm:py-6 ${activityOpen && isWorking ? "xl:pr-[23rem]" : ""}`}>
         <header className="flex items-center gap-3">
           <Link href="/research" aria-label="返回深度研究" className="inline-flex size-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"><ArrowLeft width={16} height={16} /></Link>
           <div className="min-w-0 flex-1">
@@ -487,7 +410,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
           </nav>
         ) : null}
 
-        <div className="mx-auto mt-8 w-full max-w-6xl">
+        <div className="mx-auto mt-8 w-full max-w-4xl">
           {run ? (
             <div className="ml-auto max-w-3xl rounded-[var(--radius-lg)] bg-[var(--color-accent-muted)] px-5 py-4 sm:px-6">
               <p className="text-[11px] font-medium text-[var(--color-accent)]">深度研究</p>
@@ -510,16 +433,10 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                 <span className="rounded-full bg-[var(--color-interaction-selected)] px-3 py-1 text-xs text-[var(--color-accent)]" data-stage={run.stage?.key ?? run.status}>{stageLabel}</span>
                 {elapsed ? <span className="text-xs text-[var(--color-text-tertiary)]">用时 {elapsed}</span> : null}
                 {commanderLabel ? <span className="text-xs text-[var(--color-text-tertiary)]">指挥模型 {commanderLabel}</span> : null}
-                <span className="ml-auto text-xs text-[var(--color-text-tertiary)]">{run._count.sourceSnapshots} 来源 · {run._count.evidence} Evidence · {run._count.claims} Claim</span>
-                {isWorking ? <Button type="button" variant="ghost" size="sm" aria-expanded={activityOpen} onClick={() => setActivityOpen((open) => !open)}><List width={14} height={14} />{activityOpen ? "收起活动" : "研究活动"}</Button> : null}
-                {!isTerminal ? <Button type="button" variant="ghost" size="sm" onClick={() => setCancelDialogOpen(true)} disabled={cancelRun.isPending}>取消运行</Button> : null}
-                {hasReport ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={exportReport}>
-                    {exported ? <Check width={14} height={14} /> : <Copy width={14} height={14} />}{exported ? "已复制 Markdown" : "复制报告 Markdown"}
-                  </Button>
-                ) : null}
               </div>
-              <p aria-live="polite" role="status" className="mt-2 min-h-5 text-xs text-[var(--color-text-secondary)]">{liveMessage}</p>
+              {!isTerminal ? (
+                <p aria-live="polite" role="status" className="mt-2 min-h-5 px-1 text-xs text-[var(--color-text-secondary)]">{liveMessage}</p>
+              ) : null}
 
               {run.degradations && run.degradations.length > 0 ? (
                 <div role="status" className="mt-4 space-y-1 bg-[var(--color-info-muted)] px-4 py-3">
@@ -561,7 +478,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
               {run.status === "planning" ? <PlanningSkeleton /> : null}
 
               {run.status === "awaiting_confirmation" && plan ? (
-                <div className="mx-auto mt-5 max-w-4xl">
+                <div className="mt-5">
                   <ResearchPlanReviewCard
                     plan={plan}
                     questions={run.questions}
@@ -570,6 +487,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                     revising={revisePlan.isPending}
                     onConfirm={() => confirmPlan.mutate(undefined)}
                     onRevise={(text) => revisePlan.mutate(text)}
+                    onCancel={() => setCancelDialogOpen(true)}
                   />
                 </div>
               ) : null}
@@ -593,39 +511,49 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
               ) : null}
 
               {isWorking ? (
-                <div className={`mt-5 grid gap-5 ${activityOpen ? "xl:grid-cols-[minmax(0,1fr)_22rem]" : ""}`}>
-                  <div className="min-w-0 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 sm:px-6 sm:py-6">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
+                <>
+                  <div className="mt-5 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 sm:px-7 sm:py-6">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
                         <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">正在研究</p>
                         <h2 className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{plan?.objective ?? run.question}</h2>
                       </div>
-                      <span className="text-xs tabular-nums text-[var(--color-text-tertiary)]">{overallProgress}%</span>
+                      <Button type="button" variant="ghost" size="sm" aria-expanded={activityOpen} onClick={() => setActivityOpen((open) => !open)}>
+                        <List width={14} height={14} />{activityOpen ? "收起活动" : "研究活动"}
+                      </Button>
                     </div>
 
-                    <div className="mt-5 space-y-1">
+                    <ol className="mt-5 space-y-1">
                       {run.questions.map((item) => {
                         const completion = researchQuestionCompletion(item.status);
                         return (
-                          <div key={item.id} className="flex items-start gap-3 rounded-[var(--radius-md)] px-2 py-2.5">
-                            <span className={completion === 100 ? "mt-0.5 text-[var(--color-text-primary)]" : completion > 0 ? "mt-0.5 text-[var(--color-accent)]" : "mt-0.5 text-[var(--color-text-tertiary)]"} aria-hidden="true">
-                              {completion === 100 ? <Check width={18} height={18} /> : <Circle width={18} height={18} />}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm leading-6 text-[var(--color-text-primary)]">{item.title}</span>
-                              <span className="block text-[11px] leading-5 text-[var(--color-text-tertiary)]">{completion === 100 ? "已完成" : completion > 0 ? "正在处理" : "等待开始"}</span>
-                            </span>
-                          </div>
+                          <li key={item.id} className="flex items-center gap-3 rounded-[var(--radius-md)] px-2 py-2.5" title={completion === 100 ? `${item.title} · 已完成` : completion > 0 ? `${item.title} · 正在处理` : `${item.title} · 等待开始`}>
+                            {completion === 100 ? (
+                              <span className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--color-text-primary)] text-[var(--color-bg)]" aria-hidden="true">
+                                <Check width={12} height={12} />
+                              </span>
+                            ) : completion > 0 ? (
+                              <span className="inline-flex size-[18px] shrink-0 rounded-full border-2 border-[var(--color-text-primary)]" aria-hidden="true" />
+                            ) : (
+                              <span className="inline-flex size-[18px] shrink-0 rounded-full border border-dashed border-[var(--color-text-tertiary)]" aria-hidden="true" />
+                            )}
+                            <span className={`min-w-0 flex-1 truncate text-sm leading-6 ${completion === 100 ? "text-[var(--color-text-primary)]" : completion > 0 ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"}`}>{item.title}</span>
+                          </li>
                         );
                       })}
-                    </div>
+                    </ol>
 
                     <div className="mt-6 flex items-center justify-between gap-4 text-xs text-[var(--color-text-tertiary)]">
                       <span className="min-w-0 truncate">{liveMessage || "系统正在按计划检索、阅读与核验来源"}</span>
-                      <span className="shrink-0 tabular-nums">{progress.searchCalls} 次检索 · {progress.sourceCount} 个来源</span>
+                      <span className="shrink-0 tabular-nums">{progress.searchCalls} 次搜索</span>
                     </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--color-bg)]" role="progressbar" aria-label="研究总体进度" aria-valuenow={overallProgress} aria-valuemin={0} aria-valuemax={100}>
-                      <div className="h-full rounded-full bg-[var(--color-text-primary)] transition-[width] duration-500" style={{ width: `${Math.max(3, overallProgress)}%` }} />
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-border-light)]" role="progressbar" aria-label="研究总体进度" aria-valuenow={overallProgress} aria-valuemin={0} aria-valuemax={100}>
+                        <div className="h-full rounded-full bg-[var(--color-text-primary)] transition-[width] duration-500" style={{ width: `${Math.max(3, overallProgress)}%` }} />
+                      </div>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label="取消运行" onClick={() => setCancelDialogOpen(true)} disabled={cancelRun.isPending}>
+                        <span className="block size-2.5 rounded-[3px] bg-current" aria-hidden="true" />
+                      </Button>
                     </div>
 
                     <details className="mt-6">
@@ -645,87 +573,55 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                   </div>
 
                   {activityOpen ? (
-                    <ResearchActivityPanel stageLabel={stageLabel ?? run.status} liveMessage={liveMessage} events={visiblePublicEvents} sources={sources} onClose={() => setActivityOpen(false)} />
+                    <ResearchActivityPanel title={plan?.objective ?? run.question} stageLabel={stageLabel ?? run.status} liveMessage={liveMessage} events={visiblePublicEvents} sources={sources} onClose={() => setActivityOpen(false)} />
                   ) : null}
-                </div>
+                </>
               ) : null}
 
               {isTerminal && hasReport ? (
                 <>
-                  <section aria-label="研究报告" className="mt-5 min-w-0 max-w-full rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-4 py-6 sm:px-6 sm:py-7">
-                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">研究成果</p>
-                        <h2 className="mt-1 min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-[var(--color-text-primary)]">{run.reportSnapshot?.reportDocument.title ?? `研究报告：${run.question}`}</h2>
-                      </div>
-                      <span className="shrink-0 text-xs text-[var(--color-text-tertiary)]">{elapsed ? `${elapsed} · ` : ""}{run._count.sourceSnapshots} 来源 · {run._count.evidence} 条证据</span>
+                  <p className="mt-5 px-1 text-xs text-[var(--color-text-tertiary)]">
+                    研究完成情况：{[elapsed, `${citationCount} 次引用`, `${progress.searchCalls} 次搜索`].filter(Boolean).join(" · ")}
+                  </p>
+                  <section aria-label="研究报告" className="mt-3 min-w-0 max-w-full rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 sm:px-7 sm:py-6">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]" aria-hidden="true">
+                        <Page width={18} height={18} />
+                      </span>
+                      <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-[var(--color-text-primary)]">{reportTitle}</h2>
+                      <span className="hidden shrink-0 text-xs text-[var(--color-text-tertiary)] sm:inline">{run._count.sourceSnapshots} 来源 · {run._count.evidence} 条证据</span>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label="复制报告 Markdown" onClick={exportReport}>
+                        {exported ? <Check width={16} height={16} /> : <Copy width={16} height={16} />}
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label="展开阅读" onClick={() => setReaderOpen(true)}>
+                        <Expand width={16} height={16} />
+                      </Button>
                     </div>
                     <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">不可修改快照 · {new Date(run.reportSnapshot!.generatedAt).toLocaleString("zh-CN")}</p>
 
-                    {reportOutline.length > 0 ? (
-                      <details className="mt-5 lg:hidden">
-                        <summary className="cursor-pointer select-none text-xs text-[var(--color-text-secondary)]">报告目录</summary>
-                        <div className="mt-2 space-y-1">
-                          {reportOutline.map((item, index) => <button key={`${item.title}-${index}`} type="button" onClick={() => scrollToReportHeading(index)} className="block w-full rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)]">{item.title}</button>)}
-                        </div>
-                      </details>
-                    ) : null}
-
-                    <div className={`mt-6 grid min-w-0 max-w-full gap-6 ${reportOutline.length > 0 ? "lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[13rem_minmax(0,1fr)_20rem]" : "xl:grid-cols-[minmax(0,1fr)_20rem]"}`}>
-                      {reportOutline.length > 0 ? (
-                        <nav aria-label="报告目录" className="hidden min-w-0 lg:block">
-                          <p className="px-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">目录</p>
-                          <div className="mt-3 space-y-1 lg:sticky lg:top-6">
-                            {reportOutline.map((item, index) => (
-                              <button key={`${item.title}-${index}`} type="button" onClick={() => scrollToReportHeading(index)} className={`block w-full rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-xs leading-5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] ${item.level === 3 ? "pl-5" : "font-medium"}`}>
-                                {item.title}
-                              </button>
-                            ))}
-                          </div>
-                        </nav>
-                      ) : null}
-
-                      <div className="relative min-w-0 max-w-full rounded-[var(--radius-lg)] bg-[var(--color-bg)] px-5 py-6 sm:px-8 sm:py-8">
-                        <div
-                          ref={reportContainerRef}
-                          className="relative min-w-0 max-w-full"
-                          onClick={handleReportCitationClick}
-                          onMouseOver={showCitationPreview}
-                          onMouseOut={hideCitationPreview}
-                          onFocus={showCitationPreview}
-                          onBlur={hideCitationPreview}
-                        >
-                          <MarkdownContent
-                            content={reportBody}
-                            className="min-w-0 max-w-full [overflow-wrap:anywhere]"
-                          />
-                        </div>
-                        {hoveredMarker && hoveredCitation ? (
-                          <div
-                            role="tooltip"
-                            className="pointer-events-none absolute z-20 hidden max-h-80 w-80 overflow-y-auto rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 py-3 shadow-lg sm:block"
-                            style={{
-                              top: hoveredMarker.top,
-                              left: hoveredMarker.left,
-                              transform: hoveredMarker.placement === "above" ? "translateY(-100%)" : undefined,
-                            }}
-                          >
-                            <ResearchCitationCard entry={hoveredCitation} evidence={evidenceById.get(hoveredMarker.evidenceId)} marker={markerByEvidenceId.get(hoveredMarker.evidenceId)} className="" />
-                          </div>
-                        ) : null}
+                    <div className="relative mt-4">
+                      <div className="max-h-[24rem] min-w-0 max-w-full overflow-hidden">
+                        <MarkdownContent content={reportBody} className="min-w-0 max-w-full [overflow-wrap:anywhere]" />
                       </div>
-                      <div className={reportOutline.length > 0 ? "lg:col-start-2 xl:col-start-auto" : ""}>
-                        <ResearchReportEvidencePanel
-                          claims={run.claims}
-                          evidence={run.evidence as never}
-                          citationMap={run.reportSnapshot?.citationMap}
-                          evidenceRefs={run.reportSnapshot?.reportDocument.evidenceRefs ?? []}
-                          selectedEvidenceId={selectedReportEvidenceId}
-                          onSelectEvidence={setSelectedReportEvidenceId}
-                        />
+                      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[var(--color-panel-muted)] via-[var(--color-panel-muted)] to-transparent opacity-95" />
+                      <div className="absolute inset-x-0 bottom-3 flex justify-center">
+                        <Button type="button" variant="secondary" size="sm" onClick={() => setReaderOpen(true)}>
+                          <Expand width={14} height={14} />展开阅读全文
+                        </Button>
                       </div>
                     </div>
                   </section>
+
+                  {readerOpen ? (
+                    <ResearchReportReader
+                      reportSnapshot={run.reportSnapshot as never}
+                      evidence={run.evidence as never}
+                      claims={run.claims as never}
+                      onClose={() => setReaderOpen(false)}
+                      onExport={exportReport}
+                      exported={exported}
+                    />
+                  ) : null}
 
                   {followUpPanel}
 
