@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { Check, Circle, Globe, Page, Search, Xmark } from "iconoir-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,9 @@ interface ResearchActivityEvent {
 }
 
 const COLLAPSED_SOURCE_COUNT = 6;
+
+/** 水合检测用的空订阅（同 theme-toggle）。 */
+const subscribeToHydration = () => () => undefined;
 
 function activityIcon(kind: string | undefined) {
   if (kind?.includes("search")) return <Search width={16} height={16} />;
@@ -57,8 +60,12 @@ export function ResearchActivityPanel({
 }) {
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   // portal 到 body：避免被工作台主内容的动画层叠上下文困住（同阅读器）。
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // useSyncExternalStore 水合检测（同 theme-toggle），避免 effect 内同步 setState。
+  const mounted = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
   const visibleEvents = events.slice(0, 12);
   const visibleSources = sourcesExpanded ? sources : sources.slice(0, COLLAPSED_SOURCE_COUNT);
   const hiddenSources = sources.length - visibleSources.length;

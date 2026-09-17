@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, Xmark } from "iconoir-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,9 @@ import type { ResearchCitationMap } from "@/lib/research/research-view-model";
 
 /** 悬浮引用卡的估计高度，用于判断是否向上翻转。 */
 const TOOLTIP_ESTIMATED_HEIGHT = 320;
+
+/** 水合检测用的空订阅（同 theme-toggle）。 */
+const subscribeToHydration = () => () => undefined;
 
 interface ReaderEvidence {
   id: string;
@@ -156,8 +159,12 @@ export function ResearchReportReader({
 
   // 经由 portal 挂到 body：工作台主内容的 view-enter 动画会形成持久层叠上下文，
   // 直接内联渲染时 fixed/z-index 会被困在其中，侧边栏会盖住阅读器。
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // useSyncExternalStore 水合检测（同 theme-toggle），避免 effect 内同步 setState。
+  const mounted = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
   if (!mounted) return null;
 
   return createPortal(
