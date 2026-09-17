@@ -475,6 +475,12 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                 </AlertDialogContent>
               </AlertDialog>
 
+              {cancelRun.isError ? (
+                <div role="alert" className="mt-4 bg-[var(--color-info-muted)] px-4 py-3">
+                  <p className="text-xs leading-5 text-[var(--color-danger)]">取消失败：{cancelRun.error instanceof Error ? cancelRun.error.message : "请稍后重试"}</p>
+                </div>
+              ) : null}
+
               {run.status === "planning" ? <PlanningSkeleton /> : null}
 
               {run.status === "awaiting_confirmation" && plan ? (

@@ -20,7 +20,7 @@ import {
 } from "./citation-graph";
 import { createResearchToolInvoker, createToolBackedResearchSourceProvider, parseResearchResourceRefs, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider, type ResearchToolInvoker, type ResearchResourceRef } from "./source-provider";
 import { academicCitationSignal, clampQuality, computeEvidenceRecency, computeResearchInformationGain, computeSourceDiversity, estimateSourceQuality, summarizeResearchQuality } from "./quality";
-import { assertResearchRunTransition } from "./state-machine";
+import { assertResearchRunTransition, isTerminalResearchRunStatus } from "./state-machine";
 import type { ResearchPlanSnapshot, ResearchQuestionStatus, ResearchRunStatus } from "./contracts";
 import { nextResearchTaskRetryStatus } from "./task-retry";
 import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
@@ -116,6 +116,36 @@ async function transitionRun(runId: string, next: ResearchRunStatus) {
   if (current.status === next) return;
   assertResearchRunTransition(current.status as ResearchRunStatus, next);
   await prisma.researchRun.update({ where: { id: runId }, data: { status: next } });
+}
+
+/**
+ * 把 durable execution 的终态失败投影回 ResearchRun。execution 在 worker 内失败
+ * （重试耗尽、handler 返回不可重试错误、租约毒化）时，API 层的 dispatch try/catch
+ * 早已返回；没有这道投影 run 会永远停在 queued/researching，用户看到「0 进度」。
+ */
+export async function projectResearchRunExecutionFailure(input: {
+  runId: string;
+  code: string;
+  message: string;
+  now: Date;
+}): Promise<void> {
+  const run = await prisma.researchRun.findUnique({ where: { id: input.runId }, select: { status: true, metrics: true } });
+  if (!run) return;
+  if (isTerminalResearchRunStatus(run.status as ResearchRunStatus)) return;
+  const metrics = run.metrics && typeof run.metrics === "object" && !Array.isArray(run.metrics)
+    ? run.metrics as Record<string, unknown>
+    : {};
+  await prisma.researchRun.update({
+    where: { id: input.runId },
+    data: {
+      status: "failed",
+      completedAt: input.now,
+      metrics: {
+        ...metrics,
+        executionFailure: { code: input.code, message: input.message, at: input.now.toISOString() },
+      },
+    },
+  });
 }
 
 async function persistCandidate(input: {
@@ -227,7 +257,10 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     if (!checkpoint || request?.executionKind !== "research" || !request.researchRunId) {
       return { kind: "failed", code: "invalid_research_checkpoint", message: "Research checkpoint is missing its run identity", retryable: false };
     }
-    const run = await prisma.researchRun.findFirst({ where: { id: request.researchRunId, userId: context.execution.userId }, include: { workspace: true, activePlanVersion: true } });
+    // 不按 execution.userId 二次过滤：execution 由服务端在确认计划时为该 run 创建，
+    // 归属在创建时已校验；运行期执行行与 run 可能独立迁移归属（历史数据不一致会
+    // 让这里永久 research_run_not_found，把 run 卡死在 queued）。
+    const run = await prisma.researchRun.findFirst({ where: { id: request.researchRunId }, include: { workspace: true, activePlanVersion: true } });
     if (!run) return { kind: "failed", code: "research_run_not_found", message: "Research Run 不存在", retryable: false };
     if (run.status === "cancelled") return { kind: "cancelled", message: "Research Run 已取消", checkpoint };
     if (run.status === "awaiting_confirmation") {

@@ -76,7 +76,16 @@ function isKnownPrismaError(
 }
 
 export class PrismaAgentExecutionStore implements AgentExecutionStore {
-  constructor(private readonly client: PrismaClient = prisma) {}
+  constructor(
+    private readonly client: PrismaClient = prisma,
+    private readonly hooks: {
+      onExecutionFailed?: (input: {
+        checkpoint: unknown;
+        code: string;
+        message: string;
+      }) => void | Promise<void>;
+    } = {}
+  ) {}
 
   async createOrGetByClientRunKey(
     input: CreateOrGetAgentExecutionInput
@@ -471,7 +480,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         status: "running",
         leaseExpiresAt: { lt: input.now },
       },
-      select: { id: true, attempt: true, leaseRecoveryCount: true, conversation: { select: { kind: true } } },
+      select: { id: true, attempt: true, leaseRecoveryCount: true, checkpoint: true, conversation: { select: { kind: true } } },
     });
     let recovered = 0;
 
@@ -572,6 +581,14 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         }
         return true;
       });
+      if (didRecover && exhausted) {
+        await this.hooks.onExecutionFailed?.({
+          checkpoint: candidate.checkpoint,
+          code: "max_attempts_exceeded",
+          message:
+            "Execution lease expired after the maximum number of attempts",
+        });
+      }
       if (didRecover) recovered += 1;
     }
 
@@ -846,6 +863,70 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           payload: {
             scheduledAt: input.scheduledAt.toISOString(),
             resumedAt: input.now.toISOString(),
+          },
+          createdAt: input.now,
+        },
+      });
+      return true;
+    });
+  }
+
+  /**
+   * 把 failed 终态的 research execution 重置回 queued。用于用户显式确认/继续研究
+   * 时 execution 已失败（如供应商故障重试耗尽）的场景：不重置就只能丢弃整个 Run。
+   * 仅限 research checkpoint，并重置 attempt 给足重试预算。
+   */
+  async requeueFailedOwned(input: {
+    executionId: string;
+    userId: string;
+    scheduledAt: Date;
+    now: Date;
+  }): Promise<boolean> {
+    return this.client.$transaction(async (transaction) => {
+      const execution = await transaction.agentExecution.findFirst({
+        where: {
+          id: input.executionId,
+          userId: input.userId,
+          status: "failed",
+        },
+        select: { checkpoint: true, lastEventSequence: true },
+      });
+      if (!execution?.checkpoint) return false;
+
+      const checkpoint = parseAgentCheckpoint(execution.checkpoint);
+      if (checkpoint.request?.executionKind !== "research") return false;
+
+      const [updated] = await transaction.agentExecution.updateManyAndReturn({
+        where: {
+          id: input.executionId,
+          userId: input.userId,
+          status: "failed",
+        },
+        data: {
+          status: "queued",
+          scheduledAt: input.scheduledAt,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          waitingToolExecutionId: null,
+          failure: Prisma.JsonNull,
+          attempt: 0,
+          leaseRecoveryCount: 0,
+          lastEventSequence: { increment: 1 },
+        },
+        select: { lastEventSequence: true },
+      });
+      if (!updated) return false;
+
+      await transaction.agentExecutionEvent.create({
+        data: {
+          executionId: input.executionId,
+          sequence: updated.lastEventSequence,
+          key: `run_requeued:${updated.lastEventSequence}`,
+          type: "run_requeued",
+          payload: {
+            scheduledAt: input.scheduledAt.toISOString(),
+            requeuedAt: input.now.toISOString(),
+            reason: "research_resume_after_failure",
           },
           createdAt: input.now,
         },

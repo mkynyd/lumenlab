@@ -338,3 +338,63 @@ describe("AgentExecutionRunner", () => {
     expect(store.scheduleRetry).not.toHaveBeenCalled();
   });
 });
+
+describe("AgentExecutionRunner onTerminalFailure hook", () => {
+  it("invokes the hook with the failure detail after a terminal failure is persisted", async () => {
+    const store = createStore();
+    const onTerminalFailure = vi.fn().mockResolvedValue(undefined);
+    const runner = new AgentExecutionRunner({
+      store,
+      handler: vi.fn().mockResolvedValue({
+        kind: "failed",
+        code: "research_run_not_found",
+        message: "Research Run 不存在",
+        retryable: false,
+      }),
+      retryPolicy: retryPolicy(),
+      now: () => new Date("2026-07-31T00:00:05.000Z"),
+      hooks: { onTerminalFailure },
+    });
+
+    await expect(
+      runner.run({
+        execution: claimedExecution(),
+        workerId: "worker-a",
+        signal: new AbortController().signal,
+      })
+    ).resolves.toEqual({ state: "failed" });
+
+    expect(onTerminalFailure).toHaveBeenCalledTimes(1);
+    expect(onTerminalFailure).toHaveBeenCalledWith({
+      execution: expect.objectContaining({ id: "run-1" }),
+      code: "research_run_not_found",
+      message: "Research Run 不存在",
+    });
+  });
+
+  it("does not invoke the hook for retryable failures or lost leases", async () => {
+    const store = createStore();
+    const onTerminalFailure = vi.fn().mockResolvedValue(undefined);
+    const runner = new AgentExecutionRunner({
+      store,
+      handler: vi.fn().mockResolvedValue({
+        kind: "failed",
+        code: "provider_unavailable",
+        message: "temporary",
+        retryable: true,
+      }),
+      retryPolicy: retryPolicy(),
+      now: () => new Date("2026-07-31T00:00:05.000Z"),
+      hooks: { onTerminalFailure },
+    });
+
+    await expect(
+      runner.run({
+        execution: claimedExecution({ attempt: 1 }),
+        workerId: "worker-a",
+        signal: new AbortController().signal,
+      })
+    ).resolves.toMatchObject({ state: "retry_scheduled" });
+    expect(onTerminalFailure).not.toHaveBeenCalled();
+  });
+});

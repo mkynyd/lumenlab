@@ -89,6 +89,11 @@ export type AgentExecutionRunnerHooks = {
     result: AgentExecutionHandlerResult,
     execution: AgentExecutionRecord
   ) => void | Promise<void>;
+  onTerminalFailure?: (input: {
+    execution: AgentExecutionRecord;
+    code: string;
+    message: string;
+  }) => void | Promise<void>;
 };
 
 export class LeaseLostDuringRun extends Error {}
@@ -323,6 +328,14 @@ export class AgentExecutionRunner {
       now,
       ...(result.checkpoint ? { checkpoint: result.checkpoint } : {}),
     });
-    return failed ? { state: "failed" } : { state: "lease_lost" };
+    if (failed) {
+      await this.hooks.onTerminalFailure?.({
+        execution: input.execution,
+        code: result.code,
+        message: result.message,
+      });
+      return { state: "failed" };
+    }
+    return { state: "lease_lost" };
   }
 }

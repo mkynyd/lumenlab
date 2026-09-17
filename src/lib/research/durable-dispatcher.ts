@@ -80,7 +80,17 @@ export async function resumeResearchAgentExecution(userId: string, runId: string
   if (!run?.agentExecutionId) return false;
 
   const now = new Date();
-  return new PrismaAgentExecutionStore().resumeOwned({
+  const store = new PrismaAgentExecutionStore();
+  const resumed = await store.resumeOwned({
+    executionId: run.agentExecutionId,
+    userId,
+    now,
+    scheduledAt: now,
+  });
+  if (resumed) return true;
+  // execution 可能已因供应商故障等进入 failed 终态；用户显式确认/追加指令
+  // 代表继续研究的意图，重置后重新入队，而不是让 Run 无声卡死。
+  return store.requeueFailedOwned({
     executionId: run.agentExecutionId,
     userId,
     now,

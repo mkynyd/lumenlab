@@ -1631,3 +1631,181 @@ describe("PrismaAgentExecutionStore", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 });
+
+describe("PrismaAgentExecutionStore requeueFailedOwned", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("requeues a failed research execution with a fresh attempt budget", async () => {
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    mocks.transaction.mockImplementation(async (operation) =>
+      operation({
+        agentExecution: {
+          findFirst: mocks.findFirst,
+          updateManyAndReturn: mocks.updateManyAndReturn,
+        },
+        agentExecutionEvent: { create: mocks.createEvent },
+      })
+    );
+    mocks.findFirst.mockResolvedValue({
+      checkpoint: {
+        ...checkpoint(),
+        request: {
+          message: "q",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: false,
+          reasoningEffort: "high",
+          webSearchActive: false,
+          skillOff: true,
+          isQuickTask: false,
+          executionKind: "research",
+          researchRunId: "run-1",
+        },
+      },
+      lastEventSequence: 7,
+    });
+    mocks.updateManyAndReturn.mockResolvedValue([{ lastEventSequence: 8 }]);
+    mocks.createEvent.mockResolvedValue({});
+
+    const requeued = await new PrismaAgentExecutionStore().requeueFailedOwned({
+      executionId: "run-1",
+      userId: "user-1",
+      scheduledAt: now,
+      now,
+    });
+
+    expect(requeued).toBe(true);
+    expect(mocks.updateManyAndReturn).toHaveBeenCalledWith({
+      where: { id: "run-1", userId: "user-1", status: "failed" },
+      data: expect.objectContaining({
+        status: "queued",
+        scheduledAt: now,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        waitingToolExecutionId: null,
+        failure: Prisma.JsonNull,
+        attempt: 0,
+        leaseRecoveryCount: 0,
+        lastEventSequence: { increment: 1 },
+      }),
+      select: { lastEventSequence: true },
+    });
+    expect(mocks.createEvent).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        executionId: "run-1",
+        sequence: 8,
+        type: "run_requeued",
+      }),
+    });
+  });
+
+  it("refuses to requeue executions without a research checkpoint", async () => {
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    mocks.transaction.mockImplementation(async (operation) =>
+      operation({
+        agentExecution: {
+          findFirst: mocks.findFirst,
+          updateManyAndReturn: mocks.updateManyAndReturn,
+        },
+        agentExecutionEvent: { create: mocks.createEvent },
+      })
+    );
+    mocks.findFirst.mockResolvedValue({ checkpoint: checkpoint(), lastEventSequence: 7 });
+
+    const requeued = await new PrismaAgentExecutionStore().requeueFailedOwned({
+      executionId: "run-1",
+      userId: "user-1",
+      scheduledAt: now,
+      now,
+    });
+
+    expect(requeued).toBe(false);
+    expect(mocks.updateManyAndReturn).not.toHaveBeenCalled();
+    expect(mocks.createEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("PrismaAgentExecutionStore recoverExpired failure hook", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("notifies onExecutionFailed when a poisoned lease becomes terminal", async () => {
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    const researchCheckpoint = {
+      ...checkpoint(),
+      request: {
+          message: "q",
+          model: "deepseek-v4-pro",
+          thinkingEnabled: false,
+          reasoningEffort: "high",
+          webSearchActive: false,
+          skillOff: true,
+          isQuickTask: false,
+          executionKind: "research",
+          researchRunId: "run-1",
+        },
+    };
+    mocks.findMany.mockResolvedValue([
+      { id: "run-poison", attempt: 3, checkpoint: researchCheckpoint },
+    ]);
+    mocks.transaction.mockImplementation(async (operation) =>
+      operation({
+        agentExecution: {
+          updateMany: mocks.updateMany,
+          update: mocks.update,
+          findUnique: mocks.findExecutionUnique,
+        },
+        agentExecutionEvent: { create: mocks.createEvent },
+        toolExecution: { updateMany: mocks.updateToolExecution },
+      })
+    );
+    mocks.updateMany.mockResolvedValue({ count: 1 });
+    mocks.update.mockResolvedValue({ lastEventSequence: 8 });
+    mocks.createEvent.mockResolvedValue({});
+    mocks.updateToolExecution.mockResolvedValue({ count: 0 });
+    mocks.findExecutionUnique.mockResolvedValue(null);
+    const onExecutionFailed = vi.fn();
+
+    await new PrismaAgentExecutionStore(undefined, { onExecutionFailed }).recoverExpired({
+      now,
+      maxAttempts: 3,
+    });
+
+    expect(onExecutionFailed).toHaveBeenCalledTimes(1);
+    expect(onExecutionFailed).toHaveBeenCalledWith({
+      checkpoint: researchCheckpoint,
+      code: "max_attempts_exceeded",
+      message: "Execution lease expired after the maximum number of attempts",
+    });
+  });
+
+  it("does not notify onExecutionFailed when an expired lease is requeued", async () => {
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    mocks.findMany.mockResolvedValue([{ id: "run-1", attempt: 1 }]);
+    mocks.transaction.mockImplementation(async (operation) =>
+      operation({
+        agentExecution: {
+          updateMany: mocks.updateMany,
+          update: mocks.update,
+          findUnique: mocks.findExecutionUnique,
+        },
+        agentExecutionEvent: { create: mocks.createEvent },
+        toolExecution: { updateMany: mocks.updateToolExecution },
+      })
+    );
+    mocks.updateMany.mockResolvedValue({ count: 1 });
+    mocks.update.mockResolvedValue({ lastEventSequence: 3 });
+    mocks.createEvent.mockResolvedValue({});
+    mocks.updateToolExecution.mockResolvedValue({ count: 0 });
+    const onExecutionFailed = vi.fn();
+
+    const recovered = await new PrismaAgentExecutionStore(undefined, {
+      onExecutionFailed,
+    }).recoverExpired({ now });
+
+    expect(recovered).toBe(1);
+    expect(onExecutionFailed).not.toHaveBeenCalled();
+  });
+});

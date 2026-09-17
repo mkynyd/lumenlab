@@ -63,6 +63,22 @@ export function useCancelResearchRun(runId: string, workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => (await fetchJson<{ run: unknown }>(`/api/research/runs/${runId}`, { method: "DELETE" })).run,
+    // 取消在后端是即时写库；乐观更新让 UI 秒级响应，而不是等 4s 轮询。
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.research.run(runId) });
+      const previous = queryClient.getQueryData<Record<string, unknown>>(queryKeys.research.run(runId));
+      if (previous) {
+        queryClient.setQueryData(queryKeys.research.run(runId), {
+          ...previous,
+          status: "cancelled",
+          completedAt: new Date().toISOString(),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) queryClient.setQueryData(queryKeys.research.run(runId), context.previous);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.research.workspace(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.research.run(runId) });

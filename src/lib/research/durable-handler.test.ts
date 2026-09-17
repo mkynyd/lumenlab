@@ -309,7 +309,7 @@ vi.mock("./model-stage", async (importOriginal) => {
   };
 });
 
-import { createDurableResearchExecutionHandler } from "./durable-handler";
+import { createDurableResearchExecutionHandler, projectResearchRunExecutionFailure } from "./durable-handler";
 import { runResearchModelStage } from "./model-stage";
 import { prisma } from "@/lib/db";
 
@@ -1056,5 +1056,88 @@ describe("durable research handler · visual_evidence stage", () => {
     const firstState = (first as { checkpoint: AgentCheckpoint }).checkpoint.researchState!;
     await handler(createContext({ researchState: { ...firstState, stage: "visual_evidence", visualEvidence: { ...firstState.visualEvidence!, done: false } } }));
     expect(toolInvoker).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("durable research handler · run ownership", () => {
+  it("resolves the run without coupling to the execution owner", async () => {
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => []),
+      read: vi.fn(async () => sciverseRead),
+    };
+    const findFirst = prisma.researchRun.findFirst as unknown as ReturnType<typeof vi.fn>;
+    const seen: unknown[] = [];
+    findFirst.mockImplementation(async (args: unknown) => {
+      seen.push(args);
+      return {
+        ...researchRunRow,
+        status: runStatus,
+        workspace: { ...researchRunRow.workspace },
+        activePlanVersion: { ...researchRunRow.activePlanVersion },
+      };
+    });
+    const handler = createDurableResearchExecutionHandler({ provider });
+    // 模拟 execution 与 run 归属不一致（历史迁移只改了一侧）：
+    // 旧实现按 execution.userId 过滤会永久 research_run_not_found。
+    const context = createContext();
+    (context.execution as { userId: string }).userId = "user-legacy";
+
+    const result = await handler(context);
+
+    expect(result).not.toMatchObject({ kind: "failed", code: "research_run_not_found" });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const args of seen) {
+      expect((args as { where: Record<string, unknown> }).where.userId).toBeUndefined();
+    }
+  });
+});
+
+describe("projectResearchRunExecutionFailure", () => {
+  it("marks an active run failed with the execution failure detail", async () => {
+    runStatus = "queued";
+    const now = new Date("2026-09-17T10:00:00.000Z");
+    const updateMock = prisma.researchRun.update as unknown as ReturnType<typeof vi.fn>;
+    const updates: unknown[] = [];
+    updateMock.mockImplementation(async (args: unknown) => {
+      updates.push(args);
+      return {};
+    });
+
+    await projectResearchRunExecutionFailure({
+      runId: "run-1",
+      code: "research_run_not_found",
+      message: "Research Run 不存在",
+      now,
+    });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      where: { id: "run-1" },
+      data: {
+        status: "failed",
+        completedAt: now,
+        metrics: {
+          executionFailure: {
+            code: "research_run_not_found",
+            message: "Research Run 不存在",
+            at: now.toISOString(),
+          },
+        },
+      },
+    });
+  });
+
+  it("leaves terminal runs untouched", async () => {
+    runStatus = "cancelled";
+    const updateMock = prisma.researchRun.update as unknown as ReturnType<typeof vi.fn>;
+
+    await projectResearchRunExecutionFailure({
+      runId: "run-1",
+      code: "research_run_not_found",
+      message: "Research Run 不存在",
+      now: new Date("2026-09-17T10:00:00.000Z"),
+    });
+
+    expect(updateMock).not.toHaveBeenCalled();
   });
 });

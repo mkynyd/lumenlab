@@ -382,7 +382,8 @@ export async function confirmResearchRunPlan(userId: string, runId: string) {
   });
   try {
     const agentExecutionId = await createResearchAgentExecution(userId, runId);
-    await resumeResearchAgentExecution(userId, runId);
+    const resumed = await resumeResearchAgentExecution(userId, runId);
+    if (!resumed) throw new ResearchServiceError("INVALID_STATE", "研究执行记录不可用，无法启动");
     return { ...queued, agentExecutionId };
   } catch (error) {
     await prisma.researchRun.update({ where: { id: runId }, data: { status: "failed", completedAt: new Date(), metrics: { dispatchError: error instanceof Error ? error.message : "dispatch failed" } } });

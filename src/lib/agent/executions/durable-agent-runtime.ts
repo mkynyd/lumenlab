@@ -48,7 +48,7 @@ import { AgentExecutionWorker } from "./agent-execution-worker";
 import { PrismaAgentExecutionStore } from "./prisma-agent-execution-store";
 import { AgentExecutionRetryPolicy } from "./retry-policy";
 import { createPaperFormattingHandler } from "@/lib/paper/formatting-handler";
-import { createDurableResearchExecutionHandler } from "@/lib/research/durable-handler";
+import { createDurableResearchExecutionHandler, projectResearchRunExecutionFailure } from "@/lib/research/durable-handler";
 
 const OUTPUT_CHUNK_SIZE = 16_000;
 /** 增量落盘的分段阈值：攒够字符数或距上次写入超过该间隔即写入事件存储 */
@@ -1045,13 +1045,38 @@ type WorkerGlobal = typeof globalThis & {
   __lumenAgentExecutionWorker?: AgentExecutionWorker;
 };
 
+async function projectResearchExecutionFailure(
+  checkpoint: unknown,
+  code: string,
+  message: string
+): Promise<void> {
+  const request = (checkpoint as AgentCheckpoint | null | undefined)?.request;
+  if (request?.executionKind !== "research" || !request.researchRunId) return;
+  try {
+    await projectResearchRunExecutionFailure({
+      runId: request.researchRunId,
+      code,
+      message,
+      now: new Date(),
+    });
+  } catch (error) {
+    logger.error("Failed to project research run execution failure", {
+      runId: request.researchRunId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export function startAgentExecutionWorker() {
   const globalWorker = globalThis as WorkerGlobal;
   if (globalWorker.__lumenAgentExecutionWorker?.isRunning) {
     return { started: false, workerId: "existing-process-worker" };
   }
 
-  const store = new PrismaAgentExecutionStore();
+  const store = new PrismaAgentExecutionStore(prisma, {
+    onExecutionFailed: ({ checkpoint, code, message }) =>
+      projectResearchExecutionFailure(checkpoint, code, message),
+  });
   const retryPolicy = new AgentExecutionRetryPolicy({
     maxAttempts: 3,
     baseDelayMs: 1_000,
@@ -1061,6 +1086,12 @@ export function startAgentExecutionWorker() {
     store,
     handler: createDurableAgentExecutionHandler(),
     retryPolicy,
+    hooks: {
+      // Research run 的终态失败必须投影回 ResearchRun：execution 在 worker 内
+      // 重试耗尽时 API 层无法感知，否则 run 会永远停在 queued/researching。
+      onTerminalFailure: ({ execution, code, message }) =>
+        projectResearchExecutionFailure(execution.checkpoint, code, message),
+    },
   });
   const workerId = `${hostname()}:${process.pid}:${randomUUID()}`;
   const worker = new AgentExecutionWorker({
