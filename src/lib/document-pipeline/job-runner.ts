@@ -72,7 +72,7 @@ export async function recoverStaleJobs(maxAgeMinutes = STALE_JOB_MINUTES): Promi
 
 /**
  * Recover stale jobs and start processing all pending jobs.
- * Intended to be called once at application startup (e.g. from instrumentation.ts).
+ * Intended to be called once at application startup (e.g. from src/instrumentation.ts).
  */
 export async function startParseJobWorker(): Promise<{ recovered: number; pending: number }> {
   // On startup, any job still marked as running is no longer actually running,
