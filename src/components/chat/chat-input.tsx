@@ -141,7 +141,7 @@ export function ChatInput({
   disabled = false,
   value,
   onValueChange,
-  attachments = [],
+  attachments: controlledAttachments = [],
   onAttachmentsChange,
   contextHint,
   placeholder = "问点什么",
@@ -158,6 +158,11 @@ export function ChatInput({
 }: ChatInputProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const mounted = useRef(true);
+  // 附件默认受控（聊天页由父组件持有）；未提供 onAttachmentsChange 时
+  // （如深度研究入口的 ResearchComposer）退化为内部状态，否则选中的文件会被静默丢弃。
+  const [internalAttachments, setInternalAttachments] = useState<FileAttachment[]>([]);
+  const attachments = onAttachmentsChange ? controlledAttachments : internalAttachments;
+  const updateAttachments = onAttachmentsChange ?? setInternalAttachments;
   const attachmentsRef = useRef(attachments);
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -219,7 +224,7 @@ export function ChatInput({
       if (latestDraft.current.attachments === attachments) {
         // 发送成功后本地预览退出：乐观消息使用自己的 blob 预览。
         for (const attachment of attachments) releasePreview(attachment);
-        onAttachmentsChange?.([]);
+        updateAttachments([]);
       }
     } finally {
       setIsSubmitting(false);
@@ -269,7 +274,7 @@ export function ChatInput({
           }
           return attachment;
         });
-        onAttachmentsChange?.([...attachments, ...nextFiles]);
+        updateAttachments([...attachments, ...nextFiles]);
       } else {
         // 追加后超批量限制：整批不追加，文件不落附件列表。
         rejected.unshift(batch.error);
@@ -330,7 +335,7 @@ export function ChatInput({
     for (const attachment of attachments) {
       if (attachment.id === id) releasePreview(attachment);
     }
-    onAttachmentsChange?.(attachments.filter((attachment) => attachment.id !== id));
+    updateAttachments(attachments.filter((attachment) => attachment.id !== id));
   }
 
   const mobileModels = MOBILE_MODEL_OPTIONS.filter((option) =>

@@ -185,3 +185,39 @@ describe("ChatInput", () => {
     expect(next[0].previewUrl).toBeUndefined();
   });
 });
+
+describe("ChatInput 非受控附件模式（深度研究入口）", () => {
+  it("keeps pasted files as visible chips and sends them via onSend without onAttachmentsChange", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(true);
+    render(<ChatInput onSend={onSend} />);
+
+    const file = new File(["data"], "资料.pdf", { type: "application/pdf" });
+    pasteFiles(screen.getByRole("textbox"), [file]);
+
+    // 附件 chip 可见且带删除按钮（ResearchComposer 不传受控回调时不能静默丢弃）。
+    expect(screen.getByText("资料.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /移除.*资料\.pdf|资料\.pdf.*移除/ })).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox"), "研究这个问题{Enter}");
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    const [, attachments] = onSend.mock.calls[0] as unknown as [string, FileAttachment[]];
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].name).toBe("资料.pdf");
+
+    // 发送成功后内部附件清空。
+    await waitFor(() => expect(screen.queryByText("资料.pdf")).not.toBeInTheDocument());
+  });
+
+  it("still clears internally held attachments after a successful send and keeps them on failure", async () => {
+    const user = userEvent.setup();
+    const failSend = vi.fn().mockResolvedValue(false);
+    const { unmount } = render(<ChatInput onSend={failSend} />);
+    pasteFiles(screen.getByRole("textbox"), [new File(["x"], "a.pdf", { type: "application/pdf" })]);
+    expect(screen.getByText("a.pdf")).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox"), "hi{Enter}");
+    await waitFor(() => expect(failSend).toHaveBeenCalled());
+    expect(screen.getByText("a.pdf")).toBeInTheDocument();
+    unmount();
+  });
+});
