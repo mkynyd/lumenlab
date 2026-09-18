@@ -163,7 +163,7 @@ export default function PaperTemplatesPage() {
         <div className="mt-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">模板库</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">这里收录国内高校论文模板的最新验证状态。标为「已验证」或「兼容可用」的模板可以在「论文排版」中直接提交；其余模板正在验证或已停更，仅供查看格式要求，验证通过后会自动开放提交。</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">这里收录国内高校论文模板的最新验证状态。「已验证」「兼容可用」的模板格式可信，可作排版参考；模板在「论文排版」中开放提交以完成全部三级验证为准，验证通过后无需额外申请。其余模板正在验证或已停更，仅供查看格式要求。</p>
           </div>
           <BookStack className="text-[var(--color-accent)]" width={28} height={28} strokeWidth={1.5} />
         </div>

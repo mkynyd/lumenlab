@@ -94,7 +94,7 @@ export function PaperTypesetting() {
               <div className="mt-4 bg-[var(--color-panel-muted)] px-5 py-6">
                 <p className="text-sm font-medium text-[var(--color-text-primary)]">模板库正在验证，暂未开放提交</p>
                 <p className="mt-2 max-w-2xl text-xs leading-5 text-[var(--color-text-secondary)]">
-                  每个学校模板都要通过「固定可执行快照、隔离编译、真实样例排版」三级验证后才能提交。当前收录的 {counts?.records ?? 0} 条模板都还在验证队列中，验证通过后本页会自动开放，无需重新上传或额外申请。
+                  每个学校模板都要通过「固定可执行快照、隔离编译、真实样例排版」三级验证后才能提交。当前模板库中没有已通过全部验证的模板，验证通过后本页会自动开放，无需重新上传或额外申请。
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <Link href="/chat" className="inline-flex min-h-9 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90">去聊天，让 AI 按学校要求帮你排版</Link>
