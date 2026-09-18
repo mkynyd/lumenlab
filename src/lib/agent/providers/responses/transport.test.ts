@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   postResponses,
   streamResponses,
+  ResponsesConnectTimeoutError,
   ResponsesHttpError,
   ResponsesStreamInterruptedError,
   ResponsesTimeoutError,
@@ -351,6 +352,167 @@ describe("streamResponses", () => {
     );
     expect(failure).toBeInstanceOf(ResponsesTimeoutError);
   });
+
+  it("never retried a mid-stream interruption: headers already arrived", async () => {
+    const { impl, calls } = fakeFetch(() => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              sseEvent({ type: "response.output_text.delta", delta: "a" })
+            )
+          );
+          controller.error(new Error("socket hangup"));
+        },
+      });
+      return { ok: true, status: 200, body } as unknown as Response;
+    });
+    const source = await streamResponses({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      body: { model: "m", input: [] },
+      fetchImpl: impl,
+    });
+    const failure = await collect(source).then(
+      () => null,
+      (error: unknown) => error
+    );
+    expect(failure).toBeInstanceOf(ResponsesStreamInterruptedError);
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe("streamResponses · pre-headers resilience", () => {
+  it("retries a pre-headers network failure once with backoff and then succeeds", async () => {
+    let attempts = 0;
+    const { impl, calls } = fakeFetch(() => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error("read ECONNRESET") as Error & { code: string };
+        error.code = "ECONNRESET";
+        return Promise.reject(error);
+      }
+      return sseResponse([
+        sseEvent({ type: "response.completed", response: { id: "r1", status: "completed" } }),
+      ]);
+    });
+    const events = await collect(
+      await streamResponses({
+        baseUrl: "https://api.example.com",
+        apiKey: "k",
+        body: { model: "m", input: [] },
+        fetchImpl: impl,
+      })
+    );
+    expect(calls).toHaveLength(2);
+    expect(events.map((event) => event.type)).toEqual(["response.completed"]);
+  });
+
+  it("gives up after the configured retry attempts", async () => {
+    const { impl, calls } = fakeFetch(() =>
+      Promise.reject(new TypeError("fetch failed"))
+    );
+    const failure = await streamResponses({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      body: { model: "m", input: [] },
+      fetchImpl: impl,
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ResponsesStreamInterruptedError);
+    expect((failure as ResponsesStreamInterruptedError).reason).toBe("network");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("does not retry HTTP error responses", async () => {
+    const { impl, calls } = fakeFetch(() => errorResponse(500, "boom"));
+    const failure = await streamResponses({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      body: { model: "m", input: [] },
+      fetchImpl: impl,
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ResponsesHttpError);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does not retry caller cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { impl, calls } = fakeFetch(() =>
+      Promise.reject(new DOMException("The operation was aborted", "AbortError"))
+    );
+    const failure = await streamResponses({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      body: { model: "m", input: [] },
+      signal: controller.signal,
+      fetchImpl: impl,
+    }).catch((error: unknown) => error);
+    expect((failure as Error).name).toBe("AbortError");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("aborts with ResponsesConnectTimeoutError when headers never arrive, then retries", async () => {
+    let attempts = 0;
+    const { impl, calls } = fakeFetch((_url, init) => {
+      attempts += 1;
+      if (attempts === 1) {
+        // 挂起的连接：不响应、不 reject，等 signal abort。
+        return new Promise<Response>((_, reject) => {
+          init.signal?.addEventListener(
+            "abort",
+            () =>
+              reject(
+                init.signal?.reason instanceof Error
+                  ? init.signal.reason
+                  : new DOMException("The operation was aborted", "AbortError")
+              ),
+            { once: true }
+          );
+        });
+      }
+      return sseResponse([
+        sseEvent({ type: "response.completed", response: { id: "r1", status: "completed" } }),
+      ]);
+    });
+    const events = await collect(
+      await streamResponses({
+        baseUrl: "https://api.example.com",
+        apiKey: "k",
+        body: { model: "m", input: [] },
+        connectTimeoutMs: 20,
+        fetchImpl: impl,
+      })
+    );
+    expect(calls).toHaveLength(2);
+    expect(events.map((event) => event.type)).toEqual(["response.completed"]);
+  });
+
+  it("surfaces ResponsesConnectTimeoutError when the retry also stalls", async () => {
+    const { impl, calls } = fakeFetch((_url, init) =>
+      new Promise<Response>((_, reject) => {
+        init.signal?.addEventListener(
+          "abort",
+          () =>
+            reject(
+              init.signal?.reason instanceof Error
+                ? init.signal.reason
+                : new DOMException("The operation was aborted", "AbortError")
+            ),
+          { once: true }
+        );
+      })
+    );
+    const failure = await streamResponses({
+      baseUrl: "https://api.example.com",
+      apiKey: "k",
+      body: { model: "m", input: [] },
+      connectTimeoutMs: 20,
+      fetchImpl: impl,
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ResponsesConnectTimeoutError);
+    expect(calls).toHaveLength(2);
+  }, 10_000);
 });
 
 describe("postResponses", () => {

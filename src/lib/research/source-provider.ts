@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createPrismaToolRunner } from "@/lib/agent/tools/tool-runner";
 import type { ToolRunner } from "@/lib/agent/tools/tool-runner";
+import { logger } from "@/lib/logger";
 import { createAcademicSourceAdapters, type AcademicSourceAdapter } from "./academic-adapters";
 import { normalizeDoi } from "./source-identity";
 import { deriveScholarlyFilterIntent } from "./scholarly-filter";
@@ -290,7 +291,12 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
     const academicResults = await Promise.all(academicAdapters.map(async (adapter) => {
       try {
         return await adapter.search(context, question);
-      } catch {
+      } catch (error) {
+        // fallback 失败此前被静默吞掉，run 只剩一条 sciverse_empty 误导归因。
+        logger.warn("academic fallback adapter failed", {
+          provider: adapter.provider,
+          errorClass: error instanceof Error ? error.name : typeof error,
+        });
         return [];
       }
     }));

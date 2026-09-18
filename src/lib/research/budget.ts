@@ -6,10 +6,19 @@ import type {
   ResearchStopInput,
 } from "./contracts";
 
+/**
+ * 收尾预留：核验/架构/写作/审计（+最多一次修订）四个阶段的 model/tokens/credits。
+ * deep 档数值按生产实测校准：一次 15 份资料的真实 deep Run 探索阶段消耗约
+ * 585k tokens（16 次调用、平均 42k input tokens/次），旧上限 160k 在收尾前
+ * 就被打穿，导致 canUseFinalizationModel 直接跳过全部收尾阶段。deep 总额
+ * 640k = 探索 544k + 收尾预留 96k（≈6 次收尾调用 × 15–25k input）；
+ * comprehensive 保持高于 deep（1.5×）。档位只由 profile 决定、不随附件数动态
+ * 变化，保证 durable 重放时预算口径稳定。
+ */
 export const RESEARCH_FINALIZATION_RESERVES: Record<ResearchBudgetProfile, ResearchFinalizationBudgetReserve> = {
   quick: { modelCalls: 6, maxTokens: 12_000, maxCostCredits: 36 },
-  deep: { modelCalls: 6, maxTokens: 32_000, maxCostCredits: 96 },
-  comprehensive: { modelCalls: 6, maxTokens: 72_000, maxCostCredits: 220 },
+  deep: { modelCalls: 6, maxTokens: 96_000, maxCostCredits: 288 },
+  comprehensive: { modelCalls: 6, maxTokens: 144_000, maxCostCredits: 432 },
 };
 
 export const RESEARCH_BUDGETS: Record<ResearchBudgetProfile, ResearchBudgetLimits> = {
@@ -36,8 +45,8 @@ export const RESEARCH_BUDGETS: Record<ResearchBudgetProfile, ResearchBudgetLimit
     searchCalls: 24,
     fetchCalls: 40,
     maxSources: 40,
-    maxTokens: 160_000,
-    maxCostCredits: 480,
+    maxTokens: 640_000,
+    maxCostCredits: 1_920,
     researcherConcurrency: 4,
     maxReplans: 3,
     maxVerificationRepairs: 2,
@@ -52,8 +61,8 @@ export const RESEARCH_BUDGETS: Record<ResearchBudgetProfile, ResearchBudgetLimit
     searchCalls: 72,
     fetchCalls: 120,
     maxSources: 120,
-    maxTokens: 480_000,
-    maxCostCredits: 1_500,
+    maxTokens: 960_000,
+    maxCostCredits: 3_000,
     researcherConcurrency: 4,
     maxReplans: 6,
     maxVerificationRepairs: 4,
@@ -132,6 +141,21 @@ export function tryReserveResearchBudgetCounter(
 /** Release a reservation when an operation did not produce the counted item. */
 export function releaseResearchBudgetCounter(counters: ResearchBudgetCounters, counter: ResearchBudgetCounter) {
   counters[counter] = Math.max(0, counters[counter] - 1);
+}
+
+/**
+ * 发起一次模型调用前的 token/credit 余量检查（纯内存比较，无副作用）。
+ * 调用计数由 tryReserveResearchBudgetCounter 同步预留，但单次调用的实际
+ * token 消耗在返回前未知；生产 deep Run 曾因此只按调用计数放行、连续烧掉
+ * 585k tokens。在 researching 循环内每次模型调用前检查本函数，余量为 0 时
+ * 优雅停止探索而不是继续烧钱后跳过收尾。
+ */
+export function hasResearchModelBudgetHeadroom(input: {
+  limits: ResearchBudgetLimits;
+  totalTokens?: number;
+  costCredits?: number;
+}): boolean {
+  return (input.totalTokens ?? 0) < input.limits.maxTokens && (input.costCredits ?? 0) < input.limits.maxCostCredits;
 }
 
 export function evaluateResearchStop(input: ResearchStopInput): ResearchStopDecision {

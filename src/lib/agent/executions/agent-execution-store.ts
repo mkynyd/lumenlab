@@ -188,6 +188,7 @@ const researchStateSchema = z
     completionTokens: z.number().int().nonnegative().optional(),
     totalTokens: z.number().int().nonnegative().optional(),
     costCredits: z.number().int().nonnegative().optional(),
+    budgetStopReason: z.string().max(64).optional(),
     draftReport: z.string().max(200_000).optional(),
     lastEvidenceCount: z.number().int().nonnegative().optional(),
     claimExtraction: z

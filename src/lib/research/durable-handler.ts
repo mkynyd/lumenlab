@@ -4,7 +4,7 @@ import type { AgentCheckpoint } from "@/lib/agent/executions/agent-execution-sto
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { AgentExecutionHandler, AgentExecutionHandlerContext, AgentExecutionHandlerResult } from "@/lib/agent/executions/agent-execution-runner";
 import type { ChatModel } from "@/lib/chat/model-catalog";
-import { evaluateResearchStop, finalizationBudgetRemaining, getResearchBudget, getResearchExplorationBudget, getResearchFinalizationReserve, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
+import { evaluateResearchStop, finalizationBudgetRemaining, getResearchBudget, getResearchExplorationBudget, getResearchFinalizationReserve, hasResearchModelBudgetHeadroom, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
 import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion, snapshotScopeTypeOf } from "./claim-graph";
@@ -40,6 +40,7 @@ import {
   buildSourceTriagePrompt,
   buildVerifierPrompt,
   RESEARCH_PROMPT_VERSIONS,
+  SOURCE_TRIAGE_CANDIDATE_CHAR_BUDGET,
   type ReportClaimPacket,
 } from "./prompts";
 import { deterministicReportAudit, evidenceMarkersInReport, fallbackReportArchitecture, normalizeReportArchitecture, normalizeReportAuditDecision } from "./report-quality";
@@ -285,8 +286,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       };
     }
 
-    /** 最近一次评估得出的预算停止原因（进入 run.metrics.budgetStopReason）。 */
-    let lastBudgetStopReason = "continue";
+    /** 最近一次评估得出的预算停止原因（持久化到 state，进入 run.metrics.budgetStopReason）。 */
+    let lastBudgetStopReason = checkpoint.researchState?.budgetStopReason ?? "continue";
     const existing = checkpoint.researchState;
     const state: ResearchState = existing ?? {
       stage: "researching",
@@ -404,6 +405,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       const hardBudgetReached = elapsedMs >= researchLimits.wallTimeMs || state.modelCalls >= researchLimits.modelCalls || (state.totalTokens ?? 0) >= researchLimits.maxTokens || (state.costCredits ?? 0) >= researchLimits.maxCostCredits || state.searchCalls >= researchLimits.searchCalls || state.fetchCalls >= researchLimits.fetchCalls || state.sourceCount >= researchLimits.maxSources;
       if (hardBudgetReached) {
         state.stage = "evaluating";
+        lastBudgetStopReason = "hard_budget";
+        state.budgetStopReason = lastBudgetStopReason;
         await appendPublicEvent(context, { key: `research:budget:reached:${run.id}:${state.searchCalls}:${state.fetchCalls}`, kind: "budget_updated", runId: run.id, message: "已达到研究硬预算，进入评估阶段", publicData: { elapsedMs, modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, limits } });
         await transitionRun(run.id, "evaluating");
         await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
@@ -429,8 +432,13 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         await prisma.researchQuestion.update({ where: { id: task.question.id }, data: { status: "researching", researchAttempts: { increment: 1 } } });
         await appendPublicEvent(context, { key: `research:task:start:${task.id}`, kind: "task_started", runId: run.id, message: `开始研究：${task.question.title}`, publicData: { questionId: task.question.id, priority: task.question.priority } });
         try {
-          if (!tryReserveResearchBudgetCounter(state, researchLimits, "modelCalls")) {
-            await prisma.researchTask.update({ where: { id: task.id }, data: { status: "retrying", lastError: json({ code: "research_model_budget_reserved" }) } });
+          // 单次调用的 token 消耗在返回前未知：除同步预留调用计数外，发起前
+          // 再检查一次 token/credit 余量。余量为 0 时不再点火新调用，任务回到
+          // retrying，下一轮 handler 的 hardBudgetReached 会把 Run 送入 evaluating
+          // 优雅收尾，而不是烧穿预算后跳过收尾。
+          const workerHeadroom = hasResearchModelBudgetHeadroom({ limits: researchLimits, totalTokens: state.totalTokens, costCredits: state.costCredits });
+          if (!workerHeadroom || !tryReserveResearchBudgetCounter(state, researchLimits, "modelCalls")) {
+            await prisma.researchTask.update({ where: { id: task.id }, data: { status: "retrying", lastError: json({ code: workerHeadroom ? "research_model_budget_reserved" : "research_token_budget_exhausted" }) } });
             return;
           }
           const workerResult = await runResearchModelStage<ResearchWorkerDecision>({
@@ -461,7 +469,14 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             const prioritized = prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders).slice(0, 12);
             const deterministicAssessments = new Map(prioritized.map((candidate, index) => [String(index), deterministicSourceAssessment({ question: task.question!.question, strategy, candidate })]));
             let modelAssessments: ReturnType<typeof normalizeSourceTriageDecision> = {};
-            if (prioritized.some((_, index) => deterministicAssessments.get(String(index))?.relevance !== "irrelevant") && tryReserveResearchBudgetCounter(state, researchLimits, "modelCalls")) {
+            // triage 是 researching 循环里最贵的调用（12 候选 × 摘录）。余量检查
+            // 与候选字符预算双重收敛：预算越紧，每条摘录越短（有下限）。
+            const triageHeadroom = hasResearchModelBudgetHeadroom({ limits: researchLimits, totalTokens: state.totalTokens, costCredits: state.costCredits });
+            const triageCandidateCharBudget = Math.min(
+              SOURCE_TRIAGE_CANDIDATE_CHAR_BUDGET,
+              Math.max(2_400, (researchLimits.maxTokens - (state.totalTokens ?? 0)) * 2),
+            );
+            if (triageHeadroom && prioritized.some((_, index) => deterministicAssessments.get(String(index))?.relevance !== "irrelevant") && tryReserveResearchBudgetCounter(state, researchLimits, "modelCalls")) {
               const triageResult = await runResearchModelStage<{ candidates?: unknown }>({
                 role: "research.source_triage",
                 userId: context.execution.userId,
@@ -469,7 +484,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
                 projectId: run.workspace.projectId,
                 signal: context.signal,
                 modelOverride,
-                prompt: buildSourceTriagePrompt({ plan: planSnapshot!, question: task.question.question, strategy, candidates: prioritized.map((candidate, index) => ({ id: String(index), candidate })), methodology: methodology("source_triage") }),
+                prompt: buildSourceTriagePrompt({ plan: planSnapshot!, question: task.question.question, strategy, candidates: prioritized.map((candidate, index) => ({ id: String(index), candidate })), methodology: methodology("source_triage"), candidateCharBudget: triageCandidateCharBudget }),
               });
               recordResearchModelStage(state, triageResult, { modelCallReserved: true });
               modelAssessments = normalizeSourceTriageDecision(triageResult.value, new Set(prioritized.map((_, index) => String(index))));
@@ -615,6 +630,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       state.lastEvidenceCount = allEvidence.length;
       const stopDecision = evaluateResearchStop({ limits: researchLimits, modelCalls: state.modelCalls, totalTokens: state.totalTokens, costCredits: state.costCredits, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount, elapsedMs: Date.now() - (run.startedAt ?? run.createdAt).getTime(), criticalQuestionsResolved: !unresolvedCritical, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain, hasPendingCriticalWork: Boolean(unresolvedCritical) });
       lastBudgetStopReason = stopDecision.reason;
+      state.budgetStopReason = lastBudgetStopReason;
       await appendPublicEvent(context, { key: `research:budget:evaluated:${run.id}:${state.replanCount}`, kind: "budget_updated", runId: run.id, message: stopDecision.summary, publicData: { ...stopDecision, semanticCoverage, sourceDiversity, independentCorroboration, conflictCoverage, informationGain, counters: { modelCalls: state.modelCalls, promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0, searchCalls: state.searchCalls, fetchCalls: state.fetchCalls, sourceCount: state.sourceCount } } });
       if (!stopDecision.stop && unresolvedCritical && unresolvedCritical.replanAttempts < limits.maxQuestionReplans && state.replanCount < limits.maxReplans && state.searchCalls < limits.searchCalls) {
         state.replanCount += 1;
@@ -1171,6 +1187,9 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     if (existingReport) return { kind: "completed", checkpoint };
     const finalizationStart = { modelCalls: state.modelCalls, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 };
     const canUseFinalizationModel = () => (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits;
+    // 收尾调用跳过的归因：走不到各 if 分支只可能是预算问题（token/credit 触顶或
+    // modelCalls 计数打满——预留只在计数打满时失败）；模型不可用是 if 分支内
+    // attempted 但 value 为 null。两种原因分开记降级码，用户文案见 state-machine.ts。
     const claims = await prisma.claim.findMany({ where: { runId: run.id, status: { in: ["active", "disputed"] } }, include: { question: { select: { id: true, title: true, question: true, priority: true } }, evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } }, orderBy: { createdAt: "asc" } });
     const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
     const sourceSnapshots = [...new Set(evidence.map((item) => item.sourceSnapshotId))];
@@ -1241,7 +1260,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       if (!verifierAvailable) degradationCodes.add("research_verifier_unavailable");
       await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
     } else {
-      degradationCodes.add("research_verifier_unavailable");
+      degradationCodes.add("finalization_budget_exhausted");
     }
     const claimStatuses = Object.fromEntries(claims.map((claim) => {
       const deterministic = deterministicByClaim.get(claim.id)!;
@@ -1327,11 +1346,13 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         architecture = normalized;
         architectureAvailable = true;
       } else degradationCodes.add("research_report_architecture_unavailable");
-    } else degradationCodes.add("research_report_architecture_unavailable");
+    } else degradationCodes.add("finalization_budget_exhausted");
 
     let reportBody = "";
     let synthesisAvailable = false;
+    let synthesisAttempted = false;
     if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+      synthesisAttempted = true;
       const writer = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile, methodology: methodology("writer") });
       recordResearchModelStage(state, writer, { modelCallReserved: true });
       if (writer.value) {
@@ -1340,8 +1361,10 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       }
     }
     if (!synthesisAvailable) {
-      degradationCodes.add("research_synthesis_unavailable");
-      reportBody = "## 综合阶段未完成\n\n研究资料已经收集，但最终综合阶段未成功完成。当前来源、Evidence 与 Claim 已保留，可在工作区查看或通过 Follow-up Run 重试。";
+      degradationCodes.add(synthesisAttempted ? "research_synthesis_unavailable" : "finalization_budget_exhausted");
+      reportBody = synthesisAttempted
+        ? "## 综合阶段未完成\n\n研究资料已经收集，但最终综合阶段未成功完成。当前来源、Evidence 与 Claim 已保留，可在工作区查看或通过 Follow-up Run 重试。"
+        : "## 综合阶段未执行\n\n研究预算已在资料收集阶段用尽，最终综合与核验未能执行。当前来源、Evidence 与 Claim 已保留，可改用更高研究强度重试。";
     }
 
     let deterministicAudit = deterministicReportAudit({ report: reportBody, evidenceRefs: evidence.map((item) => item.id), claims: claimPackets });
@@ -1355,7 +1378,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         modelAudit = normalizeReportAuditDecision(audit.value);
         auditorAvailable = true;
       } else degradationCodes.add("research_report_audit_unavailable");
-    } else degradationCodes.add("research_report_audit_unavailable");
+    } else degradationCodes.add("finalization_budget_exhausted");
 
     let reportAuditPass = synthesisAvailable && deterministicAudit.pass && auditorAvailable && modelAudit.pass;
     if (!reportAuditPass && synthesisAvailable && auditorAvailable && state.verificationRepairs < limits.maxVerificationRepairs && canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
@@ -1419,7 +1442,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       replanCount: state.replanCount,
       visualResourceCount: typeof visualMetrics.resourcesPersisted === "number" ? visualMetrics.resourcesPersisted : 0,
       visualObservationCount: typeof visualMetrics.observationsPersisted === "number" ? visualMetrics.observationsPersisted : 0,
-      budgetStopReason: lastBudgetStopReason,
+      budgetStopReason: state.budgetStopReason ?? lastBudgetStopReason,
       degradationCount: degradationCodes.size,
       finalizationBudgetReserved: finalizationReserve,
       finalizationBudgetUsed: {

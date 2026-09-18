@@ -27,6 +27,7 @@ const stageBehavior: {
   visualEvaluator: unknown;
   reportArchitect: unknown;
   reportAuditor: unknown;
+  workerUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | null;
 } = {
   claimExtractor: null,
   synthesizer: null,
@@ -34,6 +35,7 @@ const stageBehavior: {
   visualEvaluator: null,
   reportArchitect: null,
   reportAuditor: null,
+  workerUsage: null,
 };
 
 let idCounter = 0;
@@ -297,7 +299,7 @@ vi.mock("./model-stage", async (importOriginal) => {
   return {
     ...actual,
     runResearchModelStage: vi.fn(async (input: { role: string }) => {
-      if (input.role === "research.worker") return { value: { queries: ["transformer self-attention"], rationale: "test" }, usage: null, model: "deepseek-flash", attempted: false };
+      if (input.role === "research.worker") return { value: { queries: ["transformer self-attention"], rationale: "test" }, usage: stageBehavior.workerUsage, model: "deepseek-flash", attempted: false };
       if (input.role === "research.claim_extractor") return { value: stageBehavior.claimExtractor, usage: null, model: "deepseek-flash", attempted: true };
       if (input.role === "research.synthesizer") return { value: stageBehavior.synthesizer, usage: null, model: "deepseek-flash", attempted: stageBehavior.synthesizer !== null };
       if (input.role === "research.verifier") return { value: stageBehavior.verifier, usage: null, model: "deepseek-flash", attempted: true };
@@ -311,6 +313,7 @@ vi.mock("./model-stage", async (importOriginal) => {
 
 import { createDurableResearchExecutionHandler, projectResearchRunExecutionFailure } from "./durable-handler";
 import { runResearchModelStage } from "./model-stage";
+import { getResearchBudget, getResearchExplorationBudget } from "./budget";
 import { prisma } from "@/lib/db";
 
 const prismaResearchQuestionFindMany = (prisma as unknown as {
@@ -384,6 +387,7 @@ beforeEach(() => {
   stageBehavior.visualEvaluator = null;
   stageBehavior.reportArchitect = null;
   stageBehavior.reportAuditor = null;
+  stageBehavior.workerUsage = null;
   workspaceBudgetProfile = "quick";
   vi.clearAllMocks();
 });
@@ -442,6 +446,73 @@ describe("durable research handler · researching stage", () => {
     expect(result.kind).toBe("rescheduled");
     expect(state.candidates[0].status).toBe("rejected");
     expect(state.evidences).toHaveLength(0);
+  });
+
+  it("moves to evaluating without new model calls once the exploration token budget is spent", async () => {
+    const explorationCeiling = getResearchExplorationBudget("quick").maxTokens;
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => [sciverseCandidate]),
+      read: vi.fn(async () => sciverseRead),
+    };
+    const handler = createDurableResearchExecutionHandler({ provider });
+
+    const result = await handler(createContext({
+      researchState: {
+        stage: "researching",
+        modelCalls: 2,
+        searchCalls: 2,
+        fetchCalls: 2,
+        sourceCount: 2,
+        replanCount: 0,
+        verificationRepairs: 0,
+        totalTokens: explorationCeiling,
+        costCredits: 0,
+      },
+    }));
+
+    expect(result.kind).toBe("rescheduled");
+    expect(provider.search).not.toHaveBeenCalled();
+    expect(runResearchModelStage).not.toHaveBeenCalled();
+    const saved = state.savedCheckpoints.at(-1);
+    expect(saved?.researchState?.stage).toBe("evaluating");
+    expect(saved?.researchState?.budgetStopReason).toBe("hard_budget");
+  });
+
+  it("skips the source-triage model call when the worker consumed the remaining token headroom", async () => {
+    const explorationCeiling = getResearchExplorationBudget("quick").maxTokens;
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => [sciverseCandidate]),
+      read: vi.fn(async () => sciverseRead),
+    };
+    stageBehavior.workerUsage = { promptTokens: explorationCeiling, completionTokens: 0, totalTokens: explorationCeiling };
+    const handler = createDurableResearchExecutionHandler({ provider });
+
+    const result = await handler(createContext());
+
+    expect(result.kind).toBe("rescheduled");
+    const roles = vi.mocked(runResearchModelStage).mock.calls.map(([input]) => (input as { role: string }).role);
+    expect(roles).toEqual(["research.worker"]);
+    // triage 被跳过，但确定性评估与来源读取仍继续，证据正常落库。
+    expect(provider.read).toHaveBeenCalled();
+    expect(state.evidences).toHaveLength(1);
+  });
+
+  it("bounds long candidate abstracts inside the source-triage prompt", async () => {
+    const longAbstract = "a".repeat(2_000);
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => [{ ...sciverseCandidate, metadata: { ...sciverseCandidate.metadata, abstractPreview: longAbstract } }]),
+      read: vi.fn(async () => sciverseRead),
+    };
+    const handler = createDurableResearchExecutionHandler({ provider });
+
+    await handler(createContext());
+
+    const triageCall = vi.mocked(runResearchModelStage).mock.calls.find(([input]) => (input as { role: string }).role === "research.source_triage");
+    expect(triageCall).toBeDefined();
+    const prompt = (triageCall![0] as { prompt: string }).prompt;
+    // quick 档余量充足时使用默认上限：单候选摘录最多 800 字符。
+    expect(prompt).toContain(`"${"a".repeat(800)}"`);
+    expect(prompt).not.toContain(`"${"a".repeat(801)}"`);
   });
 });
 
@@ -820,6 +891,54 @@ describe("durable research handler · verifying stage", () => {
     const roles = vi.mocked(runResearchModelStage).mock.calls.map(([input]) => (input as { role: string }).role);
     expect(roles).toEqual(expect.arrayContaining(["research.verifier", "research.report_architect", "research.synthesizer", "research.report_auditor"]));
     expect(state.report).toMatchObject({ reportDocument: { qualityState: "normal" }, modelConfiguration: { promptVersions: { reportWriter: "research-report-writer-v2" } } });
+  });
+
+  it("attributes skipped finalization to budget exhaustion and keeps the persisted stop reason", async () => {
+    workspaceBudgetProfile = "deep";
+    runStatus = "verifying";
+    seedClaimWithEvidence("active");
+    const handler = createDurableResearchExecutionHandler();
+
+    const result = await handler(createContext({
+      researchState: {
+        ...claimExtractionState(),
+        stage: "verifying",
+        modelCalls: 10,
+        totalTokens: getResearchBudget("deep").maxTokens,
+        costCredits: 0,
+        budgetStopReason: "hard_budget",
+      },
+    }));
+
+    expect(result.kind).toBe("completed");
+    // 预算触顶：收尾模型一个都不点火，也不能记成「模型不可用」。
+    expect(runResearchModelStage).not.toHaveBeenCalled();
+    const updateCalls = vi.mocked(prisma.researchRun.update).mock.calls;
+    const metricsCall = updateCalls.map(([args]) => (args as { data: Record<string, unknown> }).data).find((data) => data.metrics);
+    const metrics = metricsCall!.metrics as Record<string, unknown>;
+    expect(metrics.degradations).toEqual(expect.arrayContaining(["finalization_budget_exhausted"]));
+    expect(metrics.degradations).not.toEqual(expect.arrayContaining(["research_verifier_unavailable"]));
+    expect(metrics.budgetStopReason).toBe("hard_budget");
+    const report = state.report as { reportDocument: { qualityState: string; body: string } };
+    expect(report.reportDocument.qualityState).toBe("degraded");
+    expect(report.reportDocument.body).toContain("综合阶段未执行");
+  });
+
+  it("keeps model-unavailable attribution when finalization was attempted but returned nothing", async () => {
+    runStatus = "verifying";
+    seedClaimWithEvidence("active");
+    // stageBehavior 全部保持 null：mock 对 verifier/architect/auditor 是
+    // attempted=true、value=null —— 模型不可用路径，预算充足。
+    const handler = createDurableResearchExecutionHandler();
+
+    const result = await handler(createContext({ researchState: { ...claimExtractionState(), stage: "verifying" } }));
+
+    expect(result.kind).toBe("completed");
+    const updateCalls = vi.mocked(prisma.researchRun.update).mock.calls;
+    const metricsCall = updateCalls.map(([args]) => (args as { data: Record<string, unknown> }).data).find((data) => data.metrics);
+    const metrics = metricsCall!.metrics as Record<string, unknown>;
+    expect(metrics.degradations).toEqual(expect.arrayContaining(["research_verifier_unavailable"]));
+    expect(metrics.degradations).not.toEqual(expect.arrayContaining(["finalization_budget_exhausted"]));
   });
 });
 

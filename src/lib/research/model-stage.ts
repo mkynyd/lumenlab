@@ -69,6 +69,8 @@ export async function runResearchModelStage<T>(input: ResearchModelStageInput): 
       role: input.role,
       model: selection.model,
       error: error instanceof Error ? error.message : String(error),
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorCause: error instanceof Error && error.cause ? (error.cause instanceof Error ? error.cause.message : String(error.cause)) : undefined,
     });
     return { value: null, model: selection.model, usage: null, attempted };
   }

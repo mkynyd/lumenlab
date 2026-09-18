@@ -50,7 +50,28 @@ export function buildQueryStrategyPrompt(input: { plan: ResearchPlanSnapshot; qu
   ].join("\n");
 }
 
-export function buildSourceTriagePrompt(input: { plan: ResearchPlanSnapshot; question: string; strategy: ResearchQueryStrategyItem; candidates: Array<{ id: string; candidate: ResearchCandidate }>; methodology?: string }) {
+/**
+ * Source Triage 候选 payload 的字符预算上限（≈4–5k input tokens）。
+ * 生产 deep Run 单次 triage 曾达 4–6 万 input tokens（12 候选 × 大摘录），
+ * 是探索预算失控的主要来源之一。
+ */
+export const SOURCE_TRIAGE_CANDIDATE_CHAR_BUDGET = 9_600;
+/** 预算收紧时每条候选至少保留的摘录长度（12 条 × 240 = 2_880 chars，有界）。 */
+export const SOURCE_TRIAGE_MIN_EXCERPT_CHARS = 240;
+
+export function buildSourceTriagePrompt(input: { plan: ResearchPlanSnapshot; question: string; strategy: ResearchQueryStrategyItem; candidates: Array<{ id: string; candidate: ResearchCandidate }>; methodology?: string; candidateCharBudget?: number }) {
+  // 候选数 × 摘录长度在预算内动态截断：默认每条最多 800 chars；当调用方按
+  // 剩余探索 token 预算收紧 candidateCharBudget 时，每条摘录随候选数摊薄，
+  // 但不低于 SOURCE_TRIAGE_MIN_EXCERPT_CHARS。
+  const candidates = input.candidates.slice(0, 12);
+  const budget = Math.max(SOURCE_TRIAGE_MIN_EXCERPT_CHARS, input.candidateCharBudget ?? SOURCE_TRIAGE_CANDIDATE_CHAR_BUDGET);
+  const excerptCap = candidates.length > 0
+    ? Math.max(SOURCE_TRIAGE_MIN_EXCERPT_CHARS, Math.floor(budget / candidates.length))
+    : 800;
+  const capExcerpt = (value: string | null | undefined) => {
+    if (typeof value !== "string") return null;
+    return value.slice(0, Math.min(800, excerptCap));
+  };
   return [
     "你是 LumenLab Source Triage。只返回严格 JSON，不联网，不调用工具，不输出隐藏推理。",
     `promptVersion=${RESEARCH_PROMPT_VERSIONS.sourceTriage}`,
@@ -60,7 +81,7 @@ export function buildSourceTriagePrompt(input: { plan: ResearchPlanSnapshot; que
     `Research Brief：${JSON.stringify(input.plan)}`,
     `Research Question：${input.question}`,
     `Query purpose=${input.strategy.purpose}，期望角色=${input.strategy.sourceRole}`,
-    `候选：${JSON.stringify(input.candidates.map(({ id, candidate }) => ({ id, title: candidate.title, abstractPreview: typeof candidate.metadata.abstract === "string" ? candidate.metadata.abstract.slice(0, 800) : typeof candidate.metadata.abstractPreview === "string" ? candidate.metadata.abstractPreview.slice(0, 800) : null, year: candidate.metadata.year ?? null, venue: candidate.metadata.venue ?? null, provider: candidate.provider, identifiers: { doi: candidate.metadata.doi ?? null, externalId: candidate.externalId } })))}`,
+    `候选：${JSON.stringify(candidates.map(({ id, candidate }) => ({ id, title: candidate.title, abstractPreview: capExcerpt(typeof candidate.metadata.abstract === "string" ? candidate.metadata.abstract : typeof candidate.metadata.abstractPreview === "string" ? candidate.metadata.abstractPreview : null), year: candidate.metadata.year ?? null, venue: candidate.metadata.venue ?? null, provider: candidate.provider, identifiers: { doi: candidate.metadata.doi ?? null, externalId: candidate.externalId } })))}`,
     ...methodology(input.methodology),
   ].join("\n");
 }

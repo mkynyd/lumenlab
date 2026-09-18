@@ -13,6 +13,11 @@
  *   distinguishable (`ResponsesStreamInterruptedError` vs. the generator
  *   simply ending; the accumulator turns a terminal-less EOF into an
  *   interruption error).
+ * - A 12s connect timeout guards the headers-arrival phase; failures before
+ *   response headers (connect timeout, ECONNRESET/EOF/undici headers-timeout)
+ *   get one retry with exponential backoff, because the request never reached
+ *   the provider and cannot be double-billed. Once headers arrived, a stream
+ *   interruption is never retried (the provider already processed = billed).
  */
 import type {
   ResponsesRequestBody,
@@ -21,6 +26,12 @@ import type {
 } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
+/** 响应头到达前的连接超时；只覆盖连接/首包阶段，不影响整体 300s 请求超时。 */
+export const RESPONSES_CONNECT_TIMEOUT_MS = 12_000;
+/** 响应头到达前的网络失败重试次数（一次重试）。 */
+export const RESPONSES_NETWORK_RETRY_ATTEMPTS = 1;
+/** 指数退避基数：第 N 次重试等待 BASE * 2^N ms（首次重试 400ms）。 */
+export const RESPONSES_NETWORK_RETRY_BASE_DELAY_MS = 400;
 const RESPONSES_PATH = "/responses";
 
 export class ResponsesHttpError extends Error {
@@ -41,6 +52,15 @@ export class ResponsesTimeoutError extends Error {
   constructor(public readonly timeoutMs: number) {
     super(`Responses API request timed out after ${timeoutMs}ms`);
     this.name = "ResponsesTimeoutError";
+  }
+}
+
+export class ResponsesConnectTimeoutError extends Error {
+  constructor(public readonly timeoutMs: number) {
+    super(
+      `Responses API connect timed out after ${timeoutMs}ms (response headers never arrived)`
+    );
+    this.name = "ResponsesConnectTimeoutError";
   }
 }
 
@@ -71,6 +91,8 @@ export interface ResponsesTransportRequest {
   signal?: AbortSignal;
   /** Whole-request timeout, matching the legacy SDK client semantics. */
   timeoutMs?: number;
+  /** 响应头到达前的连接超时（默认 12s）。 */
+  connectTimeoutMs?: number;
   /** Extra headers (e.g. Qwen session-cache hints). */
   headers?: Record<string, string>;
   /** Test seam; defaults to global fetch. */
@@ -123,17 +145,26 @@ interface WiredSignal {
   signal: AbortSignal;
   cleanup(): void;
   cancel(): void;
+  /** 响应头已到达：清除连接超时计时器（此后进入已计费阶段，不再重试）。 */
+  headersReceived(): void;
 }
 
 function wireSignal(
   external: AbortSignal | undefined,
-  timeoutMs: number
+  timeoutMs: number,
+  connectTimeoutMs: number
 ): WiredSignal {
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort(new ResponsesTimeoutError(timeoutMs));
   }, timeoutMs);
   (timer as unknown as { unref?: () => void }).unref?.();
+  // 连接超时只约束「响应头到达前」；fetch resolve（头到达）后由
+  // headersReceived() 清除，避免误杀正常的长时间流式下载。
+  const connectTimer = setTimeout(() => {
+    controller.abort(new ResponsesConnectTimeoutError(connectTimeoutMs));
+  }, connectTimeoutMs);
+  (connectTimer as unknown as { unref?: () => void }).unref?.();
   const relay = () => controller.abort(external?.reason);
   if (external?.aborted) relay();
   external?.addEventListener("abort", relay, { once: true });
@@ -141,12 +172,16 @@ function wireSignal(
     signal: controller.signal,
     cleanup() {
       clearTimeout(timer);
+      clearTimeout(connectTimer);
       external?.removeEventListener("abort", relay);
     },
     cancel() {
       if (!controller.signal.aborted) {
         controller.abort(new DOMException("The operation was aborted", "AbortError"));
       }
+    },
+    headersReceived() {
+      clearTimeout(connectTimer);
     },
   };
 }
@@ -155,38 +190,69 @@ function responsesUrl(baseUrl: string) {
   return `${baseUrl.replace(/\/+$/, "")}${RESPONSES_PATH}`;
 }
 
+/**
+ * 响应头到达前的失败是否可重试：该阶段请求未被供应商受理，重试无重复计费
+ * 风险。整体超时（ResponsesTimeoutError）不重试——请求可能已被受理只是响应
+ * 缓慢；HTTP 错误（ResponsesHttpError）由调用方按 status/retry 元数据决策。
+ */
+function isRetryablePreHeadersFailure(error: unknown): boolean {
+  if (error instanceof ResponsesConnectTimeoutError) return true;
+  return (
+    error instanceof ResponsesStreamInterruptedError && error.reason === "network"
+  );
+}
+
 async function sendRequest(
   request: ResponsesTransportRequest,
   accept: string
 ): Promise<{ response: Response; wired: WiredSignal }> {
   const fetchImpl = request.fetchImpl ?? fetch;
   const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const wired = wireSignal(request.signal, timeoutMs);
-  let response: Response;
-  try {
-    response = await fetchImpl(responsesUrl(request.baseUrl), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${request.apiKey}`,
-        "Content-Type": "application/json",
-        Accept: accept,
-        ...request.headers,
-      },
-      body: JSON.stringify(request.body),
-      signal: wired.signal,
-    });
-  } catch (error) {
-    wired.cleanup();
-    throw translateTransportError(error, wired.signal);
-  }
-  if (!response.ok) {
+  const connectTimeoutMs = request.connectTimeoutMs ?? RESPONSES_CONNECT_TIMEOUT_MS;
+  const maxAttempts = 1 + RESPONSES_NETWORK_RETRY_ATTEMPTS;
+  for (let attempt = 0; ; attempt += 1) {
+    const wired = wireSignal(request.signal, timeoutMs, connectTimeoutMs);
     try {
-      throw await readHttpError(response);
-    } finally {
+      const response = await fetchImpl(responsesUrl(request.baseUrl), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${request.apiKey}`,
+          "Content-Type": "application/json",
+          Accept: accept,
+          ...request.headers,
+        },
+        body: JSON.stringify(request.body),
+        signal: wired.signal,
+      });
+      wired.headersReceived();
+      if (!response.ok) {
+        try {
+          throw await readHttpError(response);
+        } finally {
+          wired.cleanup();
+        }
+      }
+      return { response, wired };
+    } catch (error) {
       wired.cleanup();
+      const translated = translateTransportError(error, wired.signal);
+      if (
+        attempt >= maxAttempts - 1 ||
+        request.signal?.aborted ||
+        !isRetryablePreHeadersFailure(translated)
+      ) {
+        throw translated;
+      }
+      // 指数退避：首次重试 400ms。退避期间调用方取消会在下一次尝试时经
+      // wireSignal 立即中继为 AbortError。
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          RESPONSES_NETWORK_RETRY_BASE_DELAY_MS * 2 ** attempt
+        )
+      );
     }
   }
-  return { response, wired };
 }
 
 async function readHttpError(response: Response): Promise<ResponsesHttpError> {
@@ -219,10 +285,12 @@ function isAbortError(error: unknown): boolean {
 function translateTransportError(error: unknown, signal?: AbortSignal): Error {
   if (signal?.aborted) {
     if (signal.reason instanceof ResponsesTimeoutError) return signal.reason;
+    if (signal.reason instanceof ResponsesConnectTimeoutError) return signal.reason;
     return new DOMException("The operation was aborted", "AbortError");
   }
   if (
     error instanceof ResponsesTimeoutError ||
+    error instanceof ResponsesConnectTimeoutError ||
     error instanceof ResponsesHttpError ||
     error instanceof ResponsesStreamInterruptedError
   ) {

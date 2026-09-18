@@ -1,4 +1,4 @@
-import { ResponsesHttpError } from "@/lib/agent/providers/responses/transport";
+import { ResponsesConnectTimeoutError, ResponsesHttpError, ResponsesStreamInterruptedError, ResponsesTimeoutError } from "@/lib/agent/providers/responses/transport";
 import { ResponsesConfigurationError, ResponsesModelError } from "@/lib/agent/providers/responses/adapter-stream";
 import { ResponsesSerializationError } from "@/lib/agent/providers/responses/serialize";
 import { randomUUID } from "node:crypto";
@@ -1199,6 +1199,15 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       });
     }
   } catch (err) {
+    // 未映射错误统一兜底为 502 之前，先把原始错误类型落日志：生产上
+    // ECONNRESET/超时类失败被吞进兜底文案，无法区分供应商故障与本地网络问题。
+    logger.warn("provider startRound failed", {
+      model,
+      provider: modelRoute.provider,
+      errorName: err instanceof Error ? err.name : typeof err,
+      errorMessage: err instanceof Error ? err.message : String(err),
+      errorCause: err instanceof Error && err.cause ? (err.cause instanceof Error ? err.cause.message : String(err.cause)) : undefined,
+    });
     throw (
       mapProviderError(err) ??
       new AgentRuntimeError(502, "无法连接模型服务，请稍后重试")
@@ -1424,6 +1433,15 @@ function mapProviderError(error: unknown): AgentRuntimeError | null {
   }
   if (error instanceof ResponsesHttpError) {
     return new AgentRuntimeError(error.status >= 400 && error.status < 500 ? error.status : 502, error.message, { responsesStatus: error.status });
+  }
+  if (error instanceof ResponsesTimeoutError) {
+    return new AgentRuntimeError(504, "模型服务响应超时，请稍后重试", { reason: "timeout", timeoutMs: error.timeoutMs });
+  }
+  if (error instanceof ResponsesConnectTimeoutError) {
+    return new AgentRuntimeError(504, "模型服务连接超时，请稍后重试", { reason: "connect_timeout", timeoutMs: error.timeoutMs });
+  }
+  if (error instanceof ResponsesStreamInterruptedError) {
+    return new AgentRuntimeError(502, error.reason === "eof_without_terminal" ? "模型服务连接中断，请稍后重试" : "无法连接模型服务，请稍后重试", { reason: error.reason });
   }
   if (error instanceof ResponsesModelError || error instanceof ResponsesSerializationError) {
     return new AgentRuntimeError(400, error.message);
