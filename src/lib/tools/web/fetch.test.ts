@@ -79,6 +79,19 @@ describe("web.fetch safety", () => {
   it("rejects everything when the allowlist is empty", () => {
     expect(isSafePublicHttpUrl("https://example.com/article", [])).toBe(false);
   });
+
+  it("wildcard allowlist opens all public hosts but keeps SSRF guards", () => {
+    process.env.WEB_FETCH_ALLOWLIST = "*";
+    try {
+      expect(isSafePublicHttpUrl("https://gxq.cq.gov.cn/sjfb")).toBe(true);
+      expect(isSafePublicHttpUrl("https://stats.gov.cn/sj/zxfb")).toBe(true);
+      expect(isSafePublicHttpUrl("http://127.0.0.1/internal")).toBe(false);
+      expect(isSafePublicHttpUrl("http://192.168.1.1/internal")).toBe(false);
+      expect(isSafePublicHttpUrl("ftp://example.com/file")).toBe(false);
+    } finally {
+      process.env.WEB_FETCH_ALLOWLIST = "example.com,example.org";
+    }
+  });
 });
 
 describe("web.fetch html cleaning", () => {

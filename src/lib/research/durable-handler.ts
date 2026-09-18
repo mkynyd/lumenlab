@@ -8,7 +8,7 @@ import { evaluateResearchStop, finalizationBudgetRemaining, getResearchBudget, g
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
 import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion, snapshotScopeTypeOf } from "./claim-graph";
-import { selectCandidatesForTriage } from "./candidate-priority";
+import { prioritizeResearchCandidates, selectCandidatesForTriage } from "./candidate-priority";
 import {
   decideCitationExpansion,
   emptyCitationGraphMetrics,
@@ -538,9 +538,16 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
               modelAssessments = normalizeSourceTriageDecision(triageResult.value, new Set(prioritized.map((_, index) => String(index))));
             }
             let adjacentAccepted = 0;
-            for (const [candidateIndex, candidate] of prioritized.entries()) {
+            // 消费顺序回到全量优先级：保底只决定「谁能进窗口」，不决定谁先消费
+            // ——邻近名额与 fetch 预算按优先级分配，project 高优先候选不被 web
+            // 保底席位挤到名额之外（2026-09-18 生产回归）。索引仍以 triage prompt
+            // 的窗口顺序为准。
+            const fetchOrder = prioritizeResearchCandidates(prioritized, domainProfile?.preferredProviders);
+            const promptIndexByCandidate = new Map(prioritized.map((candidate, index) => [candidate, String(index)]));
+            for (const candidate of fetchOrder) {
+              const candidateIndex = promptIndexByCandidate.get(candidate)!;
               if (context.signal.aborted || state.sourceCount >= limits.maxSources) break;
-              const assessment = mergeSourceAssessments(deterministicAssessments.get(String(candidateIndex))!, modelAssessments[String(candidateIndex)]);
+              const assessment = mergeSourceAssessments(deterministicAssessments.get(candidateIndex)!, modelAssessments[candidateIndex]);
               const assessedCandidate = { ...candidate, metadata: { ...candidate.metadata, sourceAssessment: assessment, queryPurpose: strategy.purpose, intendedSourceRole: strategy.sourceRole } };
               const savedCandidate = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate: assessedCandidate });
               if (assessment.relevance === "irrelevant" || (assessment.relevance === "adjacent" && adjacentAccepted >= 2)) {

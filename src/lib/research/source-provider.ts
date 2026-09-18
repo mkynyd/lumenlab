@@ -538,6 +538,19 @@ export function createToolBackedResearchSourceProvider(input: { toolRunner?: Too
           : { url: candidate.url };
       const result = await runTool(context, toolId, args);
       if (!result) return null;
+      // 工具执行成功但 summary 携带 error（如 web.fetch 的 URL_NOT_ALLOWED）时
+      // 按读取失败处理并留痕——此前静默返回 null，35 次抓取失败无一日志，
+      // 证据链干旱无法归因（2026-09-18 生产事故）。
+      if (typeof result === "object" && "error" in result && typeof (result as { error?: unknown }).error === "string") {
+        logger.warn("research source read tool returned error summary", {
+          toolId,
+          provider: candidate.provider,
+          kind: candidate.kind,
+          error: (result as { error: string }).error,
+          url: candidate.url ?? null,
+        });
+        return null;
+      }
       const content = candidate.kind === "project_file"
         ? typeof result.text === "string" ? result.text : ""
         : candidate.kind === "arxiv"

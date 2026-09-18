@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ResearchQueryStrategyItem } from "./model-stage";
 import type { ResearchCandidate } from "./source-provider";
-import { assessSourceQuality, deterministicSourceAssessment } from "./source-triage";
+import { assessSourceQuality, deterministicSourceAssessment, normalizeSourceTriageDecision } from "./source-triage";
 
 const strategy: ResearchQueryStrategyItem = { query: "MoE routing 2025", purpose: "primary_work", sourceRole: "primary", freshness: "target_period", questionKey: "q1" };
 function candidate(title: string, venue = "EMNLP"): ResearchCandidate {
@@ -31,5 +31,21 @@ describe("source relevance and quality are independent", () => {
     const assessment = deterministicSourceAssessment({ question, strategy, candidate: working });
     expect(assessment.relevance).toBe("direct");
     expect(assessSourceQuality(working)).toBe("grey_literature");
+  });
+});
+
+describe("normalizeSourceTriageDecision qualityClass 兼容", () => {
+  it("keeps relevance judgment when model emits out-of-enum qualityClass", () => {
+    const normalized = normalizeSourceTriageDecision({
+      candidates: [
+        { id: "0", relevance: "direct", sourceRole: "primary", qualityClass: "high", relevanceScore: 0.9, reason: "官方发布" },
+        { id: "1", relevance: "irrelevant", sourceRole: "context", qualityClass: "unknown", reason: "不相关" },
+        { id: "2", relevance: "adjacent", sourceRole: "secondary", qualityClass: "official_document" },
+      ],
+    }, new Set(["0", "1", "2"]));
+    expect(normalized["0"].relevance).toBe("direct");
+    expect(normalized["0"].qualityClass).toBe("primary_peer_reviewed");
+    expect(normalized["1"].relevance).toBe("irrelevant");
+    expect(normalized["2"].qualityClass).toBe("official_standard");
   });
 });

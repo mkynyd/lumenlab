@@ -94,14 +94,37 @@ export function normalizeSourceTriageDecision(value: unknown, ids: Set<string>):
   const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const result: Record<string, SourceAssessment> = {};
   if (!Array.isArray(record.candidates)) return result;
+  // 模型常输出枚举外取值（high/official/primary/unknown 等，生产实测 9 成以上），
+  // 整条丢弃会让模型相关性判定被静默忽略、只剩确定性兜底。qualityClass 由
+  // mergeSourceAssessments 用确定性值覆盖，因此这里把同义词映射进枚举、无法
+  // 识别的兜底 context_source，保住 relevance 判断。
+  const QUALITY_CLASS_SYNONYMS: Record<string, SourceAssessment["qualityClass"]> = {
+    high: "primary_peer_reviewed",
+    medium: "secondary_review",
+    low: "grey_literature",
+    official: "official_standard",
+    official_document: "official_standard",
+    "official-document": "official_standard",
+    official_policy: "official_standard",
+    primary: "primary_peer_reviewed",
+    primary_policy: "primary_peer_reviewed",
+    project_document: "context_source",
+    project_primary: "context_source",
+    contextual_reference: "context_source",
+    industry_report: "grey_literature",
+    preprint: "primary_preprint",
+  };
   for (const raw of record.candidates.slice(0, 12)) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const item = raw as Record<string, unknown>;
     if (typeof item.id !== "string" || !ids.has(item.id)) continue;
     const relevance = item.relevance === "direct" || item.relevance === "adjacent" || item.relevance === "irrelevant" ? item.relevance : null;
     const sourceRole = item.sourceRole === "primary" || item.sourceRole === "secondary" || item.sourceRole === "context" ? item.sourceRole : null;
-    const qualityClass = item.qualityClass === "official_standard" || item.qualityClass === "primary_peer_reviewed" || item.qualityClass === "primary_preprint" || item.qualityClass === "secondary_review" || item.qualityClass === "grey_literature" || item.qualityClass === "context_source" ? item.qualityClass : null;
-    if (!relevance || !sourceRole || !qualityClass) continue;
+    if (!relevance || !sourceRole) continue;
+    const rawQuality = typeof item.qualityClass === "string" ? item.qualityClass.toLowerCase() : "";
+    const qualityClass: SourceAssessment["qualityClass"] = QUALITY_CLASS_SYNONYMS[rawQuality]
+      ?? (["official_standard", "primary_peer_reviewed", "primary_preprint", "secondary_review", "grey_literature", "context_source"] as const).find((value) => value === rawQuality)
+      ?? "context_source";
     result[item.id] = { relevance, sourceRole, qualityClass, relevanceScore: typeof item.relevanceScore === "number" && Number.isFinite(item.relevanceScore) ? Math.max(0, Math.min(1, item.relevanceScore)) : relevance === "direct" ? 0.8 : relevance === "adjacent" ? 0.5 : 0, reason: typeof item.reason === "string" ? item.reason.slice(0, 300) : "模型批量相关性判定" };
   }
   return result;

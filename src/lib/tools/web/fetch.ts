@@ -45,6 +45,11 @@ function getFetchAllowlist(): string[] {
     .filter(Boolean);
 }
 
+/** `WEB_FETCH_ALLOWLIST=*` 显式放行所有公网主机（SSRF 防线不变）。 */
+function isFetchWildcardEnabled(): boolean {
+  return process.env.WEB_FETCH_ALLOWLIST?.trim() === "*";
+}
+
 function hostMatchesAllowlist(host: string, allowlist: string[]): boolean {
   const normalizedHost = host.toLowerCase();
   return allowlist.some((domain) => {
@@ -72,7 +77,7 @@ export function isSafePublicHttpUrl(
       return false;
     }
     if (isNonPublicIp(host)) return false;
-    if (!hostMatchesAllowlist(host, allowlist)) return false;
+    if (!isFetchWildcardEnabled() && !hostMatchesAllowlist(host, allowlist)) return false;
     return true;
   } catch {
     return false;
