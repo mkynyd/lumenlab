@@ -62,3 +62,59 @@ export function prioritizeResearchCandidates(
     || identityTier(left) - identityTier(right)
     || metadataCompleteness(right) - metadataCompleteness(left));
 }
+
+/**
+ * Source Triage 候选窗口（确定性，durable 重放一致）：
+ *
+ * 生产事故：domain profile 把 project/sciverse 排在 web 之前，两者满页时
+ * 12 席窗口被占满，web.search 的高相关结果被全量挤出（连 triage 都进不了），
+ * 中文本地政策类主题 + 项目带附件时必现。因此窗口采用「家族保底 + 优先级填充」：
+ *
+ * 1. 先按 prioritizeResearchCandidates 全量排序；
+ * 2. web 家族保底 min(TRIAGE_WEB_FLOOR, 实际 web 数) 席——只要 web.search
+ *    有高相关结果，就不允许被全量挤出 triage；
+ * 3. 其余席位按既定优先级顺序填充；
+ * 4. 被淘汰的候选按 provider 计数返回（观测与候选持久化用）。
+ *
+ * 窗口不扩大：12 席与 triage prompt 的 12 候选上限、摘录字符预算同口径。
+ */
+export const TRIAGE_WINDOW_SIZE = 12;
+export const TRIAGE_WEB_FLOOR = 3;
+
+export interface TriageWindowSelection {
+  selected: ResearchCandidate[];
+  /** 因窗口溢出被淘汰的候选，按 provider 计数（如 { sciverse: 4 }）。 */
+  droppedByProvider: Record<string, number>;
+}
+
+export function selectCandidatesForTriage(
+  candidates: ResearchCandidate[],
+  preferredProviders: string[] | undefined,
+  windowSize: number = TRIAGE_WINDOW_SIZE,
+): TriageWindowSelection {
+  const prioritized = prioritizeResearchCandidates(candidates, preferredProviders);
+  if (prioritized.length <= windowSize) {
+    return { selected: prioritized, droppedByProvider: {} };
+  }
+  const selected: ResearchCandidate[] = [];
+  const used = new Set<ResearchCandidate>();
+  // 名额 1：web 家族保底（取优先级最高的前 N 个 web 候选）。
+  const webCandidates = prioritized.filter((candidate) => candidate.provider === "web");
+  for (const candidate of webCandidates.slice(0, Math.min(TRIAGE_WEB_FLOOR, windowSize))) {
+    selected.push(candidate);
+    used.add(candidate);
+  }
+  // 名额 2：其余席位按既定优先级填充（project/sciverse 的高优先级不被保底扭曲）。
+  for (const candidate of prioritized) {
+    if (selected.length >= windowSize) break;
+    if (used.has(candidate)) continue;
+    selected.push(candidate);
+    used.add(candidate);
+  }
+  const droppedByProvider: Record<string, number> = {};
+  for (const candidate of prioritized) {
+    if (used.has(candidate)) continue;
+    droppedByProvider[candidate.provider] = (droppedByProvider[candidate.provider] ?? 0) + 1;
+  }
+  return { selected, droppedByProvider };
+}

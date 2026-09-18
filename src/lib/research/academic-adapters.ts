@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 import { normalizeDoi, normalizePmid } from "./source-identity";
 import type { ReadResearchSource, ResearchCandidate, ResearchProviderContext } from "./source-provider";
 
@@ -34,6 +35,7 @@ function openAlexAbstract(value: unknown): string | null {
 }
 
 async function fetchJson(
+  provider: AcademicSourceAdapter["provider"],
   context: ResearchProviderContext,
   url: string,
   fetcher: Fetcher
@@ -47,10 +49,19 @@ async function fetchJson(
       headers: { accept: "application/json", "user-agent": "LumenLab/1.0 research-source-adapter" },
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // 静默失败此前让 run 只剩一条 sciverse_empty，无法区分「上游没结果」与
+      // 「fallback 通道故障」。warn 级 + provider/errorClass，不刷屏幕。
+      logger.warn("academic adapter HTTP failure", { provider, status: response.status });
+      return null;
+    }
     const value: unknown = await response.json();
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
-  } catch {
+  } catch (error) {
+    logger.warn("academic adapter request failed", {
+      provider,
+      errorClass: error instanceof Error ? error.name : typeof error,
+    });
     return null;
   } finally {
     clearTimeout(timeout);
@@ -126,13 +137,13 @@ export function createAcademicSourceAdapters(input: { fetcher?: Fetcher } = {}):
     {
       provider: "openalex",
       async search(context, question) {
-        const payload = await fetchJson(context, `https://api.openalex.org/works?search=${encodeURIComponent(question)}&per-page=5`, fetcher);
+        const payload = await fetchJson("openalex", context, `https://api.openalex.org/works?search=${encodeURIComponent(question)}&per-page=5`, fetcher);
         const results = Array.isArray(payload?.results) ? payload.results : [];
         return results.flatMap((item) => item && typeof item === "object" ? [openAlexCandidate(item as Record<string, unknown>)].filter((candidate): candidate is ResearchCandidate => Boolean(candidate)) : []);
       },
       async read(context, candidate) {
         const id = candidate.externalId.startsWith("10.") ? `https://api.openalex.org/works/https://doi.org/${encodeURIComponent(candidate.externalId)}` : `https://api.openalex.org/works/${encodeURIComponent(candidate.externalId)}`;
-        const payload = await fetchJson(context, id, fetcher);
+        const payload = await fetchJson("openalex", context, id, fetcher);
         if (!payload) return null;
         const abstract = openAlexAbstract(payload.abstract_inverted_index);
         return readResult({ candidate, content: JSON.stringify(payload), title: stringValue(payload.title), abstract, sourceVersion: yearValue(payload.publication_year)?.toString(), locator: { kind: "openalex", id: candidate.externalId }, metadata: payload });
@@ -141,12 +152,12 @@ export function createAcademicSourceAdapters(input: { fetcher?: Fetcher } = {}):
     {
       provider: "crossref",
       async search(context, question) {
-        const payload = await fetchJson(context, `https://api.crossref.org/works?query=${encodeURIComponent(question)}&rows=5`, fetcher);
+        const payload = await fetchJson("crossref", context, `https://api.crossref.org/works?query=${encodeURIComponent(question)}&rows=5`, fetcher);
         const items = payload?.message && typeof payload.message === "object" ? (payload.message as Record<string, unknown>).items : null;
         return Array.isArray(items) ? items.flatMap((item) => item && typeof item === "object" ? [crossrefCandidate(item as Record<string, unknown>)].filter((candidate): candidate is ResearchCandidate => Boolean(candidate)) : []) : [];
       },
       async read(context, candidate) {
-        const payload = await fetchJson(context, `https://api.crossref.org/works/${encodeURIComponent(candidate.externalId)}`, fetcher);
+        const payload = await fetchJson("crossref", context, `https://api.crossref.org/works/${encodeURIComponent(candidate.externalId)}`, fetcher);
         const message = payload?.message && typeof payload.message === "object" ? payload.message as Record<string, unknown> : null;
         if (!message) return null;
         const title = Array.isArray(message.title) ? stringValue(message.title[0]) : stringValue(message.title);
@@ -156,12 +167,12 @@ export function createAcademicSourceAdapters(input: { fetcher?: Fetcher } = {}):
     {
       provider: "semantic_scholar",
       async search(context, question) {
-        const payload = await fetchJson(context, `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(question)}&limit=5&fields=title,abstract,year,url,externalIds`, fetcher);
+        const payload = await fetchJson("semantic_scholar", context, `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(question)}&limit=5&fields=title,abstract,year,url,externalIds`, fetcher);
         const results = Array.isArray(payload?.data) ? payload.data : [];
         return results.flatMap((item) => item && typeof item === "object" ? [semanticScholarCandidate(item as Record<string, unknown>)].filter((candidate): candidate is ResearchCandidate => Boolean(candidate)) : []);
       },
       async read(context, candidate) {
-        const payload = await fetchJson(context, `https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(candidate.externalId)}?fields=title,abstract,year,url,externalIds,authors`, fetcher);
+        const payload = await fetchJson("semantic_scholar", context, `https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(candidate.externalId)}?fields=title,abstract,year,url,externalIds,authors`, fetcher);
         if (!payload) return null;
         return readResult({ candidate, content: JSON.stringify(payload), title: stringValue(payload.title), abstract: stringValue(payload.abstract), sourceVersion: yearValue(payload.year)?.toString(), locator: { kind: "semantic_scholar", id: candidate.externalId }, metadata: payload });
       },
@@ -169,16 +180,16 @@ export function createAcademicSourceAdapters(input: { fetcher?: Fetcher } = {}):
     {
       provider: "pubmed",
       async search(context, question) {
-        const search = await fetchJson(context, `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(question)}&retmode=json&retmax=5`, fetcher);
+        const search = await fetchJson("pubmed", context, `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(question)}&retmode=json&retmax=5`, fetcher);
         const esearch = search?.esearchresult && typeof search.esearchresult === "object" ? search.esearchresult as Record<string, unknown> : null;
         const ids = Array.isArray(esearch?.idlist) ? esearch.idlist.filter((id): id is string => typeof id === "string") : [];
         if (ids.length === 0) return [];
-        const summary = await fetchJson(context, `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${ids.join(",")}&retmode=json`, fetcher);
+        const summary = await fetchJson("pubmed", context, `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${ids.join(",")}&retmode=json`, fetcher);
         const result = summary?.result && typeof summary.result === "object" ? summary.result as Record<string, unknown> : null;
         return ids.flatMap((id) => result?.[id] && typeof result[id] === "object" ? [pubmedCandidate(result[id] as Record<string, unknown>, id)].filter((candidate): candidate is ResearchCandidate => Boolean(candidate)) : []);
       },
       async read(context, candidate) {
-        const payload = await fetchJson(context, `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${encodeURIComponent(candidate.externalId)}&retmode=json`, fetcher);
+        const payload = await fetchJson("pubmed", context, `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${encodeURIComponent(candidate.externalId)}&retmode=json`, fetcher);
         const result = payload?.result && typeof payload.result === "object" ? payload.result as Record<string, unknown> : null;
         const item = result?.[candidate.externalId] && typeof result[candidate.externalId] === "object" ? result[candidate.externalId] as Record<string, unknown> : null;
         if (!item) return null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canProduceFullTextEvidence, prioritizeResearchCandidates } from "./candidate-priority";
+import { canProduceFullTextEvidence, prioritizeResearchCandidates, selectCandidatesForTriage, TRIAGE_WEB_FLOOR, TRIAGE_WINDOW_SIZE } from "./candidate-priority";
 import type { ResearchCandidate } from "./source-provider";
 
 function candidate(overrides: Partial<ResearchCandidate> & { provider: string }): ResearchCandidate {
@@ -82,5 +82,59 @@ describe("research candidate priority", () => {
     expect(canProduceFullTextEvidence(candidate({ provider: "arxiv", kind: "arxiv" }))).toBe(true);
     expect(canProduceFullTextEvidence(candidate({ provider: "openalex" }))).toBe(false);
     expect(canProduceFullTextEvidence(candidate({ provider: "pubmed", kind: "pmid" }))).toBe(false);
+  });
+});
+
+describe("selectCandidatesForTriage · provider-family fairness window", () => {
+  const RANK = ["project", "sciverse", "openalex", "crossref", "arxiv", "web"];
+
+  function candidatesOf(shape: Record<string, number>): ResearchCandidate[] {
+    const list: ResearchCandidate[] = [];
+    for (const [provider, count] of Object.entries(shape)) {
+      for (let index = 0; index < count; index += 1) {
+        list.push(candidate({ provider, externalId: `${provider}-${index}`, metadata: provider === "sciverse" ? { docId: "d".repeat(64) } : {} }));
+      }
+    }
+    return list;
+  }
+
+  it("keeps the historical behavior when the window is not full", () => {
+    const { selected, droppedByProvider } = selectCandidatesForTriage(candidatesOf({ sciverse: 8, web: 3 }), RANK);
+    expect(selected).toHaveLength(11);
+    expect(droppedByProvider).toEqual({});
+  });
+
+  it("guarantees web floor when project + sciverse fill the page (production incident shape)", () => {
+    // project 3 + sciverse 10 = 13 > 12：旧 slice 会把 web 全量挤出。
+    const { selected, droppedByProvider } = selectCandidatesForTriage(candidatesOf({ project: 3, sciverse: 10, web: 5 }), RANK);
+    expect(selected).toHaveLength(TRIAGE_WINDOW_SIZE);
+    const webSelected = selected.filter((item) => item.provider === "web");
+    expect(webSelected).toHaveLength(TRIAGE_WEB_FLOOR);
+    // web 保底拿的是优先级最高的 web 候选。
+    expect(webSelected.map((item) => item.externalId)).toEqual(["web-0", "web-1", "web-2"]);
+    // 被淘汰者按 provider 计数：保底占 3 席后填充 9 席（project 3 + sciverse 6），
+    // 落选 = 4 个最低优先级 sciverse + 2 个保底之外的 web。
+    expect(droppedByProvider).toEqual({ web: 2, sciverse: 4 });
+  });
+
+  it("caps the web floor at the actual web count", () => {
+    const { selected } = selectCandidatesForTriage(candidatesOf({ project: 3, sciverse: 10, web: 2 }), RANK);
+    expect(selected.filter((item) => item.provider === "web")).toHaveLength(2);
+  });
+
+  it("does not duplicate web candidates when they also rank high", () => {
+    // web 排在第一位时，保底与填充不得重复入选。
+    const { selected } = selectCandidatesForTriage(candidatesOf({ web: 5, sciverse: 10 }), ["web", "sciverse"]);
+    expect(selected).toHaveLength(TRIAGE_WINDOW_SIZE);
+    expect(new Set(selected).size).toBe(selected.length);
+    expect(selected.filter((item) => item.provider === "web")).toHaveLength(5);
+  });
+
+  it("is deterministic for identical inputs", () => {
+    const input = candidatesOf({ project: 3, sciverse: 10, web: 5 });
+    const first = selectCandidatesForTriage(input, RANK);
+    const second = selectCandidatesForTriage(input, RANK);
+    expect(first.selected.map((item) => item.externalId)).toEqual(second.selected.map((item) => item.externalId));
+    expect(first.droppedByProvider).toEqual(second.droppedByProvider);
   });
 });

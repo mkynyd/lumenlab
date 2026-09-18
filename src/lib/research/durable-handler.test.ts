@@ -562,6 +562,45 @@ describe("durable research handler · researching stage", () => {
     expect(prompt).toContain(`"${"a".repeat(800)}"`);
     expect(prompt).not.toContain(`"${"a".repeat(801)}"`);
   });
+
+  it("guarantees web candidates a triage seat when project + sciverse fill the page", async () => {
+    // 生产事故形状：project 3 + sciverse 10 占满 12 席窗口，web 被全量挤出。
+    const projectCandidates: ResearchCandidate[] = Array.from({ length: 3 }, (_, i) => ({
+      provider: "project", kind: "project_file", externalId: `file-${i}`, title: `项目附件 ${i}`, url: null, metadata: { snippet: "政策条款" },
+    }));
+    const sciverseCandidates: ResearchCandidate[] = Array.from({ length: 10 }, (_, i) => ({
+      ...sciverseCandidate, externalId: `10.0000/moe.${i}`, title: `MoE routing paper ${i}`, metadata: { ...sciverseCandidate.metadata, doi: `10.0000/moe.${i}`, docId: "e".repeat(64) },
+    }));
+    const webCandidates: ResearchCandidate[] = Array.from({ length: 5 }, (_, i) => ({
+      provider: "web", kind: "web", externalId: `https://example.gov/policy-${i}`, title: `Web 政策文件 ${i}`, url: `https://example.gov/policy-${i}`, metadata: {},
+    }));
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => [...projectCandidates, ...sciverseCandidates, ...webCandidates]),
+      read: vi.fn(async () => sciverseRead),
+    };
+    const handler = createDurableResearchExecutionHandler({ provider });
+
+    await handler(createContext());
+
+    // web 保底 3 席进入 triage prompt。
+    const triageCall = vi.mocked(runResearchModelStage).mock.calls.find(([input]) => (input as { role: string }).role === "research.source_triage");
+    expect(triageCall).toBeDefined();
+    const prompt = (triageCall![0] as { prompt: string }).prompt;
+    expect(prompt).toContain("Web 政策文件 0");
+    expect(prompt).toContain("Web 政策文件 1");
+    expect(prompt).toContain("Web 政策文件 2");
+    // 被淘汰者按 provider 计数进 checkpoint，并持久化为 rejected 候选（不再静默消失）。
+    // 本测试 plan 无 domainProfile，排序按 identity/fulltext：sciverse(带 DOI) 优先，
+    // 保底 + 填充后落选 = sciverse 1 + project 3 + 保底外 web 2。
+    const saved = state.savedCheckpoints.at(-1);
+    expect(saved?.researchState?.triageWindowDropped).toEqual({ project: 3, sciverse: 1, web: 2 });
+    // 窗口语义进持久化：前 6 行是被窗口淘汰的候选（persist 先于选中候选），
+    // 全部记为 rejected；其余 12 个选中候选里 adjacent 每查询限 2 个，其余也 rejected。
+    const windowDroppedRows = state.candidates.slice(0, 6);
+    expect(windowDroppedRows.every((row) => row.status === "rejected")).toBe(true);
+    expect(windowDroppedRows.map((row) => row.provider).sort()).toEqual(["project", "project", "project", "sciverse", "web", "web"]);
+    expect(state.candidates).toHaveLength(18);
+  });
 });
 
 function claimExtractionState(overrides: Record<string, unknown> = {}) {
@@ -987,6 +1026,25 @@ describe("durable research handler · verifying stage", () => {
     const metrics = metricsCall!.metrics as Record<string, unknown>;
     expect(metrics.degradations).toEqual(expect.arrayContaining(["research_verifier_unavailable"]));
     expect(metrics.degradations).not.toEqual(expect.arrayContaining(["finalization_budget_exhausted"]));
+  });
+
+  it("attributes an empty claim chain to claim_extraction_empty instead of architecture unavailability", async () => {
+    runStatus = "verifying";
+    // 不 seed 任何 claim：claim extractor 从 3 份附件提炼出 0 个原子 Claim 的形态。
+    questionRow.evidence = [evidenceRow()];
+    const handler = createDurableResearchExecutionHandler();
+
+    const result = await handler(createContext({ researchState: { ...claimExtractionState(), stage: "verifying" } }));
+
+    expect(result.kind).toBe("completed");
+    const roles = vi.mocked(runResearchModelStage).mock.calls.map(([input]) => (input as { role: string }).role);
+    // 空 claim 不点火 architect：任何架构归一化都必然 null，只会白烧一次调用。
+    expect(roles).not.toContain("research.report_architect");
+    const updateCalls = vi.mocked(prisma.researchRun.update).mock.calls;
+    const metricsCall = updateCalls.map(([args]) => (args as { data: Record<string, unknown> }).data).find((data) => data.metrics);
+    const metrics = metricsCall!.metrics as Record<string, unknown>;
+    expect(metrics.degradations).toEqual(expect.arrayContaining(["claim_extraction_empty"]));
+    expect(metrics.degradations).not.toEqual(expect.arrayContaining(["research_report_architecture_unavailable"]));
   });
 });
 

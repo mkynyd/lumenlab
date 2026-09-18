@@ -63,7 +63,7 @@ describe("public research stage resolution", () => {
 
 describe("provider degradation messages", () => {
   it("explains supported degradations in user language without stack traces", () => {
-    for (const code of ["sciverse_error", "arxiv_error", "web_error", "visual_resources_unavailable"]) {
+    for (const code of ["sciverse_error", "arxiv_error", "web_error", "visual_resources_unavailable", "claim_extraction_empty", "finalization_budget_exhausted"]) {
       const message = describeResearchDegradation(code);
       expect(message).toBeTruthy();
       expect(message).not.toMatch(/Error|AbortError|stack/i);

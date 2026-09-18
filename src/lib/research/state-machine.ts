@@ -113,6 +113,7 @@ export const RESEARCH_DEGRADATION_MESSAGES: Record<string, string> = {
   visual_resources_unavailable: "论文图表资源暂时不可读，已仅使用正文证据继续",
   visual_model_unavailable: "图表分析模型暂时不可用，已仅使用正文证据继续",
   finalization_budget_exhausted: "研究预算已用尽，无法完成最终综合与核验；可改用更高研究强度重试",
+  claim_extraction_empty: "未能从已收集资料中提炼出可核验的论点，证据收集可能不足",
   research_verifier_unavailable: "最终命题核验模型未成功完成，报告已按确定性证据下界降级",
   research_report_architecture_unavailable: "报告结构规划未成功完成，已使用保守结构继续",
   research_synthesis_unavailable: "研究资料已经收集，但最终综合阶段未成功完成",

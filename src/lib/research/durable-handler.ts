@@ -8,7 +8,7 @@ import { evaluateResearchStop, finalizationBudgetRemaining, getResearchBudget, g
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
 import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion, snapshotScopeTypeOf } from "./claim-graph";
-import { prioritizeResearchCandidates } from "./candidate-priority";
+import { selectCandidatesForTriage } from "./candidate-priority";
 import {
   decideCitationExpansion,
   emptyCitationGraphMetrics,
@@ -501,7 +501,20 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             if (context.signal.aborted || !tryReserveResearchBudgetCounter(state, researchLimits, "searchCalls")) break;
             const taskContext: ResearchProviderContext = { ...providerContext, question: task.question.question };
             const candidates = await provider.search(taskContext, query);
-            const prioritized = prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders).slice(0, 12);
+            // 家族保底窗口：web 至少 3 席，project/sciverse 满页也不得把 web 的
+            // 高相关结果全量挤出 triage（生产事故：中文政策主题必现）。被淘汰者
+            // 按 provider 计数（metrics）并持久化为 rejected 候选（不再静默消失）。
+            const triageWindow = selectCandidatesForTriage(candidates, domainProfile?.preferredProviders);
+            const prioritized = triageWindow.selected;
+            for (const [droppedProvider, droppedCount] of Object.entries(triageWindow.droppedByProvider)) {
+              state.triageWindowDropped = { ...state.triageWindowDropped, [droppedProvider]: (state.triageWindowDropped?.[droppedProvider] ?? 0) + droppedCount };
+            }
+            const kept = new Set(prioritized);
+            for (const candidate of candidates) {
+              if (kept.has(candidate)) continue;
+              const droppedRow = await persistCandidate({ workspaceId: run.workspaceId, runId: run.id, questionId: task.question.id, candidate });
+              await markCandidateRejected(droppedRow.id);
+            }
             const deterministicAssessments = new Map(prioritized.map((candidate, index) => [String(index), deterministicSourceAssessment({ question: task.question!.question, strategy, candidate })]));
             let modelAssessments: ReturnType<typeof normalizeSourceTriageDecision> = {};
             // triage 是 researching 循环里最贵的调用（12 候选 × 摘录）。预估感知
@@ -1376,7 +1389,12 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const allowedClaimIds = new Set(claimPackets.filter((claim) => claim.status !== "unsupported").map((claim) => claim.id));
     let architecture = fallbackReportArchitecture({ objective: planSnapshot?.objective ?? run.question, intentType: planSnapshot?.intentType, claims: claimPackets });
     let architectureAvailable = false;
-    if (canUseFinalizationModel("research.report_architect") && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+    if (allowedClaimIds.size === 0) {
+      // 证据链为空：claim extractor 没有从已收集资料提炼出任何可核验论点。
+      // 归因到证据收集/提炼环节，而不是误导性的「架构模型不可用」；也不点火
+      // architect——空 claim 输入任何架构归一化都必然 null，只会白烧一次调用。
+      degradationCodes.add("claim_extraction_empty");
+    } else if (canUseFinalizationModel("research.report_architect") && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
       const architect = await architectReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, plan: planSnapshot!, questions: reportQuestions, claims: claimPackets, coverageGaps, modelOverride, methodology: methodology("report_architect") });
       recordResearchModelStage(state, architect, { modelCallReserved: true, estimateRole: "research.report_architect" });
       const normalized = normalizeReportArchitecture(architect.value, allowedClaimIds);
@@ -1471,6 +1489,9 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       searchCalls: state.searchCalls,
       fetchCalls: state.fetchCalls,
       candidateSourceCount: state.sourceCount,
+      // 候选窗口溢出淘汰计数（按 provider）：project/sciverse 满页挤掉 web 等
+      // 家族的规模在这里可见，避免「22 次检索 0 公开来源」这类黑盒。
+      triageWindowDroppedByProvider: state.triageWindowDropped ?? {},
       promptTokens: state.promptTokens ?? 0,
       completionTokens: state.completionTokens ?? 0,
       totalTokens: state.totalTokens ?? 0,
