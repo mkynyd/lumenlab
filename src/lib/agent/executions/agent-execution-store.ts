@@ -191,6 +191,8 @@ const researchStateSchema = z
     budgetStopReason: z.string().max(64).optional(),
     /** 各阶段角色最近一次模型调用的实测 totalTokens，用于预估感知闸门（go/no-go）。 */
     modelCallEstimates: z.record(z.string().max(64), z.number().int().nonnegative()).optional(),
+    /** 候选窗口溢出淘汰计数（按 provider），进入 run.metrics.triageWindowDroppedByProvider。 */
+    triageWindowDropped: z.record(z.string().max(64), z.number().int().nonnegative()).optional(),
     draftReport: z.string().max(200_000).optional(),
     lastEvidenceCount: z.number().int().nonnegative().optional(),
     claimExtraction: z
