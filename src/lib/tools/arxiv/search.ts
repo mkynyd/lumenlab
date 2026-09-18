@@ -6,7 +6,8 @@
  * 任何 401/403/超时返回 {error}。
  *
  * 超时/重试策略（bounded，与 Sciverse transport 对齐）：
- * - 单次尝试 8s 超时，超时或网络错误允许一次 300ms 退避后的重试；
+ * - 单次尝试 15s 超时（arXiv 出口抖动反复出现，8s 窗口过紧），超时或网络
+ *   错误允许一次 600ms 退避后的重试；
  * - 父 AbortSignal（用户取消 / 工具硬超时）立即终止，绝不进入重试；
  * - 日志只记录 provider、耗时、错误类别与重试次数，不记录检索 query。
  */
@@ -14,8 +15,10 @@
 import { logger } from "@/lib/logger";
 
 const ARXIV_API = "http://export.arxiv.org/api/query";
-const FETCH_TIMEOUT_MS = 8000;
-const RETRY_BACKOFF_MS = 300;
+/** 单次尝试超时：arXiv 出口抖动反复出现，8s 窗口过紧，放宽到 15s。 */
+export const ARXIV_FETCH_TIMEOUT_MS = 15_000;
+/** 一次退避重试的等待时长（8s 时代的 300ms 对抖动出口偏紧，拉长一倍）。 */
+export const ARXIV_RETRY_BACKOFF_MS = 600;
 const MAX_RESULTS = 10;
 
 interface RawEntry {
@@ -108,7 +111,7 @@ export async function arxivSearch(
   const fetchImpl = options.fetchImpl ?? fetch;
 
   const attempt = async (): Promise<Response> => {
-    const timeout = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+    const timeout = AbortSignal.timeout(ARXIV_FETCH_TIMEOUT_MS);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
     return fetchImpl(url, {
       signal,
@@ -128,7 +131,7 @@ export async function arxivSearch(
     }
     // 超时/网络瞬时错误：有界退避后最多重试一次。
     logger.warn("arxiv.search attempt failed; retrying once", { provider: "arxiv", durationMs: Date.now() - startedAt, errorClass: errorClass(error), retried: false });
-    await sleep(RETRY_BACKOFF_MS);
+    await sleep(ARXIV_RETRY_BACKOFF_MS);
     try {
       response = await attempt();
     } catch (retryError) {

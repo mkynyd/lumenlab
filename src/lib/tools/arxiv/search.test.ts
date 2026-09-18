@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { arxivSearch } from "./search";
+import { arxivSearch, ARXIV_FETCH_TIMEOUT_MS, ARXIV_RETRY_BACKOFF_MS } from "./search";
 
 const fetchMock = vi.fn();
 
@@ -10,6 +10,12 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+it("uses a 15s attempt window and a doubled 600ms backoff for the flaky arXiv egress", () => {
+  // arXiv 出口抖动反复出现：8s 超时窗口过紧、300ms 退避偏短，同步标定。
+  expect(ARXIV_FETCH_TIMEOUT_MS).toBe(15_000);
+  expect(ARXIV_RETRY_BACKOFF_MS).toBe(600);
 });
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
