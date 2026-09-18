@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -219,5 +219,128 @@ describe("ChatInput 非受控附件模式（深度研究入口）", () => {
     await waitFor(() => expect(failSend).toHaveBeenCalled());
     expect(screen.getByText("a.pdf")).toBeInTheDocument();
     unmount();
+  });
+});
+
+describe("ChatInput 附件部分接受（F-2）", () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:mock-preview");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("keeps the legal files in a mixed batch and only rejects the oversized one", () => {
+    const onAttachmentsChange = vi.fn();
+    render(<ChatInput onSend={vi.fn()} onAttachmentsChange={onAttachmentsChange} />);
+
+    const big = new File(["x"], "big.pdf", { type: "application/pdf" });
+    Object.defineProperty(big, "size", { value: 60 * 1024 * 1024 });
+    const note = new File(["note"], "note.txt", { type: "text/plain" });
+    pasteFiles(screen.getByRole("textbox"), [big, note]);
+
+    expect(onAttachmentsChange).toHaveBeenCalledTimes(1);
+    const kept = onAttachmentsChange.mock.calls[0][0] as FileAttachment[];
+    expect(kept.map((attachment) => attachment.name)).toEqual(["note.txt"]);
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("big.pdf");
+    expect(notice).toHaveTextContent("超过 50MB 限制");
+    // 合法文件仍在输入坞中可选中发送
+    expect(screen.getByRole("textbox")).toBeEnabled();
+  });
+
+  it("partially accepts files up to the per-request total size ceiling", () => {
+    const onAttachmentsChange = vi.fn();
+    render(<ChatInput onSend={vi.fn()} onAttachmentsChange={onAttachmentsChange} />);
+
+    // 单文件均 ≤50MB，但 7×50MB 超过单次 300MB 总上限：前 6 份保留，第 7 份单独拒绝。
+    const files = Array.from({ length: 7 }, (_, index) => {
+      const file = new File([`f${index}`], `part-${index}.pdf`, { type: "application/pdf" });
+      Object.defineProperty(file, "size", { value: 50 * 1024 * 1024 });
+      return file;
+    });
+    pasteFiles(screen.getByRole("textbox"), files);
+
+    expect(onAttachmentsChange).toHaveBeenCalledTimes(1);
+    const kept = onAttachmentsChange.mock.calls[0][0] as FileAttachment[];
+    expect(kept.map((attachment) => attachment.name)).toEqual([
+      "part-0.pdf",
+      "part-1.pdf",
+      "part-2.pdf",
+      "part-3.pdf",
+      "part-4.pdf",
+      "part-5.pdf",
+    ]);
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("part-6.pdf");
+    expect(notice).toHaveTextContent("单次上传总大小超过 300MB 限制");
+  });
+
+  it("partially accepts files up to the per-request count ceiling", () => {
+    const onAttachmentsChange = vi.fn();
+    const existing: FileAttachment[] = Array.from({ length: 49 }, (_, index) => ({
+      id: `existing-${index}`,
+      name: `资料-${index}.txt`,
+      mimeType: "text/plain",
+      size: 0,
+      data: new File([], `资料-${index}.txt`, { type: "text/plain" }),
+    }));
+    render(
+      <ChatInput
+        onSend={vi.fn()}
+        attachments={existing}
+        onAttachmentsChange={onAttachmentsChange}
+      />
+    );
+
+    const one = new File(["1"], "one.txt", { type: "text/plain" });
+    const two = new File(["2"], "two.txt", { type: "text/plain" });
+    pasteFiles(screen.getByRole("textbox"), [one, two]);
+
+    expect(onAttachmentsChange).toHaveBeenCalledTimes(1);
+    const kept = onAttachmentsChange.mock.calls[0][0] as FileAttachment[];
+    expect(kept).toHaveLength(50);
+    expect(kept[49].name).toBe("one.txt");
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("two.txt");
+    expect(notice).toHaveTextContent("单次最多上传 50 个文件");
+  });
+});
+
+describe("ChatInput 发送幂等（F-3）", () => {
+  it("does not enqueue a duplicate send from rapid consecutive submissions", async () => {
+    let resolveSend: ((value: boolean) => void) | undefined;
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSend = resolve;
+        })
+    );
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "hi" } });
+
+    // 同一同步批次内连按两次 Enter：第二次事件处理器读到的仍是
+    // isSubmitting=false 的旧闭包，必须靠同步幂等闸挡住重复入队。
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSend?.(true);
+    });
+    await waitFor(() => expect(screen.getByRole("textbox")).toHaveValue(""));
+  });
+
+  it("allows a new send after the previous one settles", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(true);
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox");
+
+    await user.type(input, "第一条{Enter}");
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+
+    await user.type(input, "第二条{Enter}");
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2));
+    expect(onSend.mock.calls[1][0]).toBe("第二条");
   });
 });

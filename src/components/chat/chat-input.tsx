@@ -5,7 +5,8 @@ import { ArrowUp, Globe, Paperclip, Plus, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
 import {
   ACCEPT_ATTRIBUTE,
-  validateUploadBatch,
+  MAX_FILES_PER_REQUEST,
+  MAX_TOTAL_SIZE,
   validateUploadFile,
 } from "@/lib/files/allowed-extensions";
 import { attachmentIconFor } from "@/lib/files/attachment-icon";
@@ -157,6 +158,9 @@ export function ChatInput({
   onSkillChange,
 }: ChatInputProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // 同步幂等闸：快速连按 Enter / 发送时，后续事件处理器读到的仍是 isSubmitting=false
+  // 的旧闭包，state 挡不住重复入队，只能用 ref 在提交前同步拦截。
+  const submittingRef = useRef(false);
   const mounted = useRef(true);
   // 附件默认受控（聊天页由父组件持有）；未提供 onAttachmentsChange 时
   // （如深度研究入口的 ResearchComposer）退化为内部状态，否则选中的文件会被静默丢弃。
@@ -216,6 +220,8 @@ export function ChatInput({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!hasSendableContent || isStreaming || isSubmitting || disabled || blockedReason) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       const sent = await onSend(currentValue, attachments);
@@ -227,6 +233,7 @@ export function ChatInput({
         updateAttachments([]);
       }
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   }
@@ -238,8 +245,9 @@ export function ChatInput({
     }
   }
 
-  // 文件选择、拖拽、粘贴三条路径共用的唯一入口：逐个预校验 + 批量上限校验，
-  // 非法文件不进入附件列表，原因以非阻断提示展示（提示 6 秒后自动消隐）。
+  // 文件选择、拖拽、粘贴三条路径共用的唯一入口：逐个预校验 + 在单次上限内尽量接受。
+  // 单个非法（类型 / 超过 50MB）或放不进单次上限（50 个 / 总 300MB）的文件单独
+  // 拒绝并提示「哪份 + 上限」，其余合法文件保留，不整批丢弃。
   function addFiles(files: Iterable<File> | FileList | null) {
     if (!files) return;
     const incoming = Array.from(files);
@@ -255,9 +263,28 @@ export function ChatInput({
       }
     }
     if (accepted.length > 0) {
-      const batch = validateUploadBatch([...attachments, ...accepted]);
-      if (batch.ok) {
-        const nextFiles = accepted.map((file) => {
+      // 按选择顺序在剩余数量与总大小额度内接受，放不下的逐份拒绝。
+      let countLeft = Math.max(0, MAX_FILES_PER_REQUEST - attachments.length);
+      let sizeLeft = Math.max(
+        0,
+        MAX_TOTAL_SIZE - attachments.reduce((sum, attachment) => sum + attachment.size, 0)
+      );
+      const kept: File[] = [];
+      for (const file of accepted) {
+        if (countLeft <= 0) {
+          rejected.push(`${file.name}: 单次最多上传 ${MAX_FILES_PER_REQUEST} 个文件，未添加`);
+          continue;
+        }
+        if (file.size > sizeLeft) {
+          rejected.push(`${file.name}: 单次上传总大小超过 300MB 限制，未添加`);
+          continue;
+        }
+        kept.push(file);
+        countLeft -= 1;
+        sizeLeft -= file.size;
+      }
+      if (kept.length > 0) {
+        const nextFiles = kept.map((file) => {
           const mimeType = file.type || "application/octet-stream";
           const attachment: FileAttachment = {
             id:
@@ -275,9 +302,6 @@ export function ChatInput({
           return attachment;
         });
         updateAttachments([...attachments, ...nextFiles]);
-      } else {
-        // 追加后超批量限制：整批不追加，文件不落附件列表。
-        rejected.unshift(batch.error);
       }
     }
     if (rejected.length > 0) setAttachmentNotice(rejected);
