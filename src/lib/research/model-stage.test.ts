@@ -57,6 +57,8 @@ describe("research model stage contracts", () => {
       expect.objectContaining({
         conversation: { id: "conversation-1" },
         capabilities: expect.objectContaining({ selectedFileIds: [] }),
+        // 阶段调用必须隔离：禁止把执行会话的完整历史重放进每次调用。
+        isolatedTurn: true,
       })
     );
   });

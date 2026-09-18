@@ -50,6 +50,9 @@ export async function runResearchModelStage<T>(input: ResearchModelStageInput): 
       prompt: { message: input.prompt, attachments: input.attachments ?? [] },
       model: { requestedModel: selection.model, thinkingEnabled: false, reasoningEffort: selection.reasoningEffort },
       capabilities: { webSearchActive: false, skillOff: true, selectedFileIds: [], isQuickTask: false, mode: "general" },
+      // 阶段 prompt 自包含：禁止把执行会话的完整历史（历次阶段 prompt + JSON
+      // 输出）重放进每次调用。生产实测历史重发占阶段调用 token 的 80%+。
+      isolatedTurn: true,
       signal: input.signal,
     });
     for await (const event of run.events) {

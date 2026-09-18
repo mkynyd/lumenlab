@@ -64,6 +64,13 @@ export interface AgentRunInput {
    * 重复提交（同一键）复用同一批附件行与对象，不重复用户消息或计费。
    */
   clientRunKey?: string;
+  /**
+   * 一次性结构化调用（Research 阶段、标题生成等）：不落对话历史上下文，
+   * 模型只收到 system prompt + 本轮 prompt。用户/助手消息仍照常持久化，
+   * 但后续调用不再重放本条历史——Research 每个阶段 prompt 自包含，
+   * 重放完整历史是 token 浪费的主要来源（生产实测占阶段调用 80%+）。
+   */
+  isolatedTurn?: boolean;
   signal: AbortSignal;
 }
 

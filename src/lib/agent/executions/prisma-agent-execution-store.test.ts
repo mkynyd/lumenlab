@@ -1472,6 +1472,8 @@ describe("PrismaAgentExecutionStore", () => {
       completionTokens: 30,
       totalTokens: 150,
       costCredits: 2,
+      budgetStopReason: "hard_budget",
+      modelCallEstimates: { "research.worker": 9_000 },
     };
     expect(() =>
       parseAgentCheckpoint({ ...checkpoint(), researchState })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateResearchStop, getResearchBudget, getResearchExplorationBudget, getResearchFinalizationReserve, hasResearchModelBudgetHeadroom } from "./budget";
+import { evaluateResearchStop, getResearchBudget, getResearchExplorationBudget, getResearchFinalizationReserve, hasResearchModelBudgetHeadroom, hasResearchModelCallBudget, RESEARCH_CALL_ESTIMATE_SAFETY_FACTOR } from "./budget";
 
 describe("research budget", () => {
   it("keeps comprehensive concurrency bounded at four", () => {
@@ -7,23 +7,27 @@ describe("research budget", () => {
     expect(getResearchBudget("comprehensive").maxQuestionReplans).toBe(3);
   });
 
-  it("sizes the deep profile for real multi-attachment runs with a protected finalization reserve", () => {
-    // 生产校准：一次 15 份资料的 deep Run 探索阶段实测消耗约 585k tokens，
-    // 旧上限 160k 在收尾前被打穿。deep 总额 640k = 探索 544k + 收尾预留 96k。
+  it("sizes the deep profile for isolated-turn stage calls with a protected finalization reserve", () => {
+    // 校准依据（token-composition probe，24 evidence/12 claim 的 deep Run）：
+    // 阶段调用改为 isolatedTurn（不重放历史）+ 摘录分级截断后，17 次调用完整
+    // 序列约 289k tokens；15 来源重证据 Run 约 400-450k。deep 总额 480k =
+    // 探索 352k + 收尾预留 128k（verifier/architect/writer/auditor 实测
+    // 20-28k/次 × 4 ≈ 98k + 30% 余量）。
     const total = getResearchBudget("deep");
     const reserve = getResearchFinalizationReserve("deep");
     const exploration = getResearchExplorationBudget("deep");
-    expect(total.maxTokens).toBe(640_000);
-    expect(reserve.maxTokens).toBe(96_000);
-    expect(exploration.maxTokens).toBe(544_000);
-    expect(total.maxCostCredits).toBe(1_920);
-    expect(reserve.maxCostCredits).toBe(288);
-    expect(exploration.maxCostCredits).toBe(1_632);
+    expect(total.maxTokens).toBe(480_000);
+    expect(reserve.maxTokens).toBe(128_000);
+    expect(exploration.maxTokens).toBe(352_000);
+    expect(total.maxCostCredits).toBe(1_440);
+    expect(reserve.maxCostCredits).toBe(384);
+    expect(exploration.maxCostCredits).toBe(1_056);
   });
 
   it("keeps comprehensive strictly above deep", () => {
     expect(getResearchBudget("comprehensive").maxTokens).toBeGreaterThan(getResearchBudget("deep").maxTokens);
     expect(getResearchExplorationBudget("comprehensive").maxTokens).toBeGreaterThan(getResearchExplorationBudget("deep").maxTokens);
+    expect(getResearchBudget("comprehensive").maxTokens).toBe(720_000);
   });
 
   it("gates model calls on token and credit headroom", () => {
@@ -33,6 +37,21 @@ describe("research budget", () => {
     expect(hasResearchModelBudgetHeadroom({ limits, totalTokens: limits.maxTokens, costCredits: 0 })).toBe(false);
     expect(hasResearchModelBudgetHeadroom({ limits, totalTokens: 0, costCredits: limits.maxCostCredits })).toBe(false);
     expect(hasResearchModelBudgetHeadroom({ limits })).toBe(true);
+  });
+
+  it("estimate-aware gate requires headroom for estimate times the safety factor", () => {
+    const limits = getResearchBudget("deep");
+    // 余量充足：一次性通过。
+    expect(hasResearchModelCallBudget({ limits, totalTokens: 0, costCredits: 0, estimateTokens: 24_000 })).toBe(true);
+    // 余量低于 预估 × 1.5：拦截（生产两次 Run 的跳变式超支形态）。
+    const remaining = Math.ceil(24_000 * RESEARCH_CALL_ESTIMATE_SAFETY_FACTOR) - 1;
+    expect(hasResearchModelCallBudget({ limits, totalTokens: limits.maxTokens - remaining, costCredits: 0, estimateTokens: 24_000 })).toBe(false);
+    // 恰好等于 预估 × 1.5：放行。
+    expect(hasResearchModelCallBudget({ limits, totalTokens: limits.maxTokens - Math.ceil(24_000 * RESEARCH_CALL_ESTIMATE_SAFETY_FACTOR), costCredits: 0, estimateTokens: 24_000 })).toBe(true);
+    // 无估计值：退回纯余量检查。
+    expect(hasResearchModelCallBudget({ limits, totalTokens: limits.maxTokens - 1, costCredits: 0 })).toBe(true);
+    // 硬顶已触：无论估计值都拦截。
+    expect(hasResearchModelCallBudget({ limits, totalTokens: limits.maxTokens, costCredits: 0, estimateTokens: 1 })).toBe(false);
   });
 
   it("does not stop while critical work is pending", () => {

@@ -4,7 +4,7 @@ import type { AgentCheckpoint } from "@/lib/agent/executions/agent-execution-sto
 import type { AgentModel, AgentUsage } from "@/lib/agent/contracts";
 import type { AgentExecutionHandler, AgentExecutionHandlerContext, AgentExecutionHandlerResult } from "@/lib/agent/executions/agent-execution-runner";
 import type { ChatModel } from "@/lib/chat/model-catalog";
-import { evaluateResearchStop, finalizationBudgetRemaining, getResearchBudget, getResearchExplorationBudget, getResearchFinalizationReserve, hasResearchModelBudgetHeadroom, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
+import { evaluateResearchStop, finalizationBudgetRemaining, getResearchBudget, getResearchExplorationBudget, getResearchFinalizationReserve, hasResearchModelCallBudget, RESEARCH_DEFAULT_CALL_ESTIMATE_TOKENS, releaseResearchBudgetCounter, tryReserveResearchBudgetCounter } from "./budget";
 import { ingestResearchReadSource, markCandidateFetched, markCandidateRejected } from "./evidence-ingestion";
 import { buildClaimExtractionPrompt, buildQuestionEvidenceFingerprint, normalizeClaimExtractorOutput, type ClaimExtractorDecision } from "./claim-extraction";
 import { computeDeterministicClaimVerification, mergeClaimVerification, persistExtractedClaimsForQuestion, snapshotScopeTypeOf } from "./claim-graph";
@@ -21,7 +21,7 @@ import {
 import { createResearchToolInvoker, createToolBackedResearchSourceProvider, parseResearchResourceRefs, type ResearchCandidate, type ResearchProviderContext, type ResearchSourceProvider, type ResearchToolInvoker, type ResearchResourceRef } from "./source-provider";
 import { academicCitationSignal, clampQuality, computeEvidenceRecency, computeResearchInformationGain, computeSourceDiversity, estimateSourceQuality, summarizeResearchQuality } from "./quality";
 import { assertResearchRunTransition, isTerminalResearchRunStatus } from "./state-machine";
-import type { ResearchPlanSnapshot, ResearchQuestionStatus, ResearchRunStatus } from "./contracts";
+import type { ResearchBudgetLimits, ResearchPlanSnapshot, ResearchQuestionStatus, ResearchRunStatus } from "./contracts";
 import { nextResearchTaskRetryStatus } from "./task-retry";
 import { addResearchUsage, EMPTY_RESEARCH_USAGE } from "./accounting";
 import { resolveCommanderModel } from "./model-routing";
@@ -78,6 +78,29 @@ const VISUAL_SCAN_WINDOW = 6_000;
 const VISUAL_BODY_CONTEXT_CHARS = 4_000;
 /** checkpoint 中保留的 provider 降级代码上限。 */
 const MAX_RESEARCH_DEGRADATIONS = 12;
+/**
+ * 阶段 prompt 内 Evidence 摘录的确定性上限（全文仍在 Evidence 行，经 evidenceId
+ * + locator 可追溯）。历史重发消除后，终审阶段 prompt 的主要构成是 evidence
+ * 摘录原文（每条可达 2000 字符 × 数十条），按阶段用途分级截断：
+ * evaluator 判断覆盖度看 statement 即可；claim extractor 需要更多原文 grounding；
+ * verifier 核对支持关系；report packet 只为写作提供引用上下文。
+ */
+const EVIDENCE_EXCERPT_CAPS = { evaluator: 800, claimExtractor: 1_200, verifier: 1_000, reportPacket: 800 } as const;
+
+function capEvidenceExcerpt(text: string | null | undefined, cap: number): string {
+  if (typeof text !== "string") return "";
+  return text.length <= cap ? text : `${text.slice(0, cap)}…[截断，全文见 Evidence 记录]`;
+}
+
+/**
+ * 预估感知闸门的角色估计：无实测时按预算档位推导保守默认——固定 24k 会让
+ * quick（探索预算 28k）在第一调用就被闸门挡死，因此默认估计不超过预算的 1/10。
+ */
+function researchCallEstimate(state: ResearchState, role: string, limits: ResearchBudgetLimits): number {
+  const measured = state.modelCallEstimates?.[role];
+  if (measured && measured > 0) return measured;
+  return Math.min(RESEARCH_DEFAULT_CALL_ESTIMATE_TOKENS, Math.max(2_000, Math.floor(limits.maxTokens / 10)));
+}
 
 function json(value: unknown) {
   return JSON.parse(JSON.stringify(value));
@@ -87,7 +110,7 @@ function checkpointWithResearch(checkpoint: AgentCheckpoint, researchState: Rese
   return { ...checkpoint, researchState };
 }
 
-function recordResearchModelStage(state: ResearchState, result: { attempted: boolean; usage: AgentUsage | null; model: AgentModel }, options?: { modelCallReserved?: boolean }) {
+function recordResearchModelStage(state: ResearchState, result: { attempted: boolean; usage: AgentUsage | null; model: AgentModel }, options?: { modelCallReserved?: boolean; estimateRole?: string }) {
   if (result.attempted && !options?.modelCallReserved) state.modelCalls += 1;
   if (!result.usage) return;
   const usage = addResearchUsage({ promptTokens: state.promptTokens ?? 0, completionTokens: state.completionTokens ?? 0, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 }, result.usage, result.model);
@@ -95,6 +118,14 @@ function recordResearchModelStage(state: ResearchState, result: { attempted: boo
   state.completionTokens = usage.completionTokens;
   state.totalTokens = usage.totalTokens;
   state.costCredits = usage.costCredits;
+  // 预估感知闸门素材：按角色记录单次调用实测（取 max，防一次异常大调用被
+  // 后续较小的同阶段调用低估）。只影响 go/no-go 决策，不改预算口径。
+  if (options?.estimateRole) {
+    const total = result.usage.totalTokens || result.usage.promptTokens + result.usage.completionTokens;
+    if (total > 0) {
+      state.modelCallEstimates = { ...state.modelCallEstimates, [options.estimateRole]: Math.max(state.modelCallEstimates?.[options.estimateRole] ?? 0, total) };
+    }
+  }
 }
 
 async function appendPublicEvent(context: AgentExecutionHandlerContext, input: {
@@ -364,7 +395,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         modelOverride,
         prompt: buildPlannerPrompt({ plan: currentPlan, profile: run.workspace.budgetProfile, domainProfile, methodology: methodology("planner") }),
       });
-      recordResearchModelStage(state, plannerResult);
+      recordResearchModelStage(state, plannerResult, { estimateRole: "research.planner" });
       const revisedPlan = applyResearchPlannerDecision(currentPlan, normalizeResearchPlannerDecision(plannerResult.value));
       const changed = JSON.stringify(revisedPlan) !== JSON.stringify(currentPlan);
       let planVersionId = activePlanVersion.id;
@@ -402,7 +433,11 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     if (state.stage === "researching") {
       await transitionRun(run.id, "researching");
       const elapsedMs = Date.now() - (run.startedAt ?? run.createdAt).getTime();
-      const hardBudgetReached = elapsedMs >= researchLimits.wallTimeMs || state.modelCalls >= researchLimits.modelCalls || (state.totalTokens ?? 0) >= researchLimits.maxTokens || (state.costCredits ?? 0) >= researchLimits.maxCostCredits || state.searchCalls >= researchLimits.searchCalls || state.fetchCalls >= researchLimits.fetchCalls || state.sourceCount >= researchLimits.maxSources;
+      // 预估感知：连一次 worker 调用的「实测 × 安全系数」都覆盖不了时，同样视为
+      // 硬预算触顶直接收尾——否则任务在闸门处回 retrying、入口检查又放行，
+      // 会形成 250ms 的热循环。
+      const explorationCallBlocked = !hasResearchModelCallBudget({ limits: researchLimits, totalTokens: state.totalTokens, costCredits: state.costCredits, estimateTokens: researchCallEstimate(state, "research.worker", researchLimits) });
+      const hardBudgetReached = explorationCallBlocked || elapsedMs >= researchLimits.wallTimeMs || state.modelCalls >= researchLimits.modelCalls || (state.totalTokens ?? 0) >= researchLimits.maxTokens || (state.costCredits ?? 0) >= researchLimits.maxCostCredits || state.searchCalls >= researchLimits.searchCalls || state.fetchCalls >= researchLimits.fetchCalls || state.sourceCount >= researchLimits.maxSources;
       if (hardBudgetReached) {
         state.stage = "evaluating";
         lastBudgetStopReason = "hard_budget";
@@ -433,10 +468,10 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         await appendPublicEvent(context, { key: `research:task:start:${task.id}`, kind: "task_started", runId: run.id, message: `开始研究：${task.question.title}`, publicData: { questionId: task.question.id, priority: task.question.priority } });
         try {
           // 单次调用的 token 消耗在返回前未知：除同步预留调用计数外，发起前
-          // 再检查一次 token/credit 余量。余量为 0 时不再点火新调用，任务回到
-          // retrying，下一轮 handler 的 hardBudgetReached 会把 Run 送入 evaluating
-          // 优雅收尾，而不是烧穿预算后跳过收尾。
-          const workerHeadroom = hasResearchModelBudgetHeadroom({ limits: researchLimits, totalTokens: state.totalTokens, costCredits: state.costCredits });
+          // 用「上次同阶段实测 × 安全系数」做预估感知闸门——纯余量检查挡不住
+          // 单次 call 跳变式超支。余量不足时不点火新调用，任务回到 retrying，
+          // 下一轮 handler 的 hardBudgetReached 会把 Run 送入 evaluating 优雅收尾。
+          const workerHeadroom = hasResearchModelCallBudget({ limits: researchLimits, totalTokens: state.totalTokens, costCredits: state.costCredits, estimateTokens: researchCallEstimate(state, "research.worker", researchLimits) });
           if (!workerHeadroom || !tryReserveResearchBudgetCounter(state, researchLimits, "modelCalls")) {
             await prisma.researchTask.update({ where: { id: task.id }, data: { status: "retrying", lastError: json({ code: workerHeadroom ? "research_model_budget_reserved" : "research_token_budget_exhausted" }) } });
             return;
@@ -458,7 +493,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
               methodology: methodology("retrieval"),
             }),
           });
-          recordResearchModelStage(state, workerResult, { modelCallReserved: true });
+          recordResearchModelStage(state, workerResult, { modelCallReserved: true, estimateRole: "research.worker" });
           const workerDecision = normalizeResearchWorkerDecision(workerResult.value, task.question.question, task.question.key);
           await appendPublicEvent(context, { key: `research:query:${task.id}:${attempt}`, kind: "task_started", runId: run.id, message: `已生成检索策略：${task.question.title}`, publicData: { questionId: task.question.id, queries: workerDecision.queries.map((item) => item.query) } });
           for (const strategy of workerDecision.queries) {
@@ -469,9 +504,9 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             const prioritized = prioritizeResearchCandidates(candidates, domainProfile?.preferredProviders).slice(0, 12);
             const deterministicAssessments = new Map(prioritized.map((candidate, index) => [String(index), deterministicSourceAssessment({ question: task.question!.question, strategy, candidate })]));
             let modelAssessments: ReturnType<typeof normalizeSourceTriageDecision> = {};
-            // triage 是 researching 循环里最贵的调用（12 候选 × 摘录）。余量检查
-            // 与候选字符预算双重收敛：预算越紧，每条摘录越短（有下限）。
-            const triageHeadroom = hasResearchModelBudgetHeadroom({ limits: researchLimits, totalTokens: state.totalTokens, costCredits: state.costCredits });
+            // triage 是 researching 循环里最贵的调用（12 候选 × 摘录）。预估感知
+            // 闸门 + 候选字符预算双重收敛：预算越紧，每条摘录越短（有下限）。
+            const triageHeadroom = hasResearchModelCallBudget({ limits: researchLimits, totalTokens: state.totalTokens, costCredits: state.costCredits, estimateTokens: researchCallEstimate(state, "research.source_triage", researchLimits) });
             const triageCandidateCharBudget = Math.min(
               SOURCE_TRIAGE_CANDIDATE_CHAR_BUDGET,
               Math.max(2_400, (researchLimits.maxTokens - (state.totalTokens ?? 0)) * 2),
@@ -486,7 +521,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
                 modelOverride,
                 prompt: buildSourceTriagePrompt({ plan: planSnapshot!, question: task.question.question, strategy, candidates: prioritized.map((candidate, index) => ({ id: String(index), candidate })), methodology: methodology("source_triage"), candidateCharBudget: triageCandidateCharBudget }),
               });
-              recordResearchModelStage(state, triageResult, { modelCallReserved: true });
+              recordResearchModelStage(state, triageResult, { modelCallReserved: true, estimateRole: "research.source_triage" });
               modelAssessments = normalizeSourceTriageDecision(triageResult.value, new Set(prioritized.map((_, index) => String(index))));
             }
             let adjacentAccepted = 0;
@@ -567,7 +602,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           const assessmentValue = evidenceProvenance.sourceAssessment ?? sourceMetadata.sourceAssessment;
           const assessment = assessmentValue && typeof assessmentValue === "object" && !Array.isArray(assessmentValue) ? assessmentValue as Record<string, unknown> : {};
           const scope = snapshotMetadata.scope && typeof snapshotMetadata.scope === "object" && !Array.isArray(snapshotMetadata.scope) ? snapshotMetadata.scope as Record<string, unknown> : {};
-          return { id: item.id, statement: item.statement, excerpt: item.excerpt, sourceTitle: item.sourceSnapshot.source.title, year: sourceMetadata.year ?? null, venue: sourceMetadata.venue ?? null, sourceRole: assessment.sourceRole ?? evidenceProvenance.intendedSourceRole ?? sourceMetadata.intendedSourceRole ?? "context", sourceRelevance: assessment.relevance ?? "adjacent", qualityClass: assessment.qualityClass ?? "context_source", evidenceType: item.evidenceType, scope: scope.type ?? "unknown", canonicalSourceIdentity: item.sourceSnapshot.source.canonicalKey };
+          return { id: item.id, statement: item.statement, excerpt: capEvidenceExcerpt(item.excerpt, EVIDENCE_EXCERPT_CAPS.evaluator), sourceTitle: item.sourceSnapshot.source.title, year: sourceMetadata.year ?? null, venue: sourceMetadata.venue ?? null, sourceRole: assessment.sourceRole ?? evidenceProvenance.intendedSourceRole ?? sourceMetadata.intendedSourceRole ?? "context", sourceRelevance: assessment.relevance ?? "adjacent", qualityClass: assessment.qualityClass ?? "context_source", evidenceType: item.evidenceType, scope: scope.type ?? "unknown", canonicalSourceIdentity: item.sourceSnapshot.source.canonicalKey };
         });
         const substantive = evidencePackets.filter((item) => item.sourceRelevance === "direct" && item.scope !== "metadata_only");
         const independentDirectSources = new Set(substantive.map((item) => item.canonicalSourceIdentity)).size;
@@ -576,7 +611,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         const fallbackDecision = deterministicEvaluatorDecision({ intentType: planSnapshot?.intentType, evidence: evidencePackets });
         let decision = fallbackDecision;
         const canEvaluateQuestion = question.evaluateAttempts < limits.maxQuestionEvaluateAttempts;
-        if (canEvaluateQuestion && state.modelCalls < researchLimits.modelCalls && (state.totalTokens ?? 0) < researchLimits.maxTokens && (state.costCredits ?? 0) < researchLimits.maxCostCredits) {
+        if (canEvaluateQuestion && state.modelCalls < researchLimits.modelCalls && hasResearchModelCallBudget({ limits: researchLimits, totalTokens: state.totalTokens, costCredits: state.costCredits, estimateTokens: researchCallEstimate(state, "research.evaluator", researchLimits) })) {
           const evaluatorResult = await runResearchModelStage<ResearchEvaluatorDecision>({
             role: "research.evaluator",
             userId: context.execution.userId,
@@ -586,7 +621,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             modelOverride,
             prompt: buildEvaluatorPrompt({ plan: planSnapshot!, question: { question: question.question, completionCriteria: question.completionCriteria }, domainProfile, evidence: evidencePackets, methodology: methodology("evaluator") }),
           });
-          recordResearchModelStage(state, evaluatorResult);
+          recordResearchModelStage(state, evaluatorResult, { estimateRole: "research.evaluator" });
           decision = normalizeResearchEvaluatorDecision(evaluatorResult.value, fallbackDecision);
         }
         const status = substantive.length === 0
@@ -1035,7 +1070,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           })),
         });
         metrics.modelCalls += 1;
-        recordResearchModelStage(state, stage, { modelCallReserved: true });
+        recordResearchModelStage(state, stage, { modelCallReserved: true, estimateRole: "research.visual_evaluator" });
         if (!stage.value) {
           metrics.degradations += 1;
           degradationCodes.add("visual_model_unavailable");
@@ -1117,7 +1152,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           fingerprints[question.id] = fingerprint;
           continue;
         }
-        if (!tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+        if (!hasResearchModelCallBudget({ limits, totalTokens: state.totalTokens, costCredits: state.costCredits, estimateTokens: researchCallEstimate(state, "research.claim_extractor", limits) }) || !tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
           // 预算耗尽：保守继续，保留既有 Claims，不追加无上限的模型调用。
           await appendPublicEvent(context, { key: `research:claims:budget:${run.id}`, kind: "budget_updated", runId: run.id, message: "模型预算已用尽，跳过剩余问题的 Claim Extraction，报告将以证据级保守方式生成", publicData: { modelCalls: state.modelCalls } });
           break;
@@ -1135,7 +1170,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             evidence: question.evidence.map((evidence) => ({
               id: evidence.id,
               statement: evidence.statement,
-              excerpt: evidence.excerpt,
+              excerpt: capEvidenceExcerpt(evidence.excerpt, EVIDENCE_EXCERPT_CAPS.claimExtractor),
               evidenceType: evidence.evidenceType,
               locator: evidence.locator,
               provenance: evidence.provenance,
@@ -1151,7 +1186,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             methodology: methodology("claim"),
           }),
         });
-        recordResearchModelStage(state, extractorResult, { modelCallReserved: true });
+        recordResearchModelStage(state, extractorResult, { modelCallReserved: true, estimateRole: "research.claim_extractor" });
         if (!extractorResult.value) {
           // 模型不可用或 JSON 解析失败：不回退到模板 Claim，留下可观测状态并保守继续。
           await appendPublicEvent(context, { key: `research:claims:unavailable:${question.id}:${context.execution.attempt}`, kind: "question_evaluated", runId: run.id, message: `Claim Extraction 暂不可用：${question.title}，本 Run 将以证据级保守方式继续`, publicData: { questionId: question.id, modelAttempted: extractorResult.attempted } });
@@ -1186,10 +1221,13 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const existingReport = await prisma.researchReportSnapshot.findUnique({ where: { runId: run.id } });
     if (existingReport) return { kind: "completed", checkpoint };
     const finalizationStart = { modelCalls: state.modelCalls, totalTokens: state.totalTokens ?? 0, costCredits: state.costCredits ?? 0 };
-    const canUseFinalizationModel = () => (state.totalTokens ?? 0) < limits.maxTokens && (state.costCredits ?? 0) < limits.maxCostCredits;
-    // 收尾调用跳过的归因：走不到各 if 分支只可能是预算问题（token/credit 触顶或
-    // modelCalls 计数打满——预留只在计数打满时失败）；模型不可用是 if 分支内
-    // attempted 但 value 为 null。两种原因分开记降级码，用户文案见 state-machine.ts。
+    // 收尾调用跳过的归因：走不到各 if 分支只可能是预算问题（token/credit 触顶、
+    // modelCalls 计数打满，或余量不足以安全覆盖「上次同阶段实测 × 安全系数」）；
+    // 模型不可用是 if 分支内 attempted 但 value 为 null。两种原因分开记降级码。
+    const canUseFinalizationModel = (role: "research.verifier" | "research.report_architect" | "research.synthesizer" | "research.report_auditor") =>
+      (state.totalTokens ?? 0) < limits.maxTokens
+      && (state.costCredits ?? 0) < limits.maxCostCredits
+      && hasResearchModelCallBudget({ limits, totalTokens: state.totalTokens, costCredits: state.costCredits, estimateTokens: researchCallEstimate(state, role, limits) });
     const claims = await prisma.claim.findMany({ where: { runId: run.id, status: { in: ["active", "disputed"] } }, include: { question: { select: { id: true, title: true, question: true, priority: true } }, evidenceRelations: { include: { evidence: { include: { sourceSnapshot: { include: { source: true } } } } } } }, orderBy: { createdAt: "asc" } });
     const evidence = await prisma.evidence.findMany({ where: { runId: run.id, status: "active" }, include: { sourceSnapshot: { include: { source: true } } }, orderBy: { createdAt: "asc" } });
     const sourceSnapshots = [...new Set(evidence.map((item) => item.sourceSnapshotId))];
@@ -1224,7 +1262,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       return [claim.id, linked] as const;
     }));
     let verifierAvailable = false;
-    if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+    if (canUseFinalizationModel("research.verifier") && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
       const verifierResult = await runResearchModelStage<ResearchVerifierDecision>({
         role: "research.verifier",
         userId: context.execution.userId,
@@ -1243,7 +1281,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
               rationale: relation.rationale,
               evidenceStatus: relation.evidence.status,
               statement: relation.evidence.statement,
-              excerpt: relation.evidence.excerpt,
+              excerpt: capEvidenceExcerpt(relation.evidence.excerpt, EVIDENCE_EXCERPT_CAPS.verifier),
               source: {
                 canonicalKey: relation.evidence.sourceSnapshot.source.canonicalKey,
                 title: relation.evidence.sourceSnapshot.source.title,
@@ -1254,7 +1292,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             })),
           })), methodology: methodology("verifier") }),
       });
-      recordResearchModelStage(state, verifierResult, { modelCallReserved: true });
+      recordResearchModelStage(state, verifierResult, { modelCallReserved: true, estimateRole: "research.verifier" });
       verifierDecision = normalizeResearchVerifierDecision(verifierResult.value);
       verifierAvailable = Boolean(verifierResult.value);
       if (!verifierAvailable) degradationCodes.add("research_verifier_unavailable");
@@ -1326,7 +1364,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
           if (!marker || relation.evidence.status !== "active") return [];
           const sourceMetadata = relation.evidence.sourceSnapshot.source.metadata && typeof relation.evidence.sourceSnapshot.source.metadata === "object" && !Array.isArray(relation.evidence.sourceSnapshot.source.metadata) ? relation.evidence.sourceSnapshot.source.metadata as Record<string, unknown> : {};
           const provenance = relation.evidence.provenance && typeof relation.evidence.provenance === "object" && !Array.isArray(relation.evidence.provenance) ? relation.evidence.provenance as Record<string, unknown> : {};
-          return [{ marker, relation: relation.relation, statement: relation.evidence.statement, excerpt: relation.evidence.excerpt, source: { title: relation.evidence.sourceSnapshot.source.title, canonicalKey: relation.evidence.sourceSnapshot.source.canonicalKey, year: sourceMetadata.year ?? null, venue: sourceMetadata.venue ?? null, assessment: provenance.sourceAssessment ?? sourceMetadata.sourceAssessment ?? null } }];
+          return [{ marker, relation: relation.relation, statement: relation.evidence.statement, excerpt: capEvidenceExcerpt(relation.evidence.excerpt, EVIDENCE_EXCERPT_CAPS.reportPacket), source: { title: relation.evidence.sourceSnapshot.source.title, canonicalKey: relation.evidence.sourceSnapshot.source.canonicalKey, year: sourceMetadata.year ?? null, venue: sourceMetadata.venue ?? null, assessment: provenance.sourceAssessment ?? sourceMetadata.sourceAssessment ?? null } }];
         }),
       };
     });
@@ -1338,9 +1376,9 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const allowedClaimIds = new Set(claimPackets.filter((claim) => claim.status !== "unsupported").map((claim) => claim.id));
     let architecture = fallbackReportArchitecture({ objective: planSnapshot?.objective ?? run.question, intentType: planSnapshot?.intentType, claims: claimPackets });
     let architectureAvailable = false;
-    if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+    if (canUseFinalizationModel("research.report_architect") && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
       const architect = await architectReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, plan: planSnapshot!, questions: reportQuestions, claims: claimPackets, coverageGaps, modelOverride, methodology: methodology("report_architect") });
-      recordResearchModelStage(state, architect, { modelCallReserved: true });
+      recordResearchModelStage(state, architect, { modelCallReserved: true, estimateRole: "research.report_architect" });
       const normalized = normalizeReportArchitecture(architect.value, allowedClaimIds);
       if (normalized) {
         architecture = normalized;
@@ -1351,10 +1389,10 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     let reportBody = "";
     let synthesisAvailable = false;
     let synthesisAttempted = false;
-    if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+    if (canUseFinalizationModel("research.synthesizer") && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
       synthesisAttempted = true;
       const writer = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile, methodology: methodology("writer") });
-      recordResearchModelStage(state, writer, { modelCallReserved: true });
+      recordResearchModelStage(state, writer, { modelCallReserved: true, estimateRole: "research.synthesizer" });
       if (writer.value) {
         reportBody = writer.value;
         synthesisAvailable = true;
@@ -1371,9 +1409,9 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     const bibliographySourceIdsFor = (body: string) => [...new Set(evidenceMarkersInReport(body).flatMap((marker) => evidence[marker - 1]?.sourceSnapshot.sourceId ? [evidence[marker - 1].sourceSnapshot.sourceId] : []))];
     let modelAudit = { pass: false, issues: [] as Array<{ code: string; severity: "error" | "warning"; message: string }>, repairInstructions: [] as string[] };
     let auditorAvailable = false;
-    if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+    if (canUseFinalizationModel("research.report_auditor") && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
       const audit = await auditFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, report: reportBody, bibliographySourceIds: bibliographySourceIdsFor(reportBody), methodology: methodology("auditor") });
-      recordResearchModelStage(state, audit, { modelCallReserved: true });
+      recordResearchModelStage(state, audit, { modelCallReserved: true, estimateRole: "research.report_auditor" });
       if (audit.value) {
         modelAudit = normalizeReportAuditDecision(audit.value);
         auditorAvailable = true;
@@ -1381,15 +1419,15 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     } else degradationCodes.add("finalization_budget_exhausted");
 
     let reportAuditPass = synthesisAvailable && deterministicAudit.pass && auditorAvailable && modelAudit.pass;
-    if (!reportAuditPass && synthesisAvailable && auditorAvailable && state.verificationRepairs < limits.maxVerificationRepairs && canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+    if (!reportAuditPass && synthesisAvailable && auditorAvailable && state.verificationRepairs < limits.maxVerificationRepairs && canUseFinalizationModel("research.synthesizer") && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
       state.verificationRepairs += 1;
       const repair = await writeFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, profile: run.workspace.budgetProfile, repair: { draft: reportBody, instructions: [...deterministicAudit.issues.map((issue) => issue.message), ...modelAudit.repairInstructions] }, methodology: methodology("writer") });
-      recordResearchModelStage(state, repair, { modelCallReserved: true });
+      recordResearchModelStage(state, repair, { modelCallReserved: true, estimateRole: "research.synthesizer" });
       if (repair.value) reportBody = repair.value;
       deterministicAudit = deterministicReportAudit({ report: reportBody, evidenceRefs: evidence.map((item) => item.id), claims: claimPackets });
-      if (canUseFinalizationModel() && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
+      if (canUseFinalizationModel("research.report_auditor") && tryReserveResearchBudgetCounter(state, limits, "modelCalls")) {
         const reaudit = await auditFinalReportWithExistingRuntime({ userId: context.execution.userId, conversationId: context.execution.conversationId, projectId: run.workspace.projectId, signal: context.signal, modelOverride, plan: planSnapshot!, architecture, claims: claimPackets, report: reportBody, bibliographySourceIds: bibliographySourceIdsFor(reportBody), methodology: methodology("auditor") });
-        recordResearchModelStage(state, reaudit, { modelCallReserved: true });
+        recordResearchModelStage(state, reaudit, { modelCallReserved: true, estimateRole: "research.report_auditor" });
         if (reaudit.value) modelAudit = normalizeReportAuditDecision(reaudit.value);
       }
       reportAuditPass = deterministicAudit.pass && modelAudit.pass;

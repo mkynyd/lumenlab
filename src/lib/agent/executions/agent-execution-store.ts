@@ -189,6 +189,8 @@ const researchStateSchema = z
     totalTokens: z.number().int().nonnegative().optional(),
     costCredits: z.number().int().nonnegative().optional(),
     budgetStopReason: z.string().max(64).optional(),
+    /** 各阶段角色最近一次模型调用的实测 totalTokens，用于预估感知闸门（go/no-go）。 */
+    modelCallEstimates: z.record(z.string().max(64), z.number().int().nonnegative()).optional(),
     draftReport: z.string().max(200_000).optional(),
     lastEvidenceCount: z.number().int().nonnegative().optional(),
     claimExtraction: z

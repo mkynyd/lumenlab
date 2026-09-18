@@ -478,6 +478,54 @@ describe("durable research handler · researching stage", () => {
     expect(saved?.researchState?.budgetStopReason).toBe("hard_budget");
   });
 
+  it("treats unaffordable exploration calls as hard budget even when raw headroom remains", async () => {
+    // 预估感知：deep 探索上限 352k，剩余 25k 低于「上次 worker 实测 20k × 1.5」。
+    // 纯余量检查会放行（25k > 0），跳变式超支正发生在这里。
+    workspaceBudgetProfile = "deep";
+    const explorationCeiling = getResearchExplorationBudget("deep").maxTokens;
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => [sciverseCandidate]),
+      read: vi.fn(async () => sciverseRead),
+    };
+    const handler = createDurableResearchExecutionHandler({ provider });
+
+    const result = await handler(createContext({
+      researchState: {
+        stage: "researching",
+        modelCalls: 5,
+        searchCalls: 5,
+        fetchCalls: 5,
+        sourceCount: 5,
+        replanCount: 0,
+        verificationRepairs: 0,
+        totalTokens: explorationCeiling - 25_000,
+        costCredits: 0,
+        modelCallEstimates: { "research.worker": 20_000 },
+      },
+    }));
+
+    expect(result.kind).toBe("rescheduled");
+    expect(runResearchModelStage).not.toHaveBeenCalled();
+    expect(provider.search).not.toHaveBeenCalled();
+    const saved = state.savedCheckpoints.at(-1);
+    expect(saved?.researchState?.stage).toBe("evaluating");
+    expect(saved?.researchState?.budgetStopReason).toBe("hard_budget");
+  });
+
+  it("records measured per-role call estimates in the checkpoint", async () => {
+    const provider: ResearchSourceProvider = {
+      search: vi.fn(async () => [sciverseCandidate]),
+      read: vi.fn(async () => sciverseRead),
+    };
+    stageBehavior.workerUsage = { promptTokens: 9_000, completionTokens: 0, totalTokens: 9_000 };
+    const handler = createDurableResearchExecutionHandler({ provider });
+
+    await handler(createContext());
+
+    const saved = state.savedCheckpoints.at(-1);
+    expect(saved?.researchState?.modelCallEstimates).toMatchObject({ "research.worker": 9_000 });
+  });
+
   it("skips the source-triage model call when the worker consumed the remaining token headroom", async () => {
     const explorationCeiling = getResearchExplorationBudget("quick").maxTokens;
     const provider: ResearchSourceProvider = {

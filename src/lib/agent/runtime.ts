@@ -441,13 +441,15 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         projectId: project.id,
         selectedFiles,
         prompt: message,
-        includeProjectImages: shouldUseProjectContext(
+        // isolatedTurn 不触发按名匹配的项目图片：Research 阶段的视觉输入只来自
+        // 显式传入的附件（visual evidence），通用匹配只会把无关图片字节带进终审。
+        includeProjectImages: !input.isolatedTurn && shouldUseProjectContext(
           effectivePrompt,
           uniqueFileIds,
           isQuickTask
         ),
         wholeCorpus:
-          projectMaterialQuickTask && materialScope === "project-corpus",
+          !input.isolatedTurn && projectMaterialQuickTask && materialScope === "project-corpus",
       });
       if (projectMedia.attachments.length > 0) {
         effectiveAttachments = [...effectiveAttachments, ...projectMedia.attachments];
@@ -460,7 +462,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     }
   }
 
-  if (project && !agentOrchestratorEnabled && !projectMaterialQuickTask) {
+  if (project && !agentOrchestratorEnabled && !projectMaterialQuickTask && !input.isolatedTurn) {
 
     if (shouldUseProjectContext(effectivePrompt, uniqueFileIds, isQuickTask)) {
       projectRetrievalAttempted = true;
@@ -617,7 +619,11 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   runMetrics.setRoute({ model, provider: modelRoute.provider });
 
   // Build the active tool allowlist from the real tool registry.
-  const activeTools = projectMaterialQuickTask
+  // isolatedTurn（Research 结构化阶段）：prompt 合同明确「不联网，不调用工具」，
+  // 且项目工具 schema/前奏检索只会污染阶段输出并烧预算——工具面置空。
+  const activeTools = input.isolatedTurn
+    ? []
+    : projectMaterialQuickTask
     ? buildAllowedTools({
         projectId: undefined,
         webSearchActive,
@@ -862,12 +868,17 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   }
 
   // 7. 获取对话历史
-  const history = await conversationPersistence.loadHistory(
-    conversation.id,
-    input.durable
-      ? [input.durable.userMessageId, input.durable.assistantMessageId]
-      : []
-  );
+  // isolatedTurn（Research 结构化阶段等一次性调用）：prompt 自包含，模型上下文
+  // 只含 system + 本轮，不重放历史——历史重放会把之前每次阶段调用的 prompt 与
+  // JSON 输出全部重发，是研究执行链路 token 消耗的大头。消息仍照常落库。
+  const history = input.isolatedTurn
+    ? []
+    : await conversationPersistence.loadHistory(
+        conversation.id,
+        input.durable
+          ? [input.durable.userMessageId, input.durable.assistantMessageId]
+          : []
+      );
 
   // 9. 保存用户消息
   if (!input.durable) {
@@ -887,19 +898,22 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
 
   // 任务 08.6：历史图片按资源 ID 重新鉴权，在剩余预算内随本次请求重新携带，
   // 让"接着上次那张图继续问"不需要重新上传；不会无限回传全部历史图片。
+  // isolatedTurn 没有历史可回传，且阶段调用不应触发按名匹配的历史图片。
   const currentImageAttachments = effectiveAttachments.filter((attachment) =>
     attachment.mimeType.startsWith("image/")
   );
-  const historyMedia = await resolveConversationMediaContext({
-    history,
-    prompt: message,
-    maxCount: Math.max(0, MAX_MEDIA_IMAGES - currentImageAttachments.length),
-    maxBytes: Math.max(
-      0,
-      MAX_MEDIA_BYTES -
-        currentImageAttachments.reduce((total, item) => total + item.size, 0)
-    ),
-  });
+  const historyMedia = input.isolatedTurn
+    ? { attachments: [], note: null as string | null }
+    : await resolveConversationMediaContext({
+        history,
+        prompt: message,
+        maxCount: Math.max(0, MAX_MEDIA_IMAGES - currentImageAttachments.length),
+        maxBytes: Math.max(
+          0,
+          MAX_MEDIA_BYTES -
+            currentImageAttachments.reduce((total, item) => total + item.size, 0)
+        ),
+      });
   if (historyMedia.attachments.length > 0) {
     effectiveAttachments = [
       ...effectiveAttachments,
@@ -930,10 +944,12 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     explainRetrieval(quickTaskMaterialSources.length);
   }
   if (projectRetrievalAttempted) explainRetrieval(legacySources.length);
-  if (agentOrchestratorEnabled && !projectMaterialQuickTask) {
+  if (agentOrchestratorEnabled && !projectMaterialQuickTask && !input.isolatedTurn) {
     // A resumed v2 turn already contains the approved tool call and its durable
     // output. Re-running the deterministic prelude here could repeat a side
     // effect before the provider even sees that output.
+    // isolatedTurn（Research 阶段）不做 planned-calls 前奏：阶段 prompt 自包含，
+    // 前奏检索只会注入与阶段无关的项目/网页上下文并烧预算。
     const plannedCalls = input.durable?.continuationMessages?.length
       ? []
       : buildPlannedToolCalls({
