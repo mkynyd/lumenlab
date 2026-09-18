@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookStack, CheckCircle, LayoutLeft, NavArrowRight, Upload } from "iconoir-react";
 import { Button } from "@/components/ui/button";
@@ -23,16 +23,27 @@ const SOURCE_ACCEPT = ".docx,.md,.markdown";
 
 export function PaperTypesetting() {
   const [query, setQuery] = useState("");
+  const [queryInput, setQueryInput] = useState("");
   const [variantId, setVariantId] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
-  const templatesQuery = useFormattingTemplates(query.trim());
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(queryInput.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
+  const templatesQuery = useFormattingTemplates(query);
   const submit = useSubmitFormatting();
   const templates = useMemo(() => templatesQuery.data?.templates ?? [], [templatesQuery.data]);
   const counts = templatesQuery.data?.counts;
+  const libraryUnavailable = !templatesQuery.isPending && !templatesQuery.isError && counts != null && counts.submittable === 0;
 
-  const options = useMemo(() => templates.flatMap((template: FormattingTemplateRecord) => template.variants.map((variant) => ({ template, variant }))), [templates]);
+  const visibleTemplates = useMemo(
+    () => (showAll || libraryUnavailable ? templates : templates.filter((template) => template.variants.some((variant) => variant.canSubmit))),
+    [templates, showAll, libraryUnavailable],
+  );
+  const options = useMemo(() => visibleTemplates.flatMap((template: FormattingTemplateRecord) => template.variants.map((variant) => ({ template, variant }))), [visibleTemplates]);
   const selected = options.find((option) => option.variant.id === variantId);
   const requiredFields = useMemo(() => new Set(selected?.variant.requiredMetadata ?? ["title", "authors"]), [selected]);
   const visibleFields = METADATA_FIELDS.filter((field) => field.required || requiredFields.has(field.key) || field.key === "institution" || field.key === "degreeType" || field.key === "studentId" || field.key === "department" || field.key === "major" || field.key === "supervisor" || field.key === "date");
@@ -66,32 +77,78 @@ export function PaperTypesetting() {
         <form onSubmit={start} className="mt-8 space-y-4">
           <section className="bg-[var(--color-panel)] px-5 py-6 sm:px-6">
             <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">1 · 选择学校与模板</h2>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">只有通过当前快照隔离编译验证的模板可以提交。暂不可用的模板仍会显示原因，方便你确认格式是否受支持。</p>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">只有通过当前快照隔离编译验证的模板可以提交，选好后即可上传原稿排版。暂不可用的模板会显示原因，方便你确认学校格式是否受支持。</p>
+            {templatesQuery.isError ? (
+              <div className="mt-4 bg-[var(--color-panel-muted)] px-4 py-6 text-center">
+                <p className="text-xs text-[var(--color-danger)]">学校模板列表加载失败，请检查网络后重试。</p>
+                <button
+                  type="button"
+                  onClick={() => templatesQuery.refetch()}
+                  disabled={templatesQuery.isRefetching}
+                  className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-60"
+                >
+                  {templatesQuery.isRefetching ? "正在重试…" : "重试"}
+                </button>
+              </div>
+            ) : libraryUnavailable ? (
+              <div className="mt-4 bg-[var(--color-panel-muted)] px-5 py-6">
+                <p className="text-sm font-medium text-[var(--color-text-primary)]">模板库正在验证，暂未开放提交</p>
+                <p className="mt-2 max-w-2xl text-xs leading-5 text-[var(--color-text-secondary)]">
+                  每个学校模板都要通过「固定可执行快照、隔离编译、真实样例排版」三级验证后才能提交。当前收录的 {counts?.records ?? 0} 条模板都还在验证队列中，验证通过后本页会自动开放，无需重新上传或额外申请。
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <Link href="/chat" className="inline-flex min-h-9 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90">去聊天，让 AI 按学校要求帮你排版</Link>
+                  <Link href="/papers/templates" className="inline-flex min-h-9 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-4 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]">查看模板验证进度</Link>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <input value={query} onChange={(event) => { setQuery(event.target.value); setVariantId(""); }} placeholder="输入学校名称搜索" aria-label="搜索学校模板" className="min-h-10 min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" />
-              {counts ? <span className="text-[11px] text-[var(--color-text-tertiary)]">记录 {counts.records} · LaTeX {counts.latex} · 已验证 {counts.verified} · 可提交 {counts.submittable}</span> : null}
+              <input value={queryInput} onChange={(event) => { setQueryInput(event.target.value); setVariantId(""); }} placeholder="输入学校名称搜索" aria-label="搜索学校模板" className="min-h-10 min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-[var(--color-border-light)] placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" />
+              {counts ? <span aria-live="polite" className="text-[11px] text-[var(--color-text-tertiary)]">记录 {counts.records} · LaTeX {counts.latex} · 已验证 {counts.verified} · 可提交 {counts.submittable}</span> : null}
+            </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                aria-pressed={!showAll}
+                onClick={() => setShowAll((current) => !current)}
+                className={`inline-flex min-h-8 items-center rounded-full px-3 text-xs transition-colors ${!showAll ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]" : "bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"}`}
+              >
+                只显示可提交模板
+              </button>
             </div>
             <div className="mt-4 grid gap-2 md:grid-cols-2">
-              {templatesQuery.isPending ? <p className="text-xs text-[var(--color-text-tertiary)]">正在读取模板…</p> : templates.length === 0 ? <p className="text-xs text-[var(--color-text-tertiary)]">没有匹配的学校模板。</p> : templates.map((template) => (
+              {templatesQuery.isPending ? <p className="text-xs text-[var(--color-text-tertiary)]">正在读取模板…</p> : visibleTemplates.length === 0 ? <p className="text-xs text-[var(--color-text-tertiary)]">{showAll ? "没有匹配的学校模板。" : "没有可提交的学校模板，可切换到「显示全部模板」查看验证进度。"}</p> : visibleTemplates.map((template) => (
                 <div key={template.id} className="bg-[var(--color-panel-muted)] px-4 py-4">
                   <div className="flex items-start justify-between gap-3"><h3 className="text-sm font-medium text-[var(--color-text-primary)]">{template.university}</h3><span className="shrink-0 text-[11px] text-[var(--color-text-tertiary)]">{template.degreeType ?? "学位未知"} · {template.year ?? "年份未知"}</span></div>
                   {template.repositoryUrl || template.officialSpecUrl ? <p className="mt-1 truncate text-[11px] text-[var(--color-text-tertiary)]">来源：<a href={template.repositoryUrl ?? template.officialSpecUrl ?? "#"} target="_blank" rel="noreferrer" className="text-[var(--color-accent)] hover:underline">{template.repositoryUrl ? "模板仓库" : "学校规范"}</a></p> : null}
                   <div className="mt-3 space-y-1.5">
                     {template.variants.map((variant: FormattingTemplateVariant) => (
                       <div key={variant.id} className={`flex items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-xs ${variantId === variant.id ? "bg-[var(--color-accent-muted)]" : ""}`}>
-                        <button type="button" onClick={() => { setVariantId(variant.id); setMessage(""); }} disabled={!variant.canSubmit} className={`min-w-0 flex-1 truncate text-left transition-colors ${variantId === variant.id ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"} disabled:cursor-not-allowed disabled:opacity-60`}>
+                        <button
+                          type="button"
+                          onClick={() => { setVariantId(variant.id); setMessage(""); }}
+                          disabled={!variant.canSubmit}
+                          aria-pressed={variantId === variant.id}
+                          aria-describedby={variant.canSubmit ? undefined : `variant-reason-${variant.id}`}
+                          className={`min-w-0 flex-1 truncate text-left transition-colors ${variantId === variant.id ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"} disabled:cursor-not-allowed disabled:opacity-60`}
+                        >
                           {variant.variantKey}
                         </button>
                         {variant.sampleAvailable ? <a href={`/api/papers/templates/${variant.id}/sample`} target="_blank" rel="noreferrer" className="shrink-0 text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)]">样例 PDF</a> : null}
-                        <span className={`shrink-0 text-[11px] ${variant.canSubmit ? "text-[var(--color-accent)]" : "text-[var(--color-text-tertiary)]"}`}>{variant.canSubmit ? "可提交" : variant.reason ?? "暂不可用"}</span>
+                        <span id={`variant-reason-${variant.id}`} className={`shrink-0 text-[11px] ${variant.canSubmit ? "text-[var(--color-accent)]" : "text-[var(--color-text-tertiary)]"}`}>{variant.canSubmit ? "可提交" : variant.reason ?? "暂不可用"}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
+            </>
+            )}
           </section>
 
+          {libraryUnavailable ? null : (
+          <>
           <section className="bg-[var(--color-panel)] px-5 py-6 sm:px-6">
             <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">2 · 填写论文信息</h2>
             <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">这些信息会写入模板封面与页眉，不参与正文改写。</p>
@@ -113,12 +170,16 @@ export function PaperTypesetting() {
               {file ? <span className="text-xs text-[var(--color-text-secondary)]">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</span> : <span className="text-xs text-[var(--color-text-tertiary)]">尚未选择文件</span>}
             </div>
           </section>
+          </>
+          )}
 
-          {message ? <p className="rounded-[var(--radius-md)] bg-[var(--color-danger-muted)] px-4 py-3 text-xs text-[var(--color-danger)]">{message}</p> : null}
+          {message ? <p role="status" aria-live="polite" className="rounded-[var(--radius-md)] bg-[var(--color-danger-muted)] px-4 py-3 text-xs text-[var(--color-danger)]">{message}</p> : null}
+          {libraryUnavailable ? null : (
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" variant="primary" size="sm" disabled={submit.isPending || !selected?.variant.canSubmit || !file}><CheckCircle width={16} height={16} />{submit.isPending ? "正在提交…" : "提交后台排版"}</Button>
             <span className="text-[11px] text-[var(--color-text-tertiary)]">提交后可以离开页面，排版进度会通过站内通知提醒。</span>
           </div>
+          )}
         </form>
 
         <p className="mt-6 text-[11px] text-[var(--color-text-tertiary)]">需要完整模板资料？<Link href="/papers/templates" className="text-[var(--color-accent)] hover:underline">浏览模板库<NavArrowRight className="inline" width={12} height={12} /></Link></p>

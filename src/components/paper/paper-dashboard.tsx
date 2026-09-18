@@ -60,10 +60,23 @@ export function PaperDashboard() {
           <Link href="/papers/templates" className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-4 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]">模板库</Link>
         </div>
 
-        {tasksQuery.isPending ? <p className="mt-8 text-sm text-[var(--color-text-tertiary)]">正在加载排版任务…</p> : tasksQuery.isError ? <p className="mt-8 text-sm text-[var(--color-danger)]">排版任务加载失败，请刷新重试。</p> : tasks.length === 0 ? (
+        {tasksQuery.isPending ? <p className="mt-8 text-sm text-[var(--color-text-tertiary)]">正在加载排版任务…</p> : tasksQuery.isError ? (
+          <div className="mt-8 bg-[var(--color-panel)] px-6 py-12 text-center">
+            <p className="text-sm text-[var(--color-danger)]">排版任务加载失败，请稍后重试。</p>
+            <button
+              type="button"
+              onClick={() => tasksQuery.refetch()}
+              disabled={tasksQuery.isRefetching}
+              className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-4 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-60"
+            >
+              {tasksQuery.isRefetching ? "正在重试…" : "重试"}
+            </button>
+          </div>
+        ) : tasks.length === 0 ? (
           <div className="mt-8 bg-[var(--color-panel)] px-6 py-16 text-center"><Page className="mx-auto text-[var(--color-text-tertiary)]" width={24} height={24} /><p className="mt-3 text-sm text-[var(--color-text-secondary)]">还没有排版任务</p><p className="mt-1 text-xs text-[var(--color-text-tertiary)]">上传一份 DOCX 或 Markdown 原稿，选择学校模板即可开始。</p></div>
         ) : (
           <div className="mt-8 space-y-8">
+            <p className="sr-only" aria-live="polite">{active.length ? `有 ${active.length} 个排版任务进行中` : ""}</p>
             {active.length ? <section><h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]"><Clock width={16} height={16} />进行中</h2><div className="mt-3 grid gap-2 md:grid-cols-2">{active.map((task) => <TaskCard key={task.id} task={task} />)}</div></section> : null}
             {finished.length ? <section><h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]"><ClockRotateRight width={16} height={16} />历史任务</h2><div className="mt-3 grid gap-2 md:grid-cols-2">{finished.map((task) => <TaskCard key={task.id} task={task} />)}</div></section> : null}
           </div>

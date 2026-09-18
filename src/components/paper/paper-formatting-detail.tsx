@@ -79,7 +79,8 @@ export function PaperFormattingDetail({ taskId }: { taskId: string }) {
   }
 
   if (query.isPending) return <main className="h-full overflow-y-auto bg-[var(--color-bg)]"><div className="mx-auto max-w-5xl px-5 py-10 sm:px-8"><p className="text-sm text-[var(--color-text-tertiary)]">正在加载排版任务…</p></div></main>;
-  if (query.isError || !task) return <main className="h-full overflow-y-auto bg-[var(--color-bg)]"><div className="mx-auto max-w-5xl px-5 py-10 sm:px-8"><Link href="/papers" className="text-xs text-[var(--color-accent)] hover:underline">返回我的排版任务</Link><p className="mt-4 text-sm text-[var(--color-danger)]">排版任务不存在或无权访问。</p></div></main>;
+  if (query.isError) return <main className="h-full overflow-y-auto bg-[var(--color-bg)]"><div className="mx-auto max-w-5xl px-5 py-10 sm:px-8"><Link href="/papers" className="text-xs text-[var(--color-accent)] hover:underline">返回我的排版任务</Link><p className="mt-4 text-sm text-[var(--color-danger)]">排版任务加载失败，请稍后重试。</p><button type="button" onClick={() => query.refetch()} disabled={query.isRefetching} className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-panel)] px-4 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-60">{query.isRefetching ? "正在重试…" : "重试"}</button></div></main>;
+  if (!task) return <main className="h-full overflow-y-auto bg-[var(--color-bg)]"><div className="mx-auto max-w-5xl px-5 py-10 sm:px-8"><Link href="/papers" className="text-xs text-[var(--color-accent)] hover:underline">返回我的排版任务</Link><p className="mt-4 text-sm text-[var(--color-danger)]">排版任务不存在或无权访问。</p></div></main>;
 
   const progress = task.status === "mapping" && task.totalUnits ? Math.round((task.completedUnits / task.totalUnits) * 100) : null;
   return (
