@@ -71,6 +71,9 @@
   --color-control-menu: oklch(1 0 0);
   --color-interaction-hover: oklch(0.145 0 0 / 0.05);
   --color-interaction-active: oklch(0.145 0 0 / 0.08);
+  /* Selected fill follows the accent-soft convention used by selected rows,
+     toggles and pills across the workbench. */
+  --color-interaction-selected: var(--color-accent-soft);
 
   --color-text-primary: oklch(0.18 0 0);
   --color-text-secondary: oklch(0.42 0 0);
@@ -81,6 +84,8 @@
   --color-accent-muted: oklch(0.9158 0.0473 245.12);
   --color-accent-soft: oklch(0.9458 0.0293 249.85);
   --color-accent-contrast: oklch(1 0 0);
+  /* Legacy alias kept for LumenFlow node accents; same design blue as --color-accent. */
+  --color-brand: var(--color-accent);
 
   /* Project workbench: blue actions with neutral interaction states */
   --color-project-action: var(--color-accent);
@@ -96,6 +101,10 @@
   --color-success-muted: oklch(0.925 0.055 158);
   --color-error: oklch(0.575 0.195 25);
   --color-error-muted: oklch(0.925 0.052 25);
+  /* Legacy alias names from an older token revision; they resolve to the
+     error scale in both themes via var() indirection. */
+  --color-danger: var(--color-error);
+  --color-danger-muted: var(--color-error-muted);
   --color-warning: oklch(0.528 0.15 54.7);
   --color-warning-muted: oklch(0.96 0.064 90.5);
   --color-info: oklch(0.51 0.08 215);
@@ -104,6 +113,10 @@
   /* Borders */
   --color-border: oklch(0.145 0 0 / 0.14);
   --color-border-light: oklch(0.145 0 0 / 0.08);
+  /* Stronger hairline for focus/emphasis borders (e.g. input dock focus). */
+  --color-border-strong: oklch(0.145 0 0 / 0.3);
+  /* Divider alias used by section separators. */
+  --color-separator: var(--color-border-light);
 
   /* Progress / Ring */
   --color-ring-track: oklch(0.9 0.004 255);
@@ -191,7 +204,9 @@
   /* Text */
   --color-text-primary: oklch(0.95 0 0);
   --color-text-secondary: oklch(0.76 0 0);
-  --color-text-tertiary: oklch(0.66 0 0);
+  /* Raised from 0.66: keeps tertiary text at or above WCAG AA (4.5:1) on the
+     darkest surfaces and on muted/accent-soft chip fills. */
+  --color-text-tertiary: oklch(0.7 0 0);
 
   /* Accent */
   --color-accent: oklch(0.7308 0.1583 248.13);
@@ -222,6 +237,7 @@
   /* Borders */
   --color-border: oklch(1 0 0 / 0.16);
   --color-border-light: oklch(1 0 0 / 0.1);
+  --color-border-strong: oklch(1 0 0 / 0.3);
 
   /* Progress / Ring */
   --color-ring-track: oklch(0.31 0.006 255);
