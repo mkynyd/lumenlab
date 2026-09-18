@@ -79,14 +79,47 @@ export function ResearchReportReader({
   // hover/焦点预览卡：键盘 Tab 到引用时同样可见；触屏（hover: none）不渲染悬浮卡。
   const [hoveredMarker, setHoveredMarker] = useState<{ evidenceId: string; top: number; left: number; placement: "below" | "above" } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  // onClose 由调用方内联创建，经 ref 转发保证焦点逻辑只在挂载时绑定一次，
+  // 否则阅读器内部任何 setState 都会重跑 effect、把焦点抢回关闭按钮。
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
+    // aria-modal 对话框：打开时焦点移入并 traps 在对话框内，关闭时还原到触发按钮。
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const container = dialogRef.current;
+      if (!container) return;
+      const focusables = container.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, []);
 
   function scrollToHeading(index: number) {
     const headings = containerRef.current?.querySelectorAll("h2, h3");
@@ -168,9 +201,9 @@ export function ResearchReportReader({
   if (!mounted) return null;
 
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={`阅读报告：${title}`} className="fixed inset-0 z-[110] overflow-y-auto overscroll-contain bg-[var(--color-bg)]">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={`阅读报告：${title}`} className="fixed inset-0 z-[110] overflow-y-auto overscroll-contain bg-[var(--color-bg)]">
       <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-[var(--color-bg)] px-4 py-3 sm:px-6">
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="关闭阅读器" onClick={onClose}>
+        <Button ref={closeButtonRef} type="button" variant="ghost" size="icon-sm" aria-label="关闭阅读器" onClick={onClose}>
           <Xmark width={18} height={18} />
         </Button>
         <Button type="button" variant="secondary" size="sm" onClick={onExport}>

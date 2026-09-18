@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, BrainResearch, Copy, Expand, List, Page, Check } from "iconoir-react";
@@ -33,6 +33,7 @@ import { ResearchPaperTransferPanel } from "@/components/research/research-paper
 import { ResearchSourcesPanel } from "@/components/research/research-sources-panel";
 import { ResearchActivityPanel } from "@/components/research/research-activity-panel";
 import { ResearchReportReader } from "@/components/research/research-report-reader";
+import { researchQuestionStatusFromEvent, researchRunStatusLabel } from "@/components/research/status-label";
 import { fetchJson } from "@/lib/api/client";
 import { MODEL_CATALOG_ENTRIES } from "@/lib/chat/model-catalog";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -100,6 +101,8 @@ interface ResearchPublicEvent {
     provider?: string;
     snapshotId?: string;
     sourceId?: string;
+    questionId?: string;
+    status?: string;
   };
 }
 
@@ -188,6 +191,17 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const [activityOpen, setActivityOpen] = useState(true);
   const [readerOpen, setReaderOpen] = useState(false);
   const [exported, setExported] = useState(false);
+  // 公开事件到达时即时投影的研究问题状态：主卡圆圈/进度不再等 4s 轮询，
+  // 与右侧活动面板的事件流保持联动（服务器轮询数据到达后自然覆盖）。
+  // 记录挂在 runId 下，切换 Run 时旧投影自动失效，无需 effect 清理。
+  const [liveQuestionStatus, setLiveQuestionStatus] = useState<{ runId: string | null; statuses: Record<string, string> }>({ runId: null, statuses: {} });
+  const activityToggleRef = useRef<HTMLButtonElement>(null);
+
+  const closeActivity = useCallback(() => {
+    setActivityOpen(false);
+    // 面板卸载后把焦点还给主卡上的活动开关，避免焦点掉进 body。
+    window.requestAnimationFrame(() => activityToggleRef.current?.focus());
+  }, []);
 
   useEffect(() => {
     if (!run?.agentExecutionId) return;
@@ -197,6 +211,16 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
         const payload = JSON.parse((event as MessageEvent).data) as ResearchPublicEvent;
         if (payload.message) setLiveMessage(payload.message);
         if (payload.publicData?.counters) setLiveBudget({ runId: run.id, counters: payload.publicData.counters });
+        if (payload.publicData?.questionId) {
+          const questionStatus = researchQuestionStatusFromEvent(payload.kind, payload.publicData.status);
+          if (questionStatus) {
+            const questionId = payload.publicData.questionId;
+            setLiveQuestionStatus((current) => ({
+              runId: run.id,
+              statuses: { ...(current.runId === run.id ? current.statuses : {}), [questionId]: questionStatus },
+            }));
+          }
+        }
         setPublicEventsRunId(run.id);
         setPublicEvents((current) => {
           const eventRunId = payload.runId ?? run.id;
@@ -218,16 +242,23 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
     () => buildResearchSourceViews({ evidence: (run?.evidence ?? []) as never, relations: run?.sourceRelations ?? [] }),
     [run?.evidence, run?.sourceRelations],
   );
+  // 事件投影的问题状态优先于轮询快照：右侧面板事件到达时主卡立即联动。
+  const mergedQuestions = useMemo(() => {
+    const liveStatuses = liveQuestionStatus.runId === run?.id ? liveQuestionStatus.statuses : {};
+    return (run?.questions ?? []).map((question) => (liveStatuses[question.id] ? { ...question, status: liveStatuses[question.id] } : question));
+  }, [run?.questions, run?.id, liveQuestionStatus]);
+  // SSE 预算计数优先于轮询 metrics，主卡底部计数与事件流同拍更新。
+  const liveCounters = liveBudget && liveBudget.runId === run?.id ? liveBudget.counters : undefined;
   const progress = useMemo(() => buildResearchProgressSummary({
-    questions: run?.questions ?? [],
+    questions: mergedQuestions,
     tasks: run?.tasks ?? [],
     sourceCount: run?._count.sourceSnapshots ?? 0,
     evidenceCount: run?._count.evidence ?? 0,
     claimCount: run?._count.claims ?? 0,
     graphMetrics: run?.reportSnapshot?.coverageSummary?.graph ?? null,
     visualMetrics: run?.reportSnapshot?.coverageSummary?.visual ?? null,
-    metrics: run?.metrics ?? null,
-  }), [run]);
+    metrics: (liveCounters as Record<string, unknown> | undefined) ?? run?.metrics ?? null,
+  }), [mergedQuestions, run, liveCounters]);
 
   // 用时只在客户端时钟上推进：render 期间不读取 Date.now()，首次写入放在 rAF 回调里。
   const [nowMs, setNowMs] = useState<number | null>(null);
@@ -331,15 +362,15 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
     );
   }
 
-  const stageLabel = run?.stage?.label ?? run?.status;
+  const stageLabel = run?.stage?.label ?? researchRunStatusLabel(run?.status);
   const hasReport = Boolean(run?.reportSnapshot);
   const isTerminal = run ? TERMINAL_STATUSES.includes(run.status) : false;
   const isWorking = run ? !isTerminal && !["planning", "awaiting_confirmation", "awaiting_scope_confirmation"].includes(run.status) : false;
   const commanderLabel = run?.commanderModel
     ? MODEL_CATALOG_ENTRIES.find((entry) => entry.id === run.commanderModel)?.displayName ?? run.commanderModel
     : null;
-  const overallProgress = run?.questions.length
-    ? Math.round(run.questions.reduce((sum, question) => sum + researchQuestionCompletion(question.status), 0) / run.questions.length)
+  const overallProgress = mergedQuestions.length
+    ? Math.round(mergedQuestions.reduce((sum, question) => sum + researchQuestionCompletion(question.status), 0) / mergedQuestions.length)
     : 0;
   const reportTitle = run?.reportSnapshot?.reportDocument.title ?? (run ? `研究报告：${run.question}` : "");
   const citationCount = run?.reportSnapshot?.reportDocument.evidenceRefs?.length ?? 0;
@@ -432,8 +463,10 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
               <div className="flex flex-wrap items-center gap-3 px-1">
                 <span className="rounded-full bg-[var(--color-interaction-selected)] px-3 py-1 text-xs text-[var(--color-accent)]" data-stage={run.stage?.key ?? run.status}>{stageLabel}</span>
                 {elapsed ? <span className="text-xs text-[var(--color-text-tertiary)]">用时 {elapsed}</span> : null}
-                {commanderLabel ? <span className="text-xs text-[var(--color-text-tertiary)]">指挥模型 {commanderLabel}</span> : null}
+                {commanderLabel ? <span className="text-xs text-[var(--color-text-tertiary)]">规划模型 {commanderLabel}</span> : null}
               </div>
+              {/* 状态变化通过 polite live region 播报（含转入终态时可见区域卸载的情况） */}
+              <p aria-live="polite" className="sr-only">{`研究状态：${stageLabel}`}</p>
               {!isTerminal ? (
                 <p aria-live="polite" role="status" className="mt-2 min-h-5 px-1 text-xs text-[var(--color-text-secondary)]">{liveMessage}</p>
               ) : null}
@@ -524,13 +557,13 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                         <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">正在研究</p>
                         <h2 className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{plan?.objective ?? run.question}</h2>
                       </div>
-                      <Button type="button" variant="ghost" size="sm" aria-expanded={activityOpen} onClick={() => setActivityOpen((open) => !open)}>
+                      <Button ref={activityToggleRef} type="button" variant="ghost" size="sm" aria-expanded={activityOpen} onClick={() => setActivityOpen((open) => !open)}>
                         <List width={14} height={14} />{activityOpen ? "收起活动" : "研究活动"}
                       </Button>
                     </div>
 
                     <ol className="mt-5 space-y-1">
-                      {run.questions.map((item) => {
+                      {mergedQuestions.map((item, index) => {
                         const completion = researchQuestionCompletion(item.status);
                         return (
                           <li key={item.id} className="flex items-center gap-3 rounded-[var(--radius-md)] px-2 py-2.5" title={completion === 100 ? `${item.title} · 已完成` : completion > 0 ? `${item.title} · 正在处理` : `${item.title} · 等待开始`}>
@@ -538,10 +571,9 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                               <span className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--color-text-primary)] text-[var(--color-bg)]" aria-hidden="true">
                                 <Check width={12} height={12} />
                               </span>
-                            ) : completion > 0 ? (
-                              <span className="inline-flex size-[18px] shrink-0 rounded-full border-2 border-[var(--color-text-primary)]" aria-hidden="true" />
                             ) : (
-                              <span className="inline-flex size-[18px] shrink-0 rounded-full border border-dashed border-[var(--color-text-tertiary)]" aria-hidden="true" />
+                              // 未完成的问题用序号而不是空圆圈：空圆圈会被误读成可点击的复选框。
+                              <span className={`inline-flex size-[18px] shrink-0 items-center justify-center text-[11px] tabular-nums ${completion > 0 ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-tertiary)]"}`} aria-hidden="true">{index + 1}</span>
                             )}
                             <span className={`min-w-0 flex-1 truncate text-sm leading-6 ${completion === 100 ? "text-[var(--color-text-primary)]" : completion > 0 ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"}`}>{item.title}</span>
                           </li>
@@ -566,7 +598,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                       <summary className="cursor-pointer select-none text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">查看详细计数与追加研究方向</summary>
                       <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">仅公开状态与计数，不含隐藏推理</p>
                       <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                        <ProgressStat label="Research Questions" value={`${progress.questionsResolved}/${progress.questionTotal} 已解决`} />
+                        <ProgressStat label="研究问题" value={`${progress.questionsResolved}/${progress.questionTotal} 已解决`} />
                         <ProgressStat label="待处理任务" value={String(progress.activeTasks)} />
                         <ProgressStat label="Evidence" value={String(progress.evidenceCount)} />
                         <ProgressStat label="Claim" value={String(progress.claimCount)} />
@@ -579,7 +611,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                   </div>
 
                   {activityOpen ? (
-                    <ResearchActivityPanel title={plan?.objective ?? run.question} stageLabel={stageLabel ?? run.status} liveMessage={liveMessage} events={visiblePublicEvents} sources={sources} onClose={() => setActivityOpen(false)} />
+                    <ResearchActivityPanel stageLabel={stageLabel} events={visiblePublicEvents} sources={sources} onClose={closeActivity} />
                   ) : null}
                 </>
               ) : null}

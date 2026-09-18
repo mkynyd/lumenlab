@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ResearchComposer, type ResearchComposerOptions } from "@/components/research/research-composer";
+import { researchRunStatusLabel } from "@/components/research/status-label";
 import { useResearchLaunch } from "@/lib/hooks/use-research-launch";
 import { useResearchWorkspaces } from "@/lib/hooks/use-research";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -96,7 +97,7 @@ export function ResearchDashboard() {
                   <h3 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workspace.name}</h3>
                   <div className="mt-3 flex items-center gap-3 text-xs text-[var(--color-text-tertiary)]">
                     <span>{workspace._count.runs} 次运行</span>
-                    <span>{workspace.runs[0]?.status ?? "待开始"}</span>
+                    <span>{researchRunStatusLabel(workspace.runs[0]?.status)}</span>
                     <span className="ml-auto">{formatWorkspaceUpdatedAt(workspace.updatedAt)}</span>
                   </div>
                 </Link>

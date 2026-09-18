@@ -1,4 +1,4 @@
-import { render as rtlRender, screen, within } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
@@ -133,10 +133,20 @@ describe("ResearchWorkspaceView status and progress", () => {
     expect(screen.getAllByText("提炼并核验命题").length).toBeGreaterThan(0);
   });
 
-  it("shows the commander model display name in the status row when present", () => {
+  it("shows the planner model display name in the status row when present", () => {
     hooks.run = { ...hooks.run, data: runDetail({ commanderModel: "qwen3.8-flash" }) };
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
-    expect(screen.getByText(/指挥模型 Qwen3\.8-Flash/i)).toBeInTheDocument();
+    expect(screen.getByText(/规划模型 Qwen3\.8-Flash/i)).toBeInTheDocument();
+    expect(screen.queryByText(/指挥模型/)).not.toBeInTheDocument();
+  });
+
+  it("maps a raw run status to a Chinese label when no fine-grained stage is present", () => {
+    hooks.run = { ...hooks.run, data: runDetail({ status: "queued", stage: undefined }) };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(screen.getAllByText("排队中").length).toBeGreaterThan(0);
+    expect(screen.queryByText("queued")).not.toBeInTheDocument();
+    // 状态变化写入 polite live region。
+    expect(screen.getByText("研究状态：排队中")).toBeInTheDocument();
   });
 
   it("keeps the workspace usable after a run completes and puts the report first", () => {
@@ -347,5 +357,150 @@ describe("ResearchWorkspaceView run selection via URL", () => {
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
     expect(screen.getByRole("button", { name: /补充反方证据/ })).toHaveAttribute("aria-current", "true");
     expect(screen.getByRole("button", { name: /比较 MoE 路由方法/ })).not.toHaveAttribute("aria-current");
+  });
+});
+
+describe("ResearchWorkspaceView question progress indicators", () => {
+  it("numbers pending and in-progress questions instead of rendering empty circles", () => {
+    hooks.run = {
+      ...hooks.run,
+      data: runDetail({
+        questions: [
+          { id: "q1", key: "q1", title: "路由方法", question: "有哪些路由方法？", priority: "critical", status: "resolved", completionCriteria: [] },
+          { id: "q2", key: "q2", title: "负载均衡", question: "如何负载均衡？", priority: "high", status: "researching", completionCriteria: [] },
+          { id: "q3", key: "q3", title: "训练稳定性", question: "稳定性如何？", priority: "normal", status: "pending", completionCriteria: [] },
+        ],
+      }),
+    };
+    const { container } = render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    // 已完成的问题保留完成态图标，未完成的问题显示序号。
+    expect(screen.getByTitle("路由方法 · 已完成")).toBeInTheDocument();
+    expect(screen.getByTitle("负载均衡 · 正在处理")).toHaveTextContent("2");
+    expect(screen.getByTitle("训练稳定性 · 等待开始")).toHaveTextContent("3");
+    // 空圆圈（伪 affordance）不再渲染。
+    expect(container.querySelector(".border-dashed")).toBeNull();
+    const progress = screen.getByRole("progressbar", { name: "研究总体进度" });
+    expect(progress).toHaveAttribute("aria-valuenow", "45");
+  });
+});
+
+describe("ResearchWorkspaceView live event linkage", () => {
+  class MockEventSource {
+    static instances: MockEventSource[] = [];
+    listeners = new Map<string, (event: MessageEvent) => void>();
+    constructor(public url: string) {
+      MockEventSource.instances.push(this);
+    }
+    addEventListener(type: string, listener: (event: MessageEvent) => void) {
+      this.listeners.set(type, listener);
+    }
+    close() {}
+    emit(payload: unknown) {
+      this.listeners.get("research")?.({ data: JSON.stringify(payload) } as MessageEvent);
+    }
+  }
+
+  beforeEach(() => {
+    MockEventSource.instances = [];
+    vi.stubGlobal("EventSource", MockEventSource);
+  });
+
+  it("syncs the main card question progress when a public event arrives", () => {
+    hooks.run = {
+      ...hooks.run,
+      data: runDetail({
+        agentExecutionId: "exec-1",
+        questions: [
+          { id: "q1", key: "q1", title: "路由方法", question: "有哪些路由方法？", priority: "critical", status: "researching", completionCriteria: [] },
+          { id: "q2", key: "q2", title: "负载均衡", question: "如何负载均衡？", priority: "high", status: "pending", completionCriteria: [] },
+        ],
+      }),
+    };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    const source = MockEventSource.instances[0];
+    expect(source).toBeDefined();
+    expect(source.url).toContain("/api/research/runs/run-1/events");
+    // 事件到达前：q1 进行中、总体进度 35/2 ≈ 18。
+    expect(screen.getByRole("progressbar", { name: "研究总体进度" })).toHaveAttribute("aria-valuenow", "18");
+    act(() => {
+      source.emit({ kind: "question_evaluated", message: "路由方法：已解决", publicData: { questionId: "q1", status: "resolved" } });
+    });
+    // 主卡圆圈与总进度立即联动，不再等 4s 轮询。
+    expect(screen.getByTitle("路由方法 · 已完成")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "研究总体进度" })).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("prefers live budget counters from events over polled metrics", () => {
+    hooks.run = {
+      ...hooks.run,
+      data: runDetail({ agentExecutionId: "exec-1", metrics: { searchCalls: 1, fetchCalls: 0, modelCalls: 1 } }),
+    };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    expect(screen.getByText("1 次搜索")).toBeInTheDocument();
+    const source = MockEventSource.instances[0];
+    act(() => {
+      source.emit({ kind: "research_progress", message: "检索中", publicData: { counters: { searchCalls: 7, fetchCalls: 3, modelCalls: 2 } } });
+    });
+    expect(screen.getByText("7 次搜索")).toBeInTheDocument();
+    expect(screen.getByText("7 / 3 / 2")).toBeInTheDocument();
+  });
+});
+
+describe("ResearchWorkspaceView activity panel a11y", () => {
+  it("moves focus into the panel on open and returns it to the toggle on Escape", async () => {
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    const panel = screen.getByRole("complementary", { name: /研究活动/ });
+    // 打开时焦点移入面板关闭按钮。
+    expect(panel).toContainElement(document.activeElement as HTMLElement);
+    expect(document.activeElement).toHaveAccessibleName("关闭研究活动");
+    // Escape 关闭面板，焦点还回主卡的活动开关。
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("complementary", { name: /研究活动/ })).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(document.activeElement).toHaveAccessibleName("研究活动");
+    });
+  });
+
+  it("does not repeat the objective as the panel title", () => {
+    hooks.run = { ...hooks.run, data: runDetail({ activePlanVersion: { plan: planDetail() } }) };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    const panel = screen.getByRole("complementary", { name: /研究活动/ });
+    expect(within(panel).getByRole("heading", { name: "研究活动" })).toBeInTheDocument();
+    // 研究目标只在主卡展示一次，面板标题与副文本不再重复。
+    expect(within(panel).queryByText("评估 2025 年 MoE 路由方法的主要改进")).not.toBeInTheDocument();
+  });
+});
+
+describe("ResearchReportReader focus trap", () => {
+  it("traps Tab focus inside the dialog and restores it on close", async () => {
+    const user = userEvent.setup();
+    hooks.run = {
+      ...hooks.run,
+      data: runDetail({
+        status: "completed",
+        stage: { key: "completed", label: "已完成" },
+        reportSnapshot: {
+          generatedAt: "2026-01-01T01:00:00.000Z",
+          reportDocument: { title: "研究报告：MoE 路由", body: "## 执行摘要\n\n结论。", evidenceRefs: [] },
+          citationMap: {},
+        },
+      }),
+    };
+    render(<ResearchWorkspaceView workspaceId="ws-1" />);
+    await user.click(screen.getByRole("button", { name: "展开阅读" }));
+    const reader = screen.getByRole("dialog", { name: /阅读报告/ });
+    // 打开时焦点在对话框内的关闭按钮。
+    expect(reader).toContainElement(document.activeElement as HTMLElement);
+    // Tab 循环只在对话框内移动（焦点数量不足以触发回绕时保持在对话框内）。
+    for (let index = 0; index < 6; index += 1) await user.tab();
+    expect(reader).toContainElement(document.activeElement as HTMLElement);
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /阅读报告/ })).not.toBeInTheDocument();
+    });
+    // 关闭后焦点还原到触发按钮。
+    expect(document.activeElement).toHaveAccessibleName("展开阅读");
   });
 });

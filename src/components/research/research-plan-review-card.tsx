@@ -83,7 +83,7 @@ export function ResearchPlanReviewCard({
       </div>
 
       <ol className="mt-5 space-y-1">
-        {questions.map((item) => {
+        {questions.map((item, index) => {
           const done = questionDone(item.status);
           return (
             <li key={item.id} className="flex items-center gap-3 rounded-[var(--radius-md)] px-2 py-2.5" title={item.question}>
@@ -92,7 +92,8 @@ export function ResearchPlanReviewCard({
                   <Check width={12} height={12} />
                 </span>
               ) : (
-                <span className="inline-flex size-[18px] shrink-0 rounded-full border border-dashed border-[var(--color-text-tertiary)]" aria-hidden="true" />
+                // 未完成的问题用序号而不是空圆圈：空圆圈会被误读成可点击的复选框。
+                <span className="inline-flex size-[18px] shrink-0 items-center justify-center text-[11px] tabular-nums text-[var(--color-text-tertiary)]" aria-hidden="true">{index + 1}</span>
               )}
               <span className={`min-w-0 flex-1 truncate text-sm leading-6 ${done ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"}`}>{item.title}</span>
             </li>

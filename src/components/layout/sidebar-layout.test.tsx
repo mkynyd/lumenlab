@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => ({
   usePathname: vi.fn(),
 }));
 
+const sidebarWorkspaces = vi.hoisted(() => ({
+  research: { data: [] as unknown[], isPending: false },
+}));
+
 const profileDialogProps = vi.hoisted(() => ({
   current: null as null | {
     open: boolean;
@@ -38,6 +42,10 @@ vi.mock("@/lib/hooks/use-conversions", () => ({
     isError: false,
   }),
 }));
+vi.mock("@/lib/hooks/use-sidebar-workspaces", () => ({
+  useSidebarResearchWorkspaces: () => sidebarWorkspaces.research,
+  useSidebarPaperWorkspaces: () => ({ data: [], isPending: false }),
+}));
 vi.mock("@/components/settings/settings-panel", () => ({
   SettingsPanel: () => null,
 }));
@@ -62,6 +70,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 describe("main workspace navigation layout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sidebarWorkspaces.research.data = [];
     mocks.usePathname.mockReturnValue("/chat");
   });
 
@@ -124,6 +133,38 @@ describe("main workspace navigation layout", () => {
       "aria-current",
       "page"
     );
+  });
+
+  it("maps the latest research run status to a Chinese label in the recent list", () => {
+    sidebarWorkspaces.research.data = [
+      {
+        id: "ws-1",
+        name: "MoE 路由研究",
+        description: null,
+        domainProfileKey: "general",
+        budgetProfile: "deep",
+        status: "active",
+        project: null,
+        runs: [
+          {
+            id: "run-1",
+            question: "比较 MoE 路由方法",
+            status: "awaiting_confirmation",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        _count: { runs: 1, sources: 0, evidence: 0 },
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    mocks.usePathname.mockReturnValue("/research");
+    const props = { mobileOpen: false, onClose: vi.fn(), onExpand: vi.fn() };
+    render(<Sidebar {...props} collapsed={false} />);
+
+    expect(screen.getByText("待确认")).toBeInTheDocument();
+    expect(screen.queryByText("awaiting_confirmation")).not.toBeInTheDocument();
   });
 
   it("can remove the desktop main navigation while preserving the mobile drawer", () => {

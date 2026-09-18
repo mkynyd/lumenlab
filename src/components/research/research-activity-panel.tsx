@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { Check, Circle, Globe, Page, Search, Xmark } from "iconoir-react";
 import { Button } from "@/components/ui/button";
@@ -40,25 +40,25 @@ function sourceHost(source: ResearchSourceView): string | null {
 }
 
 /**
- * 研究活动滑出面板（进行中状态的右侧记录）：当前阶段叙述 + 公开事件流 +
+ * 研究活动滑出面板（进行中状态的右侧记录）：当前阶段 + 公开事件流 +
  * 研究来源 chip 列表。结构对齐参考 UI 的右侧研究来源/状态面板。
+ *
+ * 标题固定为「研究活动」：研究目标已在主卡展示，这里不再重复；
+ * Escape 关闭，打开时焦点移入关闭按钮，关闭后由调用方还回触发按钮。
  */
 export function ResearchActivityPanel({
-  title,
   stageLabel,
-  liveMessage,
   events,
   sources,
   onClose,
 }: {
-  title: string;
   stageLabel: string;
-  liveMessage: string;
   events: ResearchActivityEvent[];
   sources: ResearchSourceView[];
   onClose: () => void;
 }) {
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   // portal 到 body：避免被工作台主内容的动画层叠上下文困住（同阅读器）。
   // useSyncExternalStore 水合检测（同 theme-toggle），避免 effect 内同步 setState。
   const mounted = useSyncExternalStore(
@@ -66,6 +66,16 @@ export function ResearchActivityPanel({
     () => true,
     () => false,
   );
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   const visibleEvents = events.slice(0, 12);
   const visibleSources = sourcesExpanded ? sources : sources.slice(0, COLLAPSED_SOURCE_COUNT);
   const hiddenSources = sources.length - visibleSources.length;
@@ -79,20 +89,16 @@ export function ResearchActivityPanel({
         className="h-full w-full overflow-y-auto overscroll-contain bg-[var(--color-panel)] px-5 py-5 shadow-2xl"
       >
         <div className="flex items-start justify-between gap-3">
-          <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-[var(--color-text-primary)]">{title}</h2>
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="关闭研究活动" onClick={onClose}>
+          <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-[var(--color-text-primary)]">研究活动</h2>
+          <Button ref={closeButtonRef} type="button" variant="ghost" size="icon-sm" aria-label="关闭研究活动" onClick={onClose}>
             <Xmark width={16} height={16} />
           </Button>
         </div>
 
-        <section aria-label="研究活动" className="mt-6">
-          <h3 className="text-xs font-medium text-[var(--color-text-primary)]">研究活动</h3>
-          <div className="mt-3 flex items-start gap-3">
+        <section aria-label="研究阶段" className="mt-6">
+          <div className="flex items-start gap-3">
             <span className="mt-1 inline-flex size-2 shrink-0 rounded-full bg-[var(--color-accent)]" aria-hidden="true" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-[var(--color-text-primary)]">{stageLabel}</p>
-              <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{liveMessage || "正在按研究计划检索、阅读与核验证据。"}</p>
-            </div>
+            <p className="text-sm font-medium text-[var(--color-text-primary)]">{stageLabel}</p>
           </div>
 
           {visibleEvents.length > 0 ? (

@@ -20,6 +20,7 @@ import { ProfileDialog } from "@/components/user/profile-dialog";
 import { useHashDialog } from "@/lib/hooks/use-hash-dialog";
 import { AvatarMark } from "@/components/user/avatar-mark";
 import { GlobalSearchDialog } from "@/components/search/global-search-dialog";
+import { researchRunStatusLabel } from "@/components/research/status-label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -786,7 +787,7 @@ export function Sidebar({
                           <BrainResearch strokeWidth={2} />
                           <span className="min-w-0">
                             <span className="block truncate">{workspace.name}</span>
-                            {workspace.runs[0] ? <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">{workspace.runs[0].status}</span> : null}
+                            {workspace.runs[0] ? <span className="block truncate text-[11px] text-[var(--color-text-tertiary)]">{researchRunStatusLabel(workspace.runs[0].status)}</span> : null}
                           </span>
                         </Link>
                       </SidebarMenuButton>
