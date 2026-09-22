@@ -812,25 +812,27 @@ export async function getResearchRun(userId: string, runId: string) {
       activePlanVersion: true,
       questions: { orderBy: { orderIndex: "asc" }, select: { id: true, key: true, title: true, question: true, priority: true, status: true, completionCriteria: true, sourceStrategy: true, qualitySummary: true, researchAttempts: true, evaluateAttempts: true, replanAttempts: true } },
       tasks: { orderBy: { createdAt: "asc" }, select: { id: true, questionId: true, kind: true, status: true, priority: true, title: true, instructions: true, attempt: true, maxAttempts: true, lastError: true, startedAt: true, completedAt: true, createdAt: true, updatedAt: true } },
-      sourceRelations: { orderBy: { createdAt: "asc" }, take: 200, select: { id: true, sourceId: true, targetSourceId: true, targetCanonicalKey: true, relation: true, provider: true, hop: true, externalTargetId: true, externalTargetIdType: true, metadata: true } },
       directives: { orderBy: { createdAt: "asc" }, select: { id: true, text: true, impact: true, status: true, appliedAt: true, createdAt: true } },
-      agentExecution: { select: { id: true, status: true, scheduledAt: true, checkpoint: true, failure: true } },
-      evidence: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, questionId: true, sourceSnapshotId: true, statement: true, excerpt: true, locator: true, evidenceType: true, origin: true, status: true, tags: true, provenance: true, createdAt: true, sourceSnapshot: { select: { id: true, retrievedAt: true, excerpt: true, metadata: true, source: { select: { id: true, title: true, canonicalKey: true, canonicalUrl: true, doi: true, arxivId: true, pmid: true, kind: true, metadata: true } } } } } },
-      claims: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 100, select: { id: true, questionId: true, statement: true, status: true, userEdited: true, verificationStatus: true, quality: true, createdAt: true, updatedAt: true, evidenceRelations: { select: { evidenceId: true, relation: true, confidence: true, rationale: true, evidence: { select: { id: true, statement: true, status: true, sourceSnapshotId: true } } } } } },
-      reportSnapshot: { select: { id: true, reportDocument: true, claimSnapshots: true, evidenceIds: true, sourceSnapshotIds: true, citationMap: true, coverageSummary: true, verificationSummary: true, modelConfiguration: true, generatedAt: true } },
+      agentExecution: { select: { id: true, status: true, scheduledAt: true, failure: true } },
       _count: { select: { sourceSnapshots: true, evidence: true, claims: true } },
     },
   });
   if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
   const { agentExecution, tasks, ...rest } = run;
-  const checkpointStage = agentExecution?.checkpoint && typeof agentExecution.checkpoint === "object" && !Array.isArray(agentExecution.checkpoint)
-    ? ((agentExecution.checkpoint as Record<string, unknown>).researchState as Record<string, unknown> | undefined)?.stage
-    : null;
+  // Project only the two public JSON paths in SQL. Transferring the entire
+  // checkpoint through Prisma used to serialize megabytes on every poll.
+  const publicCheckpoint = agentExecution && !["completed", "failed", "cancelled"].includes(run.status)
+    ? (await prisma.$queryRaw<Array<{ stage: string | null; degradations: unknown }>>`
+        SELECT checkpoint #>> '{researchState,stage}' AS stage,
+               checkpoint #> '{researchState,degradations}' AS degradations
+        FROM "AgentExecution" WHERE id = ${agentExecution.id} LIMIT 1
+      `)[0] : null;
+  const checkpointStage = publicCheckpoint?.stage;
   const stage = resolveResearchPublicStage(
     run.status as ResearchRunStatus,
     typeof checkpointStage === "string" ? checkpointStage : null,
   );
-  const degradations = resolveRunDegradations(run);
+  const degradations = resolveRunDegradations(run, publicCheckpoint?.degradations);
   const failureReason = resolveRunFailureReason(run, tasks);
   return {
     ...rest,
@@ -845,25 +847,47 @@ export async function getResearchRun(userId: string, runId: string) {
   };
 }
 
-/** 从 checkpoint stage 派生的细分阶段：run.status 之外补充内部阶段。 */
+/** Immutable report fetched once after the status becomes terminal. */
+export async function getResearchRunReport(userId: string, runId: string) {
+  const run = await prisma.researchRun.findFirst({
+    where: { id: runId, userId },
+    select: { reportSnapshot: { select: {
+      id: true, reportDocument: true, citationMap: true, coverageSummary: true,
+      verificationSummary: true, generatedAt: true,
+    } } },
+  });
+  if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
+  return run.reportSnapshot;
+}
+
+/** Bounded drill-down, excluded from the frequently polled status response. */
+export async function getResearchRunAssets(userId: string, runId: string) {
+  const run = await prisma.researchRun.findFirst({
+    where: { id: runId, userId },
+    select: {
+      sourceRelations: { orderBy: { createdAt: "asc" }, take: 200, select: { id: true, sourceId: true, targetSourceId: true, relation: true } },
+      evidence: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, questionId: true, sourceSnapshotId: true, statement: true, excerpt: true, locator: true, evidenceType: true, status: true, tags: true, createdAt: true, sourceSnapshot: { select: { id: true, retrievedAt: true, metadata: true, source: { select: { id: true, title: true, canonicalKey: true, canonicalUrl: true, doi: true, arxivId: true, pmid: true, kind: true, metadata: true } } } } } },
+      claims: { where: { status: { in: ["active", "disputed"] } }, orderBy: { createdAt: "asc" }, take: 100, select: { id: true, questionId: true, statement: true, status: true, userEdited: true, verificationStatus: true, quality: true, createdAt: true, updatedAt: true, evidenceRelations: { select: { evidenceId: true, relation: true, confidence: true, rationale: true, evidence: { select: { id: true, statement: true, status: true, sourceSnapshotId: true } } } } } },
+    },
+  });
+  if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
+  return run;
+}
+
+/** 从公开阶段派生的细分阶段：run.status 之外补充内部阶段。 */
 export interface ResearchRunPublicStage {
   key: string;
   label: string;
 }
 
-function resolveRunDegradations(run: { metrics: unknown; agentExecution?: { checkpoint?: unknown } | null }): Array<{ code: string; message: string }> {
+function resolveRunDegradations(run: { metrics: unknown }, checkpointCodes?: unknown): Array<{ code: string; message: string }> {
   const codes = new Set<string>();
   const metrics = run.metrics && typeof run.metrics === "object" && !Array.isArray(run.metrics) ? run.metrics as Record<string, unknown> : {};
   if (Array.isArray(metrics.degradations)) {
     for (const code of metrics.degradations) if (typeof code === "string") codes.add(code);
   }
-  const checkpoint = run.agentExecution?.checkpoint;
-  if (checkpoint && typeof checkpoint === "object" && !Array.isArray(checkpoint)) {
-    const researchState = (checkpoint as Record<string, unknown>).researchState;
-    if (researchState && typeof researchState === "object" && !Array.isArray(researchState)) {
-      const list = (researchState as Record<string, unknown>).degradations;
-      if (Array.isArray(list)) for (const code of list) if (typeof code === "string") codes.add(code);
-    }
+  if (Array.isArray(checkpointCodes)) {
+    for (const code of checkpointCodes) if (typeof code === "string") codes.add(code);
   }
   return [...codes].flatMap((code) => {
     const message = describeResearchDegradation(code);

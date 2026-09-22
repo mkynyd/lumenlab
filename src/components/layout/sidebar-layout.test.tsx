@@ -89,12 +89,12 @@ describe("main workspace navigation layout", () => {
     expect(collapsed).not.toHaveClass("grid");
   });
 
-  it("opens global search from the sidebar button and Command-K", () => {
+  it("opens global search from the sidebar button and Command-K", async () => {
     const props = { mobileOpen: false, onClose: vi.fn(), onExpand: vi.fn() };
     render(<Sidebar {...props} collapsed={false} />);
 
     fireEvent.click(screen.getAllByRole("button", { name: "全局搜索" })[0]);
-    expect(screen.getByTestId("global-search-dialog")).toHaveAttribute(
+    expect(await screen.findByTestId("global-search-dialog")).toHaveAttribute(
       "data-open",
       "true"
     );
@@ -199,7 +199,7 @@ describe("sidebar dialog hash wiring", () => {
   it("pushes #profile into the URL when the profile dialog opens from the account menu", async () => {
     await openProfileFromAccountMenu();
 
-    expect(profileDialogProps.current?.open).toBe(true);
+    await waitFor(() => expect(profileDialogProps.current?.open).toBe(true));
     expect(window.location.hash).toBe("#profile");
   });
 

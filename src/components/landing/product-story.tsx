@@ -268,7 +268,6 @@ export function ProductStory() {
   return (
     <section
       ref={rootRef}
-      id="features"
       aria-label="LumenLab 产品工作流"
       data-scroll-mode="sticky-natural"
       className={cn(

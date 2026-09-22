@@ -32,6 +32,8 @@ export const queryKeys = {
     workspaces: ["research", "workspaces"] as const,
     workspace: (id: string) => ["research", "workspaces", id] as const,
     run: (id: string) => ["research", "runs", id] as const,
+    report: (id: string) => ["research", "runs", id, "report"] as const,
+    assets: (id: string) => ["research", "runs", id, "assets"] as const,
     transfer: (id: string) => ["research", "runs", id, "transfer"] as const,
   },
   papers: {

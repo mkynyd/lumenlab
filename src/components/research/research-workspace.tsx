@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, BrainResearch, Copy, Expand, List, Page, Check } from "iconoir-react";
 import {
@@ -27,18 +28,14 @@ import {
 import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { ResearchComposer, type ResearchComposerOptions } from "@/components/research/research-composer";
 import { ResearchPlanReviewCard } from "@/components/research/research-plan-review-card";
-import { ResearchEvidencePanel } from "@/components/research/research-evidence-panel";
-import { ResearchClaimsPanel } from "@/components/research/research-claims-panel";
-import { ResearchPaperTransferPanel } from "@/components/research/research-paper-transfer-panel";
 import { ResearchSourcesPanel } from "@/components/research/research-sources-panel";
 import { ResearchActivityPanel } from "@/components/research/research-activity-panel";
-import { ResearchReportReader } from "@/components/research/research-report-reader";
 import { researchQuestionStatusFromEvent, researchRunStatusLabel } from "@/components/research/status-label";
 import { fetchJson } from "@/lib/api/client";
 import { MODEL_CATALOG_ENTRIES } from "@/lib/chat/model-catalog";
 import type { FileAttachment } from "@/lib/chat/router";
 import { uploadResearchAttachments, type ResearchAttachmentState } from "@/lib/hooks/use-research-launch";
-import { useAppendResearchDirective, useCancelResearchRun, useConfirmResearchPlan, useConfirmResearchScope, useCreateResearchFollowUp, useCreateResearchRun, useResearchRun, useResearchWorkspace, useReviseResearchPlan, useUpdateResearchWorkspace } from "@/lib/hooks/use-research";
+import { useAppendResearchDirective, useCancelResearchRun, useConfirmResearchPlan, useConfirmResearchScope, useCreateResearchFollowUp, useCreateResearchRun, useResearchRun, useResearchRunAssets, useResearchRunReport, useResearchWorkspace, useReviseResearchPlan, useUpdateResearchWorkspace } from "@/lib/hooks/use-research";
 import { buildResearchReportMarkdown, buildResearchBibliography, linkifyResearchEvidenceMarkers } from "@/lib/research/report-citations";
 import {
   buildResearchProgressSummary,
@@ -128,6 +125,10 @@ interface ResearchPlan {
 }
 
 const TERMINAL_STATUSES = ["completed", "failed", "cancelled"];
+const ResearchReportReader = dynamic(() => import("@/components/research/research-report-reader").then((m) => m.ResearchReportReader));
+const ResearchEvidencePanel = dynamic(() => import("@/components/research/research-evidence-panel").then((m) => m.ResearchEvidencePanel));
+const ResearchClaimsPanel = dynamic(() => import("@/components/research/research-claims-panel").then((m) => m.ResearchClaimsPanel));
+const ResearchPaperTransferPanel = dynamic(() => import("@/components/research/research-paper-transfer-panel").then((m) => m.ResearchPaperTransferPanel));
 
 function ProgressStat({ label, value }: { label: string; value: string }) {
   return (
@@ -169,7 +170,20 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const createRunMutation = useCreateResearchRun(workspaceId);
   const updateWorkspace = useUpdateResearchWorkspace(workspaceId);
   const runQuery = useResearchRun(activeRunId);
-  const run = runQuery.data as ResearchRunDetail | undefined;
+  const statusRun = runQuery.data as ResearchRunDetail | undefined;
+  const terminal = Boolean(statusRun && TERMINAL_STATUSES.includes(statusRun.status));
+  const [activityOpen, setActivityOpen] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [readerOpen, setReaderOpen] = useState(false);
+  const reportQuery = useResearchRunReport(activeRunId, terminal);
+  const assetsQuery = useResearchRunAssets(activeRunId, terminal ? !reportQuery.isPending : activityOpen || advancedOpen, !terminal);
+  const run = useMemo(() => statusRun ? ({
+    ...statusRun,
+    reportSnapshot: (reportQuery.data ?? statusRun.reportSnapshot ?? null) as ResearchRunDetail["reportSnapshot"],
+    evidence: ((assetsQuery.data as Pick<ResearchRunDetail, "evidence"> | undefined)?.evidence ?? statusRun.evidence ?? []),
+    claims: ((assetsQuery.data as Pick<ResearchRunDetail, "claims"> | undefined)?.claims ?? statusRun.claims ?? []),
+    sourceRelations: ((assetsQuery.data as Pick<ResearchRunDetail, "sourceRelations"> | undefined)?.sourceRelations ?? statusRun.sourceRelations ?? []),
+  }) : undefined, [statusRun, reportQuery.data, assetsQuery.data]);
   const cancelRun = useCancelResearchRun(activeRunId ?? "none", workspaceId);
   const createFollowUp = useCreateResearchFollowUp(activeRunId ?? "none", workspaceId);
   const confirmPlan = useConfirmResearchPlan(activeRunId ?? "none", workspaceId);
@@ -188,8 +202,6 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const [publicEventsRunId, setPublicEventsRunId] = useState<string | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [activityOpen, setActivityOpen] = useState(true);
-  const [readerOpen, setReaderOpen] = useState(false);
   const [exported, setExported] = useState(false);
   // 公开事件到达时即时投影的研究问题状态：主卡圆圈/进度不再等 4s 轮询，
   // 与右侧活动面板的事件流保持联动（服务器轮询数据到达后自然覆盖）。
@@ -204,7 +216,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   }, []);
 
   useEffect(() => {
-    if (!run?.agentExecutionId) return;
+    if (!run?.agentExecutionId || TERMINAL_STATUSES.includes(run.status)) return;
     const events = new EventSource(`/api/research/runs/${run.id}/events`);
     events.addEventListener("research", (event) => {
       try {
@@ -230,7 +242,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
       } catch { /* malformed public event is ignored */ }
     });
     return () => events.close();
-  }, [run?.agentExecutionId, run?.id]);
+  }, [run?.agentExecutionId, run?.id, run?.status]);
 
   const plan = useMemo(() => run?.activePlanVersion?.plan, [run?.activePlanVersion?.plan]);
   const reportBody = run?.reportSnapshot
@@ -650,7 +662,7 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                     </div>
                   </section>
 
-                  {readerOpen ? (
+                  {readerOpen && !assetsQuery.isPending ? (
                     <ResearchReportReader
                       reportSnapshot={run.reportSnapshot as never}
                       evidence={run.evidence as never}
@@ -667,7 +679,17 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                 </>
               ) : null}
 
-              {isTerminal && !hasReport ? (
+              {isTerminal && !hasReport && reportQuery.isPending ? (
+                <section aria-label="正在加载研究报告" aria-busy="true" className="mt-5 min-h-[24rem] rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 text-sm text-[var(--color-text-tertiary)]">正在加载研究报告…</section>
+              ) : null}
+
+              {isTerminal && !hasReport && reportQuery.isError ? (
+                <section role="alert" className="mt-5 rounded-[var(--radius-lg)] bg-[var(--color-panel-muted)] px-5 py-5 text-sm text-[var(--color-text-secondary)]">
+                  研究报告加载失败。<Button type="button" variant="ghost" size="sm" onClick={() => reportQuery.refetch()}>重新加载</Button>
+                </section>
+              ) : null}
+
+              {isTerminal && !hasReport && !reportQuery.isPending && !reportQuery.isError ? (
                 <>
                   <div className="mt-5"><ResearchSourcesPanel sources={sources} selectedSourceId={selectedSourceId} onSelectSource={setSelectedSourceId} /></div>
                   {followUpPanel}
@@ -675,18 +697,18 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
               ) : null}
 
               {isTerminal ? (
-                <details className="mt-5" data-testid="advanced-operations">
+                <details className="mt-5" data-testid="advanced-operations" onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
                   <summary className="cursor-pointer select-none rounded-[var(--radius-md)] bg-[var(--color-panel)] px-5 py-4 text-sm font-semibold text-[var(--color-text-primary)]">
                     高级操作
                     <span className="ml-2 text-xs font-normal text-[var(--color-text-tertiary)]">Evidence / Claims / 追加方向 / 预算 / 转移到论文 / 执行事件</span>
                   </summary>
-                  {plan ? (
+                  {advancedOpen && plan ? (
                     <div className="mt-5">
                       <ResearchPlanReviewCard plan={plan} questions={run.questions} />
                     </div>
                   ) : null}
 
-                  {run.budgetSnapshot ? (
+                  {advancedOpen && run.budgetSnapshot ? (
                     <div className="mt-5 bg-[var(--color-panel)] px-5 py-4">
                       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">预算状态</h2><span className="text-xs text-[var(--color-text-tertiary)]">{run.budgetSnapshot.profile}</span></div>
                       {(() => {
@@ -696,14 +718,14 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
                     </div>
                   ) : null}
 
-                  {directivePanel}
+                  {advancedOpen ? directivePanel : null}
 
-                  <ResearchEvidencePanel runId={run.id} workspaceId={workspaceId} evidence={run.evidence as never} />
-                  <ResearchClaimsPanel runId={run.id} workspaceId={workspaceId} claims={run.claims} evidence={run.evidence as never} />
+                  {advancedOpen && !assetsQuery.isPending ? <ResearchEvidencePanel runId={run.id} workspaceId={workspaceId} evidence={run.evidence as never} /> : null}
+                  {advancedOpen && !assetsQuery.isPending ? <ResearchClaimsPanel runId={run.id} workspaceId={workspaceId} claims={run.claims} evidence={run.evidence as never} /> : null}
 
-                  {publicEventsPanel}
+                  {advancedOpen ? publicEventsPanel : null}
 
-                  <ResearchPaperTransferPanel runId={run.id} workspaceId={workspaceId} />
+                  {advancedOpen ? <ResearchPaperTransferPanel runId={run.id} workspaceId={workspaceId} /> : null}
                 </details>
               ) : null}
             </>}

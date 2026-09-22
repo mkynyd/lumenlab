@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { emitNewChat } from "@/lib/chat/new-chat-event";
@@ -12,14 +13,9 @@ import { BrandWordmark } from "@/components/brand/brand-wordmark";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  SettingsPanel,
-  type SettingsTabId,
-} from "@/components/settings/settings-panel";
-import { ProfileDialog } from "@/components/user/profile-dialog";
+import type { SettingsTabId } from "@/components/settings/settings-panel";
 import { useHashDialog } from "@/lib/hooks/use-hash-dialog";
 import { AvatarMark } from "@/components/user/avatar-mark";
-import { GlobalSearchDialog } from "@/components/search/global-search-dialog";
 import { researchRunStatusLabel } from "@/components/research/status-label";
 import {
   AlertDialog,
@@ -93,6 +89,10 @@ import {
 } from "@/lib/hooks/use-conversions";
 import { DEFAULT_AVATAR_PRESET } from "@/lib/user-profile";
 import { useSidebarPaperWorkspaces, useSidebarResearchWorkspaces } from "@/lib/hooks/use-sidebar-workspaces";
+
+const SettingsPanel = dynamic(() => import("@/components/settings/settings-panel").then((m) => m.SettingsPanel));
+const ProfileDialog = dynamic(() => import("@/components/user/profile-dialog").then((m) => m.ProfileDialog));
+const GlobalSearchDialog = dynamic(() => import("@/components/search/global-search-dialog").then((m) => m.GlobalSearchDialog));
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -261,8 +261,18 @@ export function Sidebar({
     );
     settingsDeepLinkRef.current.setSettingsOpen(true);
   }, []);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [profileOpen, setProfileOpenState] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpenState] = useState(false);
+  // Keep dialog portals mounted after first use so their close transitions stay intact.
+  const [openedDialogs, setOpenedDialogs] = useState({ profile: false, search: false });
+  const setProfileOpen = useCallback((next: boolean) => {
+    if (next) setOpenedDialogs((current) => ({ ...current, profile: true }));
+    setProfileOpenState(next);
+  }, []);
+  const setGlobalSearchOpen = useCallback((next: boolean) => {
+    if (next) setOpenedDialogs((current) => ({ ...current, search: true }));
+    setGlobalSearchOpenState(next);
+  }, []);
   useEffect(() => {
     function handleGlobalSearchShortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -272,7 +282,7 @@ export function Sidebar({
     }
     window.addEventListener("keydown", handleGlobalSearchShortcut);
     return () => window.removeEventListener("keydown", handleGlobalSearchShortcut);
-  }, []);
+  }, [setGlobalSearchOpen]);
   const { closeDialog: closeSettingsDialog } = useHashDialog(
     "#settings",
     settingsOpen,
@@ -730,7 +740,7 @@ export function Sidebar({
                       <ContextMenuTrigger asChild>
                         <SidebarMenuItem>
                           <SidebarMenuButton asChild isActive={activeConversationId === conversation.id}>
-                            <Link href={`/chat/${conversation.id}`} onClick={onClose}>
+                            <Link href={`/chat/${conversation.id}`} prefetch={false} onMouseEnter={() => router.prefetch(`/chat/${conversation.id}`)} onFocus={() => router.prefetch(`/chat/${conversation.id}`)} onClick={onClose}>
                               <ChatLines strokeWidth={2} />
                               <span>{conversation.title}</span>
                             </Link>
@@ -783,7 +793,7 @@ export function Sidebar({
                   {researchWorkspaces.map((workspace) => (
                     <SidebarMenuItem key={workspace.id}>
                       <SidebarMenuButton asChild isActive={activeResearchWorkspaceId === workspace.id} className="min-h-10">
-                        <Link href={`/research/${workspace.id}`} onClick={onClose}>
+                        <Link href={`/research/${workspace.id}`} prefetch={false} onMouseEnter={() => router.prefetch(`/research/${workspace.id}`)} onFocus={() => router.prefetch(`/research/${workspace.id}`)} onClick={onClose}>
                           <BrainResearch strokeWidth={2} />
                           <span className="min-w-0">
                             <span className="block truncate">{workspace.name}</span>
@@ -803,7 +813,7 @@ export function Sidebar({
                   {paperWorkspaces.map((workspace) => (
                     <SidebarMenuItem key={workspace.id}>
                       <SidebarMenuButton asChild isActive={activePaperWorkspaceId === workspace.id} className="min-h-10">
-                        <Link href={`/papers/${workspace.id}`} onClick={onClose}>
+                        <Link href={`/papers/${workspace.id}`} prefetch={false} onMouseEnter={() => router.prefetch(`/papers/${workspace.id}`)} onFocus={() => router.prefetch(`/papers/${workspace.id}`)} onClick={onClose}>
                           <BookStack strokeWidth={2} />
                           <span>{workspace.name}</span>
                         </Link>
@@ -826,7 +836,7 @@ export function Sidebar({
                             isActive={activeConversionId === conversion.id}
                             className="min-h-10"
                           >
-                            <Link href={`/tools/${conversion.id}`} onClick={onClose}>
+                            <Link href={`/tools/${conversion.id}`} prefetch={false} onMouseEnter={() => router.prefetch(`/tools/${conversion.id}`)} onFocus={() => router.prefetch(`/tools/${conversion.id}`)} onClick={onClose}>
                               <PageEdit strokeWidth={2} />
                               <span>{conversion.title}</span>
                             </Link>
@@ -880,7 +890,7 @@ export function Sidebar({
                     <ContextMenuTrigger asChild>
                       <SidebarMenuItem>
                         <SidebarMenuButton asChild isActive={activeProjectId === project.id} className="min-h-10">
-                          <Link href={projectDestination(project.id)} onClick={onClose}>
+                          <Link href={projectDestination(project.id)} prefetch={false} onMouseEnter={() => router.prefetch(projectDestination(project.id))} onFocus={() => router.prefetch(projectDestination(project.id))} onClick={onClose}>
                             <Folder strokeWidth={2} />
                             <span>{project.name}</span>
                           </Link>
@@ -1166,7 +1176,7 @@ export function Sidebar({
             />
           </DialogContent>
         </Dialog>
-        <ProfileDialog
+        {(profileOpen || openedDialogs.profile) ? <ProfileDialog
           open={profileOpen}
           onOpenChange={(next) => {
             // 防御性：受控 Dialog 不会自行触发 open=true，此处兜底互斥。
@@ -1177,11 +1187,11 @@ export function Sidebar({
               closeProfileDialog();
             }
           }}
-        />
-        <GlobalSearchDialog
+        /> : null}
+        {(globalSearchOpen || openedDialogs.search) ? <GlobalSearchDialog
           open={globalSearchOpen}
           onOpenChange={setGlobalSearchOpen}
-        />
+        /> : null}
       </aside>
     </SidebarProvider>
   );

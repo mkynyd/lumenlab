@@ -24,6 +24,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/hooks/use-research", () => ({
   useResearchWorkspace: () => hooks.workspace,
   useResearchRun: () => hooks.run,
+  useResearchRunReport: () => ({ data: undefined, isPending: false, isError: false, refetch: vi.fn() }),
+  useResearchRunAssets: () => ({ data: undefined, isPending: false, isError: false, refetch: vi.fn() }),
   useCreateResearchRun: mutation,
   useUpdateResearchWorkspace: mutation,
   useCancelResearchRun: mutation,
@@ -192,7 +194,7 @@ describe("ResearchWorkspaceView status and progress", () => {
     render(<ResearchWorkspaceView workspaceId="ws-1" />);
     // 目录收进全屏阅读器，对齐参考 UI 的成果详情态。
     await userEvent.setup().click(screen.getByRole("button", { name: "展开阅读" }));
-    const reader = screen.getByRole("dialog", { name: /阅读报告/ });
+    const reader = await screen.findByRole("dialog", { name: /阅读报告/ });
     // 目录在窄屏折叠区与宽屏浮动卡各渲染一份。
     expect(within(reader).getAllByRole("navigation", { name: "报告目录" }).length).toBeGreaterThan(0);
     expect(within(reader).getAllByRole("button", { name: "执行摘要" }).length).toBeGreaterThan(0);

@@ -81,7 +81,7 @@ describe("ProductStory", () => {
     motionPreference.reduced = true;
     const { container } = render(<ProductStory />);
 
-    expect(container.querySelector("#features")).toHaveAttribute(
+    expect(container.querySelector("section[data-scroll-mode]")).toHaveAttribute(
       "aria-label",
       "LumenLab 产品工作流"
     );
@@ -97,7 +97,7 @@ describe("ProductStory", () => {
     motionPreference.reduced = false;
     const { container } = render(<ProductStory />);
 
-    expect(container.querySelector("#features")).toHaveAttribute(
+    expect(container.querySelector("section[data-scroll-mode]")).toHaveAttribute(
       "data-scroll-mode",
       "sticky-natural"
     );

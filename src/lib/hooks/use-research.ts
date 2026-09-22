@@ -24,8 +24,29 @@ export function useResearchRun(id: string | null) {
   return useQuery({
     queryKey: queryKeys.research.run(id ?? "none"),
     enabled: Boolean(id),
-    refetchInterval: 4_000,
+    refetchInterval: (query) => {
+      const status = (query.state.data as { status?: string } | undefined)?.status;
+      return status && ["completed", "failed", "cancelled"].includes(status) ? false : 4_000;
+    },
     queryFn: async () => (await fetchJson<{ run: unknown }>(`/api/research/runs/${id}`)).run,
+  });
+}
+
+export function useResearchRunReport(id: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.research.report(id ?? "none"),
+    enabled: Boolean(id && enabled),
+    staleTime: Infinity,
+    queryFn: async () => (await fetchJson<{ reportSnapshot: unknown }>(`/api/research/runs/${id}/report`)).reportSnapshot,
+  });
+}
+
+export function useResearchRunAssets(id: string | null, enabled: boolean, running: boolean) {
+  return useQuery({
+    queryKey: queryKeys.research.assets(id ?? "none"),
+    enabled: Boolean(id && enabled),
+    refetchInterval: running ? 20_000 : false,
+    queryFn: async () => (await fetchJson<{ assets: unknown }>(`/api/research/runs/${id}/assets`)).assets,
   });
 }
 
