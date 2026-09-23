@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   checkRateLimit: vi.fn(),
   feedbackCreate: vi.fn(),
+  userFindUnique: vi.fn(),
+  notify: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -15,7 +17,11 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => {
 vi.mock("@/lib/db", () => ({
   prisma: {
     feedback: { create: mocks.feedbackCreate },
+    user: { findUnique: mocks.userFindUnique },
   },
+}));
+vi.mock("@/lib/email/feedback-notify", () => ({
+  sendFeedbackNotificationEmail: mocks.notify,
 }));
 
 import { POST } from "@/app/api/feedback/route";
@@ -41,6 +47,8 @@ describe("POST /api/feedback", () => {
       id: "fb-1",
       ...data,
     }));
+    mocks.userFindUnique.mockResolvedValue({ email: "u1@example.com" });
+    mocks.notify.mockResolvedValue(undefined);
   });
 
   it("creates feedback for logged-in users", async () => {
@@ -82,4 +90,22 @@ describe("POST /api/feedback", () => {
     expect(response.status).toBe(400);
   });
 
+  it("notifies admins after feedback is created, and still returns 201 if notify rejects", async () => {
+    const response = await post(validBody);
+    expect(response.status).toBe(201);
+    expect(mocks.notify).toHaveBeenCalledWith({
+      feedbackId: "fb-1",
+      category: "bug",
+      userEmail: "u1@example.com",
+      content: "导出 PDF 时卡住",
+      pagePath: "/chat",
+      contact: "qq 123",
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.notify.mockRejectedValue(new Error("notify boom"));
+    const second = await post(validBody);
+    expect(second.status).toBe(201);
+    errorSpy.mockRestore();
+  });
 });

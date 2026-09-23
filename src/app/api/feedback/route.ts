@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { checkRateLimit, RateLimits } from "@/lib/rate-limit";
+import { sendFeedbackNotificationEmail } from "@/lib/email/feedback-notify";
 
 const feedbackSchema = z.object({
   category: z.enum(["bug", "suggestion", "other"]),
@@ -50,6 +51,26 @@ export async function POST(request: Request) {
       userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? "",
     },
   });
+
+  // 通知链路（含取邮箱）任何失败都不影响反馈已落库的事实
+  let userEmail = "unknown";
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { email: true },
+    });
+    userEmail = user?.email ?? "unknown";
+    await sendFeedbackNotificationEmail({
+      feedbackId: feedback.id,
+      category: feedback.category,
+      userEmail,
+      content: feedback.content,
+      pagePath: feedback.pagePath,
+      contact: feedback.contact,
+    });
+  } catch (error) {
+    console.error("反馈通知调用失败", error);
+  }
 
   return NextResponse.json({ id: feedback.id }, { status: 201 });
 }
