@@ -449,7 +449,7 @@ export function useChat(options: UseChatOptions = {}) {
         if (persistedHeader) {
           try {
             const persisted = JSON.parse(
-              persistedHeader
+              decodeURIComponent(persistedHeader)
             ) as ChatAttachmentDto[];
             if (Array.isArray(persisted) && persisted.length > 0) {
               setMessages((prev) =>

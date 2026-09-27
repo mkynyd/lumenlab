@@ -92,11 +92,17 @@ export function toChatAttachmentDto(row: {
   };
 }
 
-/** 把本轮附件 DTO 编码进响应头，供乐观消息替换为持久附件。 */
+/**
+ * 把本轮附件 DTO 编码进响应头，供乐观消息替换为持久附件。
+ *
+ * Headers 的值必须能转换为 ByteString，原始 JSON 中的中文文件名会让
+ * Response 构造直接抛错。对完整 JSON 做 URI 编码，既保持值为纯 ASCII，
+ * 也让客户端能够无损还原原始文件名。
+ */
 export function encodeChatAttachmentsHeader(
   rows: PersistedChatAttachment[]
 ): string {
-  return JSON.stringify(rows.map(toChatAttachmentDto));
+  return encodeURIComponent(JSON.stringify(rows.map(toChatAttachmentDto)));
 }
 
 /**

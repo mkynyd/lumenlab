@@ -345,9 +345,11 @@ describe("attachment DTO", () => {
     });
     expect(
       JSON.parse(
-        encodeChatAttachmentsHeader([
-          { ...persisted, hasThumbnail: Boolean(persisted.thumbnailPath) },
-        ])
+        decodeURIComponent(
+          encodeChatAttachmentsHeader([
+            { ...persisted, hasThumbnail: Boolean(persisted.thumbnailPath) },
+          ])
+        )
       )
     ).toEqual([dto]);
   });
@@ -365,6 +367,20 @@ describe("attachment DTO", () => {
     });
     expect(dto.kind).toBe("file");
     expect(dto.thumbnailUrl).toBe("/api/chat/attachments/att-pdf");
+  });
+
+  it("keeps attachment headers ByteString-safe when the filename contains Chinese", () => {
+    const encoded = encodeChatAttachmentsHeader([
+      {
+        ...row({ originalName: "这是什么.png" }),
+        hasThumbnail: true,
+      },
+    ]);
+
+    expect(() => new Headers({ "X-Message-Attachments": encoded })).not.toThrow();
+    expect(JSON.parse(decodeURIComponent(encoded))).toMatchObject([
+      { name: "这是什么.png" },
+    ]);
   });
 });
 
