@@ -7,7 +7,6 @@ import type { Prisma } from "@/generated/prisma/client";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import { ProviderAccessError } from "@/lib/provider-access";
 import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
-import { recordFileContentChange } from "@/lib/learning/services";
 import { createDocumentChunks } from "@/lib/rag/vector-store";
 import { embedChunksForFile } from "@/lib/rag/embedding";
 import { refreshProjectIndex } from "@/lib/rag/project-index";
@@ -154,19 +153,6 @@ export async function POST(
       logger.warn("文件增强后检索索引同步失败", {
         fileId: file.id,
         error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    if (file.contentFingerprint) {
-      await recordFileContentChange({
-        userId,
-        fileAssetId: file.id,
-        previousFingerprint: file.contentFingerprint,
-        currentFingerprint,
-      }).catch((error) => {
-        logger.warn("文件增强完成后学习资料新鲜度更新失败", {
-          fileId: file.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
       });
     }
     return NextResponse.json({

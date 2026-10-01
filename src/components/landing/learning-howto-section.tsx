@@ -1,25 +1,25 @@
 "use client";
 
 import { ScrollReveal } from "./scroll-reveal";
-import { LearningGoalDemo } from "./demos/learning-goal-demo";
+import { StudyDemo } from "./demos/study-demo";
 
 const STEPS = [
   {
-    title: "创建学习目标",
-    body: "写下要学什么、为什么学，以及目标日期和每天能投入的时间。",
+    title: "创建题集",
+    body: "选择学段、学科与考试范围，建立自己的错题本。",
   },
   {
-    title: "确认学习范围",
-    body: "勾选纳入学习范围的课程资料，资料缺口会单独标出，确认后才生成地图。",
+    title: "选择错题",
+    body: "上传材料后框选需要保存的题目，或从已核验题库中多选。",
   },
   {
-    title: "生成地图并开始诊断",
-    body: "知识点地图生成后，从一轮诊断练习开始，之后按计划练习和复习。",
+    title: "查看解析与日程",
+    body: "查看后台处理进度，并在日历中安排课程和截止任务。",
   },
 ];
 
 /**
- * 学习上手板块：用真实「学习目标」流程精简展示学习闭环的起步路径。
+ * 学习上手板块：用真实「错题与日程」流程精简展示学习闭环的起步路径。
  */
 export function LearningHowToSection() {
   return (
@@ -31,13 +31,13 @@ export function LearningHowToSection() {
       <div className="mx-auto grid w-full max-w-7xl gap-14 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] lg:gap-20">
         <ScrollReveal className="flex flex-col justify-center">
           <h2 className="whitespace-nowrap text-[clamp(2rem,4.6vw,4rem)] font-semibold leading-[1.04] tracking-[-0.04em] text-[var(--color-accent)]">
-            学习目标
+            错题与日程
           </h2>
           <p
             className="mt-6 max-w-[42ch] text-[16px] leading-7 text-[var(--color-text-secondary)]"
             style={{ textWrap: "pretty" }}
           >
-            在项目里定下目标、圈定资料，LumenLab 会安排好接下来的诊断和复习。
+            在题集中整理错题，用日历安排课程、作业与学习时间。
           </p>
 
           <ol className="mt-10 border-t border-[var(--color-border-light)]">
@@ -65,9 +65,9 @@ export function LearningHowToSection() {
         <ScrollReveal
           scale
           yOffset={20}
-          className="overflow-hidden rounded-[28px] bg-[var(--color-surface)] ring-1 ring-[var(--color-border-light)]"
+          className="overflow-hidden rounded-[28px] bg-[var(--color-surface)]"
         >
-          <LearningGoalDemo />
+          <StudyDemo mode="capture" />
         </ScrollReveal>
       </div>
     </section>

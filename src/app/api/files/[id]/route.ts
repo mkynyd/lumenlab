@@ -15,7 +15,6 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { deleteFileAsset } from "@/lib/files/delete-file-asset";
 import { computeContentFingerprint } from "@/lib/files/content-fingerprint";
-import { recordFileContentChange } from "@/lib/learning/services";
 import { PIPELINE_VERSION } from "@/lib/document-pipeline/version";
 
 const updateFileSchema = z
@@ -171,23 +170,6 @@ export async function PATCH(
       }),
     },
   });
-  if (
-    parsed.data.textContent !== undefined &&
-    file.contentFingerprint &&
-    currentFingerprint
-  ) {
-    await recordFileContentChange({
-      userId: session.user.id,
-      fileAssetId: file.id,
-      previousFingerprint: file.contentFingerprint,
-      currentFingerprint,
-    }).catch((error) => {
-      logger.warn("手工修订 OCR 后学习资料新鲜度更新失败", {
-        fileId: file.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }
   if (parsed.data.textContent !== undefined) {
     await createDocumentChunks({
       fileAssetId: file.id,

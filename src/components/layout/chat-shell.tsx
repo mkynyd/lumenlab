@@ -9,7 +9,6 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { NotificationProvider } from "@/components/notifications/notification-provider";
 import { NotificationToastHost } from "@/components/notifications/notification-toast-host";
-import { LearningFeatureProvider } from "@/components/providers/learning-feature-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +24,7 @@ export function ChatShell({
     ? "projects"
     : pathname.startsWith("/tools")
       ? "tools"
-      : pathname.startsWith("/learning") || pathname.startsWith("/today")
+      : pathname.startsWith("/learning")
         ? "learning"
         : "chat";
   const isInsideProject = /^\/projects\/[^/]+/.test(pathname || "");
@@ -47,9 +46,7 @@ export function ChatShell({
   return (
     <SessionProvider>
       <QueryProvider>
-        <LearningFeatureProvider
-          navigationVisible={learningNavigationVisible}
-        >
+
           <NotificationProvider>
             <a
               href="#workbench-main"
@@ -118,7 +115,6 @@ export function ChatShell({
             </div>
             <NotificationToastHost />
           </NotificationProvider>
-        </LearningFeatureProvider>
       </QueryProvider>
     </SessionProvider>
   );

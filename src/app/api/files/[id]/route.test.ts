@@ -11,8 +11,6 @@ const mocks = vi.hoisted(() => ({
   deleteChunksByFileAsset: vi.fn(),
   createDocumentChunks: vi.fn(),
   refreshProjectIndex: vi.fn(),
-  recordFileContentChange: vi.fn(),
-  recordFileDeletion: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -39,10 +37,7 @@ vi.mock("@/lib/rag/project-index", () => ({
     keywords: [],
   }),
 }));
-vi.mock("@/lib/learning/services", () => ({
-  recordFileContentChange: mocks.recordFileContentChange,
-  recordFileDeletion: mocks.recordFileDeletion,
-}));
+
 
 import { DELETE, GET, PATCH } from "@/app/api/files/[id]/route";
 
@@ -82,16 +77,6 @@ describe("project file route resources", () => {
     mocks.fileDelete.mockResolvedValue({ id: "file-1" });
     mocks.fileUpdate.mockResolvedValue({ id: "file-1" });
     mocks.createDocumentChunks.mockResolvedValue(1);
-    mocks.recordFileContentChange.mockResolvedValue({
-      changed: true,
-      knowledgePoints: [],
-      practiceItems: [],
-    });
-    mocks.recordFileDeletion.mockResolvedValue({
-      changed: true,
-      knowledgePoints: [],
-      practiceItems: [],
-    });
   });
 
   it("returns public resource IDs and paths without object storage keys", async () => {
@@ -118,14 +103,6 @@ describe("project file route resources", () => {
       provider: "local",
       key: "resources/circuit.png",
     });
-    expect(mocks.recordFileDeletion).toHaveBeenCalledWith({
-      userId: "user-1",
-      fileAssetId: "file-1",
-      previousFingerprint: "sha256:v1:private",
-    });
-    expect(
-      mocks.fileDelete.mock.invocationCallOrder[0]
-    ).toBeLessThan(mocks.recordFileDeletion.mock.invocationCallOrder[0]);
   });
 
   it("versions manually corrected OCR content", async () => {
@@ -148,12 +125,6 @@ describe("project file route resources", () => {
           summary: "修订后的 OCR 正文",
         }),
       }),
-    });
-    expect(mocks.recordFileContentChange).toHaveBeenCalledWith({
-      userId: "user-1",
-      fileAssetId: "file-1",
-      previousFingerprint: "sha256:v1:private",
-      currentFingerprint: expect.stringMatching(/^sha256:v1:[a-f0-9]{64}$/),
     });
   });
 });

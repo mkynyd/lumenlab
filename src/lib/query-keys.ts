@@ -1,5 +1,3 @@
-const learningAll = ["learning"] as const;
-
 export const queryKeys = {
   conversations: {
     all: ["conversations"] as const,
@@ -45,71 +43,6 @@ export const queryKeys = {
     formattingTasks: ["papers", "formatting", "tasks"] as const,
     formattingTask: (id: string) => ["papers", "formatting", "tasks", id] as const,
     formattingTemplates: (query = "") => ["papers", "formatting", "templates", query] as const,
-  },
-  learning: {
-    all: learningAll,
-    goals: (projectId: string) =>
-      [...learningAll, "projects", projectId, "goals"] as const,
-    scope: (projectId: string, goalId: string) =>
-      [...learningAll, "projects", projectId, "goals", goalId, "scope"] as const,
-    map: (projectId: string, goalId: string) =>
-      [...learningAll, "projects", projectId, "goals", goalId, "map"] as const,
-    session: (projectId: string, sessionId: string) =>
-      [...learningAll, "projects", projectId, "sessions", sessionId] as const,
-    progress: (projectId: string, goalId: string) =>
-      [
-        ...learningAll,
-        "projects",
-        projectId,
-        "goals",
-        goalId,
-        "progress",
-      ] as const,
-    history: (projectId: string, goalId: string) =>
-      [
-        ...learningAll,
-        "projects",
-        projectId,
-        "goals",
-        goalId,
-        "history",
-      ] as const,
-    wrongAnswers: (projectId: string, goalId: string) =>
-      [
-        ...learningAll,
-        "projects",
-        projectId,
-        "goals",
-        goalId,
-        "wrong-answers",
-      ] as const,
-    reviews: (projectId: string, goalId: string) =>
-      [
-        ...learningAll,
-        "projects",
-        projectId,
-        "goals",
-        goalId,
-        "reviews",
-      ] as const,
-    today: () => [...learningAll, "today"] as const,
-    studyPacks: (projectId: string, goalId: string) =>
-      [
-        ...learningAll,
-        "projects",
-        projectId,
-        "goals",
-        goalId,
-        "study-packs",
-      ] as const,
-    studyPack: (projectId: string, packId: string) =>
-      [
-        ...learningAll,
-        "projects",
-        projectId,
-        "study-packs",
-        packId,
-      ] as const,
   },
   notifications: {
     snapshot: ["notifications", "snapshot"] as const,

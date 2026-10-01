@@ -53,19 +53,19 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 - 对话覆盖标题与消息正文；资料复用文件中心索引，覆盖文件名、项目、分类、已解析正文、分块与摘要关键词。
 - 支持类型筛选、方向键选择与 Enter 打开；资料结果直接进入统一可信预览页。
 
-### 可恢复学习闭环
+### 题集、错题本与学习日程
 
-学习闭环已在生产环境开启，从主导航的独立「学习」工作区进入；自托管部署默认关闭，可通过 `LEARNING_LOOP_ROLLOUT=preview` 在本地或小范围环境开启：
+- 题集按学段、学科、专业和考试分类；创建时可上传考试大纲或填写知识范围。
+- 上传图片、PDF、Word、PPT后框选错题；支持多个区域、跨页续题、插图与完整长文。Markdown支持选择原文片段，保留公式。
+- 完整文档只用于临时预览，提交、取消或过期后清除。长期保存所选题目的裁片、文字与解析。
+- 后台展示真实进度：完整识别、题库匹配、联网检索、DeepSeek与Qwen Flash独立解析、MiniMax核验。核验通过采用DeepSeek解析；不完整或未通过则保留待校对状态。
+- 题库只展示人工核验发布的资料，附来源和授权；没有预置完整考试题库。发布格式见[学习模块运行说明](docs/study-workspace.md)。
+- 导入图片、Excel、ICS、PDF课表，确认学期起点与各节课钟点后入日历；支持学校补课与不可用时段。
+- 作业可手工输入或从老师要求提取后确认。日历高亮截止日期，任务按截止时间排序。
+- 根据明确空闲时段、课程、已有安排与2026年官方放假安排生成规划预览，确认后保存；无法按期完成的任务明确列出。
+- 学习助手按需展开，帮助讨论范围和细节，主操作仍通过组件与确认预览完成。
 
-- 从独立「学习」工作区选择已有项目，直接创建学习目标、确认整库或选定资料范围，再生成带来源锚点的版本化知识点地图。
-- 学习总览集中展示今日下一步、已有学习项目和基于 shadcn Base Calendar 的复习日历；项目仍作为资料所有权与权限边界。
-- 诊断与复习题在提交前只返回公开题面；答案条件、标准答案和解析保留在服务端。
-- 每次作答追加为独立证据；同一错题可以反复重做并提升掌握状态，不强制生成变式题。
-- 错题集保留作答与判定历史，答对后进入“已解决”区域但仍可回看。
-- 「档案」按知识点汇总掌握、复习、资料新鲜度和作答证据；每个结论都能展开查看题面、有效判定、理由与来源。
-- 用户可以把模型给出的错因修正为六类通俗标签；修正会追加为人工证据，原始判定不会被覆盖。
-- 学习总览只突出一个今日下一步，并用分段条展示未开始、学习中、已掌握和到期复习数量，不伪造精确掌握率。
-- 资料重解析或删除只把关联知识标为待验证或不可用，保留不受影响的学习历史。
+旧学习目标、知识地图、诊断、掌握度和资料包功能及数据表已移除。数据库迁移会删除这些旧记录；普通聊天、项目资料和成果保持独立。
 
 ### Deep Research
 
@@ -212,14 +212,12 @@ src/
 │   │   └── register/page.tsx
 │   ├── (chat)/                         # 主应用壳层
 │   │   ├── layout.tsx                  # 全局侧边栏布局
-│   │   ├── learning/page.tsx           # 独立学习中心与跨项目今日入口
-│   │   ├── today/page.tsx              # 兼容跳转到 /learning
+│   │   ├── learning/page.tsx           # 题集、错题本与学习日程
 │   │   ├── chat/page.tsx               # 普通聊天
 │   │   ├── chat/[id]/page.tsx          # 历史对话
 │   │   ├── projects/page.tsx           # 项目列表
 │   │   ├── projects/new/page.tsx       # 新建项目
 │   │   ├── projects/[id]/page.tsx      # 项目工作台
-│   │   ├── projects/[id]/learning/      # 兼容跳转到独立学习中心
 │   │   ├── settings/page.tsx           # 用户设置
 │   │   └── tools/page.tsx              # 文档工具
 │   └── api/                            # REST API
@@ -231,8 +229,6 @@ src/
 │       │   ├── approve/route.ts        # 一次性审批令牌兑换
 │       │   ├── reject/route.ts         # 显式拒绝待执行 ToolExecution
 │       │   └── executions/             # 状态、事件续传、取消与重试
-│       ├── learning/today/              # 今日学习聚合
-│       ├── projects/[id]/learning/      # Goal/Scope/Map/Practice/Review API
 │       ├── auth/[...nextauth]/         # NextAuth 认证路由
 │       ├── auth/register/              # 邮箱/手机号验证注册
 │       ├── projects/                   # 项目 CRUD
@@ -271,7 +267,7 @@ src/
 │   │   ├── conversation-loop.ts        # agent-loop 兼容导出
 │   │   ├── preview-builder.ts          # 脱敏 ToolCallPreview
 │   │   └── audit-log.ts                # AgentAuditLog 写入器
-│   ├── learning/                        # 学习合同、服务、判分、证据、复习与 freshness
+│   ├── study/                           # 选题、临时素材生命周期、解析核验与日程规划
 │   │   ├── contracts.ts                # 公开/私有 DTO 与领域枚举
 │   │   ├── services/                   # Goal/Scope/Map/Practice/Review 服务
 │   │   ├── policy/                     # 证据、进度、复习、错题与 freshness 政策
@@ -460,7 +456,6 @@ cp .env.example .env
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | RSA 私钥 (PEM base64) |
 | `AGENT_RUNTIME_MODE` | `legacy` / `shadow` / `new`，默认 `legacy` |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 持久 Agent Worker 与事件恢复开关，默认 `false` |
-| `LEARNING_LOOP_ROLLOUT` | `off` / `preview` / `default`，默认 `off`；`default` 要求持久执行开启 |
 | `AGENT_PROVIDER_ADAPTER` | 默认 `responses`；兼容 `legacy` 别名，拒绝旧 `pi` / `pi-ai` 配置 |
 | `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_MINIMAX_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
 | `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 开放开关，示例默认 `false`；设为 `true` 前须验证目标账号的实际聊天权限，只有 Embedding 权限不足以开放默认聊天 |
@@ -507,14 +502,13 @@ npm run dev
 3. 可选启用深度推理模式获得慢思考。
 4. AI 回答基于项目资料，不确定内容标注 `[需补充]`。
 
-### 使用学习闭环
+### 使用学习功能
 
-1. 从主导航进入独立「学习」工作区（自托管部署需先设置 `LEARNING_LOOP_ROLLOUT=preview`）。
-2. 在学习中心选择一个已有项目，创建目标并确认学习范围；未单独选文件时使用项目内全部可读资料。
-3. 生成知识点地图并完成诊断练习。
-4. 从「错题」回看同题重做历史，从「复习」处理到期知识点。
-5. 在「档案」展开每个知识点的证据与资料来源；如果模型判断错因不准确，可直接追加人工修正。
-6. 返回学习总览查看跨项目的唯一下一步、复习日历和简洁进度。
+1. 从主导航进入「学习」，创建题集与第一本错题本，填写学科和考试范围。
+2. 上传试卷后框选需要保存的错题，绑定全部选项、长文与插图；或从题库多选题目。
+3. 查看后台进度，在题目详情中展开答案与解析，检查待校对题目。
+4. 在「学习日程」导入课表并确认时间，录入或提取截止任务。
+5. 添加明确空闲时段，预览规划并确认加入日历；按学校通知添加补课或移除停课。
 
 ### 使用 Agent 模式
 

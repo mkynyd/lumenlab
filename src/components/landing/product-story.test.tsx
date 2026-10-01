@@ -60,17 +60,8 @@ vi.mock("./demos/conversion-demo", () => ({
   ConversionDemo: () => <div data-testid="conversion-demo" />,
 }));
 
-vi.mock("./demos/learning-map-demo", () => ({
-  LearningMapDemo: () => <div data-testid="learning-map-demo" />,
-}));
 
-vi.mock("./demos/learning-practice-demo", () => ({
-  LearningPracticeDemo: () => <div data-testid="learning-practice-demo" />,
-}));
 
-vi.mock("./demos/learning-review-demo", () => ({
-  LearningReviewDemo: () => <div data-testid="learning-review-demo" />,
-}));
 
 describe("ProductStory", () => {
   beforeEach(() => {
@@ -87,9 +78,9 @@ describe("ProductStory", () => {
     );
     expect(screen.getAllByText("创建项目").length).toBeGreaterThan(0);
     expect(screen.getAllByText("围绕资料提问").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("从资料生成地图").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("做几道题，找到薄弱点").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("按节奏复习到掌握").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("只收录你选择的错题").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("保留完整题目，核验解析").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("围绕截止日期安排时间").length).toBeGreaterThan(0);
     expect(screen.getAllByText("解析并导出文档").length).toBeGreaterThan(0);
   });
 

@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "category": "exam",
   "display_name": "复习教练",
   "trust_level": "builtin",
@@ -8,34 +8,61 @@
     "project_files.list",
     "project_files.read",
     "project_rag.search",
-    "learning.goal.upsert",
-    "learning.map.generate",
-    "learning.practice.create",
-    "learning.attempt.submit",
-    "learning.review.next",
-    "learning.progress.read",
     "artifact.save",
     "artifact.list"
   ],
-  "allowed_risk_level": ["L1", "L2"],
+  "allowed_risk_level": [
+    "L1",
+    "L2"
+  ],
   "default_approval_policy": "ask_first",
-  "required_scopes": ["project.read", "artifact.write"],
+  "required_scopes": [
+    "project.read",
+    "artifact.write"
+  ],
   "input_contract": {
     "type": "object",
     "properties": {
-      "examName": { "type": "string" },
-      "daysUntilExam": { "type": "integer", "minimum": 0 },
-      "hoursPerDay": { "type": "number", "minimum": 0 },
-      "focusAreas": { "type": "array", "items": { "type": "string" } }
+      "examName": {
+        "type": "string"
+      },
+      "daysUntilExam": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "hoursPerDay": {
+        "type": "number",
+        "minimum": 0
+      },
+      "focusAreas": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
     },
-    "required": ["examName"]
+    "required": [
+      "examName"
+    ]
   },
   "output_contract": {
     "type": "object",
     "properties": {
-      "planArtifactId": { "type": "string" },
-      "cardArtifactIds": { "type": "array", "items": { "type": "string" } },
-      "weakTopics": { "type": "array", "items": { "type": "string" } }
+      "planArtifactId": {
+        "type": "string"
+      },
+      "cardArtifactIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "weakTopics": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
     }
   },
   "data_handling": {
@@ -45,16 +72,34 @@
   },
   "triggers": {
     "include": [
-      "速记卡", "记忆卡", "flashcard", "自测题", "刷题",
-      "复习计划", "exam coach", "备考", "考试复习",
-      "错题整理", "帮我复习", "期末复习", "考前冲刺"
+      "速记卡",
+      "记忆卡",
+      "flashcard",
+      "自测题",
+      "刷题",
+      "复习计划",
+      "exam coach",
+      "备考",
+      "考试复习",
+      "错题整理",
+      "帮我复习",
+      "期末复习",
+      "考前冲刺"
     ],
     "exclude": [
-      "考点分析", "考试重点", "划重点", "考题要点"
+      "考点分析",
+      "考试重点",
+      "划重点",
+      "考题要点"
     ]
   },
   "resources": {
-    "allow": ["references/**", "assets/**"],
-    "deny": ["scripts/**"]
+    "allow": [
+      "references/**",
+      "assets/**"
+    ],
+    "deny": [
+      "scripts/**"
+    ]
   }
 }

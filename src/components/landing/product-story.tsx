@@ -1,5 +1,7 @@
 "use client";
 
+import { StudyDemo } from "./demos/study-demo";
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   FileText,
@@ -12,9 +14,6 @@ import {
 import { cn } from "@/lib/utils";
 import { ChatDemo } from "./demos/chat-demo";
 import { ConversionDemo } from "./demos/conversion-demo";
-import { LearningMapDemo } from "./demos/learning-map-demo";
-import { LearningPracticeDemo } from "./demos/learning-practice-demo";
-import { LearningReviewDemo } from "./demos/learning-review-demo";
 import { ProjectDemo } from "./demos/project-demo";
 import { usePrefersReducedMotion } from "./prefers-motion";
 
@@ -55,35 +54,35 @@ const STORY_CHAPTERS: StoryChapter[] = [
   {
     id: "map",
     index: "03",
-    label: "知识点地图",
-    title: "从资料生成地图",
+    label: "错题收录",
+    title: "只收录你选择的错题",
     description:
-      "设定学习目标并确认资料范围后，LumenLab 从项目资料生成知识点地图，每个知识点都标注来源。",
-    detail: "资料更新后，只重新验证受影响的知识点。",
+      "设定学习目标并确认资料范围后，LumenLab 从项目资料生成错题收录，每个知识点都标注来源。",
+    detail: "完整上传原件仅用于临时选题。",
     icon: <Map size={17} strokeWidth={1.8} />,
-    demo: <LearningMapDemo className="h-full" />,
+    demo: <StudyDemo mode="capture" className="h-full" />,
   },
   {
     id: "practice",
     index: "04",
-    label: "诊断练习",
-    title: "做几道题，找到薄弱点",
+    label: "自动解析",
+    title: "保留完整题目，核验解析",
     description:
-      "围绕地图开始诊断练习，提交后立即看到判定、解析和出处；卡住了可以先要提示，看答案会记为辅助作答。",
-    detail: "每次作答都会更新对应知识点的掌握度。",
+      "围绕地图开始自动解析，提交后立即看到判定、解析和出处；卡住了可以先要提示，看答案会记为辅助作答。",
+    detail: "处理进度直接展示在题集里。",
     icon: <ListChecks size={17} strokeWidth={1.8} />,
-    demo: <LearningPracticeDemo className="h-full" />,
+    demo: <StudyDemo mode="analysis" className="h-full" />,
   },
   {
     id: "review",
     index: "05",
-    label: "复习与错题",
-    title: "按节奏复习到掌握",
+    label: "学习日程",
+    title: "围绕截止日期安排时间",
     description:
-      "掌握度独立记录，到期的知识点自动进入复习队列；错题留在历史里可以重做，也可以打包成复习资料包导出。",
-    detail: "今天该做什么，打开学习页就知道。",
+      "导入课表并确认上课时间，记录作业与截止日期。根据你提供的空闲时段预览学习安排，确认后写入日历。",
+    detail: "无法在截止前完成的工作会明确列出。",
     icon: <RefreshCw size={17} strokeWidth={1.8} />,
-    demo: <LearningReviewDemo className="h-full" />,
+    demo: <StudyDemo mode="calendar" className="h-full" />,
   },
   {
     id: "deliver",

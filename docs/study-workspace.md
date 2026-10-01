@@ -1,0 +1,59 @@
+# 学习模块运行与数据边界
+
+## 运行依赖
+
+- PostgreSQL：部署时运行 `prisma migrate deploy`。`20261001010000_retire_learning_loop` 删除23个旧学习模型及对应枚举，不迁移旧记录。
+- Node instrumentation 启动错题队列和临时素材清理。每个任务有租约、心跳、最多3次领取，失败可在页面重试。
+- 图片/PDF使用 Sharp、PDF.js和 `@napi-rs/canvas`。Word/PPT/ODT/ODP需要主机安装 LibreOffice，`STUDY_OFFICE_BINARY` 指向 `soffice`。无运行依赖时明确报错并建议另存PDF。
+- Qwen需要 `BAILIAN_WORKSPACE_ID`，所有模型使用当前用户已授权凭证及统一额度统计。识别、双模型独立求解、MiniMax复核均有费用；核验只是模型判断，不保证所有试题绝对正确。
+- 上传预览最多80页、总原件30MB；大纲/作业提取最多16页。超限直接拒绝，不静默截断。
+
+## 原件与所选题目
+
+图片/PDF/Office完整原件只在请求内存或隔离临时目录中转换，不进入聊天或项目资料。扫描预览置于 `study/temporary/<user>/<import>`，2小时过期；提交、取消即清除。上传目标在写入前记录，删除失败保留清理清单周期重试。
+
+用户选中的题干、续题、插图和长文裁片进入 `study/selected/<user>/<item>`。裁片上传前建立持久化 staging 清单；提交事务将清单和题目同时标记完成。中断后仅清理未入库裁片，保留已提交题目。
+
+Markdown完整原文只在当前页面及提交请求中使用，服务端仅保存所选精确子串。引用插图的Markdown题目需要改用图像/PDF绑定，避免丢图。所有素材读取均校验登录、所属用户或已核验题库，禁止暴露存储路径。
+
+带图的OCR结果不通过文字哈希直接采用题库答案；文本题目只在唯一、无插图的核验题库条目匹配时直接采用。其余走检索、独立解答和复核。未核验结果不会显示为解析完成。
+
+## 发布题库
+
+只发布已检查完整题干、选项、插图、答案、来源及授权的材料。入口为管理者本地CLI，不向学生开放写题库API：
+
+```sh
+NODE_OPTIONS=--conditions=react-server npx tsx --env-file=.env.local scripts/study-bank-publish.ts /absolute/path/manifest.json --verified
+```
+
+Manifest字段：
+
+```json
+{
+  "title": "已核验试卷名称",
+  "stage": "university",
+  "subject": "数学",
+  "exam": "考试类型",
+  "year": 2026,
+  "sourceUrl": "https://source.example/paper",
+  "license": "实际授权说明",
+  "questions": [{
+    "ordinal": "1",
+    "prompt": "完整题干及全部选项，公式使用LaTeX",
+    "illustrations": ["figure-1.png"],
+    "solution": { "answer": "已核验答案", "explanation": "完整解析", "topics": ["大纲考点"] }
+  }]
+}
+```
+
+插图路径相对于manifest所在目录。创建时试卷不公开，所有条目成功写入后才发布；失败清理本次条目和素材。没有随代码附带完整考试题库，也不把GitHub资料自动视为有再发布授权。
+
+## 课程与时间规划
+
+学校Excel周次/节次格式和明确日期列表使用结构化解析。ICS必须提供有限日期范围，支持RRULE、EXDATE与异常实例；未知时区不猜测。图像/PDF识别后用户确认。
+
+节次规则逐节输入实际开始/结束钟点，支持不等长课间、午休、非连续节次。第1周起点必须为星期一。官方法定放假不直接改动学校课表；用户按学校通知添加补课、移除停课并标出不可用时段。
+
+2026年节假日来源：[国务院办公厅通知的政府门户转载](https://www.beijing.gov.cn/cs/gncs/zcwj/202603/t20260327_4568275.html)。未知年份显示提示。排程依据明确空闲窗口，扣除课程、不可用与已有学习安排，优先临近截止；计划快照过期或任务/日程变动须重新预览。
+
+`20261001020000_remove_retired_study_pack_artifacts` 清除带有明确 studyPackId + goalId 来源元数据的旧资料包发布成果，保留普通成果。

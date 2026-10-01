@@ -187,7 +187,7 @@ export function Sidebar({
   const pathname = usePathname();
   const { data: session } = useSession();
   const activeSection =
-    pathname.startsWith("/learning") || pathname.startsWith("/today")
+    pathname.startsWith("/learning")
       ? "learning"
     : pathname.startsWith("/research")
       ? "research"
@@ -315,7 +315,7 @@ export function Sidebar({
   const isLoading =
     activeSection === "chat"
       ? conversationsQuery.isPending
-      : activeSection === "projects" || activeSection === "learning"
+      : activeSection === "projects"
         ? projectsQuery.isPending
         : activeSection === "research"
           ? researchWorkspacesQuery.isPending
@@ -384,9 +384,7 @@ export function Sidebar({
   }
 
   function projectDestination(projectId: string) {
-    return activeSection === "learning"
-      ? `/learning?project=${encodeURIComponent(projectId)}`
-      : `/projects/${projectId}`;
+    return `/projects/${projectId}`;
   }
 
   function openAccountSurface(surface: "profile" | "settings") {
@@ -684,13 +682,12 @@ export function Sidebar({
           aria-hidden={collapsed && !mobileOpen}
           inert={collapsed && !mobileOpen ? true : undefined}
         >
+          {activeSection !== "learning" && <>
           <SidebarGroup className="shrink-0 px-2 pb-1 pt-1">
             <div className="flex items-center justify-between gap-1">
               <SidebarGroupLabel className="h-7 px-2 pb-0 text-[11px] font-normal uppercase tracking-[0.06em]">
                 {activeSection === "chat"
                   ? "最近对话"
-                  : activeSection === "learning"
-                    ? "学习项目"
                   : activeSection === "research"
                     ? "最近研究"
                   : activeSection === "papers"
@@ -905,7 +902,7 @@ export function Sidebar({
                         }}
                       >
                         <Folder strokeWidth={2} />
-                        {activeSection === "learning" ? "设置学习" : "打开项目"}
+                        打开项目
                       </ContextMenuItem>
                       <ContextMenuItem
                         variant="destructive"
@@ -926,6 +923,7 @@ export function Sidebar({
               </p>
             )}
           </SidebarContent>
+          </>}
         </div>
 
         <SidebarFooter

@@ -35,9 +35,7 @@ vi.mock("@/lib/chat/message-attachments", () => ({
   toMediaRef: mocks.toMediaRef,
   encodeChatAttachmentsHeader: mocks.encodeChatAttachmentsHeader,
 }));
-vi.mock("@/lib/learning/feature-flags", () => ({
-  learningFeatureFlags: { durableExecutionEnabled: false },
-}));
+
 vi.mock("@/lib/logger", () => ({
   logger: { error: mocks.loggerError, warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));

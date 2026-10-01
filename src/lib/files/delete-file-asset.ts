@@ -14,7 +14,6 @@ import { deleteChunksByFileAsset } from "@/lib/rag/vector-store";
 import { refreshProjectIndex } from "@/lib/rag/project-index";
 import { invalidateSearchCache } from "@/lib/cache/rag-search-cache";
 import { invalidateFileSelectCache } from "@/lib/cache/rag-file-select-cache";
-import { recordFileDeletion } from "@/lib/learning/services";
 
 export interface DeleteFileAssetResult {
   deleted: boolean;
@@ -82,19 +81,6 @@ export async function deleteFileAsset(params: {
 
   // 4. 删除数据库行
   await prisma.fileAsset.delete({ where: { id: file.id } });
-  if (file.contentFingerprint) {
-    await recordFileDeletion({
-      userId,
-      fileAssetId: file.id,
-      previousFingerprint: file.contentFingerprint,
-    }).catch((error) => {
-      logger.warn("文件删除后学习资料新鲜度更新失败", {
-        fileId: file.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }
-
   // 5. 刷新项目索引与缓存
   if (file.projectId && refreshProject) {
     await invalidateSearchCache(file.projectId);

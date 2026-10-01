@@ -13,7 +13,6 @@ import {
   parseChatRequest,
 } from "./request-mapper";
 import { createChatResponse } from "./response-stream";
-import { learningFeatureFlags } from "@/lib/learning/feature-flags";
 import { dispatchDurableChat } from "@/lib/agent/executions/durable-chat-dispatcher";
 import { createDurableReplayResponse } from "@/lib/agent/executions/durable-response-stream";
 import { startAgentExecutionWorker } from "@/lib/agent/executions/durable-agent-runtime";
@@ -104,7 +103,7 @@ export async function POST(request: NextRequest) {
         .filter((attachment) => attachment.kind === "image")
         .map(toMediaRef);
     }
-    if (learningFeatureFlags.durableExecutionEnabled) {
+    if (process.env.AGENT_DURABLE_EXECUTION_ENABLED === "true") {
       if (!parsed.body.clientRunKey) {
         return NextResponse.json(
           { error: "启用持久执行时缺少 clientRunKey" },

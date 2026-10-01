@@ -194,7 +194,6 @@ function buildAllowedTools(input: {
     for (const tool of toolRegistry.list()) {
       if (
         tool.toolId.startsWith("project_") ||
-        tool.toolId.startsWith("learning.") ||
         tool.toolId.startsWith("artifact.") ||
         tool.toolId.startsWith("reference.") ||
         tool.toolId.startsWith("arxiv.") ||

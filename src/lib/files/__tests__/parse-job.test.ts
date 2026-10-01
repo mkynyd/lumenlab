@@ -7,7 +7,6 @@ import * as mineru from "@/lib/parse/mineru";
 import * as vectorStore from "@/lib/rag/vector-store";
 import * as projectIndex from "@/lib/rag/project-index";
 import * as embedding from "@/lib/rag/embedding";
-import * as learningServices from "@/lib/learning/services";
 import { prisma } from "@/lib/db";
 
 vi.mock("@/lib/storage/object-storage");
@@ -17,7 +16,7 @@ vi.mock("@/lib/parse/mineru");
 vi.mock("@/lib/rag/vector-store");
 vi.mock("@/lib/rag/project-index");
 vi.mock("@/lib/rag/embedding");
-vi.mock("@/lib/learning/services");
+
 vi.mock("@/lib/db", () => ({
   prisma: {
     fileAsset: {
@@ -257,11 +256,6 @@ describe("parseFileAsset", () => {
   embedded: 0,
 });
     vi.mocked(projectIndex.refreshProjectIndex).mockResolvedValue("project index");
-    vi.mocked(learningServices.recordFileContentChange).mockResolvedValue({
-      changed: true,
-      knowledgePoints: [],
-      practiceItems: [],
-    });
   });
 
   it("rewrites image references after persisting assets", async () => {
@@ -295,12 +289,6 @@ describe("parseFileAsset", () => {
     expect(textContent).toContain("/api/files/f1/resources/");
     expect(updateCall![0].data).toMatchObject({
       contentFingerprint: expect.stringMatching(/^sha256:v1:[a-f0-9]{64}$/),
-    });
-    expect(learningServices.recordFileContentChange).toHaveBeenCalledWith({
-      userId: "u1",
-      fileAssetId: "f1",
-      previousFingerprint: "sha256:v1:previous",
-      currentFingerprint: updateCall![0].data.contentFingerprint,
     });
 
     expect(vectorStore.createDocumentChunks).toHaveBeenCalledWith(
