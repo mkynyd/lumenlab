@@ -17,7 +17,8 @@ export async function POST(request: Request) {
     let text = String(form.get("text") ?? "");
     if (text.length > 100000) throw new Error("文字过长，请分批提供");
     let images: { name: string; mimeType: string; size: number; data: Buffer }[] | undefined;
-    if (file instanceof File && (file.size > 0 || file.name !== "")) {
+    // Empty file controls have runtime-dependent names; only nonempty bytes are a document.
+    if (file instanceof File && file.size > 0) {
       if (!file.size || file.size > 20 * 1024 * 1024) throw new Error("请选择20MB以内的文件");
       if (/\.(md|markdown|txt)$/i.test(file.name)) { text = await file.text(); if (text.length > 100000) throw new Error("文字过长，请分批提供"); }
       else {

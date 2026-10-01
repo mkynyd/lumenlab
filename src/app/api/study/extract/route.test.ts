@@ -5,8 +5,8 @@ vi.mock("@/lib/study/model-gateway", () => ({ studyModelJson: mocks.model }));
 vi.mock("@/lib/study/render-document", () => ({ renderStudyDocument: mocks.render }));
 import { POST } from "./route";
 beforeEach(() => { vi.clearAllMocks(); mocks.auth.mockResolvedValue({ user: { id: "owner" } }); });
-it("accepts pasted requirements when the browser submits an empty unselected file", async () => {
-  const form = new FormData(); form.set("mode", "tasks"); form.set("text", "10月3日18点前提交报告。"); form.set("file", new File([], ""));
+it.each(["", "blob"])("accepts pasted requirements with an empty file control named %j", async (name) => {
+  const form = new FormData(); form.set("mode", "tasks"); form.set("text", "10月3日18点前提交报告。"); form.set("file", new File([], name));
   mocks.model.mockResolvedValue({ tasks: [], questions: ["请确认年份"] });
   const response = await POST(new Request("http://localhost/api/study/extract", { method: "POST", body: form }));
   expect(response.status).toBe(200);
