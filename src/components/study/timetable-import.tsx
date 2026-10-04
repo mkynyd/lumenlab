@@ -1,4 +1,5 @@
 "use client";
+import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -137,13 +138,9 @@ export function TimetableImport({
       className="space-y-4 rounded-xl bg-[var(--color-surface-hover)] p-4"
       aria-label="导入课表"
     >
-      <h2 className="font-medium">导入课表</h2>
-      <p className="text-xs text-[var(--color-text-secondary)]">
-        支持图片、Excel、ICS和PDF。先检查课程，再确认学期与学校节次时间。节次会保存，并在下次导入时回填供你核对。
-      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs">
-          ICS导入范围起点
+          <span className="sr-only">ICS导入范围起点</span>
           <StudyDatePicker
             label="ICS导入范围起点"
             value={rangeStart}
@@ -152,7 +149,7 @@ export function TimetableImport({
           />
         </label>
         <label className="text-xs">
-          ICS导入范围终点（不含当天）
+          <span className="sr-only">ICS导入范围终点（不含当天）</span>
           <StudyDatePicker
             label="ICS导入范围终点"
             value={rangeEnd}
@@ -172,11 +169,7 @@ export function TimetableImport({
           if (file) void upload(file);
         }}
       />
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <StudyFeedback message={error} error />}
       {preview && (
         <div className="space-y-4">
           {preview.warnings.length > 0 && (
@@ -189,7 +182,7 @@ export function TimetableImport({
           {preview.patterns.length > 0 && (
             <>
               <label className="block text-xs">
-                第1周星期一日期
+                <span className="sr-only">第1周星期一日期</span>
                 <StudyDatePicker
                   label="第1周星期一日期"
                   value={termStart}
@@ -237,10 +230,8 @@ export function TimetableImport({
               </div>
             </>
           )}
-          {timingError && (
-            <p className="text-xs text-destructive">{timingError}</p>
-          )}
-          <p className="text-sm font-medium">预览 {events.length} 次课程</p>
+          {timingError && <StudyFeedback message={timingError} error />}
+          <p className="text-sm font-medium">{events.length} 次课程</p>
           <div className="max-h-64 space-y-2 overflow-auto text-xs">
             {events.map((event, index) => (
               <p key={index}>
@@ -262,11 +253,12 @@ export function TimetableImport({
             替换之前导入的课程
           </StudyCheck>
           <StudyCheck
+            hint="检查课程、周次、节次时间与识别提示，确认后导入；学校调课以学校通知为准。"
             checked={confirmed}
             onChange={setConfirmed}
             disabled={busy}
           >
-            我已检查课程、周次、节次时间与识别提示；以学校实际调课安排为准。
+            确认课表
           </StudyCheck>
           <div className="flex gap-2">
             <Button

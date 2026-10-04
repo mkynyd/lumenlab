@@ -7,6 +7,7 @@ import { CheckIcon } from "lucide-react";
 
 function Checkbox({
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
   return (
@@ -24,6 +25,7 @@ function Checkbox({
       >
         <CheckIcon />
       </CheckboxPrimitive.Indicator>
+      {children}
     </CheckboxPrimitive.Root>
   );
 }

@@ -21,33 +21,90 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { Info, TriangleAlert } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+export function StudyTip({
+  content,
+  children,
+}: {
+  content: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent>{content}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+export function StudyFeedback({
+  message,
+  error = false,
+}: {
+  message: string;
+  error?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div role={error ? "alert" : "status"}>
+      <span className="sr-only">{message}</span>
+      <TooltipProvider>
+        <Tooltip open={open} onOpenChange={setOpen}>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant={error ? "destructive" : "secondary"}
+              onClick={(event) => {
+                event.preventDefault();
+                setOpen(true);
+              }}
+            >
+              {error ? <TriangleAlert /> : <Info />}
+              {error ? "查看错误" : "查看提示"}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{message}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+}
 
 export function StudyCheck({
   checked,
   onChange,
   disabled,
   children,
+  hint,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
   children: React.ReactNode;
+  hint?: string;
 }) {
   const id = useId();
-  return (
-    <label
-      htmlFor={id}
-      className="flex cursor-pointer items-start gap-3 text-sm leading-5"
+  const control = (
+    <Checkbox
+      id={id}
+      checked={checked}
+      onCheckedChange={(value) => onChange(value === true)}
+      disabled={disabled}
+      className="size-auto min-h-10 justify-start gap-2 px-3 py-2 text-left text-sm font-medium data-checked:bg-[var(--color-accent-muted)] data-checked:text-[var(--color-accent)]"
     >
-      <Checkbox
-        id={id}
-        checked={checked}
-        onCheckedChange={(value) => onChange(value === true)}
-        disabled={disabled}
-      />
       {children}
-    </label>
+    </Checkbox>
   );
+  return hint ? <StudyTip content={hint}>{control}</StudyTip> : control;
 }
 
 export function StudySelect({
@@ -125,7 +182,7 @@ export function StudyDatePicker({
             className="h-10 w-full justify-start px-3 font-normal"
           >
             <CalendarDays />
-            {date ? format(date, "yyyy年M月d日") : "选择日期"}
+            {date ? format(date, "yyyy年M月d日") : label}
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-auto p-2">
@@ -174,11 +231,10 @@ export function StudyTimePicker({
             className="h-10 w-full justify-start px-3 font-normal"
           >
             <Clock />
-            {value || "选择时间"}
+            {value || label}
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64">
-          <p className="mb-3 text-sm font-medium">{label}</p>
           <div className="grid grid-cols-2 gap-2">
             <StudySelect
               label={`${label}小时`}

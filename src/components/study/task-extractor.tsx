@@ -1,4 +1,5 @@
 "use client";
+import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { UploadButton } from "./controls";
@@ -40,7 +41,6 @@ export function TaskExtractor({
   }
   return (
     <section className="space-y-3 rounded-xl bg-[var(--color-surface-hover)] p-4">
-      <h2 className="font-medium">从老师要求提取任务</h2>
       <form
         className="space-y-3"
         onSubmit={(event) => {
@@ -51,7 +51,7 @@ export function TaskExtractor({
         <textarea
           name="text"
           aria-label="老师的作业要求"
-          placeholder="粘贴作业要求；若提取结果需要确认，可补充日期等信息后重新识别。"
+          placeholder="老师的作业要求"
           maxLength={100000}
           className="min-h-24 w-full rounded-md bg-[var(--color-surface)] p-3 text-sm"
         />
@@ -66,9 +66,7 @@ export function TaskExtractor({
         </Button>
       </form>
       {questions.map((question, index) => (
-        <p key={index} className="text-sm text-[var(--color-accent)]">
-          需要补充：{question}
-        </p>
+        <StudyFeedback key={index} message={question} />
       ))}
       {tasks.map((task, index) => (
         <div
@@ -87,11 +85,11 @@ export function TaskExtractor({
             }
           />
           <p className="text-xs">
-            北京时间{" "}
+            {" "}
             {new Date(task.deadline).toLocaleString("zh-CN", {
               timeZone: "Asia/Shanghai",
             })}{" "}
-            · 预计 {task.estimatedMinutes} 分钟
+            {task.estimatedMinutes} 分钟
           </p>
           <Button
             variant="secondary"
@@ -134,11 +132,7 @@ export function TaskExtractor({
           确认并保存 {tasks.length} 个任务
         </Button>
       )}
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <StudyFeedback message={error} error />}
     </section>
   );
 }

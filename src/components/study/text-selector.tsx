@@ -1,4 +1,5 @@
 "use client";
+import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StudySelect } from "./controls";
@@ -21,12 +22,8 @@ export function TextSelector({
     [error, setError] = useState("");
   return (
     <section className="space-y-4 rounded-xl bg-[var(--color-surface-hover)] p-4">
-      <h2 className="font-semibold">选择 Markdown 中的错题</h2>
-      <p className="text-sm">
-        选中下方原文后添加为题目；长文、选项和跨段内容可追加到指定题目。原文只在本次选择中临时使用。
-      </p>
       <label className="block text-sm">
-        绑定到
+        <span className="sr-only">绑定到</span>
         <StudySelect
           label="绑定到指定题目"
           value={String(target)}
@@ -124,11 +121,7 @@ export function TextSelector({
           />
         </div>
       ))}
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <StudyFeedback message={error} error />}
       <div className="flex gap-2">
         <Button variant="secondary" disabled={busy} onClick={onCancel}>
           取消并清除原文

@@ -1,4 +1,5 @@
 "use client";
+import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StudySelect, StudyDateTime } from "./controls";
@@ -15,10 +16,6 @@ export function SchoolAdjustments({
     [error, setError] = useState("");
   return (
     <section className="space-y-3 rounded-xl bg-[var(--color-surface-hover)] p-4">
-      <h2 className="font-medium">学校补课与不可用时段</h2>
-      <p className="text-xs text-[var(--color-text-secondary)]">
-        按学校通知添加补课、考试或休息时段。停课可在日历日程列表中移除对应课程。
-      </p>
       <form
         className="space-y-3"
         onSubmit={async (event) => {
@@ -80,7 +77,7 @@ export function SchoolAdjustments({
         />
         <div className="flex flex-col gap-3">
           <label className="text-xs">
-            开始（北京时间）
+            <span className="sr-only">开始（北京时间）</span>
             <StudyDateTime
               label="日程开始"
               value={start}
@@ -89,7 +86,7 @@ export function SchoolAdjustments({
             />
           </label>
           <label className="text-xs">
-            结束（北京时间）
+            <span className="sr-only">结束（北京时间）</span>
             <StudyDateTime
               label="日程结束"
               value={end}
@@ -102,11 +99,7 @@ export function SchoolAdjustments({
           确认添加日程
         </Button>
       </form>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <StudyFeedback message={error} error />}
     </section>
   );
 }

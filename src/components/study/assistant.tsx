@@ -1,4 +1,5 @@
 "use client";
+import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +30,7 @@ export function StudyAssistant({ notebookId }: { notebookId?: string }) {
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
+          <DialogHeader className="sr-only">
             <DialogTitle>学习助手</DialogTitle>
             <DialogDescription>
               讨论学习范围或安排细节，修改通过页面确认。对话保留在当前页面。
@@ -39,9 +40,6 @@ export function StudyAssistant({ notebookId }: { notebookId?: string }) {
             <div className="max-h-80 space-y-4 overflow-auto">
               {messages.map((message, index) => (
                 <div key={index}>
-                  <p className="mb-1 text-xs text-[var(--color-text-tertiary)]">
-                    {message.role === "user" ? "你" : "学习助手"}
-                  </p>
                   <MarkdownContent content={message.text} />
                 </div>
               ))}
@@ -83,7 +81,7 @@ export function StudyAssistant({ notebookId }: { notebookId?: string }) {
                 name="message"
                 aria-label="向学习助手提问"
                 className="w-full rounded-md bg-[var(--color-surface)] p-3 text-sm"
-                placeholder="例如：我的复习范围还需要包含哪些章节？"
+                placeholder="学习范围 / 日程问题"
                 required
                 maxLength={10000}
                 disabled={busy}
@@ -92,11 +90,7 @@ export function StudyAssistant({ notebookId }: { notebookId?: string }) {
                 {busy ? "正在思考…" : "发送"}
               </Button>
             </form>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
+            {error && <StudyFeedback message={error} error />}
           </div>
         </DialogContent>
       </Dialog>

@@ -1,4 +1,5 @@
 "use client";
+import { StudyFeedback } from "./controls";
 
 import { useState } from "react";
 import { ArrowUpRight, BookOpen, Library, Plus, Search } from "lucide-react";
@@ -47,14 +48,11 @@ export function CollectionLibrary({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">
-            我的题集{" "}
+            {" "}
             <span className="ml-2 text-sm font-normal text-[var(--color-text-secondary)]">
               {collections.length} 本
             </span>
           </h2>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-            按学科整理，在错题本中继续收录与复习。
-          </p>
         </div>
         <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-3 size-4 text-[var(--color-text-tertiary)]" />
@@ -67,14 +65,7 @@ export function CollectionLibrary({
           />
         </div>
       </div>
-      {loading && !collections.length && (
-        <p
-          role="status"
-          className="py-12 text-center text-sm text-[var(--color-text-secondary)]"
-        >
-          正在加载题集…
-        </p>
-      )}
+
       <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((collection) => {
           const actions = [
@@ -159,21 +150,14 @@ export function CollectionLibrary({
           <span className="flex size-14 items-center justify-center rounded-xl bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
             <BookOpen className="size-6" />
           </span>
-          <h3 className="mt-2 text-lg font-semibold">把错题放进你的学习书架</h3>
-          <p className="max-w-sm text-sm leading-6 text-[var(--color-text-secondary)]">
-            创建题集，确定学科和考试范围，再从上传的试卷或题库中选择错题。
-          </p>
+
           <Button className="mt-3 h-10 px-5" onClick={onCreate}>
             <Plus />
             创建第一本题集
           </Button>
         </div>
       )}
-      {!!collections.length && !filtered.length && (
-        <p className="py-12 text-center text-sm text-[var(--color-text-secondary)]">
-          没有匹配的题集或错题本。
-        </p>
-      )}
+
       <Dialog
         open={!!target}
         onOpenChange={(open) => {
@@ -181,7 +165,7 @@ export function CollectionLibrary({
         }}
       >
         <DialogContent>
-          <DialogHeader>
+          <DialogHeader className="sr-only">
             <DialogTitle>新增错题本</DialogTitle>
             <DialogDescription>
               收录到「{target?.name}」，按章节或专题分开整理。
@@ -209,15 +193,11 @@ export function CollectionLibrary({
               value={name}
               onChange={(event) => setName(event.target.value)}
               aria-label="新错题本名称"
-              placeholder="例如：极限与连续"
+              placeholder="错题本名称"
               required
               maxLength={100}
             />
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
+            {error && <StudyFeedback message={error} error />}
             <Button disabled={busy} type="submit" className="h-10">
               {busy ? "正在添加…" : "添加错题本"}
             </Button>

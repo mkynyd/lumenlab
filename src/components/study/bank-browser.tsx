@@ -1,4 +1,5 @@
 "use client";
+import { StudyFeedback } from "./controls";
 /* eslint-disable @next/next/no-img-element -- Authenticated bank scan assets. */
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -88,7 +89,6 @@ export function BankBrowser({
       aria-label="从题库选题"
     >
       <header className="flex justify-between">
-        <h2 className="font-semibold">从题库选择错题</h2>
         <Button variant="secondary" onClick={onClose} disabled={busy}>
           关闭
         </Button>
@@ -152,11 +152,7 @@ export function BankBrowser({
           筛选
         </Button>
       </form>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <StudyFeedback message={error} error />}
       {!paper && (
         <div className="grid gap-3 sm:grid-cols-2">
           {papers.map((candidate) => (
@@ -175,11 +171,7 @@ export function BankBrowser({
           ))}
         </div>
       )}
-      {!paper && !papers.length && (
-        <p className="py-6 text-sm text-[var(--color-text-secondary)]">
-          目前没有符合条件的已核验试卷。也可以上传自己的试卷选择错题。
-        </p>
-      )}
+
       {paper && (
         <>
           <div className="space-y-2">
@@ -191,18 +183,16 @@ export function BankBrowser({
               返回试卷列表
             </Button>
             <h3 className="font-medium">{paper.title}</h3>
-            <p className="text-xs text-[var(--color-text-secondary)]">
-              来源：
-              <a
-                className="text-[var(--color-accent)]"
-                href={paper.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                原始资料
-              </a>{" "}
-              · {paper.license}
-            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" asChild>
+                <a href={paper.sourceUrl} target="_blank" rel="noreferrer">
+                  来源
+                </a>
+              </Button>
+              <span className="text-xs text-[var(--color-text-secondary)]">
+                {paper.license}
+              </span>
+            </div>
           </div>
           <div className="max-h-[60vh] space-y-3 overflow-auto">
             {questions.map((question) => (

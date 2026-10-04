@@ -1,4 +1,5 @@
 "use client";
+import { StudyFeedback } from "./controls";
 /* eslint-disable @next/next/no-img-element -- Owner-checked selected scan assets. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -311,25 +312,6 @@ export function StudyWorkspace() {
     );
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 p-4 md:p-8">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="mb-2 text-xs font-medium tracking-widest text-[var(--color-accent)]">
-            学习工作台
-          </p>
-          <h1 className="text-2xl font-semibold">
-            {tab === "calendar" ? "让学习有序发生" : "从错题开始，逐步掌握"}
-          </h1>
-          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-            {tab === "calendar"
-              ? "把课程、作业和可用时间安排在同一张日历里。"
-              : "只收录你选择的题目，题面、插图与解析一起整理。"}
-          </p>
-        </div>
-        <Button className="h-10 px-4" onClick={() => setCreating(true)}>
-          <Plus />
-          新建题集
-        </Button>
-      </header>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav
           className="flex gap-1 rounded-xl bg-[var(--color-surface-hover)] p-1"
@@ -360,31 +342,30 @@ export function StudyWorkspace() {
             </Button>
           ))}
         </nav>
+        <Button className="ml-auto h-10 px-4" onClick={() => setCreating(true)}>
+          <Plus />
+          新建题集
+        </Button>
         <StudyAssistant
           key={notebook?.id ?? tab}
           notebookId={tab === "collections" ? notebook?.id : undefined}
         />
       </div>
       {notice && (
-        <div
-          role="status"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--color-accent-muted)] px-4 py-3 text-sm text-[var(--color-accent)]"
-        >
-          <span>{notice}</span>
+        <div className="flex items-center gap-2">
+          <StudyFeedback message={notice} />
           <Button variant="secondary" size="sm" onClick={() => setNotice("")}>
-            知道了
+            清除提示
           </Button>
         </div>
       )}
-      {error && (
-        <p
-          role="alert"
-          className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
-        >
-          {error}
-        </p>
+      {error && <StudyFeedback message={error} error />}
+
+      {loading && (
+        <Button variant="secondary" disabled>
+          加载中
+        </Button>
       )}
-      {loading && <p role="status">正在加载…</p>}
       {job && (
         <section
           className="space-y-2 rounded-xl bg-[var(--color-surface-hover)] p-4"
@@ -397,7 +378,7 @@ export function StudyWorkspace() {
             <span className="text-sm">{job.progress}%</span>
           </div>
           <Progress value={job.progress} label="错题处理进度" />
-          {job.error && <p className="text-sm text-destructive">{job.error}</p>}
+          {job.error && <StudyFeedback message={job.error} error />}
           {job.status === "failed" && job.attempts < 3 && (
             <Button
               variant="secondary"
@@ -509,11 +490,6 @@ export function StudyWorkspace() {
                   }}
                 />
               )}
-              {!items.length && (
-                <p className="rounded-xl bg-[var(--color-surface-hover)] p-6 text-sm text-[var(--color-text-secondary)]">
-                  还没有错题。上传后只保存你选择的题目，完整试卷会被清除。
-                </p>
-              )}
               {items.map((item, index) => {
                 const actions = [
                   {
@@ -598,7 +574,7 @@ export function StudyWorkspace() {
             }}
           >
             <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
-              <DialogHeader>
+              <DialogHeader className="sr-only">
                 <DialogTitle>题目详情</DialogTitle>
                 <DialogDescription>
                   题干、选项与插图完整保留，解析按需展开。
@@ -636,9 +612,7 @@ export function StudyWorkspace() {
                           setEditingPrompt(event.target.value)
                         }
                       />
-                      <p className="text-xs">
-                        确认题干、全部选项和共享材料完整后重新解析，已选插图会继续参与核验。
-                      </p>
+
                       <Button
                         disabled={busy || !editingPrompt.trim()}
                         onClick={() =>
@@ -672,7 +646,7 @@ export function StudyWorkspace() {
                     </div>
                   )}
                   {detail.error && (
-                    <p className="text-sm text-destructive">{detail.error}</p>
+                    <StudyFeedback message={detail.error} error />
                   )}
                   {detail.solution && (
                     <>

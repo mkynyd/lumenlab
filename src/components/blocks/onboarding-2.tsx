@@ -1,13 +1,14 @@
 "use client";
+import { StudyFeedback } from "@/components/study/controls";
 
 // Adapted from the licensed ReactBits Pro onboarding-2 vertical-step form.
 import { useState } from "react";
-import { Check, ArrowLeft, ArrowRight, BookOpen } from "lucide-react";
+import { Check, ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StudySelect, UploadButton } from "@/components/study/controls";
 import { Input } from "@/components/ui/input";
 import { collectionSchema, type CollectionInput } from "@/lib/study/contracts";
-import { cn } from "@/lib/utils";
+import { StudyTip } from "@/components/study/controls";
 const STEPS = [
   { title: "学习阶段", description: "选择年级与学习阶段" },
   { title: "学科与考试", description: "明确这本题集的范围" },
@@ -64,14 +65,14 @@ export default function Onboarding2({
   const textField = (
     key: "name" | "grade" | "subject" | "major" | "exam" | "notebookName",
     label: string,
-    placeholder?: string,
   ) => (
     <label className="block space-y-2 text-sm">
-      {label}
+      <span className="sr-only">{label}</span>
       <Input
+        aria-label={label}
         value={form[key]}
         onChange={(event) => field(key, event.target.value)}
-        placeholder={placeholder}
+        placeholder={label}
         maxLength={key === "subject" ? 80 : 100}
         disabled={busy}
       />
@@ -82,32 +83,26 @@ export default function Onboarding2({
       className="grid min-h-[480px] overflow-hidden rounded-2xl bg-[var(--color-surface)] md:grid-cols-[220px_1fr]"
       aria-label="创建题集"
     >
-      <aside className="space-y-5 bg-[var(--color-surface-hover)] p-5">
-        <div className="flex items-center gap-2 font-semibold">
-          <BookOpen size={18} />
-          创建题集
-        </div>
-        <ol className="grid grid-cols-4 gap-2 md:grid-cols-1 md:gap-5">
+      <aside className="bg-[var(--color-surface-hover)] p-5">
+        <ol className="grid grid-cols-4 gap-2 md:grid-cols-1">
           {STEPS.map((item, index) => (
-            <li
-              key={item.title}
-              className={cn(
-                "flex items-start gap-2 text-sm",
-                index === step
-                  ? "text-[var(--color-accent)]"
-                  : "text-[var(--color-text-secondary)]",
-              )}
-              aria-current={index === step ? "step" : undefined}
-            >
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface)] text-xs">
-                {index < step ? <Check size={14} /> : index + 1}
-              </span>
-              <div className="hidden md:block">
-                <p className="font-medium">{item.title}</p>
-                <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
-                  {item.description}
-                </p>
-              </div>
+            <li key={item.title}>
+              <StudyTip content={item.description}>
+                <Button
+                  type="button"
+                  variant={index === step ? "default" : "secondary"}
+                  disabled={busy || index > step}
+                  aria-label={item.title}
+                  aria-current={index === step ? "step" : undefined}
+                  className="h-auto min-h-11 w-full justify-start whitespace-normal p-3 text-left"
+                  onClick={() => setStep(index)}
+                >
+                  <span className="shrink-0">
+                    {index < step ? <Check size={14} /> : index + 1}
+                  </span>
+                  <span className="hidden md:block">{item.title}</span>
+                </Button>
+              </StudyTip>
             </li>
           ))}
         </ol>
@@ -119,15 +114,11 @@ export default function Onboarding2({
           void next();
         }}
       >
-        <h2 className="text-xl font-semibold">{STEPS[step].title}</h2>
-        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-          {STEPS[step].description}
-        </p>
-        <div className="my-8 flex-1 space-y-5">
+        <div className="mb-6 flex-1 space-y-5">
           {step === 0 && (
             <>
               <label className="block space-y-2 text-sm">
-                学习阶段
+                <span className="sr-only">学习阶段</span>
                 <StudySelect
                   label="学习阶段"
                   value={form.stage}
@@ -142,20 +133,19 @@ export default function Onboarding2({
                   ]}
                 />
               </label>
-              {textField("grade", "年级（选填）", "例如：大三")}
+              {textField("grade", "年级（选填）")}
             </>
           )}
           {step === 1 && (
             <>
-              {textField("subject", "学科", "例如：数学")}
-              {textField("major", "专业（选填）", "例如：计算机科学与技术")}
-              {textField("exam", "考试（选填）", "例如：考研数学二")}
+              {textField("subject", "学科")}
+              {textField("major", "专业（选填）")}
+              {textField("exam", "考试（选填）")}
             </>
           )}
           {step === 2 && (
             <>
               <div className="flex flex-col gap-2 text-sm">
-                上传考试大纲
                 <UploadButton
                   label="选择大纲文件"
                   accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.md,.markdown,.txt"
@@ -188,32 +178,25 @@ export default function Onboarding2({
                 />
               </div>
               <label className="block space-y-2 text-sm">
-                考试大纲或知识范围（选填）
+                <span className="sr-only">考试大纲或知识范围（选填）</span>
                 <textarea
                   className="min-h-40 w-full rounded-md bg-[var(--color-surface-hover)] p-3"
                   value={form.syllabus}
                   onChange={(event) => field("syllabus", event.target.value)}
-                  placeholder="粘贴大纲或说明本次考试的范围"
+                  placeholder="大纲 / 知识范围"
                   maxLength={100000}
                 />
               </label>
-              <p className="text-xs text-[var(--color-text-secondary)]">
-                大纲用于考点归类；超出范围的题目会单独标记。
-              </p>
             </>
           )}
           {step === 3 && (
             <>
-              {textField("name", "题集名称", "例如：2027 考研数学二")}
-              {textField("notebookName", "第一本错题本", "例如：极限与连续")}
+              {textField("name", "题集名称")}
+              {textField("notebookName", "第一本错题本")}
             </>
           )}
         </div>
-        {error && (
-          <p role="alert" className="mb-4 text-sm text-destructive">
-            {error}
-          </p>
-        )}
+        {error && <StudyFeedback message={error} error />}
         <div className="flex items-center gap-2">
           <Button
             type="button"

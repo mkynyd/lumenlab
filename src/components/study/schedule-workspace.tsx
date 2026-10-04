@@ -1,8 +1,8 @@
 "use client";
+import { StudyFeedback } from "./controls";
 
 import { useEffect, useState } from "react";
 import {
-  CalendarDays,
   Check,
   Clock,
   Plus,
@@ -23,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StudyDateTime } from "./controls";
+import { StudyDateTime, StudyTip } from "./controls";
 import { StudyContext, StudyMore } from "./actions";
 import { TimetableImport } from "./timetable-import";
 import { TaskExtractor } from "./task-extractor";
@@ -131,16 +131,14 @@ export function ScheduleWorkspace({
       <div className="flex min-w-0 flex-col gap-6">
         <section className="rounded-2xl bg-[var(--color-surface-hover)] p-4 sm:p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 font-semibold">
-              <CalendarDays className="size-5 text-[var(--color-accent)]" />
-              课程与截止日期
-            </h2>
-            <Button
-              variant="secondary"
-              onClick={() => setSelectedDate(new Date())}
-            >
-              回到今天
-            </Button>
+            <StudyTip content="高亮：截止日期；下划线：已有日程；彩色：2026法定放假；斜体：调休工作日。">
+              <Button
+                variant="secondary"
+                onClick={() => setSelectedDate(new Date())}
+              >
+                回到今天
+              </Button>
+            </StudyTip>
           </div>
           <div className="grid items-start gap-5 md:grid-cols-[300px_minmax(0,1fr)]">
             <Calendar
@@ -172,18 +170,13 @@ export function ScheduleWorkspace({
             <div className="flex min-w-0 flex-col gap-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium">
-                  {selectedDate ? format(selectedDate, "M月d日") : "全部日期"}
-                  的日程
+                  {selectedDate ? format(selectedDate, "M月d日") : ""}
                 </h3>
                 <span className="text-xs text-[var(--color-text-secondary)]">
                   {dayEvents.length} 项
                 </span>
               </div>
-              {!dayEvents.length && (
-                <div className="rounded-xl bg-[var(--color-surface)] p-5 text-sm leading-6 text-[var(--color-text-secondary)]">
-                  这一天没有安排。导入课表后，课程会显示在这里。
-                </div>
-              )}
+
               <div className="flex max-h-72 flex-col gap-2 overflow-auto">
                 {dayEvents.map((event) => {
                   const actions = [
@@ -229,24 +222,9 @@ export function ScheduleWorkspace({
               </div>
             </div>
           </div>
-          <p className="mt-4 text-xs leading-5 text-[var(--color-text-secondary)]">
-            高亮：任务截止 · 下划线：已有日程 · 彩色：2026 法定放假 ·
-            斜体：调休工作日
-          </p>
         </section>
         <section className="flex flex-col gap-3" aria-label="截止任务">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">
-                {showCompleted ? "已完成任务" : "剩余任务"}{" "}
-                <span className="ml-2 text-sm font-normal text-[var(--color-text-secondary)]">
-                  {visibleTasks.length} 项
-                </span>
-              </h2>
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                按截止时间从近到远排列 · 北京时间
-              </p>
-            </div>
             <Button
               variant="secondary"
               onClick={() => setShowCompleted(!showCompleted)}
@@ -286,7 +264,7 @@ export function ScheduleWorkspace({
                         hour: "2-digit",
                         minute: "2-digit",
                       })}{" "}
-                      · 预计 {task.estimatedMinutes} 分钟
+                      · {task.estimatedMinutes} 分钟
                       {overdue && (
                         <span className="ml-2 text-destructive">已逾期</span>
                       )}
@@ -313,40 +291,26 @@ export function ScheduleWorkspace({
             );
           })}
           {!visibleTasks.length && (
-            <div className="rounded-xl bg-[var(--color-surface-hover)] p-6 text-sm text-[var(--color-text-secondary)]">
-              {showCompleted
-                ? "还没有已完成任务。"
-                : "没有待完成任务，可以添加下一项作业。"}
-            </div>
+            <Button variant="secondary" onClick={() => open("task")}>
+              <Plus />
+              添加任务
+            </Button>
           )}
         </section>
       </div>
       <aside className="flex flex-col gap-4">
-        <div>
-          <h2 className="font-semibold">安排学习</h2>
-          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-            任务、课表与空闲时间放在一起。
-          </p>
-        </div>
         {TOOLS.map(({ id, label, description, icon: Icon }) => (
-          <Button
-            key={id}
-            variant={id === "task" ? "default" : "secondary"}
-            className="h-auto min-h-16 w-full justify-start gap-3 whitespace-normal px-4 py-3 text-left"
-            onClick={() => open(id)}
-          >
-            <Icon className="size-5" />
-            <span>
-              <span className="block text-sm font-medium">{label}</span>
-              <span className="mt-1 block text-xs font-normal opacity-80">
-                {description}
-              </span>
-            </span>
-          </Button>
+          <StudyTip key={id} content={description}>
+            <Button
+              variant={id === "task" ? "default" : "secondary"}
+              className="h-12 w-full justify-start gap-3 px-4"
+              onClick={() => open(id)}
+            >
+              <Icon className="size-5" />
+              {label}
+            </Button>
+          </StudyTip>
         ))}
-        <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-          右键任务或日程可快速操作；触屏可使用每行的更多按钮。
-        </p>
       </aside>
       <Dialog
         open={!!tool}
@@ -355,7 +319,7 @@ export function ScheduleWorkspace({
         }}
       >
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
+          <DialogHeader className="sr-only">
             <DialogTitle>{activeTool?.label}</DialogTitle>
             <DialogDescription>
               {activeTool?.description}。日期与时间均按北京时间保存。
@@ -389,17 +353,16 @@ export function ScheduleWorkspace({
               }}
             >
               <label className="flex flex-col gap-2 text-sm">
-                任务名称
+                <span className="sr-only">任务名称</span>
                 <Input
                   name="title"
                   aria-label="任务名称"
-                  placeholder="例如：完成实验报告"
+                  placeholder="任务名称"
                   required
                   maxLength={200}
                 />
               </label>
               <div className="flex flex-col gap-2 text-sm">
-                截止日期与时间
                 <StudyDateTime
                   value={deadline}
                   onChange={setDeadline}
@@ -408,10 +371,12 @@ export function ScheduleWorkspace({
                 />
               </div>
               <label className="flex flex-col gap-2 text-sm">
-                预计耗时（分钟）
+                <span className="sr-only">预计耗时（分钟）</span>
                 <Input
                   type="number"
                   name="minutes"
+                  aria-label="预计耗时（分钟）"
+                  placeholder="预计耗时（分钟）"
                   defaultValue={60}
                   min={5}
                   max={100000}
@@ -419,11 +384,7 @@ export function ScheduleWorkspace({
                   required
                 />
               </label>
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              )}
+              {error && <StudyFeedback message={error} error />}
               <Button className="h-10" disabled={saving} type="submit">
                 {saving ? "正在保存…" : "添加任务"}
               </Button>
