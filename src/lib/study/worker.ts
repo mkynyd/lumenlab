@@ -2,10 +2,11 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { logger } from "@/lib/logger";
 import { readStoredObject } from "@/lib/storage/object-storage";
 import { runWebSearch } from "@/lib/tools/web/search-engine";
 import { solutionSchema } from "./contracts";
-import { studyModelJson, solveSelectedQuestion } from "./model-gateway";
+import { studyModelJson, solveSelectedQuestion, StudyModelOutputError } from "./model-gateway";
 const payloadSchema = z.object({ items: z.array(z.string()).min(1).max(100), syllabus: z.string() });
 const assetSchema = z.array(z.object({ provider: z.enum(["local", "qiniu"]), key: z.string(), role: z.string(), page: z.number() })).max(32);
 const ocrSchema = z.object({ markdown: z.string().min(1).max(200000), complete: z.boolean(), missing: z.array(z.string()).max(30) }).strict();
@@ -24,13 +25,17 @@ export async function processStudyJob() {
     void prisma.studyJob.updateMany({ where: { id: candidate.id, leaseOwner: owner, status: "processing" }, data: { leaseUntil: new Date(Date.now() + 180000) } }).then(result => { if (!result.count) controller.abort(); }).catch(() => controller.abort());
   }, 30000);
   heartbeat.unref();
+  let currentStage = candidate.stage;
+  let selectedItemIds: string[] = [];
   const progress = async (stage: string, percent: number) => {
     if (controller.signal.aborted) throw new Error("任务租约已失效");
     const result = await prisma.studyJob.updateMany({ where: { id: candidate.id, leaseOwner: owner, status: "processing" }, data: { stage, progress: percent } });
     if (!result.count) { controller.abort(); throw new Error("任务租约已失效"); }
+    currentStage = stage;
   };
   try {
     const payload = payloadSchema.parse(candidate.payload);
+    selectedItemIds = payload.items;
     let completed = 0;
     for (const id of payload.items) {
       const item = await prisma.mistakeItem.findFirst({ where: { id, notebook: { collection: { userId: candidate.userId } } } });
@@ -89,8 +94,18 @@ export async function processStudyJob() {
       completed++;
     }
     await prisma.studyJob.updateMany({ where: { id: candidate.id, leaseOwner: owner, status: "processing" }, data: { status: "completed", progress: 100, stage: "处理完成", leaseOwner: null, leaseUntil: null } });
-  } catch {
-    if (!controller.signal.aborted) await prisma.studyJob.updateMany({ where: { id: candidate.id, leaseOwner: owner, status: "processing" }, data: { status: "failed", error: "错题处理未完成，可重新提交处理", stage: "处理失败", leaseOwner: null, leaseUntil: null } });
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      // Log only fixed classifications, never provider bodies, keys or question text.
+      logger.warn("study job failed", { jobId: candidate.id, stage: currentStage,
+        failure: error instanceof StudyModelOutputError ? error.reason : error instanceof z.ZodError ? "invalid_input" : "processing_error",
+        ...(error instanceof StudyModelOutputError ? { provider: error.provider } : {}) });
+      await prisma.$transaction(async tx => {
+        const fenced = await tx.studyJob.updateMany({ where: { id: candidate.id, leaseOwner: owner, status: "processing" }, data: { status: "failed", error: "错题处理未完成，可重新提交处理", stage: "处理失败", leaseOwner: null, leaseUntil: null } });
+        if (!fenced.count) return;
+        await tx.mistakeItem.updateMany({ where: { id: { in: selectedItemIds }, status: { in: ["queued", "processing"] }, notebook: { collection: { userId: candidate.userId } } }, data: { status: "failed", error: "错题处理未完成，可重试或校对题面" } });
+      });
+    }
   } finally { clearInterval(heartbeat); }
 }
 export function startStudyWorker() {

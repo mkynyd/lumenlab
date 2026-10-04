@@ -45,4 +45,18 @@ describe("independent solvers and bounded verification", () => {
     expect(mocks.key).not.toHaveBeenCalled();
     expect(mocks.post).not.toHaveBeenCalled();
   });
+  it("retries malformed JSON once with identical evidence and bills both completed responses", async () => {
+    mocks.post.mockResolvedValueOnce({ ...response(solution), output_text: '{"answer":"2","explanation":"计算"1+1"","topics":[]}' }).mockResolvedValueOnce(response(solution));
+    expect(await studyModelJson({ userId: "owner", provider: "bailian", prompt: "完整题干和检索资料", schema: solutionSchema })).toEqual(solution);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(mocks.post.mock.calls[0][0].body.input).toEqual(mocks.post.mock.calls[1][0].body.input);
+    expect(mocks.post.mock.calls[1][0].body.instructions).toContain("正确转义");
+    expect(mocks.usage).toHaveBeenCalledTimes(2);
+  });
+  it("never coerces invalid fields or accepts a second malformed reply", async () => {
+    mocks.post.mockResolvedValue(response({ ...solution, answer: 2 }));
+    await expect(studyModelJson({ userId: "owner", provider: "bailian", prompt: "题目", schema: solutionSchema })).rejects.toMatchObject({ reason: "invalid_contract", provider: "bailian" });
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(mocks.usage).toHaveBeenCalledTimes(2);
+  });
 });
