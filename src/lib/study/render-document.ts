@@ -34,7 +34,14 @@ export async function renderStudyDocument(buffer: Buffer, name: string, mimeType
     throw new Error("当前扫描导入支持图片、PDF、Word与PPT");
   }
   const [{ createCanvas }, pdfjs] = await Promise.all([import("@napi-rs/canvas"), import("pdfjs-dist/legacy/build/pdf.mjs")]);
-  const document = await pdfjs.getDocument({ data: new Uint8Array(pdf), useSystemFonts: true, disableFontFace: true }).promise;
+  const document = await pdfjs.getDocument({
+    data: new Uint8Array(pdf),
+    useSystemFonts: true,
+    disableFontFace: true,
+    cMapUrl: path.join(process.cwd(), "public/pdfjs/cmaps") + path.sep,
+    standardFontDataUrl: path.join(process.cwd(), "public/pdfjs/standard_fonts") + path.sep,
+    wasmUrl: path.join(process.cwd(), "node_modules/pdfjs-dist/wasm") + path.sep,
+  }).promise;
   try {
     if (document.numPages > 80) throw new Error("一次最多导入80页，请分批上传；未截断文档");
     const pages: Buffer[] = [];

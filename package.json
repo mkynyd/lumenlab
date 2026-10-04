@@ -7,6 +7,7 @@
     "dev": "next dev",
     "prebuild": "tsx scripts/copy-pdfjs-assets.ts",
     "build": "next build",
+    "postbuild": "node scripts/check-pdfjs-runtime.mjs",
     "start": "next start",
     "lint": "eslint && node scripts/check-design-tokens.mjs",
     "test": "vitest run --exclude '.worktrees/**'",

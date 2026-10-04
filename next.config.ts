@@ -42,11 +42,18 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: [
     "@napi-rs/canvas",
+    "pdfjs-dist",
     "pdfkit",
     "adm-zip",
     "fonteditor-core",
     "tencentcloud-sdk-nodejs-ses",
   ],
+  // PDF.js loads its Node worker dynamically relative to the package. Bundling
+  // relocates that import to a Next chunk; tracing alone also misses the worker.
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+    "/api/study/**": ["./node_modules/pdfjs-dist/wasm/**/*"],
+  },
   // Turbopack root fix
   turbopack: {
     root: process.cwd(),

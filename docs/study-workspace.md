@@ -5,6 +5,7 @@
 - PostgreSQL：部署时运行 `prisma migrate deploy`。`20261001010000_retire_learning_loop` 删除23个旧学习模型及对应枚举，不迁移旧记录。
 - Node instrumentation 启动错题队列和临时素材清理。每个任务有租约、心跳、最多3次领取，失败可在页面重试。
 - 图片/PDF使用 Sharp、PDF.js和 `@napi-rs/canvas`。Word/PPT/ODT/ODP需要主机安装 LibreOffice，`STUDY_OFFICE_BINARY` 指向 `soffice`。无运行依赖时明确报错并建议另存PDF。
+- PDF.js作为服务端外部包运行，standalone显式收录动态worker及学习渲染所需WASM，构建后实际加载一页PDF检查worker；中文CMap和字体使用随构建复制的本地资源。
 - Qwen需要 `BAILIAN_WORKSPACE_ID`，所有模型使用当前用户已授权凭证及统一额度统计。识别、双模型独立求解、MiniMax复核均有费用；核验只是模型判断，不保证所有试题绝对正确。
 - 上传预览最多80页、总原件30MB；大纲/作业提取最多16页。超限直接拒绝，不静默截断。
 
