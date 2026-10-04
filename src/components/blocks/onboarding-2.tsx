@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { Check, ArrowLeft, ArrowRight, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { StudySelect, UploadButton } from "@/components/study/controls";
 import { Input } from "@/components/ui/input";
 import { collectionSchema, type CollectionInput } from "@/lib/study/contracts";
 import { cn } from "@/lib/utils";
@@ -13,54 +14,232 @@ const STEPS = [
   { title: "考试大纲", description: "用于自动识别题目考点" },
   { title: "题集与错题本", description: "只收录你选择的错题" },
 ];
-export default function Onboarding2({ onCreate, onCancel }: {
+export default function Onboarding2({
+  onCreate,
+  onCancel,
+}: {
   onCreate: (input: CollectionInput) => Promise<void>;
   onCancel: () => void;
 }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState<CollectionInput>({ name: "", stage: "university", grade: "", subject: "", major: "", exam: "", syllabus: "", notebookName: "错题本" });
+  const [form, setForm] = useState<CollectionInput>({
+    name: "",
+    stage: "university",
+    grade: "",
+    subject: "",
+    major: "",
+    exam: "",
+    syllabus: "",
+    notebookName: "错题本",
+  });
   function field(key: keyof CollectionInput, value: string) {
-    setForm(previous => ({ ...previous, [key]: value }));
+    setForm((previous) => ({ ...previous, [key]: value }));
   }
   async function next() {
     setError("");
-    if (step === 1 && !form.subject.trim()) { setError("请填写学科"); return; }
-    if (step < 3) { setStep(step + 1); return; }
+    if (step === 1 && !form.subject.trim()) {
+      setError("请填写学科");
+      return;
+    }
+    if (step < 3) {
+      setStep(step + 1);
+      return;
+    }
     const parsed = collectionSchema.safeParse(form);
-    if (!parsed.success) { setError("请填写题集名称、学科和错题本名称"); return; }
+    if (!parsed.success) {
+      setError("请填写题集名称、学科和错题本名称");
+      return;
+    }
     setBusy(true);
-    try { await onCreate(parsed.data); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "创建失败，请重试"); }
-    finally { setBusy(false); }
+    try {
+      await onCreate(parsed.data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "创建失败，请重试");
+    } finally {
+      setBusy(false);
+    }
   }
-  const textField = (key: "name" | "grade" | "subject" | "major" | "exam" | "notebookName", label: string, placeholder?: string) => (
-    <label className="block space-y-2 text-sm">{label}<Input value={form[key]} onChange={event => field(key, event.target.value)} placeholder={placeholder} maxLength={key === "subject" ? 80 : 100} disabled={busy} /></label>
+  const textField = (
+    key: "name" | "grade" | "subject" | "major" | "exam" | "notebookName",
+    label: string,
+    placeholder?: string,
+  ) => (
+    <label className="block space-y-2 text-sm">
+      {label}
+      <Input
+        value={form[key]}
+        onChange={(event) => field(key, event.target.value)}
+        placeholder={placeholder}
+        maxLength={key === "subject" ? 80 : 100}
+        disabled={busy}
+      />
+    </label>
   );
-  return <section className="grid min-h-[480px] overflow-hidden rounded-2xl bg-[var(--color-surface)] md:grid-cols-[220px_1fr]" aria-label="创建题集">
-    <aside className="space-y-5 bg-[var(--color-surface-hover)] p-5">
-      <div className="flex items-center gap-2 font-semibold"><BookOpen size={18} />创建题集</div>
-      <ol className="grid grid-cols-4 gap-2 md:grid-cols-1 md:gap-5">
-        {STEPS.map((item, index) => <li key={item.title} className={cn("flex items-start gap-2 text-sm", index === step ? "text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]")} aria-current={index === step ? "step" : undefined}>
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface)] text-xs">{index < step ? <Check size={14} /> : index + 1}</span>
-          <div className="hidden md:block"><p className="font-medium">{item.title}</p><p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{item.description}</p></div>
-        </li>)}
-      </ol>
-    </aside>
-    <form className="flex min-w-0 flex-col p-6 md:p-8" onSubmit={event => { event.preventDefault(); void next(); }}>
-      <h2 className="text-xl font-semibold">{STEPS[step].title}</h2>
-      <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{STEPS[step].description}</p>
-      <div className="my-8 flex-1 space-y-5">
-        {step === 0 && <><label className="block space-y-2 text-sm">学习阶段<select className="h-9 w-full rounded-md bg-[var(--color-surface-hover)] px-3" value={form.stage} onChange={event => field("stage", event.target.value)}>
-          <option value="primary">小学</option><option value="secondary">中学</option><option value="university">大学</option><option value="professional">职业 / 资格考试</option><option value="other">其他</option>
-        </select></label>{textField("grade", "年级（选填）", "例如：大三")}</>}
-        {step === 1 && <>{textField("subject", "学科", "例如：数学")}{textField("major", "专业（选填）", "例如：计算机科学与技术")}{textField("exam", "考试（选填）", "例如：考研数学二")}</>}
-        {step === 2 && <><label className="block space-y-2 text-sm">上传考试大纲<input type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.md,.markdown,.txt" disabled={busy} onChange={async event => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; setBusy(true); setError(""); try { const data = new FormData(); data.set("mode", "syllabus"); data.set("file", file); const response = await fetch("/api/study/extract", { method: "POST", body: data }), result = await response.json(); if (!response.ok) throw new Error(result.error); field("syllabus", result.text); } catch (cause) { setError(cause instanceof Error ? cause.message : "识别失败"); } finally { setBusy(false); } }} /></label><label className="block space-y-2 text-sm">考试大纲或知识范围（选填）<textarea className="min-h-40 w-full rounded-md bg-[var(--color-surface-hover)] p-3" value={form.syllabus} onChange={event => field("syllabus", event.target.value)} placeholder="粘贴大纲或说明本次考试的范围" maxLength={100000} /></label><p className="text-xs text-[var(--color-text-secondary)]">大纲用于考点归类；超出范围的题目会单独标记。</p></>}
-        {step === 3 && <>{textField("name", "题集名称", "例如：2027 考研数学二")}{textField("notebookName", "第一本错题本", "例如：极限与连续")}</>}
-      </div>
-      {error && <p role="alert" className="mb-4 text-sm text-destructive">{error}</p>}
-      <div className="flex items-center gap-2"><Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>取消</Button>{step > 0 && <Button type="button" variant="ghost" disabled={busy} onClick={() => setStep(step - 1)}><ArrowLeft />上一步</Button>}<Button className="ml-auto" type="submit" disabled={busy}>{busy ? "正在处理…" : step === 3 ? "创建题集" : "下一步"}{!busy && step < 3 && <ArrowRight />}</Button></div>
-    </form>
-  </section>;
+  return (
+    <section
+      className="grid min-h-[480px] overflow-hidden rounded-2xl bg-[var(--color-surface)] md:grid-cols-[220px_1fr]"
+      aria-label="创建题集"
+    >
+      <aside className="space-y-5 bg-[var(--color-surface-hover)] p-5">
+        <div className="flex items-center gap-2 font-semibold">
+          <BookOpen size={18} />
+          创建题集
+        </div>
+        <ol className="grid grid-cols-4 gap-2 md:grid-cols-1 md:gap-5">
+          {STEPS.map((item, index) => (
+            <li
+              key={item.title}
+              className={cn(
+                "flex items-start gap-2 text-sm",
+                index === step
+                  ? "text-[var(--color-accent)]"
+                  : "text-[var(--color-text-secondary)]",
+              )}
+              aria-current={index === step ? "step" : undefined}
+            >
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface)] text-xs">
+                {index < step ? <Check size={14} /> : index + 1}
+              </span>
+              <div className="hidden md:block">
+                <p className="font-medium">{item.title}</p>
+                <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+                  {item.description}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </aside>
+      <form
+        className="flex min-w-0 flex-col p-6 md:p-8"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void next();
+        }}
+      >
+        <h2 className="text-xl font-semibold">{STEPS[step].title}</h2>
+        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+          {STEPS[step].description}
+        </p>
+        <div className="my-8 flex-1 space-y-5">
+          {step === 0 && (
+            <>
+              <label className="block space-y-2 text-sm">
+                学习阶段
+                <StudySelect
+                  label="学习阶段"
+                  value={form.stage}
+                  onChange={(value) => field("stage", value)}
+                  disabled={busy}
+                  options={[
+                    { value: "primary", label: "小学" },
+                    { value: "secondary", label: "中学" },
+                    { value: "university", label: "大学" },
+                    { value: "professional", label: "职业 / 资格考试" },
+                    { value: "other", label: "其他" },
+                  ]}
+                />
+              </label>
+              {textField("grade", "年级（选填）", "例如：大三")}
+            </>
+          )}
+          {step === 1 && (
+            <>
+              {textField("subject", "学科", "例如：数学")}
+              {textField("major", "专业（选填）", "例如：计算机科学与技术")}
+              {textField("exam", "考试（选填）", "例如：考研数学二")}
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <div className="flex flex-col gap-2 text-sm">
+                上传考试大纲
+                <UploadButton
+                  label="选择大纲文件"
+                  accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.md,.markdown,.txt"
+                  disabled={busy}
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    setBusy(true);
+                    setError("");
+                    try {
+                      const data = new FormData();
+                      data.set("mode", "syllabus");
+                      data.set("file", file);
+                      const response = await fetch("/api/study/extract", {
+                          method: "POST",
+                          body: data,
+                        }),
+                        result = await response.json();
+                      if (!response.ok) throw new Error(result.error);
+                      field("syllabus", result.text);
+                    } catch (cause) {
+                      setError(
+                        cause instanceof Error ? cause.message : "识别失败",
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                />
+              </div>
+              <label className="block space-y-2 text-sm">
+                考试大纲或知识范围（选填）
+                <textarea
+                  className="min-h-40 w-full rounded-md bg-[var(--color-surface-hover)] p-3"
+                  value={form.syllabus}
+                  onChange={(event) => field("syllabus", event.target.value)}
+                  placeholder="粘贴大纲或说明本次考试的范围"
+                  maxLength={100000}
+                />
+              </label>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                大纲用于考点归类；超出范围的题目会单独标记。
+              </p>
+            </>
+          )}
+          {step === 3 && (
+            <>
+              {textField("name", "题集名称", "例如：2027 考研数学二")}
+              {textField("notebookName", "第一本错题本", "例如：极限与连续")}
+            </>
+          )}
+        </div>
+        {error && (
+          <p role="alert" className="mb-4 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            取消
+          </Button>
+          {step > 0 && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => setStep(step - 1)}
+            >
+              <ArrowLeft />
+              上一步
+            </Button>
+          )}
+          <Button className="ml-auto h-10 px-4" type="submit" disabled={busy}>
+            {busy ? "正在处理…" : step === 3 ? "创建题集" : "下一步"}
+            {!busy && step < 3 && <ArrowRight />}
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
 }
