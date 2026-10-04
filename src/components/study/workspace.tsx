@@ -169,7 +169,7 @@ export function StudyWorkspace() {
         .then(async (result) => {
           if (!active) return;
           setJob(result.job);
-          if (result.job.status === "completed") {
+          if (["completed", "failed"].includes(result.job.status)) {
             await reloadItems();
             await reload();
           }
@@ -542,6 +542,8 @@ export function StudyWorkspace() {
                               ? "解析完成"
                               : item.status === "needs_review"
                                 ? "需要校对"
+                                : item.status === "failed"
+                                  ? "处理失败"
                                 : "处理中"}
                             <ArrowUpRight className="ml-1 inline size-3.5" />
                           </span>

@@ -52,9 +52,27 @@ const json = (body: unknown, status = 200) =>
       headers: { "Content-Type": "application/json" },
     }),
   );
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("study library refresh", () => {
+  it("refreshes item failure status when a processing job fails", async () => {
+    vi.useFakeTimers();
+    let failed = false;
+    vi.stubGlobal("fetch", vi.fn((path: string) => {
+      if (path === "/api/study/collections") return json({ collections: [created] });
+      if (path.endsWith("/jobs")) return json({ jobs: [{ id: "job", status: "processing", progress: 3, stage: "正在解析", attempts: 1 }] });
+      if (path.endsWith("/jobs/job")) { failed = true; return json({ job: { id: "job", status: "failed", progress: 3, stage: "处理失败", attempts: 1 } }); }
+      if (path.endsWith("/items")) return json({ items: [{ id: "item", prompt: "计算1+1", topics: [], status: failed ? "failed" : "processing" }] });
+      if (path.endsWith("/tasks")) return json({ tasks: [] });
+      return json({ events: [] });
+    }));
+    await act(async () => { render(<StudyWorkspace />); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /极限与连续/ })); });
+    expect(screen.getByRole("button", { name: /错题 1/ })).toHaveTextContent("处理中");
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(screen.getByRole("button", { name: /错题 1/ })).toHaveTextContent("处理失败");
+    expect(screen.getByRole("button", { name: "重试处理" })).toBeVisible();
+  });
   it("publishes a created card immediately and prevents an older GET from erasing it", async () => {
     let resolveOld!: (response: Response) => void;
     const old = new Promise<Response>((resolve) => {
