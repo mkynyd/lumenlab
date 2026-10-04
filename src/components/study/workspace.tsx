@@ -359,7 +359,7 @@ export function StudyWorkspace() {
           </Button>
         </div>
       )}
-      {error && <StudyFeedback message={error} error />}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
       {loading && (
         <Button variant="secondary" disabled>
@@ -378,7 +378,7 @@ export function StudyWorkspace() {
             <span className="text-sm">{job.progress}%</span>
           </div>
           <Progress value={job.progress} label="错题处理进度" />
-          {job.error && <StudyFeedback message={job.error} error />}
+          {job.error && <p role="alert" className="text-sm text-destructive">{job.error}</p>}
           {job.status === "failed" && job.attempts < 3 && (
             <Button
               variant="secondary"
@@ -576,7 +576,7 @@ export function StudyWorkspace() {
             }}
           >
             <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
-              <DialogHeader className="sr-only">
+              <DialogHeader>
                 <DialogTitle>题目详情</DialogTitle>
                 <DialogDescription>
                   题干、选项与插图完整保留，解析按需展开。
@@ -605,7 +605,9 @@ export function StudyWorkspace() {
                   )}
                   {editingPrompt !== null && (
                     <div className="space-y-3">
+                      <label htmlFor="corrected-study-prompt" className="text-sm font-medium">完整题面</label>
                       <textarea
+                        id="corrected-study-prompt"
                         className="min-h-48 w-full rounded-md bg-[var(--color-surface-hover)] p-3 text-sm"
                         aria-label="校对完整题面"
                         maxLength={200000}
@@ -614,6 +616,10 @@ export function StudyWorkspace() {
                           setEditingPrompt(event.target.value)
                         }
                       />
+
+                      <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
+                        确认题干、全部选项和共享材料完整后重新解析，已选插图会继续参与核验。
+                      </p>
 
                       <Button
                         disabled={busy || !editingPrompt.trim()}
@@ -648,7 +654,7 @@ export function StudyWorkspace() {
                     </div>
                   )}
                   {detail.error && (
-                    <StudyFeedback message={detail.error} error />
+                    <p role="alert" className="text-sm text-destructive">{detail.error}</p>
                   )}
                   {detail.solution && (
                     <>

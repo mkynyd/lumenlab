@@ -1,5 +1,4 @@
 "use client";
-import { StudyFeedback } from "./controls";
 
 import { useState } from "react";
 import { ArrowUpRight, BookOpen, Library, Plus, Search } from "lucide-react";
@@ -165,7 +164,7 @@ export function CollectionLibrary({
         }}
       >
         <DialogContent>
-          <DialogHeader className="sr-only">
+          <DialogHeader>
             <DialogTitle>新增错题本</DialogTitle>
             <DialogDescription>
               收录到「{target?.name}」，按章节或专题分开整理。
@@ -188,7 +187,9 @@ export function CollectionLibrary({
               }
             }}
           >
+            <label htmlFor="new-notebook-name" className="text-sm font-medium">错题本名称</label>
             <Input
+              id="new-notebook-name"
               autoFocus
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -197,7 +198,7 @@ export function CollectionLibrary({
               required
               maxLength={100}
             />
-            {error && <StudyFeedback message={error} error />}
+            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <Button disabled={busy} type="submit" className="h-10">
               {busy ? "正在添加…" : "添加错题本"}
             </Button>

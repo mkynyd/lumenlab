@@ -1,5 +1,4 @@
 "use client";
-import { StudyFeedback } from "./controls";
 /* eslint-disable @next/next/no-img-element -- Expiring authenticated scan pages. */
 import { useRef, useState, type PointerEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -169,7 +168,13 @@ export function StudyScanner({
   return (
     <section className="space-y-4" aria-label="扫描与框选错题">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm">{questions.length} 题</span>
+        <div>
+          <h2 className="text-xl font-semibold">框选错题</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            拖动框选完整题目，包含全部选项。跨页插图或长文可绑定到指定题目。
+          </p>
+        </div>
+        <span className="text-sm">已选 {questions.length} 题</span>
       </header>
       <div className="flex flex-wrap gap-2">
         {(
@@ -192,7 +197,7 @@ export function StudyScanner({
         ))}
       </div>
       <label className="block text-xs">
-        <span className="sr-only">裁片扫描模式</span>
+        裁片扫描模式
         <StudySelect
           label="裁片扫描模式"
           value={scanMode}
@@ -240,9 +245,9 @@ export function StudyScanner({
         </nav>
         <div className="max-h-[70vh] overflow-auto rounded-xl bg-[var(--color-surface-hover)] p-3">
           {loadedPage !== page && (
-            <Button variant="secondary" disabled>
-              加载第 {page + 1} 页
-            </Button>
+            <p role="status" className="py-6 text-center text-sm">
+              正在加载第{page + 1}页…
+            </p>
           )}
           <div
             ref={canvas}
@@ -339,6 +344,7 @@ export function StudyScanner({
           </div>
         </div>
         <aside className="space-y-3">
+          <h3 className="font-medium">选中的错题</h3>
           <div className="max-h-48 space-y-2 overflow-auto lg:max-h-72">
             {questions.map((question, index) => (
               <div
@@ -376,7 +382,7 @@ export function StudyScanner({
           {selected && (
             <div className="space-y-3">
               <label className="block text-xs">
-                <span className="sr-only">原试卷题号（选填）</span>
+                原试卷题号（选填）
                 <input
                   className="mt-1 w-full rounded-md bg-[var(--color-surface-hover)] p-2"
                   aria-label="原试卷题号"
@@ -393,7 +399,9 @@ export function StudyScanner({
                   }
                 />
               </label>
-
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                拖动选框移动，拖动右下角调整大小；也可填写百分比坐标。
+              </p>
               {selected.regions.map((region, index) => (
                 <div
                   key={index}
@@ -419,10 +427,9 @@ export function StudyScanner({
                       ] as const
                     ).map(([key, label]) => (
                       <label key={key} className="text-xs">
-                        <span className="sr-only">{label}</span>
+                        {label}
                         <input
                           aria-label={`区域${index + 1}${label}`}
-                          placeholder={label}
                           className="mt-1 w-full rounded bg-[var(--color-surface)] p-1"
                           type="number"
                           min={key === "width" || key === "height" ? 1 : 0}
@@ -458,7 +465,11 @@ export function StudyScanner({
           )}
         </aside>
       </div>
-      {error && <StudyFeedback message={error} error />}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <footer className="flex flex-wrap items-center justify-between gap-3">
         <Button
           variant="secondary"

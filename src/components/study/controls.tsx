@@ -235,6 +235,7 @@ export function StudyTimePicker({
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64">
+          <p className="mb-3 text-sm font-medium">{label}</p>
           <div className="grid grid-cols-2 gap-2">
             <StudySelect
               label={`${label}小时`}

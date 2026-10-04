@@ -1,5 +1,4 @@
 "use client";
-import { StudyFeedback } from "@/components/study/controls";
 
 // Adapted from the licensed ReactBits Pro onboarding-2 vertical-step form.
 import { useState } from "react";
@@ -8,12 +7,11 @@ import { Button } from "@/components/ui/button";
 import { StudySelect, UploadButton } from "@/components/study/controls";
 import { Input } from "@/components/ui/input";
 import { collectionSchema, type CollectionInput } from "@/lib/study/contracts";
-import { StudyTip } from "@/components/study/controls";
 const STEPS = [
-  { title: "学习阶段", description: "选择年级与学习阶段" },
-  { title: "学科与考试", description: "明确这本题集的范围" },
-  { title: "考试大纲", description: "用于自动识别题目考点" },
-  { title: "题集与错题本", description: "只收录你选择的错题" },
+  { title: "学习阶段", description: "选择学段和年级，用于整理题集与筛选题库。" },
+  { title: "学科与考试", description: "填写学科；专业和考试名称可选。" },
+  { title: "考试大纲", description: "上传或粘贴考试范围，用于标注题目考点。没有大纲也可以继续。" },
+  { title: "题集与错题本", description: "命名题集和第一本错题本，创建后再上传或从题库选题。" },
 ];
 export default function Onboarding2({
   onCreate,
@@ -65,14 +63,15 @@ export default function Onboarding2({
   const textField = (
     key: "name" | "grade" | "subject" | "major" | "exam" | "notebookName",
     label: string,
+    placeholder: string,
   ) => (
-    <label className="block space-y-2 text-sm">
-      <span className="sr-only">{label}</span>
+    <label className="flex flex-col gap-2 text-sm">
+      <span className="font-medium">{label}</span>
       <Input
         aria-label={label}
         value={form[key]}
         onChange={(event) => field(key, event.target.value)}
-        placeholder={label}
+        placeholder={placeholder}
         maxLength={key === "subject" ? 80 : 100}
         disabled={busy}
       />
@@ -80,45 +79,51 @@ export default function Onboarding2({
   );
   return (
     <section
-      className="grid min-h-[480px] overflow-hidden rounded-2xl bg-[var(--color-surface)] md:grid-cols-[220px_1fr]"
+      className="flex flex-col overflow-hidden rounded-2xl bg-[var(--color-surface)] md:grid md:min-h-[480px] md:grid-cols-[220px_1fr]"
       aria-label="创建题集"
     >
-      <aside className="bg-[var(--color-surface-hover)] p-5">
-        <ol className="grid grid-cols-4 gap-2 md:grid-cols-1">
+      <aside className="flex flex-col gap-4 bg-[var(--color-surface-hover)] p-4 md:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-semibold">创建题集</h2>
+          <span className="text-xs text-[var(--color-text-secondary)]">{step + 1} / 4</span>
+        </div>
+        <ol aria-label="创建步骤" className="grid grid-cols-2 gap-2 md:grid-cols-1">
           {STEPS.map((item, index) => (
             <li key={item.title}>
-              <StudyTip content={item.description}>
-                <Button
-                  type="button"
-                  variant={index === step ? "default" : "secondary"}
-                  disabled={busy || index > step}
-                  aria-label={item.title}
-                  aria-current={index === step ? "step" : undefined}
-                  className="h-auto min-h-11 w-full justify-start whitespace-normal p-3 text-left"
-                  onClick={() => setStep(index)}
-                >
-                  <span className="shrink-0">
-                    {index < step ? <Check size={14} /> : index + 1}
-                  </span>
-                  <span className="hidden md:block">{item.title}</span>
-                </Button>
-              </StudyTip>
+              <Button
+                type="button"
+                variant={index === step ? "default" : "secondary"}
+                disabled={busy || index > step}
+                aria-label={item.title}
+                aria-current={index === step ? "step" : undefined}
+                className="h-auto min-h-11 w-full justify-start whitespace-normal p-3 text-left"
+                onClick={() => setStep(index)}
+              >
+                <span className="shrink-0">
+                  {index < step ? <Check size={14} /> : index + 1}
+                </span>
+                <span className="text-xs leading-5 sm:text-sm">{item.title}</span>
+              </Button>
             </li>
           ))}
         </ol>
       </aside>
       <form
-        className="flex min-w-0 flex-col p-6 md:p-8"
+        className="flex min-w-0 flex-col p-5 md:p-8"
         onSubmit={(event) => {
           event.preventDefault();
           void next();
         }}
       >
-        <div className="mb-6 flex-1 space-y-5">
+        <div className="mb-6 flex flex-1 flex-col gap-5">
+          <header className="flex flex-col gap-2">
+            <h3 className="text-lg font-semibold">{STEPS[step].title}</h3>
+            <p className="text-sm leading-6 text-[var(--color-text-secondary)]">{STEPS[step].description}</p>
+          </header>
           {step === 0 && (
             <>
-              <label className="block space-y-2 text-sm">
-                <span className="sr-only">学习阶段</span>
+              <label className="flex flex-col gap-2 text-sm">
+                <span className="font-medium">学习阶段</span>
                 <StudySelect
                   label="学习阶段"
                   value={form.stage}
@@ -133,14 +138,14 @@ export default function Onboarding2({
                   ]}
                 />
               </label>
-              {textField("grade", "年级（选填）")}
+              {textField("grade", "年级（选填）", "例如：大三")}
             </>
           )}
           {step === 1 && (
             <>
-              {textField("subject", "学科")}
-              {textField("major", "专业（选填）")}
-              {textField("exam", "考试（选填）")}
+              {textField("subject", "学科", "例如：数学、英语、数据结构")}
+              {textField("major", "专业（选填）", "例如：计算机科学与技术")}
+              {textField("exam", "考试（选填）", "例如：考研数学二、大学英语六级")}
             </>
           )}
           {step === 2 && (
@@ -177,13 +182,14 @@ export default function Onboarding2({
                   }}
                 />
               </div>
-              <label className="block space-y-2 text-sm">
-                <span className="sr-only">考试大纲或知识范围（选填）</span>
+              <label className="flex flex-col gap-2 text-sm">
+                <span className="font-medium">考试大纲或知识范围（选填）</span>
                 <textarea
+                  aria-label="考试大纲或知识范围（选填）"
                   className="min-h-40 w-full rounded-md bg-[var(--color-surface-hover)] p-3"
                   value={form.syllabus}
                   onChange={(event) => field("syllabus", event.target.value)}
-                  placeholder="大纲 / 知识范围"
+                  placeholder="例如：极限、导数、一元函数积分；或粘贴完整大纲"
                   maxLength={100000}
                 />
               </label>
@@ -191,12 +197,12 @@ export default function Onboarding2({
           )}
           {step === 3 && (
             <>
-              {textField("name", "题集名称")}
-              {textField("notebookName", "第一本错题本")}
+              {textField("name", "题集名称", "例如：2027 考研数学二")}
+              {textField("notebookName", "第一本错题本", "例如：极限与连续")}
             </>
           )}
         </div>
-        {error && <StudyFeedback message={error} error />}
+        {error && <p role="alert" className="mb-4 text-sm text-destructive">{error}</p>}
         <div className="flex items-center gap-2">
           <Button
             type="button"

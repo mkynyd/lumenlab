@@ -1,5 +1,4 @@
 "use client";
-import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { holidaySource } from "@/lib/study/holidays";
@@ -66,6 +65,9 @@ export function StudyPlanning({
       className="space-y-4 rounded-xl bg-[var(--color-surface-hover)] p-4"
       aria-label="规划学习时间"
     >
+      <p className="text-xs text-[var(--color-text-secondary)]">
+        添加可学习时段。系统会避开已有课程和学习安排，并优先安排临近截止的任务。睡眠、休息和不想学习的假期请留在时段之外。
+      </p>
       <StudyCheck
         checked={skipHolidays}
         onChange={(checked) => {
@@ -76,11 +78,12 @@ export function StudyPlanning({
       >
         避开2026年法定放假日
       </StudyCheck>
-      <Button variant="secondary" asChild>
+      <p className="text-xs text-[var(--color-text-secondary)]">
         <a href={holidaySource} target="_blank" rel="noreferrer">
-          法定假日
+          官方放假与调休安排
         </a>
-      </Button>
+        ；学校补课以实际课表为准。2027年及其他年份尚未配置，请按学校通知设置可学习时段。
+      </p>
       <form
         className="space-y-3"
         onSubmit={(event) => {
@@ -109,7 +112,7 @@ export function StudyPlanning({
       >
         <div className="flex flex-col gap-3">
           <label className="text-xs">
-            <span className="sr-only">空闲开始（北京时间）</span>
+            空闲开始（北京时间）
             <StudyDateTime
               label="空闲开始"
               value={startValue}
@@ -118,7 +121,7 @@ export function StudyPlanning({
             />
           </label>
           <label className="text-xs">
-            <span className="sr-only">空闲结束（北京时间）</span>
+            空闲结束（北京时间）
             <StudyDateTime
               label="空闲结束"
               value={endValue}
@@ -166,10 +169,16 @@ export function StudyPlanning({
       >
         {busy ? "正在处理…" : "预览学习规划"}
       </Button>
-      {error && <StudyFeedback message={error} error />}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       {plan && (
         <div className="space-y-3">
-          <p className="text-sm font-medium">{plan.blocks.length} 个时段</p>
+          <h3 className="text-sm font-medium">
+            建议安排 {plan.blocks.length} 个学习时段
+          </h3>
           <div className="max-h-64 space-y-2 overflow-auto text-xs">
             {plan.blocks.map((block, index) => (
               <p key={index}>
@@ -186,10 +195,13 @@ export function StudyPlanning({
           </div>
           {!plan.feasible && (
             <>
+              <p className="text-sm text-destructive">
+                这些任务无法在截止前全部完成：
+              </p>
               <ul className="space-y-1 text-xs">
                 {plan.unscheduled.map((task) => (
                   <li key={task.taskId}>
-                    {plan.taskTitles[task.taskId]} · 缺少 {task.minutes} 分钟
+                    {plan.taskTitles[task.taskId]} · 还缺 {task.minutes} 分钟
                   </li>
                 ))}
               </ul>

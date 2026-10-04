@@ -1,5 +1,4 @@
 "use client";
-import { StudyFeedback } from "./controls";
 
 import { useEffect, useState } from "react";
 import {
@@ -319,7 +318,7 @@ export function ScheduleWorkspace({
         }}
       >
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader className="sr-only">
+          <DialogHeader>
             <DialogTitle>{activeTool?.label}</DialogTitle>
             <DialogDescription>
               {activeTool?.description}。日期与时间均按北京时间保存。
@@ -353,16 +352,17 @@ export function ScheduleWorkspace({
               }}
             >
               <label className="flex flex-col gap-2 text-sm">
-                <span className="sr-only">任务名称</span>
+                <span>任务名称</span>
                 <Input
                   name="title"
                   aria-label="任务名称"
-                  placeholder="任务名称"
+                  placeholder="例如：完成实验报告"
                   required
                   maxLength={200}
                 />
               </label>
               <div className="flex flex-col gap-2 text-sm">
+                <span>截止日期与时间（北京时间）</span>
                 <StudyDateTime
                   value={deadline}
                   onChange={setDeadline}
@@ -371,7 +371,7 @@ export function ScheduleWorkspace({
                 />
               </div>
               <label className="flex flex-col gap-2 text-sm">
-                <span className="sr-only">预计耗时（分钟）</span>
+                <span>预计耗时（分钟）</span>
                 <Input
                   type="number"
                   name="minutes"
@@ -384,7 +384,7 @@ export function ScheduleWorkspace({
                   required
                 />
               </label>
-              {error && <StudyFeedback message={error} error />}
+              {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
               <Button className="h-10" disabled={saving} type="submit">
                 {saving ? "正在保存…" : "添加任务"}
               </Button>

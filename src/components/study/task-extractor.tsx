@@ -1,5 +1,4 @@
 "use client";
-import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { UploadButton } from "./controls";
@@ -48,13 +47,16 @@ export function TaskExtractor({
           void extract(event.currentTarget);
         }}
       >
-        <textarea
-          name="text"
-          aria-label="老师的作业要求"
-          placeholder="老师的作业要求"
-          maxLength={100000}
-          className="min-h-24 w-full rounded-md bg-[var(--color-surface)] p-3 text-sm"
-        />
+        <label className="flex flex-col gap-2 text-sm">
+          <span>老师的作业要求</span>
+          <textarea
+            name="text"
+            aria-label="老师的作业要求"
+            placeholder="粘贴作业要求；若提取结果需要确认，可补充日期等信息后重新识别。"
+            maxLength={100000}
+            className="min-h-24 w-full rounded-md bg-[var(--color-surface)] p-3 text-sm"
+          />
+        </label>
         <UploadButton
           label="上传作业要求"
           name="file"
@@ -66,7 +68,9 @@ export function TaskExtractor({
         </Button>
       </form>
       {questions.map((question, index) => (
-        <StudyFeedback key={index} message={question} />
+        <p key={index} className="text-sm text-[var(--color-accent)]">
+          需要补充：{question}
+        </p>
       ))}
       {tasks.map((task, index) => (
         <div
@@ -85,11 +89,11 @@ export function TaskExtractor({
             }
           />
           <p className="text-xs">
-            {" "}
+            北京时间{" "}
             {new Date(task.deadline).toLocaleString("zh-CN", {
               timeZone: "Asia/Shanghai",
             })}{" "}
-            {task.estimatedMinutes} 分钟
+            · 预计 {task.estimatedMinutes} 分钟
           </p>
           <Button
             variant="secondary"
@@ -132,7 +136,11 @@ export function TaskExtractor({
           确认并保存 {tasks.length} 个任务
         </Button>
       )}
-      {error && <StudyFeedback message={error} error />}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </section>
   );
 }

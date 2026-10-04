@@ -1,5 +1,4 @@
 "use client";
-import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -138,9 +137,12 @@ export function TimetableImport({
       className="space-y-4 rounded-xl bg-[var(--color-surface-hover)] p-4"
       aria-label="导入课表"
     >
+      <p className="text-xs text-[var(--color-text-secondary)]">
+        支持图片、Excel、ICS和PDF。先检查课程，再确认学期与学校节次时间。节次会保存，并在下次导入时回填供你核对。
+      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs">
-          <span className="sr-only">ICS导入范围起点</span>
+          ICS导入范围起点
           <StudyDatePicker
             label="ICS导入范围起点"
             value={rangeStart}
@@ -149,7 +151,7 @@ export function TimetableImport({
           />
         </label>
         <label className="text-xs">
-          <span className="sr-only">ICS导入范围终点（不含当天）</span>
+          ICS导入范围终点（不含当天）
           <StudyDatePicker
             label="ICS导入范围终点"
             value={rangeEnd}
@@ -169,7 +171,11 @@ export function TimetableImport({
           if (file) void upload(file);
         }}
       />
-      {error && <StudyFeedback message={error} error />}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       {preview && (
         <div className="space-y-4">
           {preview.warnings.length > 0 && (
@@ -182,7 +188,7 @@ export function TimetableImport({
           {preview.patterns.length > 0 && (
             <>
               <label className="block text-xs">
-                <span className="sr-only">第1周星期一日期</span>
+                第1周星期一日期
                 <StudyDatePicker
                   label="第1周星期一日期"
                   value={termStart}
@@ -194,6 +200,10 @@ export function TimetableImport({
                 />
               </label>
               <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium">学校节次时间</p>
+                <div className="grid grid-cols-[45px_1fr_1fr] gap-2 text-xs text-[var(--color-text-secondary)]">
+                  <span>节次</span><span>上课</span><span>下课</span>
+                </div>
                 {periods.map((period, index) => (
                   <div
                     key={period.number}
@@ -230,8 +240,10 @@ export function TimetableImport({
               </div>
             </>
           )}
-          {timingError && <StudyFeedback message={timingError} error />}
-          <p className="text-sm font-medium">{events.length} 次课程</p>
+          {timingError && (
+            <p className="text-xs text-destructive">{timingError}</p>
+          )}
+          <p className="text-sm font-medium">预览 {events.length} 次课程</p>
           <div className="max-h-64 space-y-2 overflow-auto text-xs">
             {events.map((event, index) => (
               <p key={index}>
@@ -253,12 +265,11 @@ export function TimetableImport({
             替换之前导入的课程
           </StudyCheck>
           <StudyCheck
-            hint="检查课程、周次、节次时间与识别提示，确认后导入；学校调课以学校通知为准。"
             checked={confirmed}
             onChange={setConfirmed}
             disabled={busy}
           >
-            确认课表
+            我已检查课程、周次、节次时间与识别提示；以学校实际调课安排为准。
           </StudyCheck>
           <div className="flex gap-2">
             <Button

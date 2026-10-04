@@ -1,5 +1,4 @@
 "use client";
-import { StudyFeedback } from "./controls";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StudySelect, StudyDateTime } from "./controls";
@@ -16,6 +15,9 @@ export function SchoolAdjustments({
     [error, setError] = useState("");
   return (
     <section className="space-y-3 rounded-xl bg-[var(--color-surface-hover)] p-4">
+      <p className="text-xs text-[var(--color-text-secondary)]">
+        按学校通知添加补课、考试或休息时段。停课可在日历日程列表中移除对应课程。
+      </p>
       <form
         className="space-y-3"
         onSubmit={async (event) => {
@@ -58,26 +60,32 @@ export function SchoolAdjustments({
           }
         }}
       >
-        <Input
-          name="title"
-          aria-label="补课或占用名称"
-          placeholder="例如：国庆调休补课、休息"
-          required
-          maxLength={200}
-        />
-        <StudySelect
-          label="日程类型"
-          value={kind}
-          onChange={setKind}
-          disabled={busy}
-          options={[
-            { value: "course", label: "学校课程 / 补课" },
-            { value: "busy", label: "不可用 / 休息 / 考试" },
-          ]}
-        />
+        <label className="flex flex-col gap-2 text-sm">
+          <span>补课或占用名称</span>
+          <Input
+            name="title"
+            aria-label="补课或占用名称"
+            placeholder="例如：国庆调休补课、休息"
+            required
+            maxLength={200}
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm">
+          <span>日程类型</span>
+          <StudySelect
+            label="日程类型"
+            value={kind}
+            onChange={setKind}
+            disabled={busy}
+            options={[
+              { value: "course", label: "学校课程 / 补课" },
+              { value: "busy", label: "不可用 / 休息 / 考试" },
+            ]}
+          />
+        </label>
         <div className="flex flex-col gap-3">
           <label className="text-xs">
-            <span className="sr-only">开始（北京时间）</span>
+            开始（北京时间）
             <StudyDateTime
               label="日程开始"
               value={start}
@@ -86,7 +94,7 @@ export function SchoolAdjustments({
             />
           </label>
           <label className="text-xs">
-            <span className="sr-only">结束（北京时间）</span>
+            结束（北京时间）
             <StudyDateTime
               label="日程结束"
               value={end}
@@ -99,7 +107,11 @@ export function SchoolAdjustments({
           确认添加日程
         </Button>
       </form>
-      {error && <StudyFeedback message={error} error />}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </section>
   );
 }
