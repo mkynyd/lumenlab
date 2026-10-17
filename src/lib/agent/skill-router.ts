@@ -70,7 +70,7 @@ function normalize(input: string) {
 
 function includesAny(text: string, patterns: Array<string | RegExp>) {
   return patterns.some((pattern) =>
-    typeof pattern === "string" ? text.includes(pattern) : pattern.test(text)
+    typeof pattern === "string" ? text.includes(normalize(pattern)) : pattern.test(text)
   );
 }
 

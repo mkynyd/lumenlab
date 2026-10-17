@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { routeSkill } from "./skill-router";
+import { skillRegistry } from "./skill-registry";
+import { registerFromDiscovery } from "@/lib/skills/registry";
 
 describe("skill router", () => {
+  it("does not route a thought report to slides, but recognizes an explicit PPT request", async () => {
+    const previous = skillRegistry.list();
+    try {
+      await registerFromDiscovery();
+      expect(routeSkill({ message: "写一份大四学生2026年3月的入党积极分子思想汇报，要求有3月附近实事的学习反思，以及思想情况", webSearchActive: true }).activeSkillId).toBeNull();
+      expect(routeSkill({ message: "请将思想汇报制作成PPT" }).activeSkillId).toBe("pptx");
+    } finally {
+      skillRegistry.reset();
+      previous.forEach((skill) => skillRegistry.register(skill));
+    }
+  });
+
   it("keeps manual skill selection ahead of rule routing", () => {
     const route = routeSkill({
       message: "请帮我抓考试重点",

@@ -1,4 +1,5 @@
 import { getEncoding } from "js-tiktoken";
+import type { DeepSeekMessage } from "@/lib/deepseek";
 
 const ENCODING_NAME = "cl100k_base";
 
@@ -19,7 +20,7 @@ export function countTokens(text: string): number {
  * 包含消息格式开销（每条 4 tokens）和请求级 priming offset（2 tokens）。
  */
 export function countMessageTokens(
-  messages: Array<{ role: string; content: string }>
+  messages: Array<Pick<DeepSeekMessage, "role" | "content">>
 ): number {
   const enc = getEncoder();
   let total = 0;
@@ -27,7 +28,13 @@ export function countMessageTokens(
     // 角色 + 内容 + 格式开销
     total += 4;
     total += enc.encode(message.role).length;
-    total += enc.encode(message.content).length;
+    // Native tool continuations contain text/tool_use/tool_result blocks.
+    // Include the serialized structure and arguments in the estimate while
+    // retaining the original blocks for the provider and durable replay.
+    const content = typeof message.content === "string"
+      ? message.content
+      : JSON.stringify(message.content);
+    total += enc.encode(content).length;
   }
   total += 2; // priming offset
   return total;

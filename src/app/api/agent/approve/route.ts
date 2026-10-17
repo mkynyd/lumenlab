@@ -173,6 +173,7 @@ export async function POST(request: NextRequest) {
       sessionApprovals: new Map(),
     },
     skill: currentSkill,
+    webSearchActive: executionContext.webSearchActive === true,
     tool: currentTool,
     arguments: normalizedArguments,
     resourceContext: { projectId, selectedFileIds },

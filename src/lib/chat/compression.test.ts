@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import {
   selectCompressibleMessages,
   compressHistory,
@@ -10,8 +10,10 @@ vi.mock("@/lib/deepseek", () => ({
 }));
 
 import { completeChat } from "@/lib/deepseek";
+import type { DeepSeekMessage } from "@/lib/deepseek";
 
 const mockedCompleteChat = vi.mocked(completeChat);
+beforeEach(() => vi.clearAllMocks());
 
 describe("compression", () => {
   describe("selectCompressibleMessages", () => {
@@ -44,6 +46,22 @@ describe("compression", () => {
   });
 
   describe("compressHistory", () => {
+    it("serializes old tool blocks for summaries and preserves recent native continuations", async () => {
+      const old: DeepSeekMessage = { role: "assistant", content: [
+        { type: "tool_use", id: "old-call", name: "artifact_save", input: { title: "思想汇报" } },
+      ] };
+      const recent: DeepSeekMessage = { role: "user", content: [
+        { type: "tool_result", tool_use_id: "recent-call", content: '{"id":"artifact-1"}' },
+      ] };
+      const messages = [old, { role: "user", content: "继续" }, recent];
+      mockedCompleteChat.mockResolvedValueOnce({ content: "摘要", usage: null });
+      await compressHistory({ apiKey: "key", messages, protectedWindow: 1 });
+      const prompt = mockedCompleteChat.mock.lastCall?.[1].messages[1].content;
+      expect(prompt).toContain(JSON.stringify(old.content));
+      expect(prompt).not.toContain("[object Object]");
+      expect(buildCompressedMessages(messages, "摘要", 1).at(-1)).toBe(recent);
+    });
+
     it("returns null when nothing to compress", async () => {
       const messages = [
         { role: "system", content: "sys" },

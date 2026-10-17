@@ -153,6 +153,12 @@ export async function evaluatePolicy(
   }
 ): Promise<PolicyDecision> {
   const { user, workspace, conversation, skill, tool, arguments: args } = ctx;
+  // The runtime exposes enabled web tools independently of a Skill's tools.
+  // Apply their own scope/risk/approval policy; workspace and user restrictions
+  // still apply below. This flag is supplied by the server, never tool arguments.
+  const independentWebTool = ctx.webSearchActive === true &&
+    (tool.toolId === "web.search" || tool.toolId === "web.fetch");
+  const policySkill = independentWebTool ? undefined : skill;
 
   // 1. Tool 注册
   if (!toolRegistry.has(tool.toolId)) {
@@ -163,7 +169,7 @@ export async function evaluatePolicy(
 
   // 2. user scope 检查
   const requiredScopes = new Set<string>(tool.requiredScopes);
-  if (skill) for (const s of skill.requiredScopes) requiredScopes.add(s);
+  if (policySkill) for (const s of policySkill.requiredScopes) requiredScopes.add(s);
   for (const scope of requiredScopes) {
     if (!user.scopes.includes(scope)) {
       return denyDecision(
@@ -191,16 +197,16 @@ export async function evaluatePolicy(
   // 4. Skill allowlist
   // skill.activate 是全局 Skill 切换能力，runtime 始终将其暴露给模型，
   // 不应被单个 Skill 的 allowedTools 限制（否则模型按系统提示切换 Skill 时会被拒绝）。
-  if (skill && !isRuntimeMetaTool(tool.toolId)) {
-    if (!skill.allowedTools.includes(tool.toolId)) {
+  if (policySkill && !isRuntimeMetaTool(tool.toolId)) {
+    if (!policySkill.allowedTools.includes(tool.toolId)) {
       return denyDecision(
         tool,
         "TOOL_NOT_IN_SKILL_ALLOWLIST",
-        `Skill ${skill.skillId} 不允许调用 ${tool.toolId}`,
+        `Skill ${policySkill.skillId} 不允许调用 ${tool.toolId}`,
         skill
       );
     }
-    const skillMaxRisk = Math.max(...skill.allowedRiskLevel.map((r) => RISK_RANK[r]));
+    const skillMaxRisk = Math.max(...policySkill.allowedRiskLevel.map((r) => RISK_RANK[r]));
     if (toolRisk > skillMaxRisk) {
       return denyDecision(
         tool,
@@ -226,8 +232,8 @@ export async function evaluatePolicy(
   let approvalMode: ApprovalMode = tool.defaultApprovalMode;
   // skill.activate 是 Skill 切换元能力，本身只读取 Skill 元数据，不访问用户资源；
   // 不应被当前激活 Skill 的 defaultApprovalPolicy 收紧为 ask_first，否则模型按提示切换 Skill 时会弹出审批。
-  if (skill && !isRuntimeMetaTool(tool.toolId)) {
-    approvalMode = maxStrictness(approvalMode, skill.defaultApprovalPolicy);
+  if (policySkill && !isRuntimeMetaTool(tool.toolId)) {
+    approvalMode = maxStrictness(approvalMode, policySkill.defaultApprovalPolicy);
   }
   const userPref = await loadUserPreference(user.id, tool.toolId);
   if (userPref) {

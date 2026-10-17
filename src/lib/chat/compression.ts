@@ -1,10 +1,7 @@
 import { completeChat, type DeepSeekMessage } from "@/lib/deepseek";
 import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
 
-export type ChatMessage = {
-  role: string;
-  content: string;
-};
+export type ChatMessage = Pick<DeepSeekMessage, "role" | "content">;
 
 export type CompressionOptions = {
   apiKey: string;
@@ -74,7 +71,7 @@ export async function compressHistory(
   }
 
   const formatted = compressible
-    .map((m) => `${m.role === "user" ? "用户" : "助手"}：${m.content}`)
+    .map((m) => `${m.role === "user" ? "用户" : "助手"}：${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`)
     .join("\n\n");
 
   const system = userPrompt

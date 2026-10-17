@@ -976,6 +976,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
                 projectId: project?.id,
                 selectedFileIds: uniqueFileIds,
                 skillId: skillRoute.activeSkillId ?? undefined,
+                webSearchActive,
                 runId,
                 agentExecutionId: input.durable?.executionId,
                 signal: input.signal,
@@ -1099,7 +1100,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   let messages: DeepSeekMessage[] = stringMessages as DeepSeekMessage[];
 
   // 上下文窗口预算检查与自动压缩
-  const budgetCheck = checkContextBudget(messages as unknown as StringMessage[]);
+  const budgetCheck = checkContextBudget(messages);
   if (budgetCheck.status === "warn") {
     emitAgentEvent({
       type: "context_budget_warning",
@@ -1114,7 +1115,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       const compressionApiKey = await getProviderApiKey(userId, "deepseek");
       const compressionResult = await compressHistory({
         apiKey: compressionApiKey,
-        messages: messages as unknown as StringMessage[],
+        messages,
       });
       if (compressionResult) {
         const summaryMessage = await conversationPersistence.createContextSummary({
@@ -1140,10 +1141,10 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           replacedBySummaryId: summaryMessage.id,
         });
         messages = buildCompressedMessages(
-          messages as unknown as StringMessage[],
+          messages,
           compressionResult.summary
         ) as DeepSeekMessage[];
-        const reCheck = checkContextBudget(messages as unknown as StringMessage[]);
+        const reCheck = checkContextBudget(messages);
         emitAgentEvent({
           type: "context_budget_compressed",
           tokens: reCheck.tokens,
@@ -1307,6 +1308,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
               projectId: project?.id,
               selectedFileIds: uniqueFileIds,
               skillId: skillRoute.activeSkillId ?? undefined,
+              webSearchActive,
               runId,
               agentExecutionId: input.durable?.executionId,
               sessionApprovals,

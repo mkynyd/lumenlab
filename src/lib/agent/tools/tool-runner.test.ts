@@ -8,12 +8,16 @@ describe("ToolRunner", () => {
     let proposalContext: {
       projectId?: string;
       selectedFileIds?: string[];
+      webSearchActive?: boolean;
     } | undefined;
     const tool = metadata("project_files.list");
     const runner = createToolRunner({
       resolveTool: () => tool,
       resolveSkill: () => undefined,
-      evaluatePolicy: async () => allow(tool),
+      evaluatePolicy: async (context) => {
+        expect(context.webSearchActive).toBe(true);
+        return allow(tool);
+      },
       loadUserScopes: async () => ["project.read", "project.write", "artifact.read", "artifact.write"],
       issueApproval: async () => {
         throw new Error("approval should not be issued");
@@ -55,6 +59,7 @@ describe("ToolRunner", () => {
           conversationId: "conversation-1",
           projectId: "project-1",
           selectedFileIds: ["file-1"],
+          webSearchActive: true,
           sessionApprovals: new Map(),
         },
       },
@@ -69,6 +74,7 @@ describe("ToolRunner", () => {
     expect(proposalContext).toEqual({
       projectId: "project-1",
       selectedFileIds: ["file-1"],
+      webSearchActive: true,
     });
     expect(operations).toEqual([
       "persist:proposed",

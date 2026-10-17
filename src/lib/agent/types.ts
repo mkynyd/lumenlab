@@ -111,6 +111,8 @@ export interface AgentContext {
     sessionApprovals: Map<string, ApprovalScope>;
   };
   skill?: SkillMetadata;
+  /** Server-resolved turn capability, independent of the active Skill. */
+  webSearchActive?: boolean;
   tool: ToolMetadata;
   arguments: Record<string, unknown>;
   resourceContext: {

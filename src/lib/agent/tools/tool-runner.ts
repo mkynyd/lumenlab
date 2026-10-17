@@ -32,6 +32,7 @@ export interface ToolInvocationRequest {
     projectId?: string;
     selectedFileIds?: string[];
     skillId?: string;
+    webSearchActive?: boolean;
     runId?: string;
     agentExecutionId?: string;
     signal?: AbortSignal;
@@ -143,6 +144,7 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
             ? { selectedFileIds: [...request.context.selectedFileIds] }
             : {}),
           ...(request.context.runId ? { runId: request.context.runId } : {}),
+          ...(request.context.webSearchActive === true ? { webSearchActive: true } : {}),
         },
         ...(request.context.agentExecutionId
           ? {
@@ -430,6 +432,7 @@ async function buildAgentContext(
       sessionApprovals: request.context.sessionApprovals,
     },
     skill,
+    webSearchActive: request.context.webSearchActive,
     tool,
     arguments: request.call.arguments,
     resourceContext: {

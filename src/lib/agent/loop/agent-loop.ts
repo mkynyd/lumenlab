@@ -28,6 +28,7 @@ export interface AgentLoopInput {
     projectId?: string;
     selectedFileIds?: string[];
     skillId?: string;
+    webSearchActive?: boolean;
     runId?: string;
     agentExecutionId?: string;
     sessionApprovals: Map<string, ApprovalScope>;

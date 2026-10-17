@@ -41,6 +41,8 @@ Deep Research 是特殊消费者：它只读取受信 Skill 的研究方法论�
 
 Skill Router 会根据提问、隐藏快捷任务提示、选中文件、项目上下文和联网意图自动选择 Skill。手动选择 Skill 或关闭 Skill 的优先级最高。
 
+普通“思想汇报”不会触发 PPT Skill；明确要求 PPT 或幻灯片时才匹配相关触发词。本轮已开启的联网搜索与网页读取独立于文档 Skill 的工具列表，仍受 Tool 自身权限、参数、工作区规则和用户审批偏好约束。
+
 ## Skill 来源与版本
 
 运行时按 `project > user > managed > bundled` 合并 Skill；同 ID override 会在 catalog 中显示 active source 与被覆盖来源。`.lumenlab/skills` 是随 release 发布的 bundled layer，后台只检测 upstream，不写 Git 目录。Managed layer 位于 `LUMENLAB_MANAGED_SKILLS_DIR` 的共享目录；user/project layer 默认不参与自动更新。
@@ -85,7 +87,7 @@ Managed updater 与 CLI 共用一套 service。候选先下载到隔离 staging�
 - L3 会删除或生成下载类结果，每次都需要确认。
 - L4 是预留的阻断级风险，目前没有生产 Tool 使用。
 
-审批卡片会展示操作名称、影响范围、可逆性和样本。点击「仅本次允许」后，服务端会先用落库的规范化参数和当前 Tool/Skill、用户 scope、资源归属重新评估 Policy，再兑换一次性审批令牌并立即执行 Tool。等待期间的权限撤销、参数或 token 绑定不一致都会导致服务端拒绝执行。卡片会显示成功、失败或拒绝终态，但不会自动恢复此前暂停的模型 continuation，需要时可发送下一条消息继续。
+审批卡片会展示操作名称、影响范围、可逆性和样本。点击「仅本次允许」后，服务端会先用落库的规范化参数、本轮联网能力和当前 Tool/Skill、用户 scope、资源归属重新评估 Policy，再兑换一次性审批令牌并立即执行 Tool。等待期间的权限撤销、参数或 token 绑定不一致都会导致服务端拒绝执行。启用持久执行时，审批结果会恢复原任务，保留工具调用与结果的结构继续生成回答；上下文预算和压缩支持这些结构化消息。
 
 ## 使用建议
 

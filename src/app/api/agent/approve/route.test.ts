@@ -710,6 +710,24 @@ describe("POST /api/agent/approve", () => {
       },
     ]);
   });
+
+  it.each([true, false])("revalidates web access using the persisted turn capability (%s)", async (webSearchActive) => {
+    registerToolHandler("web.search", async () => ({ summary: "已查阅公开资料", sources: [] }));
+    const row = execution({
+      id: `execution-web-${webSearchActive}`, toolId: "web.search", riskLevel: "L1",
+      skillId: "pptx", args: { query: "2026年3月时事" }, contextSnapshot: { webSearchActive },
+    });
+    state.executions.set(row.id, row);
+    const issued = await issueApprovalToken({
+      userId: "user-1", conversationId: "conversation-1", toolId: row.toolId,
+      argumentsHash: row.argumentsHash, requestId: row.id,
+    });
+    const response = await POST(approveRequest({
+      token: issued.token, executionId: row.id, scope: "once",
+    }));
+    expect(response.status).toBe(webSearchActive ? 200 : 403);
+    expect(state.executions.get(row.id)?.status).toBe(webSearchActive ? "succeeded" : "blocked");
+  });
 });
 
 function execution(input: {
@@ -718,10 +736,11 @@ function execution(input: {
   userId?: string;
   conversationId?: string;
   toolId?: string;
+  skillId?: string;
   riskLevel?: string;
   args?: Record<string, unknown>;
   requiredScopes?: string[];
-  contextSnapshot?: { projectId?: string; selectedFileIds?: string[] };
+  contextSnapshot?: { projectId?: string; selectedFileIds?: string[]; webSearchActive?: boolean };
 }): ExecutionRow {
   const args = input.args ?? {};
   const toolId = input.toolId ?? "project_files.delete";
@@ -732,7 +751,7 @@ function execution(input: {
     agentExecutionId: input.agentExecutionId ?? null,
     userId: input.userId ?? "user-1",
     conversationId: input.conversationId ?? "conversation-1",
-    skillId: null,
+    skillId: input.skillId ?? null,
     toolId,
     normalizedArguments: args,
     argumentsHash: hashArguments(args),

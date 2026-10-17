@@ -1,4 +1,5 @@
 import { countMessageTokens } from "./tokenizer";
+import type { DeepSeekMessage } from "@/lib/deepseek";
 
 export const MODEL_CONTEXT_LIMIT = 1_000_000; // DeepSeek V4 / MiniMax M3
 export const OUTPUT_RESERVE = 64_000; // 预留输出 + RAG 余量
@@ -20,7 +21,7 @@ export type BudgetCheckResult = {
  * 检查消息数组是否接近或超过上下文预算。
  */
 export function checkContextBudget(
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<Pick<DeepSeekMessage, "role" | "content">>,
   options?: { budget?: number }
 ): BudgetCheckResult {
   const tokens = countMessageTokens(messages);

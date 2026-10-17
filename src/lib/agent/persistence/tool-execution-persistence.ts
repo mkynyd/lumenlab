@@ -17,6 +17,7 @@ export interface ToolProposal {
     projectId?: string;
     selectedFileIds?: string[];
     runId?: string;
+    webSearchActive?: boolean;
   };
   agentExecutionId?: string;
   providerToolCallId?: string;

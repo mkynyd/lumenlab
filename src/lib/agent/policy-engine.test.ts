@@ -129,6 +129,43 @@ describe("policy-engine.evaluatePolicy", () => {
     expect(decision.reasonCode).toBe("TOOL_NOT_IN_SKILL_ALLOWLIST");
   });
 
+  it.each(["web.search", "web.fetch"])("honors turn-level web access for %s alongside a document skill", async (toolId) => {
+    const { evaluatePolicy } = await import("./policy-engine");
+    const decision = await evaluatePolicy(ctxWithTool(toolRegistry.require(toolId), {
+      skill: skillRegistry.require("pptx"),
+      user: { id: "user-1", scopes: [] },
+      webSearchActive: true,
+      arguments: toolId === "web.search" ? { query: "2026年3月时事" } : { url: "https://example.com" },
+    }));
+    expect(decision.decision).toBe("allow");
+  });
+
+  it("does not accept web access from tool arguments or bypass non-web skill restrictions", async () => {
+    const { evaluatePolicy } = await import("./policy-engine");
+    const skill = skillRegistry.require("pptx");
+    const web = await evaluatePolicy(ctxWithTool(toolRegistry.require("web.search"), {
+      skill, arguments: { query: "时事", webSearchActive: true },
+    }));
+    expect(web.reasonCode).toBe("TOOL_NOT_IN_SKILL_ALLOWLIST");
+    const deletion = await evaluatePolicy(ctxWithTool(toolRegistry.require("project_files.delete"), {
+      skill, webSearchActive: true, arguments: { projectId: "p1", fileId: "f1" },
+    }));
+    expect(deletion.reasonCode).toBe("TOOL_NOT_IN_SKILL_ALLOWLIST");
+  });
+
+  it("still applies workspace, user preference, and argument checks to enabled web tools", async () => {
+    const { evaluatePolicy } = await import("./policy-engine");
+    const context = ctxWithTool(toolRegistry.require("web.search"), {
+      skill: skillRegistry.require("pptx"), webSearchActive: true, arguments: { query: "时事" },
+    });
+    expect((await evaluatePolicy({ ...context, workspace: {
+      id: "default", policies: [{ toolId: "web.search", mode: "block" }],
+    } })).reasonCode).toBe("WORKSPACE_BLOCKED");
+    expect((await evaluatePolicy({ ...context, arguments: { query: 42 } })).reasonCode).toBe("INVALID_ARGUMENTS");
+    userPrefs.push({ userId: "user-1", toolId: "web.search", approvalMode: "ask_each" });
+    expect((await evaluatePolicy(context)).decision).toBe("require_approval");
+  });
+
   it("allows skill.activate regardless of Skill allowlist", async () => {
     const { evaluatePolicy } = await import("./policy-engine");
     const skill = skillRegistry.require("code-reader");
