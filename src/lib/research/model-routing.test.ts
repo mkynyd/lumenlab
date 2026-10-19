@@ -1,8 +1,18 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { researchModelConfiguration, resolveCommanderModel, selectResearchModel } from "./model-routing";
 
 describe("research model routing", () => {
+  beforeEach(() => vi.stubEnv("MODEL_QWEN_ENABLED", "true"));
   afterEach(() => vi.unstubAllEnvs());
+
+  it("rejects new Qwen choices and uses DeepSeek for stored or configured Qwen while disabled", () => {
+    vi.stubEnv("MODEL_QWEN_ENABLED", "false");
+    expect(resolveCommanderModel("qwen3.8-flash")).toBeNull();
+    expect(resolveCommanderModel("qwen3.8-max")).toBeNull();
+    expect(selectResearchModel("research.worker", "qwen3.8-max")).toMatchObject({ provider: "deepseek", model: "deepseek-flash" });
+    vi.stubEnv("RESEARCH_MODEL_RESEARCH_WORKER", "qwen3.8-flash");
+    expect(selectResearchModel("research.worker")).toMatchObject({ provider: "deepseek", model: "deepseek-flash" });
+  });
 
   it("routes all default roles through the active DeepSeek Responses model", () => {
     expect(selectResearchModel("research.worker")).toMatchObject({ provider: "deepseek", model: "deepseek-flash", source: "default" });
@@ -24,8 +34,8 @@ describe("research model routing", () => {
   });
 
   it("allows active overrides, upgrades legacy IDs, and rejects unknown models", () => {
-    vi.stubEnv("RESEARCH_MODEL_RESEARCH_WORKER", "minimax-m3");
-    expect(selectResearchModel("research.worker")).toMatchObject({ provider: "minimax", model: "minimax-m3", source: "environment" });
+    vi.stubEnv("RESEARCH_MODEL_RESEARCH_WORKER", "minimax-m3.1");
+    expect(selectResearchModel("research.worker")).toMatchObject({ provider: "minimax", model: "minimax-m3.1", source: "environment" });
     vi.stubEnv("RESEARCH_MODEL_RESEARCH_VERIFIER", "deepseek-v4-pro");
     expect(selectResearchModel("research.verifier")).toMatchObject({ provider: "deepseek", model: "deepseek-flash", source: "environment" });
     vi.stubEnv("RESEARCH_MODEL_RESEARCH_CLAIM_EXTRACTOR", "qwen3.8-flash");
@@ -38,9 +48,9 @@ describe("research model routing", () => {
 
   it("prefers the per-run override over environment and default routing", () => {
     expect(selectResearchModel("research.worker", "qwen3.8-max")).toMatchObject({ provider: "bailian", model: "qwen3.8-max", source: "run_override" });
-    vi.stubEnv("RESEARCH_MODEL_RESEARCH_WORKER", "minimax-m3");
+    vi.stubEnv("RESEARCH_MODEL_RESEARCH_WORKER", "minimax-m3.1");
     expect(selectResearchModel("research.worker", "qwen3.8-max")).toMatchObject({ provider: "bailian", model: "qwen3.8-max", source: "run_override" });
-    expect(selectResearchModel("research.worker", null)).toMatchObject({ provider: "minimax", model: "minimax-m3", source: "environment" });
+    expect(selectResearchModel("research.worker", null)).toMatchObject({ provider: "minimax", model: "minimax-m3.1", source: "environment" });
   });
 
   it("keeps role reasoning rules under the per-run override", () => {

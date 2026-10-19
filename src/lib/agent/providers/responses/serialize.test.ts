@@ -274,6 +274,12 @@ describe("buildDeepSeekResponsesBody", () => {
 });
 
 describe("buildMiniMaxResponsesBody", () => {
+  it("uses the M3.1 wire ID and never disables its required thinking", () => {
+    const body = buildMiniMaxResponsesBody(baseInput({ model: "minimax-m3.1", thinkingEnabled: false }));
+    expect(body.model).toBe("MiniMax-M3.1-Flash-Preview");
+    expect(body.reasoning).toEqual({ effort: "low" });
+    expect(buildMiniMaxResponsesBody(baseInput({ model: "MiniMax-M3.1-Flash-Preview", thinkingEnabled: true, reasoningEffort: "max" })).reasoning).toEqual({ effort: "max" });
+  });
   it("defaults reasoning to none and requires non-none effort when thinking", () => {
     const off = buildMiniMaxResponsesBody(baseInput({ thinkingEnabled: false }));
     expect(off.reasoning).toEqual({ effort: "none" });

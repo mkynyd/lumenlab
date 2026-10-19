@@ -8,12 +8,12 @@ const validBody = {
 
 describe("parseChatRequest", () => {
   it("resolves an omitted model after validating context and leaves explicit models alone", async () => {
-    const resolveModel = vi.fn().mockResolvedValue("minimax-m3");
+    const resolveModel = vi.fn().mockResolvedValue("minimax-m3.1");
     const request = (body: unknown) => new Request("http://localhost/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     const parsed = await parseChatRequest(request({ message: "hello", projectId: "project" }), resolveModel);
-    expect(parsed.body.model).toBe("minimax-m3");
+    expect(parsed.body.model).toBe("minimax-m3.1");
     expect(resolveModel).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project" }));
     resolveModel.mockClear();
     expect((await parseChatRequest(request({ message: "hello", model: "deepseek-flash" }), resolveModel)).body.model).toBe("deepseek-flash");
@@ -165,7 +165,7 @@ describe("parseChatRequest", () => {
         body: {
           message: "analyze selected files",
           hiddenPrompt: "full task",
-          model: "minimax-m3",
+          model: "minimax-m3.1",
           thinkingEnabled: true,
           reasoningEffort: "max",
           conversationId: "conversation-1",
@@ -191,7 +191,7 @@ describe("parseChatRequest", () => {
         attachments: [],
       },
       model: {
-        requestedModel: "minimax-m3",
+        requestedModel: "minimax-m3.1",
         thinkingEnabled: true,
         reasoningEffort: "max",
       },

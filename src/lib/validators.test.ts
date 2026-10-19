@@ -81,13 +81,15 @@ describe("resetPasswordSchema", () => {
 });
 
 describe("sendMessageSchema", () => {
-  it("defaults an omitted model to Qwen and still enforces the rollout gate", () => {
+  it("defaults to DeepSeek while rejecting explicitly disabled Qwen", () => {
     const previous = process.env.MODEL_QWEN_ENABLED;
     try {
       process.env.MODEL_QWEN_ENABLED = "true";
-      expect(sendMessageSchema.parse({ message: "hello" }).model).toBe("qwen3.8-flash");
+      expect(sendMessageSchema.parse({ message: "hello" }).model).toBe("deepseek-flash");
       process.env.MODEL_QWEN_ENABLED = "false";
-      expect(() => sendMessageSchema.parse({ message: "hello" })).toThrow("Qwen 模型暂未开放");
+      expect(sendMessageSchema.parse({ message: "hello" }).model).toBe("deepseek-flash");
+      expect(() => sendMessageSchema.parse({ message: "hello", model: "qwen3.8-flash" })).toThrow("Qwen 模型暂未开放");
+      expect(() => sendMessageSchema.parse({ message: "hello", model: "qwen3.8-max" })).toThrow("Qwen 模型暂未开放");
     } finally {
       if (previous === undefined) delete process.env.MODEL_QWEN_ENABLED;
       else process.env.MODEL_QWEN_ENABLED = previous;
@@ -109,10 +111,10 @@ describe("sendMessageSchema", () => {
     expect(
       sendMessageSchema.parse({
         message: "分析图片资料",
-        model: "minimax-m3",
+        model: "minimax-m3.1",
       })
     ).toMatchObject({
-      model: "minimax-m3",
+      model: "minimax-m3.1",
       thinkingEnabled: true,
     });
   });

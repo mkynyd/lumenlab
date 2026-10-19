@@ -4,6 +4,7 @@ import {
   DEEPSEEK_CHAT_MODEL,
   isActiveChatModel,
   isKnownChatModel,
+  isChatModelEnabled,
   providerForChatModel,
   type CatalogModelId,
   type ChatModel,
@@ -42,10 +43,11 @@ export function isResearchRole(value: string): value is ResearchRole {
 
 export function selectResearchModel(role: ResearchRole, override?: ChatModel | null): ResearchModelSelection {
   if (override) {
+    const model = resolveConfiguredModel(override, "commanderModel");
     return {
       role,
-      provider: providerForChatModel(override)!,
-      model: override,
+      provider: providerForChatModel(model)!,
+      model,
       reasoningEffort: role === "research.synthesizer" ? "max" : "high",
       source: "run_override",
     };
@@ -75,13 +77,14 @@ export function researchModelConfiguration(override?: ChatModel | null): Record<
  * 的 legacy 升级与抛错路径。
  */
 export function resolveCommanderModel(value: unknown): ChatModel | null {
-  return typeof value === "string" && isActiveChatModel(value) ? value as ChatModel : null;
+  return typeof value === "string" && isChatModelEnabled(value) ? value as ChatModel : null;
 }
 
 function resolveConfiguredModel(value: string, environmentKey: string): ChatModel {
-  if (isActiveChatModel(value)) return value as ChatModel;
+  if (isActiveChatModel(value)) return isChatModelEnabled(value) ? value as ChatModel : DEEPSEEK_CHAT_MODEL;
   if (isKnownChatModel(value)) {
-    return activeModelForStoredModel(value as CatalogModelId);
+    const model = activeModelForStoredModel(value as CatalogModelId);
+    return isChatModelEnabled(model) ? model : DEEPSEEK_CHAT_MODEL;
   }
   throw new Error(
     `${environmentKey} must name an active or known legacy chat model`

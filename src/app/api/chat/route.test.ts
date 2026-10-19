@@ -466,7 +466,7 @@ describe("POST /api/chat", () => {
       id: "conversation-1",
       userId: "user-1",
       projectId: null,
-      model: "minimax-m3",
+      model: "minimax-m3.1",
       modelLock: null,
       thinkingEnabled: true,
       activeSkillId: null,
@@ -487,7 +487,7 @@ describe("POST /api/chat", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: "今天有什么 AI 新闻",
-          model: "minimax-m3",
+          model: "minimax-m3.1",
           thinkingEnabled: true,
           reasoningEffort: "max",
           webSearchActive: true,
@@ -756,7 +756,7 @@ describe("accumulateAndSave", () => {
       "conversation-1",
       "message-1",
       "user-1",
-      "minimax-m3",
+      "minimax-m3.1",
       "minimax",
       () => ({
         prompt_tokens: 10,
@@ -1638,7 +1638,7 @@ describe("Streaming tool loop", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: "基于项目资料写论文提纲",
-            model: "minimax-m3",
+            model: "minimax-m3.1",
             skillOff: true,
             thinkingEnabled: true,
             reasoningEffort: "max",

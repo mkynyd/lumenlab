@@ -27,7 +27,7 @@ function events(values: unknown[]) {
 }
 
 describe("research model stage contracts", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("MODEL_QWEN_ENABLED", "true"); });
 
   it("parses only the persisted final message and excludes generic project media", async () => {
     vi.mocked(runAgentRuntime).mockResolvedValue({

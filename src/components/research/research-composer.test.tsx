@@ -15,7 +15,7 @@ vi.mock("@/components/chat/chat-input", () => ({
 }));
 
 vi.mock("@/lib/hooks/use-available-models", () => ({
-  useAvailableChatModels: () => ({ availableModels: ["qwen3.8-flash", "qwen3.8-max", "deepseek-flash", "minimax-m3"], catalogError: null }),
+  useAvailableChatModels: () => ({ availableModels: ["qwen3.8-flash", "qwen3.8-max", "deepseek-flash", "minimax-m3.1"], catalogError: null }),
 }));
 
 const { ResearchComposer } = await import("./research-composer");
@@ -42,8 +42,8 @@ describe("ResearchComposer", () => {
   it("passes the default commander model and server-provided catalog to ChatInput", () => {
     render(<ResearchComposer onSend={vi.fn()} />);
     const props = latestChatInputProps();
-    expect(props.model).toBe("qwen3.8-flash");
-    expect(props.availableModels).toEqual(["qwen3.8-flash", "qwen3.8-max", "deepseek-flash", "minimax-m3"]);
+    expect(props.model).toBe("deepseek-flash");
+    expect(props.availableModels).toEqual(["qwen3.8-flash", "qwen3.8-max", "deepseek-flash", "minimax-m3.1"]);
   });
 
   it("submits question, attachments and options, including the domain key only when shown", async () => {
@@ -54,7 +54,7 @@ describe("ResearchComposer", () => {
     await props.onSend("比较两种路由方法", [attachment]);
     expect(onSend).toHaveBeenCalledWith("比较两种路由方法", [attachment], {
       budgetProfile: "comprehensive",
-      commanderModel: "qwen3.8-flash",
+      commanderModel: "deepseek-flash",
       domainProfileKey: "computer_science",
     });
   });
@@ -65,7 +65,7 @@ describe("ResearchComposer", () => {
     await latestChatInputProps().onSend("问题", []);
     expect(onSend).toHaveBeenCalledWith("问题", [], {
       budgetProfile: "deep",
-      commanderModel: "qwen3.8-flash",
+      commanderModel: "deepseek-flash",
     });
   });
 

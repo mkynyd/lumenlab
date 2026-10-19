@@ -49,6 +49,8 @@ export const CREDIT_WEIGHTS: Record<string, CreditWeights> = {
     miss: 3,
     out: 6,
   },
+  // M3.1 沿用平台现有 MiniMax 信用点权重；旧 M3 账单不重算。
+  "minimax-m3.1": { hit: 0.42, miss: 2.1, out: 8.4 },
   "minimax-m3": {
     hit: 0.42,
     miss: 2.1,

@@ -34,6 +34,7 @@ function stubTransaction() {
 describe("createResearchRun commander model", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("MODEL_QWEN_ENABLED", "true");
     prisma.researchWorkspace.findFirst.mockResolvedValue(workspace);
     stubTransaction();
   });
@@ -77,6 +78,7 @@ describe("createResearchRun commander model", () => {
 describe("updateResearchWorkspace project binding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("MODEL_QWEN_ENABLED", "true");
     prisma.researchWorkspace.findFirst.mockResolvedValue({ id: "workspace-1" });
     prisma.researchWorkspace.update.mockResolvedValue({ id: "workspace-1" });
   });

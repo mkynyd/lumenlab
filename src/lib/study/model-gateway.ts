@@ -4,7 +4,7 @@ import { getProviderApiKey } from "@/lib/data/provider-access";
 import { buildDeepSeekResponsesBody, buildMiniMaxResponsesBody, buildQwenResponsesBody, mapResponsesUsage } from "@/lib/agent/providers/responses/serialize";
 import { postResponses } from "@/lib/agent/providers/responses/transport";
 import { checkQuotaForRequest, recordTokenUsage } from "@/lib/tokens/quota";
-import { DEEPSEEK_CHAT_MODEL, MINIMAX_CHAT_MODEL } from "@/lib/chat/model-catalog";
+import { DEEPSEEK_CHAT_MODEL, MINIMAX_CHAT_MODEL, isQwenModelEnabled } from "@/lib/chat/model-catalog";
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import { acceptedSolution, solutionSchema, verdictSchema } from "./contracts";
 
@@ -25,7 +25,7 @@ export async function studyModelJson<T>(input: {
   // A completed but malformed reply gets one fresh attempt with the same
   // evidence. Never coerce fields or repair mathematical text heuristically.
   for (let attempt = 0; attempt < 2; attempt++) {
-    try { return await requestStudyModelJson(input, attempt > 0); }
+    try { return await requestStudyModelJson({ ...input, provider: input.provider === "bailian" && !isQwenModelEnabled() ? "deepseek" : input.provider }, attempt > 0); }
     catch (error) {
       if (attempt === 0 && error instanceof StudyModelOutputError && error.reason !== "incomplete") continue;
       throw error;
@@ -75,11 +75,14 @@ export async function solveSelectedQuestion(input: {
   const prompt = JSON.stringify({ task: "独立求解，逐步核对题目条件。返回answer、explanation、topics；topics必须根据大纲标注，大纲没有该考点则明确标为范围外。", question: input.question, syllabus: input.syllabus, searchEvidence: input.sources });
   await input.progress("DeepSeek 独立解析");
   const deepseek = await studyModelJson({ ...input, provider: "deepseek", prompt, schema: solutionSchema });
-  await input.progress("Qwen Flash 独立解析");
-  const qwen = await studyModelJson({ ...input, provider: "bailian", prompt, schema: solutionSchema });
+  const secondProvider = isQwenModelEnabled() ? "bailian" : "minimax";
+  await input.progress(secondProvider === "bailian" ? "Qwen Flash 独立解析" : "MiniMax M3.1 独立解析");
+  // qwen remains the stored second-candidate key for historical compatibility.
+  const qwen = await studyModelJson({ ...input, provider: secondProvider, prompt, schema: solutionSchema });
+  const candidateModels = { deepseek: DEEPSEEK_CHAT_MODEL, qwen: secondProvider === "bailian" ? "qwen3.8-flash" : MINIMAX_CHAT_MODEL };
   await input.progress("MiniMax 核验题目与两份解析");
   const verdict = await studyModelJson({ ...input, provider: "minimax", schema: verdictSchema,
-    prompt: JSON.stringify({ task: "独立复算并检查两份候选。双方一致不代表正确；题干、插图、长文或条件缺失必须evidenceComplete=false。返回deepseekCorrect、qwenCorrect、evidenceComplete、reason。", question: input.question, sources: input.sources, deepseek, qwen }),
+    prompt: JSON.stringify({ task: "独立复算并检查两份候选。双方一致不代表正确；题干、插图、长文或条件缺失必须evidenceComplete=false。返回deepseekCorrect、qwenCorrect、evidenceComplete、reason。", question: input.question, sources: input.sources, candidateModels, deepseek, qwen }),
   });
-  return { solution: acceptedSolution(deepseek, verdict), candidates: { deepseek, qwen }, verdict };
+  return { solution: acceptedSolution(deepseek, verdict), candidates: { deepseek, qwen }, candidateModels, verdict };
 }

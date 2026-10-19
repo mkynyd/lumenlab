@@ -10,6 +10,7 @@ vi.mock("@/lib/data/provider-access", () => ({ getProviderApiKey: vi.fn() }));
 vi.mock("@/lib/paper/formatting-import", () => ({ parseFormattingSource: vi.fn(), formattingSourceHash: vi.fn() }));
 
 import { withFormattingFence } from "./formatting-handler";
+import { formattingCheckpoint } from "./formatting-service";
 import { LeaseLostDuringRun } from "@/lib/agent/executions/agent-execution-runner";
 
 function context() {
@@ -17,6 +18,11 @@ function context() {
 }
 
 describe("formatting fence", () => {
+  it("uses matching DeepSeek model and provider in new formatting checkpoints", () => {
+    const checkpoint = formattingCheckpoint("task-1");
+    expect(checkpoint.model).toMatchObject({ provider: "deepseek", name: "deepseek-flash" });
+    expect(checkpoint.request?.model).toBe("deepseek-flash");
+  });
   it("binds the lease instant instead of relying on the database session time zone", async () => {
     const queryRaw = vi.fn().mockResolvedValue([{ id: "exec-1" }]);
     const findFirst = vi.fn().mockResolvedValue({ id: "task-1" });

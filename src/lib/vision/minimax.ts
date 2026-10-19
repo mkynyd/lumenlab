@@ -1,3 +1,4 @@
+import { MINIMAX_WIRE_MODEL } from "@/lib/chat/model-catalog";
 import Anthropic from "@anthropic-ai/sdk";
 import { cacheExperiments } from "@/lib/cache/experiment-config";
 import { applyActiveCache } from "@/lib/cache/minimax-active-cache";
@@ -75,10 +76,10 @@ export async function parseDocumentWithMiniMax(options: {
 
   try {
     const requestBody: Anthropic.MessageCreateParamsNonStreaming = {
-      model: "MiniMax-M3",
+      model: MINIMAX_WIRE_MODEL,
       max_tokens: 16384,
       temperature: 0.2,
-      thinking: { type: "disabled" },
+      thinking: { type: "adaptive" },
       system: DOCUMENT_PROMPT,
       messages: [
         {

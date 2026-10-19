@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type PaperFormattingTask } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { availableChatModels, DEFAULT_CHAT_MODEL, MODEL_BILLING_VERSION } from "@/lib/chat/model-catalog";
+import { availableChatModels, DEFAULT_CHAT_MODEL, MODEL_BILLING_VERSION, providerForChatModel } from "@/lib/chat/model-catalog";
 import { getProviderApiKey } from "@/lib/data/provider-access";
 import { parseAgentCheckpoint } from "@/lib/agent/executions/agent-execution-store";
 import { uploadObjectBuffer, readStoredObject, type StorageProvider } from "@/lib/storage/object-storage";
@@ -13,7 +13,7 @@ import { ACTIVE_FORMATTING_STAGES, FormattingError, formattingSubmissionSchema, 
 export const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
 
 export function formattingCheckpoint(taskId: string) {
-  return parseAgentCheckpoint({ version: 2, round: 0, items: [], model: { provider: "bailian", name: DEFAULT_CHAT_MODEL }, skill: { id: null, version: null }, rag: { sourceIds: [], selectedFileIds: [] }, allowedToolIds: [], request: { message: "后台论文排版", model: DEFAULT_CHAT_MODEL, thinkingEnabled: false, reasoningEffort: "high", webSearchActive: false, skillOff: true, isQuickTask: false, materialScope: "none", executionKind: "paper-formatting", formattingTaskId: taskId } });
+  return parseAgentCheckpoint({ version: 2, round: 0, items: [], model: { provider: providerForChatModel(DEFAULT_CHAT_MODEL)!, name: DEFAULT_CHAT_MODEL }, skill: { id: null, version: null }, rag: { sourceIds: [], selectedFileIds: [] }, allowedToolIds: [], request: { message: "后台论文排版", model: DEFAULT_CHAT_MODEL, thinkingEnabled: false, reasoningEffort: "high", webSearchActive: false, skillOff: true, isQuickTask: false, materialScope: "none", executionKind: "paper-formatting", formattingTaskId: taskId } });
 }
 
 async function createFormattingExecution(tx: Prisma.TransactionClient, input: { userId: string; taskId: string; attempt: number; title: string }) {
@@ -35,8 +35,8 @@ export async function submitFormattingTask(input: { userId: string; filename: st
     return existing;
   }
   if (process.env.PAPER_FORMATTING_ENABLED !== "true" || process.env.AGENT_DURABLE_EXECUTION_ENABLED !== "true") throw new FormattingError("FORMATTING_DISABLED", "后台排版暂未开放。", 503);
-  if (!availableChatModels().includes(DEFAULT_CHAT_MODEL) || !process.env.BAILIAN_WORKSPACE_ID) throw new FormattingError("MODEL_UNAVAILABLE", "排版模型暂不可用，请稍后重试。", 503);
-  await getProviderApiKey(input.userId, "bailian");
+  if (!availableChatModels().includes(DEFAULT_CHAT_MODEL)) throw new FormattingError("MODEL_UNAVAILABLE", "排版模型暂不可用，请稍后重试。", 503);
+  await getProviderApiKey(input.userId, providerForChatModel(DEFAULT_CHAT_MODEL)!);
   const variant = await prisma.templateVariant.findUnique({ where: { id: submission.templateVariantId } });
   if (!variant) throw new FormattingError("TEMPLATE_NOT_FOUND", "模板不存在。", 404);
   const manifest = assertFormattingTemplate(variant, submission.metadata);

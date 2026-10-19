@@ -47,7 +47,7 @@ LumenLab 是一个面向学习、研究与课程项目的 AI 工作台。核心�
 输入框上方可切换模型：
 
 - DeepSeek V4.1 Flash（DeepSeek 当前唯一活跃模型，原生支持图片理解）
-- MiniMax M3（原生多模态，1M 上下文）
+- MiniMax M3.1（原生多模态，1M 上下文）
 - Qwen3.8-Flash（服务端开放且账号具备百炼凭据时可见）
 
 历史会话里保存的旧 DeepSeek 模型（V4 Flash、V4 Flash Vision Exp、V4 Pro）会在下一次提问时自动升级到 V4.1 Flash。
@@ -82,7 +82,7 @@ LumenLab 是一个面向学习、研究与课程项目的 AI 工作台。核心�
 
 - 支持格式：PDF、Office / WPS / iWork 文档、图片（PNG / JPEG / WebP）、文本（TXT / MD / CSV）和代码文件。
 - 上传限制：单文件 50MB，单次最多 50 个文件，总大小 300MB。
-- 解析方式：PDF 由 MiniMax M3 原生解析，超过 20MB（上限 200MB）或请求被拒绝时回退 MinerU；Office / WPS / iWork 文档由 MinerU 转为 Markdown 并保留文档内图片；文本和代码本地解析。图片不单独 OCR，上传即就绪，提问时直接交给所选模型识别。
+- 解析方式：PDF 由 MiniMax M3.1 原生解析，超过 20MB（上限 200MB）或请求被拒绝时回退 MinerU；Office / WPS / iWork 文档由 MinerU 转为 Markdown 并保留文档内图片；文本和代码本地解析。图片不单独 OCR，上传即就绪，提问时直接交给所选模型识别。
 - 上传后稍等片刻，资料区会显示解析状态，完成后即可用于对话。
 - 可选对解析结果做知识增强，提升检索质量。
 

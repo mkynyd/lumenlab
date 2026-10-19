@@ -4,7 +4,10 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { expect, it } from "vitest";
 
-it.skipIf(!process.env.DATABASE_URL)("applies defaults on a clean schema and preserves existing model choices and billing", async () => {
+it.skipIf(!process.env.DATABASE_URL).each([
+  ["20260908090000_default_chat_model_qwen", "qwen3.8-flash"],
+  ["20261019090000_default_model_deepseek", "deepseek-flash"],
+])("applies %s defaults while preserving existing model choices and billing", async (target, expected) => {
   const client = new Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
   const schema = `qa_qwen_default_${randomUUID().replaceAll("-", "")}`;
@@ -13,7 +16,6 @@ it.skipIf(!process.env.DATABASE_URL)("applies defaults on a clean schema and pre
     await client.query(`CREATE SCHEMA "${schema}"`);
     await client.query(`SET LOCAL search_path TO "${schema}", public`);
     const root = join(process.cwd(), "prisma/migrations");
-    const target = "20260908090000_default_chat_model_qwen";
     for (const migration of (await readdir(root)).filter((name) => name < target).sort()) {
       if (migration === "migration_lock.toml") continue;
       await client.query(await readFile(join(root, migration, "migration.sql"), "utf8"));
@@ -34,8 +36,8 @@ it.skipIf(!process.env.DATABASE_URL)("applies defaults on a clean schema and pre
     expect(await snapshot()).toEqual(before);
     const chat = await client.query('INSERT INTO "Conversation" (id,"userId","updatedAt") VALUES (\'new-chat\',\'owner\',now()) RETURNING model');
     const project = await client.query('INSERT INTO "Project" (id,"userId",name,"updatedAt") VALUES (\'new-project\',\'owner\',\'new\',now()) RETURNING "defaultModel"');
-    expect(chat.rows[0].model).toBe("qwen3.8-flash");
-    expect(project.rows[0].defaultModel).toBe("qwen3.8-flash");
+    expect(chat.rows[0].model).toBe(expected);
+    expect(project.rows[0].defaultModel).toBe(expected);
   } finally {
     await client.query("ROLLBACK");
     await client.end();

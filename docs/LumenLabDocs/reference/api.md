@@ -135,7 +135,7 @@
 
 - 描述：返回当前部署和当前账号实际可用的聊天模型。Qwen 只有在灰度开关、百炼工作空间和用户凭据都可用时才会出现。
 - 认证：需登录。
-- 响应：`{ models: ['qwen3.8-flash'?, 'deepseek-flash', 'minimax-m3'], defaultModel, unavailableReasons }`；`models` 只包含活跃模型，历史模型 ID 只出现在历史消息与账单中。
+- 响应：`{ models: ['qwen3.8-flash'?, 'deepseek-flash', 'minimax-m3.1'], defaultModel, unavailableReasons }`；`models` 只包含活跃模型，历史模型 ID 只出现在历史消息与账单中。
 
 ### `POST /api/chat`
 
@@ -281,7 +281,7 @@
 
 ### `POST /api/files/[id]/parse`
 
-- 描述：触发文件解析，支持 PDF / Office / WPS / iWork / 图片 / 文本 / 代码等格式。项目 PDF 与图片走 MiniMax M3；Office/WPS/iWork 走 MinerU；文本和代码本地读取。
+- 描述：触发文件解析，支持 PDF / Office / WPS / iWork / 图片 / 文本 / 代码等格式。项目 PDF 与图片走 MiniMax M3.1；Office/WPS/iWork 走 MinerU；文本和代码本地读取。
 - 认证：需登录。
 - 响应：`{ id, status, parsedContent? }`
 

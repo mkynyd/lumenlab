@@ -486,7 +486,7 @@ describe("durable Agent runtime bridge", () => {
         attachments: [],
       },
       model: {
-        requestedModel: "minimax-m3",
+        requestedModel: "minimax-m3.1",
         thinkingEnabled: true,
         reasoningEffort: "high",
       },
@@ -501,7 +501,7 @@ describe("durable Agent runtime bridge", () => {
 
     expect(initial).toMatchObject({
       version: 2,
-      model: { provider: "minimax", name: "minimax-m3" },
+      model: { provider: "minimax", name: "minimax-m3.1" },
       rag: { selectedFileIds: ["file-1"] },
       request: { message: "Start" },
       items: [
@@ -695,7 +695,7 @@ describe("durable Agent runtime bridge", () => {
   it("maps new active models to providers through the catalog", () => {
     const cases = [
       ["deepseek-flash", "deepseek"],
-      ["minimax-m3", "minimax"],
+      ["minimax-m3.1", "minimax"],
       ["qwen3.8-flash", "bailian"],
     ] as const;
     for (const [requestedModel, provider] of cases) {

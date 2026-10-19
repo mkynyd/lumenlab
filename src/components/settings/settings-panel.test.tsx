@@ -184,7 +184,7 @@ describe("SettingsPanel account usage", () => {
       last5hCredits: 24,
       modelDistribution: [
         { model: "deepseek-v4-pro", credits: 2_000, tokens: 100_000 },
-        { model: "minimax-m3", credits: 500, tokens: 25_000 }
+        { model: "minimax-m3.1", credits: 500, tokens: 25_000 }
       ],
       recentRecords: [
         {
@@ -254,7 +254,7 @@ describe("SettingsPanel account usage", () => {
         recentRecords: [
           {
             id: "usage-2",
-            model: "minimax-m3",
+            model: "minimax-m3.1",
             provider: "minimax",
             totalTokens: 512,
             creditsConsumed: 8,

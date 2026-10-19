@@ -10,14 +10,15 @@ import { resolveStoredChatModel } from "./chat-model-preference";
 beforeEach(() => vi.resetAllMocks());
 
 describe("request model inheritance", () => {
-  it("defaults a new ordinary chat to Qwen without querying or rewriting history", async () => {
-    await expect(resolveStoredChatModel("owner", {})).resolves.toBe("qwen3.8-flash");
+  it("defaults a new ordinary chat to DeepSeek without querying or rewriting history", async () => {
+    await expect(resolveStoredChatModel("owner", {})).resolves.toBe("deepseek-flash");
     expect(mocks.conversation).not.toHaveBeenCalled();
     expect(mocks.project).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["minimax-m3", "minimax-m3"],
+    ["minimax-m3.1", "minimax-m3.1"],
+    ["minimax-m3", "minimax-m3.1"],
     ["deepseek-v4-flash-vision-exp", "deepseek-flash"],
     ["deepseek-v4-flash", "deepseek-flash"],
     ["deepseek-v4-pro", "deepseek-flash"],
@@ -32,8 +33,8 @@ describe("request model inheritance", () => {
   });
 
   it("inherits a project's explicit selection for its new conversations", async () => {
-    mocks.project.mockResolvedValue({ defaultModel: "minimax-m3" });
-    await expect(resolveStoredChatModel("owner", { projectId: "project" })).resolves.toBe("minimax-m3");
+    mocks.project.mockResolvedValue({ defaultModel: "minimax-m3.1" });
+    await expect(resolveStoredChatModel("owner", { projectId: "project" })).resolves.toBe("minimax-m3.1");
     expect(mocks.project).toHaveBeenCalledWith({ where: { id: "project", userId: "owner" }, select: { defaultModel: true } });
   });
 

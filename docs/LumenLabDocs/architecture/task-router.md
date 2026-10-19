@@ -1,6 +1,6 @@
 # 任务路由
 
-> 面向开发者与自托管维护者，介绍 LumenLab 如何选择 DeepSeek V4.1 Flash、MiniMax M3 或 Qwen3.8-Flash，以及 Tool / Skill 在不同模型上的分发策略。
+> 面向开发者与自托管维护者，介绍 LumenLab 如何选择 DeepSeek V4.1 Flash、MiniMax M3.1 或 Qwen3.8-Flash，以及 Tool / Skill 在不同模型上的分发策略。
 
 ## 模型路由入口
 

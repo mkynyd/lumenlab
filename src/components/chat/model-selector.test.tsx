@@ -16,7 +16,7 @@ describe("ModelSelector", () => {
           onChange={setModel}
           reasoningEffort="max"
           onReasoningEffortChange={vi.fn()}
-          availableModels={["deepseek-flash", "minimax-m3"]}
+          availableModels={["deepseek-flash", "minimax-m3.1"]}
         />
       );
     }
@@ -40,7 +40,7 @@ describe("ModelSelector", () => {
         onChange={vi.fn()}
         reasoningEffort="max"
         onReasoningEffortChange={onReasoningEffortChange}
-        availableModels={["deepseek-flash", "minimax-m3"]}
+        availableModels={["deepseek-flash", "minimax-m3.1"]}
       />
     );
 
@@ -98,7 +98,7 @@ describe("ModelSelector", () => {
     await user.click(triggers.at(-1)!);
     await user.click(screen.getByRole("button", { name: /MiniMax M3/ }));
 
-    expect(onChange).toHaveBeenCalledWith("minimax-m3");
+    expect(onChange).toHaveBeenCalledWith("minimax-m3.1");
     expect(onReasoningEffortChange).not.toHaveBeenCalled();
   });
 });

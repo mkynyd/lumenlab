@@ -1,3 +1,4 @@
+import { isQwenModelEnabled } from "@/lib/chat/model-catalog";
 import { DeepSeekAdapter } from "./deepseek-adapter";
 import { MiniMaxAdapter } from "./minimax-adapter";
 import { PiAiAdapter } from "./pi-ai-adapter";
@@ -28,6 +29,7 @@ export function createProviderAdapter(
     throw new ResponsesConfigurationError("旧 Pi 协议不支持当前活跃模型配置，请使用 Responses adapter");
   }
   if (provider === "bailian") {
+    if (!isQwenModelEnabled()) throw new ResponsesConfigurationError("Qwen 模型暂未开放");
     return new BailianQwenAdapter(apiKey, bailianQwenBaseUrl());
   }
   if (provider === "minimax") {

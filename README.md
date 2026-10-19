@@ -58,7 +58,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 - 题集按学段、学科、专业和考试分类；创建时可上传考试大纲或填写知识范围。
 - 上传图片、PDF、Word、PPT后框选错题；支持多个区域、跨页续题、插图与完整长文。Markdown支持选择原文片段，保留公式。
 - 完整文档只用于临时预览，提交、取消或过期后清除。长期保存所选题目的裁片、文字与解析。
-- 后台展示真实进度：完整识别、题库匹配、联网检索、DeepSeek与Qwen Flash独立解析、MiniMax核验。核验通过采用DeepSeek解析；不完整或未通过则保留待校对状态。
+- 后台展示真实进度：完整识别、题库匹配、联网检索、DeepSeek与第二模型独立解析、MiniMax M3.1核验（Qwen停用时第二模型改用MiniMax M3.1，识别与提取改用DeepSeek）。核验通过采用DeepSeek解析；不完整或未通过则保留待校对状态。
 - 题库只展示人工核验发布的资料，附来源和授权；没有预置完整考试题库。发布格式见[学习模块运行说明](docs/study-workspace.md)。
 - 导入图片、Excel、ICS、PDF课表，确认学期起点与各节课钟点后入日历；支持学校补课与不可用时段。
 - 作业可手工输入或从老师要求提取后确认。日历高亮截止日期，任务按截止时间排序。
@@ -148,7 +148,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 ### 多模型流式对话
 
 - 新普通会话和新项目默认使用 Qwen3.8-Flash。已有会话保留自身选择，已有项目的新对话继承项目默认；历史模型在发起新请求时升级到同供应商的活跃模型，历史账单不改写。
-- 活跃模型包括 Qwen3.8-Flash、DeepSeek V4.1 Flash（`deepseek-flash`）和 MiniMax M3，均支持文本与图片输入。DeepSeek 已把 V4 Flash、V4 Flash Vision Exp 与 V4 Pro 统一路由到 V4.1 Flash，平台侧只保留 `deepseek-flash` 用于新请求，历史 ID 仅用于历史消息与账单。Qwen 需启用 `MODEL_QWEN_ENABLED`、配置百炼工作空间，并为目标账号提供有效聊天凭证。不可用或请求失败时显示原因，保留当前选择、草稿和附件，由用户手动选择其他模型。
+- 活跃模型包括 Qwen3.8-Flash、DeepSeek V4.1 Flash（`deepseek-flash`）和 MiniMax M3.1，均支持文本与图片输入。DeepSeek 已把 V4 Flash、V4 Flash Vision Exp 与 V4 Pro 统一路由到 V4.1 Flash，平台侧只保留 `deepseek-flash` 用于新请求，历史 ID 仅用于历史消息与账单。Qwen 需启用 `MODEL_QWEN_ENABLED`、配置百炼工作空间，并为目标账号提供有效聊天凭证。不可用或请求失败时显示原因，保留当前选择、草稿和附件，由用户手动选择其他模型。
 - 三个聊天适配器使用 Responses，平台管理历史、工具审批和调用结果；原生图片在当前工具回合间保留。
 - PDF/DOCX 聊天输入先提取正文，扫描 PDF 转为有数量上限的页图；Qwen 视频附件走独立的 DashScope 兼容路径。独立文档解析保留。聊天图片附件会持久化并在历史回合中重新鉴权渲染，支持缩略图网格与大图查看器。
 - `AGENT_PROVIDER_ADAPTER=responses` 为默认配置，`legacy` 为兼容别名；旧 Pi POC 不用于当前活跃模型。各供应商可独立暂停，暂停后请求返回 503。
@@ -158,7 +158,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 ### 文档解析与转换
 
 - 项目资料上传支持 PDF、Office/WPS/iWork 文档、图片、文本和代码文件，单次最多 50 个文件，单文件 50MB。
-- 项目 PDF 走 MiniMax M3 原生文档解析（超过 20MB 或被拒绝时回退 MinerU，上限 200MB）；Office/WPS/iWork 文档走 MinerU 转 Markdown 并保存图片资源；文本和代码本地解析。上传的图片不再单独 OCR，标记为 `direct-image` 后作为原始资源直通所选模型。
+- 项目 PDF 走 MiniMax M3.1 原生文档解析（超过 20MB 或被拒绝时回退 MinerU，上限 200MB）；Office/WPS/iWork 文档走 MinerU 转 Markdown 并保存图片资源；文本和代码本地解析。上传的图片不再单独 OCR，标记为 `direct-image` 后作为原始资源直通所选模型。
 - 独立 `/tools` 文档转换继续使用 MinerU Precision，将 PDF 转为含公式、表格和图片的 Markdown。
 - 在线预览完整渲染结果，下载含 Markdown、图片目录、样式 PDF 和 DOCX 的 ZIP 包，并可保存到项目资料。
 
@@ -195,7 +195,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 | 认证 | NextAuth.js v5 (Credentials Provider, JWT) |
 | 样式 | Tailwind CSS 4 |
 | 虚拟化 | TanStack Virtual |
-| 文件解析 | MiniMax M3, MinerU Precision, PDF.js, @napi-rs/canvas |
+| 文件解析 | MiniMax M3.1, MinerU Precision, PDF.js, @napi-rs/canvas |
 | 文档导出 | docx, sharp, Playwright/Chromium, pdfkit, unified/remark |
 | 存储 | 七牛云 Kodo 私有对象存储 (生产), 本地文件系统 (开发降级) |
 | 加密 | AES-256-GCM, bcrypt, RSA-OAEP, HMAC-SHA256 |
@@ -491,7 +491,7 @@ npm run dev
 ### 上传资料
 
 1. 进入项目，在侧边栏上传文件（PNG、JPEG、WebP、PDF、Office/WPS/iWork、TXT、MD、CSV、代码等）。
-2. PDF 使用 MiniMax M3 解析（超过 20MB 或被拒时回退 MinerU）；Office/WPS/iWork 文档使用 MinerU 解析并保存图片资源；文本与代码本地读取；图片不单独解析，提问时直接交给所选模型。
+2. PDF 使用 MiniMax M3.1 解析（超过 20MB 或被拒时回退 MinerU）；Office/WPS/iWork 文档使用 MinerU 解析并保存图片资源；文本与代码本地读取；图片不单独解析，提问时直接交给所选模型。
 3. 单次最多 50 个文件，单文件上限 50MB，总大小上限 300MB。
 4. 资料解析完成后自动刷新项目索引与向量，可直接用于检索与提问。
 

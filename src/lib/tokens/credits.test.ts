@@ -14,6 +14,7 @@ const SATURDAY = (time: string) => new Date(`2026-09-12T${time}:00+08:00`);
 
 describe("credits", () => {
   it("returns weights for known models", () => {
+    expect(getCreditWeights("minimax-m3.1")).toBeDefined();
     expect(getCreditWeights("deepseek-v4-flash")).toBeDefined();
     expect(getCreditWeights("deepseek-v4-pro")).toBeDefined();
     expect(getCreditWeights("minimax-m3")).toBeDefined();

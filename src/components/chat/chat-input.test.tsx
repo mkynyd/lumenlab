@@ -41,7 +41,7 @@ describe("ChatInput", () => {
     const onSend = vi.fn();
     const onModelChange = vi.fn();
     render(<ChatInput onSend={onSend} model="qwen3.8-flash" onModelChange={onModelChange}
-      availableModels={["minimax-m3"]} blockedReason="Qwen 暂未开放" />);
+      availableModels={["minimax-m3.1"]} blockedReason="Qwen 暂未开放" />);
     await user.type(screen.getByRole("textbox"), "草稿{Enter}");
     expect(onSend).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox")).toHaveValue("草稿");

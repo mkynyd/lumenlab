@@ -17,7 +17,7 @@
 | `REGISTRATION_SYNC_SECRET` | 必需 | — | 注册码同步请求校验密钥，与管理端使用同一值 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | 必需 | — | Base64 编码的 RSA 私钥 PEM，用于解密注册码同步快照 |
 | `DEEPSEEK_BASE_URL` | 必需 | `https://api.deepseek.com` | DeepSeek API 基础地址 |
-| `MODEL_QWEN_ENABLED` | 可选 | `false` | Qwen3.8-Flash 灰度开关；仅 `true` 时才可由用户选择 |
+| `MODEL_QWEN_ENABLED` | 可选 | `false` | Qwen Flash/Max 开关；仅 `true` 时允许调用。关闭时学习识别/提取改用 DeepSeek，第二求解改用 MiniMax，Research 已存 Qwen 路由回退 DeepSeek |
 | `BAILIAN_WORKSPACE_ID` | Qwen 启用时必需 | — | 百炼工作空间 ID，用于构造 Qwen DashScope 区域端点；不包含 API Key |
 | `QINIU_ACCESS_KEY` | 必需 | — | 七牛云 Access Key |
 | `QINIU_SECRET_KEY` | 必需 | — | 七牛云 Secret Key，仅服务端使用 |

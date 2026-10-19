@@ -11,7 +11,7 @@ describe("model capabilities", () => {
   });
 
   it("allows manual web search on MiniMax through server-side prefetch", () => {
-    expect(modelSupportsWebSearch("minimax-m3")).toBe(true);
-    expect(effectiveWebSearchActive("minimax-m3", true)).toBe(true);
+    expect(modelSupportsWebSearch("minimax-m3.1")).toBe(true);
+    expect(effectiveWebSearchActive("minimax-m3.1", true)).toBe(true);
   });
 });

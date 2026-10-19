@@ -29,13 +29,13 @@ describe("chat model catalog", () => {
   });
 
   it("activates exactly the four migration target models", () => {
-    expect(DEFAULT_CHAT_MODELS).toEqual(["deepseek-flash", "minimax-m3"]);
+    expect(DEFAULT_CHAT_MODELS).toEqual(["deepseek-flash", "minimax-m3.1"]);
     expect(QWEN_CHAT_MODEL).toBe("qwen3.8-flash");
     expect(ALL_CHAT_MODELS).toEqual([
       "qwen3.8-flash",
       "qwen3.8-max",
       "deepseek-flash",
-      "minimax-m3",
+      "minimax-m3.1",
     ]);
   });
 
@@ -45,6 +45,7 @@ describe("chat model catalog", () => {
       "deepseek-v4-flash-vision-exp",
       "deepseek-v4-pro",
       "qwen3.7-plus",
+      "minimax-m3",
     ]);
     for (const legacy of LEGACY_CHAT_MODELS) {
       expect(isKnownChatModel(legacy)).toBe(true);
@@ -79,11 +80,11 @@ describe("chat model catalog", () => {
       enabled: true,
       billingVersion: MODEL_BILLING_VERSION,
     });
-    expect(getModelCatalogEntry("minimax-m3")).toMatchObject({
-      wireId: "MiniMax-M3",
+    expect(getModelCatalogEntry("minimax-m3.1")).toMatchObject({
+      wireId: "MiniMax-M3.1-Flash-Preview",
       provider: "minimax",
       inputTypes: ["text", "image"],
-      reasoningEffort: { high: "medium", max: "high" },
+      reasoningEffort: { high: "high", max: "max" },
       enabled: true,
     });
     expect(getModelCatalogEntry("qwen3.8-flash")).toMatchObject({
@@ -109,7 +110,7 @@ describe("chat model catalog", () => {
   it("resolves providers for both active and legacy models", () => {
     expect(providerForChatModel("deepseek-flash")).toBe("deepseek");
     expect(providerForChatModel("deepseek-v4-flash-vision-exp")).toBe("deepseek");
-    expect(providerForChatModel("minimax-m3")).toBe("minimax");
+    expect(providerForChatModel("minimax-m3.1")).toBe("minimax");
     expect(providerForChatModel("qwen3.8-flash")).toBe("bailian");
     expect(providerForChatModel("qwen3.8-max")).toBe("bailian");
     expect(providerForChatModel("deepseek-v4-flash")).toBe("deepseek");
@@ -129,7 +130,8 @@ describe("chat model catalog", () => {
       "deepseek-flash"
     );
     expect(activeModelForStoredModel("qwen3.7-plus")).toBe("qwen3.8-flash");
-    expect(activeModelForStoredModel("minimax-m3")).toBe("minimax-m3");
+    expect(activeModelForStoredModel("minimax-m3")).toBe("minimax-m3.1");
+    expect(chatModelLabel("minimax-m3")).toBe("MiniMax M3");
   });
 
   it("keeps display labels for historical aliases and falls back to the raw id", () => {

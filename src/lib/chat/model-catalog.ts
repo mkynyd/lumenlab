@@ -51,7 +51,8 @@ export const MODEL_BILLING_VERSION = "2026-09-10" as const;
 /** 活跃 DeepSeek 模型：官方 2026-09-10 起统一为 deepseek-flash（DeepSeek-V4.1-Flash）。 */
 export const DEEPSEEK_CHAT_MODEL = "deepseek-flash" as const;
 
-export const MINIMAX_CHAT_MODEL = "minimax-m3" as const;
+export const MINIMAX_CHAT_MODEL = "minimax-m3.1" as const;
+export const MINIMAX_WIRE_MODEL = "MiniMax-M3.1-Flash-Preview" as const;
 
 export const DEFAULT_CHAT_MODELS = [
   DEEPSEEK_CHAT_MODEL,
@@ -60,7 +61,7 @@ export const DEFAULT_CHAT_MODELS = [
 
 export const QWEN_CHAT_MODEL = "qwen3.8-flash" as const;
 
-export const DEFAULT_CHAT_MODEL = QWEN_CHAT_MODEL;
+export const DEFAULT_CHAT_MODEL = DEEPSEEK_CHAT_MODEL;
 
 export const QWEN_MAX_CHAT_MODEL = "qwen3.8-max" as const;
 
@@ -81,6 +82,7 @@ export const LEGACY_CHAT_MODELS = [
   "deepseek-v4-flash-vision-exp",
   "deepseek-v4-pro",
   "qwen3.7-plus",
+  "minimax-m3",
 ] as const;
 
 export type LegacyChatModel = (typeof LEGACY_CHAT_MODELS)[number];
@@ -144,22 +146,23 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     billingVersion: MODEL_BILLING_VERSION,
   },
   {
-    id: "minimax-m3",
-    wireId: "MiniMax-M3",
+    id: MINIMAX_CHAT_MODEL,
+    wireId: MINIMAX_WIRE_MODEL,
     provider: "minimax",
-    displayName: "MiniMax M3",
+    displayName: "MiniMax M3.1",
+    detailName: "MiniMax M3.1 Flash Preview",
     vendor: "MiniMax",
-    // 简介口径：platform.minimaxi.com「模型概览」（M3 原文）
-    description: "MiniMax 的 Frontier Coding 模型：原生多模态，支持 1M 上下文。",
+    // https://platform.minimax.cn/docs/api-reference/responses-create
+    description: "MiniMax M3.1 Flash Preview，支持文本、图片与 1M 上下文，推理始终开启并可调节深度。",
     inputLabel: "文本 · 图片",
     inputTypes: ["text", "image"],
     contextWindowTokens: 1_000_000,
-    // MiniMax 文档未给出 M3 输出上限，沿用平台既有预算口径
+    // 沿用平台既有输出预算上限
     maxOutputTokens: 128_000,
-    // MiniMax 接受 effort 但不调节深度；内部 high/max 映射为 medium/high
-    reasoningEffort: { high: "medium", max: "high" },
+    // M3.1 支持实际思考深度调节，不接受 none。
+    reasoningEffort: { high: "high", max: "max" },
     enabled: true,
-    billingVersion: MODEL_BILLING_VERSION,
+    billingVersion: "2026-10-19",
   },
   // —— 历史别名（enabled: false，仅历史展示与结算） ——
   {
@@ -218,6 +221,20 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     enabled: false,
     billingVersion: "legacy",
   },
+  {
+    id: "minimax-m3",
+    wireId: "MiniMax-M3",
+    provider: "minimax",
+    displayName: "MiniMax M3",
+    vendor: "MiniMax",
+    description: "历史 MiniMax M3 模型，仅用于历史消息与账单展示；新回合升级至 M3.1。",
+    inputTypes: ["text", "image"],
+    contextWindowTokens: 1_000_000,
+    maxOutputTokens: 128_000,
+    reasoningEffort: { high: "medium", max: "high" },
+    enabled: false,
+    billingVersion: "legacy",
+  },
 ];
 
 export const MODEL_CATALOG: Readonly<Record<CatalogModelId, ModelCatalogEntry>> =
@@ -256,6 +273,7 @@ export function activeModelForStoredModel(model: CatalogModelId): ChatModel {
   ) {
     return DEEPSEEK_CHAT_MODEL;
   }
+  if (model === "minimax-m3") return MINIMAX_CHAT_MODEL;
   if (model === "qwen3.7-plus") return "qwen3.8-flash";
   return model;
 }

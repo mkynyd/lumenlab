@@ -4,6 +4,7 @@ import {
   DEFAULT_CHAT_MODELS,
   DEFAULT_CHAT_MODEL,
   QWEN_CHAT_MODEL,
+  QWEN_MAX_CHAT_MODEL,
   availableChatModels,
 } from "@/lib/chat/model-catalog";
 import { getProviderApiKey } from "@/lib/data/provider-access";
@@ -33,6 +34,9 @@ export async function GET() {
     }
   }
 
+  if (!models.includes(QWEN_MAX_CHAT_MODEL)) {
+    unavailableReasons[QWEN_MAX_CHAT_MODEL] = unavailableReasons[QWEN_CHAT_MODEL] ?? "Qwen 模型暂未开放";
+  }
   return NextResponse.json(
     { models, defaultModel: DEFAULT_CHAT_MODEL, unavailableReasons },
     { headers: { "Cache-Control": "no-store" } }

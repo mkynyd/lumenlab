@@ -89,7 +89,7 @@ export async function processStudyJob() {
       await prisma.$transaction(async tx => {
         const fenced = await tx.studyJob.updateMany({ where: { id: candidate.id, leaseOwner: owner, status: "processing" }, data: { progress: Math.floor((completed + 1) / payload.items.length * 100) } });
         if (!fenced.count) throw new Error("任务租约已失效");
-        await tx.mistakeItem.update({ where: { id }, data: { prompt: ocr.markdown, solution: result.solution ?? undefined, verification: { verdict: result.verdict, candidates: result.candidates, sources: { query: sources.query, summary: sources.summary, sources: sources.sources.map(source => ({ url: source.url, title: source.title ?? "" })) } }, topics: result.solution?.topics ?? [], status: result.solution ? "ready" : "needs_review", error: result.solution ? null : "答案核验未通过" } });
+        await tx.mistakeItem.update({ where: { id }, data: { prompt: ocr.markdown, solution: result.solution ?? undefined, verification: { verdict: result.verdict, candidates: result.candidates, candidateModels: result.candidateModels, sources: { query: sources.query, summary: sources.summary, sources: sources.sources.map(source => ({ url: source.url, title: source.title ?? "" })) } }, topics: result.solution?.topics ?? [], status: result.solution ? "ready" : "needs_review", error: result.solution ? null : "答案核验未通过" } });
       });
       completed++;
     }
