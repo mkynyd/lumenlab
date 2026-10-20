@@ -26,7 +26,7 @@
     "artifact.export_docx"
   ],
   "allowed_risk_level": ["L1", "L2", "L3"],
-  "default_approval_policy": "ask_first",
+  "default_approval_policy": "auto",
   "required_scopes": ["project.read", "artifact.write"],
   "input_contract": {
     "type": "object",

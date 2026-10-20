@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/tooltip";
 
 interface ChatInputProps {
-  onSend: (message: string, attachments: FileAttachment[]) => void | boolean | Promise<void | boolean>;
+  onSend: (message: string, attachments: FileAttachment[], onAccepted?: () => void) => void | boolean | Promise<void | boolean>;
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
@@ -223,15 +223,19 @@ export function ChatInput({
     if (submittingRef.current) return;
     submittingRef.current = true;
     setIsSubmitting(true);
-    try {
-      const sent = await onSend(currentValue, attachments);
-      if (sent === false || !mounted.current) return;
+    let accepted = false;
+    const onAccepted = () => {
+      if (accepted || !mounted.current) return;
+      accepted = true;
       if (latestDraft.current.value === currentValue) updateValue("");
       if (latestDraft.current.attachments === attachments) {
-        // 发送成功后本地预览退出：乐观消息使用自己的 blob 预览。
         for (const attachment of attachments) releasePreview(attachment);
         updateAttachments([]);
       }
+    };
+    try {
+      const sent = await onSend(currentValue, attachments, onAccepted);
+      if (sent !== false) onAccepted();
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);

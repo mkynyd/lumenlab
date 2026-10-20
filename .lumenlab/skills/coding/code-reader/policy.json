@@ -11,7 +11,7 @@
     "artifact.list"
   ],
   "allowed_risk_level": ["L1", "L2"],
-  "default_approval_policy": "ask_first",
+  "default_approval_policy": "auto",
   "required_scopes": ["artifact.write"],
   "input_contract": {
     "type": "object",

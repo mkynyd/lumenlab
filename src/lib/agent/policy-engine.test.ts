@@ -163,7 +163,7 @@ describe("policy-engine.evaluatePolicy", () => {
     } })).reasonCode).toBe("WORKSPACE_BLOCKED");
     expect((await evaluatePolicy({ ...context, arguments: { query: 42 } })).reasonCode).toBe("INVALID_ARGUMENTS");
     userPrefs.push({ userId: "user-1", toolId: "web.search", approvalMode: "ask_each" });
-    expect((await evaluatePolicy(context)).decision).toBe("require_approval");
+    expect((await evaluatePolicy(context)).decision).toBe("allow");
   });
 
   it("allows skill.activate regardless of Skill allowlist", async () => {
@@ -236,29 +236,37 @@ describe("policy-engine.evaluatePolicy", () => {
     expect(decision.reasonCode).toBe("INVALID_ARGUMENTS");
   });
 
-  it("requires approval for L2 artifact.save on first use (ask_first)", async () => {
+  it("continues to honor explicit user blocks under automatic execution", async () => {
+    userPrefs.push({ userId: "user-1", toolId: "artifact.save", approvalMode: "block" });
+    const { evaluatePolicy } = await import("./policy-engine");
+    const decision = await evaluatePolicy(ctxWithTool(toolRegistry.require("artifact.save"), { arguments: { title: "T", content: "C" } }));
+    expect(decision.decision).toBe("deny");
+    expect(decision.reasonCode).toBe("USER_BLOCKED");
+  });
+
+  it("automatically executes L2 saves", async () => {
     const { evaluatePolicy } = await import("./policy-engine");
     const decision = await evaluatePolicy(
       ctxWithTool(toolRegistry.require("artifact.save"), {
         arguments: { title: "T", content: "C" },
       })
     );
-    expect(decision.decision).toBe("require_approval");
-    expect(decision.reasonCode).toBe("FIRST_TIME_USE_REQUIRES_APPROVAL");
+    expect(decision.decision).toBe("allow");
+    expect(decision.reasonCode).toBe("AUTO_APPROVED_BY_POLICY");
   });
 
-  it("always requires approval for L3 project_files.delete", async () => {
+  it("automatically executes allowed L3 tools", async () => {
     const { evaluatePolicy } = await import("./policy-engine");
     const decision = await evaluatePolicy(
       ctxWithTool(toolRegistry.require("project_files.delete"), {
         arguments: { projectId: "p1", fileId: "f1" },
       })
     );
-    expect(decision.decision).toBe("require_approval");
-    expect(decision.approvalScope).toBe("once");
+    expect(decision.decision).toBe("allow");
+    expect(decision.approvalRequired).toBe(false);
   });
 
-  it("forces ask_each for L3 even if user prefers auto", async () => {
+  it("keeps L3 automatic when a stored preference is auto", async () => {
     userPrefs.push({
       userId: "user-1",
       toolId: "project_files.delete",
@@ -270,8 +278,8 @@ describe("policy-engine.evaluatePolicy", () => {
         arguments: { projectId: "p1", fileId: "f1" },
       })
     );
-    expect(decision.decision).toBe("require_approval");
-    expect(decision.approvalRequired).toBe(true);
+    expect(decision.decision).toBe("allow");
+    expect(decision.approvalRequired).toBe(false);
   });
 
   it("respects session pre-approval for L1", async () => {
@@ -287,10 +295,10 @@ describe("policy-engine.evaluatePolicy", () => {
       })
     );
     expect(decision.decision).toBe("allow");
-    expect(decision.reasonCode).toBe("SESSION_PRE_APPROVED");
+    expect(decision.reasonCode).toBe("AUTO_APPROVED_BY_POLICY");
   });
 
-  it("applies user preference to make ask_each stricter than auto", async () => {
+  it("automatically executes tools with legacy ask_each preferences", async () => {
     userPrefs.push({
       userId: "user-1",
       toolId: "artifact.save",
@@ -302,7 +310,7 @@ describe("policy-engine.evaluatePolicy", () => {
         arguments: { title: "T", content: "C" },
       })
     );
-    expect(decision.decision).toBe("require_approval");
-    expect(decision.reasonCode).toBe("POLICY_REQUIRES_APPROVAL");
+    expect(decision.decision).toBe("allow");
+    expect(decision.reasonCode).toBe("AUTO_APPROVED_BY_POLICY");
   });
 });

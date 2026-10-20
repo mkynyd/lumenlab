@@ -19,6 +19,7 @@ export interface AssistantProcessTool {
   error?: string;
   sources: AgentSource[];
   preview?: ToolCallPreview;
+  download?: { url: string; filename: string };
   approval?: {
     token?: string;
     expiresAt: number;
@@ -124,6 +125,12 @@ export function reduceAssistantProcess(
       ...tool,
       status: "completed",
       progress: 100,
+      ...(event.resultSummary.format === "docx" &&
+        typeof event.resultSummary.artifactId === "string" &&
+        typeof event.resultSummary.filename === "string" &&
+        event.resultSummary.downloadUrl === `/api/artifacts/${encodeURIComponent(event.resultSummary.artifactId)}/export?format=docx`
+        ? { download: { url: event.resultSummary.downloadUrl, filename: event.resultSummary.filename } }
+        : {}),
     }));
   }
   if (event.type === "tool_failed" || event.type === "tool_blocked") {

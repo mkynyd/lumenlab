@@ -171,6 +171,122 @@ describe("useChat conversation URL sync", () => {
     window.history.replaceState(null, "", "/chat");
   });
 
+  it("does not retry stale approval records from an already completed historical task", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ models: ["deepseek-flash"] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useChat({ initialMessages: [{ id: "old", role: "assistant", content: "已完成", process: {
+      status: "completed", tools: [{ executionId: "old-pending", toolId: "artifact.save", label: "保存", sources: [], status: "awaiting_approval",
+        approval: { expiresAt: Date.now() + 60_000, canApproveSession: false } }],
+    } }] }), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.modelBlockedReason).toBeUndefined());
+    expect(fetchMock.mock.calls).toHaveLength(1);
+  });
+
+  it("acknowledges acceptance before the response stream completes and never serializes the callback", async () => {
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    let requestBody = "";
+    const accepted = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/chat") {
+        requestBody = String(init?.body);
+        return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }));
+      }
+      return Response.json({ models: ["deepseek-flash"] });
+    }));
+    const { result } = renderHook(() => useChat(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.modelBlockedReason).toBeUndefined());
+    let sending!: ReturnType<typeof result.current.sendMessage>;
+    act(() => { sending = result.current.sendMessage({ content: "教案", onAccepted: accepted }); });
+    await waitFor(() => expect(accepted).toHaveBeenCalledTimes(1));
+    expect(result.current.isStreaming).toBe(true);
+    expect(requestBody).not.toContain("onAccepted");
+    await act(async () => { stream.enqueue(new TextEncoder().encode("data: [DONE]\n\n")); stream.close(); await sending; });
+    expect(accepted).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["initial", "loaded"])("approves a %s persisted card without a transient timeline entry", async (source) => {
+    const message = {
+      id: "persisted-assistant", role: "assistant" as const, content: "",
+      process: {
+        status: "running" as const,
+        tools: [{ executionId: "pending-tool", toolId: "artifact.save", label: "保存教案",
+          status: "awaiting_approval" as const, sources: [],
+          approval: { token: "", expiresAt: Date.now() + 60_000, canApproveSession: true } }],
+      },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/agent/approve") return Response.json({
+        ok: true, status: "succeeded", scope: "once", executionId: "pending-tool", resultSummary: { saved: true },
+      });
+      return Response.json({ models: ["deepseek-flash"] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useChat({
+      initialConversationId: "existing", initialMessages: source === "initial" ? [message] : [],
+    }), { wrapper: createWrapper() });
+    if (source === "loaded") act(() => result.current.loadConversation("existing", [message]));
+    expect(result.current.agentTimeline).toEqual({});
+    await waitFor(() => expect(result.current.messages[0].process?.tools[0].status).toBe("completed"));
+    expect(fetchMock).toHaveBeenCalledWith("/api/agent/approve", expect.objectContaining({
+      body: JSON.stringify({ executionId: "pending-tool", token: "", scope: "once" }),
+    }));
+    expect(result.current.messages[0].process?.tools[0].status).toBe("completed");
+    expect(result.current.error).toBeNull();
+  });
+
+  it("keeps a restored approval pending when server ownership validation fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/api/agent/approve"
+        ? Response.json({ error: "无权审批" }, { status: 403 })
+        : Response.json({ models: ["deepseek-flash"] })
+    ));
+    const { result } = renderHook(() => useChat(), { wrapper: createWrapper() });
+    await act(async () => {
+      await expect(result.current.approveExecution("other-tool", "token", "once")).rejects.toThrow("无权审批");
+    });
+    expect(result.current.error).toBe("无权审批");
+  });
+
+  it.each(["approve", "reject"])("does not apply a late %s result or continuation to another conversation", async (action) => {
+    let resolveApproval!: (value: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith("/api/agent/")) return new Promise<Response>((resolve) => { resolveApproval = resolve; });
+      return Response.json({ models: ["deepseek-flash"] });
+    }));
+    const { result } = renderHook(() => useChat({ initialConversationId: "old" }), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.modelBlockedReason).toBeUndefined());
+    let approval!: Promise<void>;
+    act(() => { approval = action === "approve"
+      ? result.current.approveExecution("pending-tool", "", "once")
+      : result.current.rejectExecution("pending-tool"); });
+    act(() => result.current.loadConversation("new", [{ id: "new-user", role: "user", content: "new conversation" }]));
+    await act(async () => {
+      resolveApproval(Response.json({ ok: true, status: "succeeded", scope: "once",
+        executionId: "pending-tool", resultSummary: {}, shouldContinue: true }));
+      await approval;
+    });
+    expect(result.current.conversationId).toBe("new");
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.agentTimeline).toEqual({});
+    expect(result.current.error).toBeNull();
+  });
+
+  it("updates only the restored tool's message after rejection", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/agent/reject"
+      ? Response.json({ ok: true, shouldContinue: false }) : Response.json({ models: ["deepseek-flash"] })));
+    const trace = (executionId: string) => ({ status: "running" as const, tools: [{
+      executionId, toolId: "artifact.save", label: "保存", status: "awaiting_approval" as const, sources: [],
+    }] });
+    const { result } = renderHook(() => useChat({ initialMessages: [
+      { id: "old", role: "assistant", content: "", process: trace("pending-tool") },
+      { id: "other", role: "assistant", content: "", isStreaming: true, process: trace("other-tool") },
+    ] }), { wrapper: createWrapper() });
+    await act(async () => { await result.current.rejectExecution("pending-tool"); });
+    expect(result.current.messages[0].process?.tools[0].status).toBe("failed");
+    expect(result.current.messages[1].process?.tools).toHaveLength(1);
+    expect(result.current.messages[1].process?.tools[0].status).toBe("awaiting_approval");
+  });
+
   it("retains unavailable Qwen until the user explicitly selects an alternative", async () => {
     const fetchMock = vi.fn(async () => Response.json({
       models: ["minimax-m3.1"], unavailableReasons: { "qwen3.8-flash": "Qwen 暂未开放" },

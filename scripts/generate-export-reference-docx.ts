@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { Document, HeadingLevel, ImageRun, Packer, Paragraph, TextRun } from "docx";
 
+import { chineseDocxStyles } from "../src/lib/export/docx-styles";
+
 const outputPath = path.join(process.cwd(), "assets", "export", "reference.docx");
 const transparentPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -10,43 +12,7 @@ const transparentPng = Buffer.from(
 );
 
 const document = new Document({
-  styles: {
-    default: {
-      document: {
-        run: { font: "Noto Sans SC", size: 22 },
-        paragraph: { spacing: { line: 360, after: 160 } },
-      },
-    },
-    paragraphStyles: [
-      {
-        id: "Heading1",
-        name: "Heading 1",
-        basedOn: "Normal",
-        next: "Normal",
-        quickFormat: true,
-        run: { font: "Noto Sans SC", size: 32, bold: true },
-        paragraph: { spacing: { before: 360, after: 200 }, outlineLevel: 0, keepNext: true },
-      },
-      {
-        id: "Heading2",
-        name: "Heading 2",
-        basedOn: "Normal",
-        next: "Normal",
-        quickFormat: true,
-        run: { font: "Noto Sans SC", size: 28, bold: true },
-        paragraph: { spacing: { before: 280, after: 160 }, outlineLevel: 1, keepNext: true },
-      },
-      {
-        id: "Heading3",
-        name: "Heading 3",
-        basedOn: "Normal",
-        next: "Normal",
-        quickFormat: true,
-        run: { font: "Noto Sans SC", size: 24, bold: true },
-        paragraph: { spacing: { before: 220, after: 120 }, outlineLevel: 2, keepNext: true },
-      },
-    ],
-  },
+  styles: chineseDocxStyles(),
   sections: [
     {
       properties: {

@@ -4,7 +4,7 @@ import type { AdapterStreamParams, AdapterStreamResult, ProviderAdapter, Provide
 import { createProviderRound } from "@/lib/agent/provider-adapter";
 import type { ToolMetadata } from "@/lib/agent/types";
 import { fromResponsesToolName, buildQwenResponsesBody } from "@/lib/agent/providers/responses/serialize";
-import { prepareResponsesMessages, responsesModel, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
+import { prepareResponsesMessages, responsesModel, responsesOutputBudget, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
 import { BailianQwenNativeAdapter } from "./bailian-qwen-native";
 
 export class BailianQwenError extends Error {
@@ -58,7 +58,7 @@ export class BailianQwenAdapter implements ProviderAdapter {
         model: responsesModel(params.model, "bailian"),
         messages: prepareResponsesMessages(params),
         attachments: [],
-        maxOutputTokens: 8192,
+        maxOutputTokens: responsesOutputBudget(params),
       }),
     });
   }

@@ -21,6 +21,18 @@ export class ResponsesTerminalError extends Error {
   }
 }
 
+/** Reasoning and visible text share the output allowance. Keep the platform
+ * budget bounded by the catalog while leaving room for thinking before text.
+ * DeepSeek's thinking defaults are 64K (high) / 128K (max).
+ */
+export function responsesOutputBudget(params: Pick<AdapterStreamParams, "model" | "thinkingEnabled" | "reasoningEffort">) {
+  const limit = getModelCatalogEntry(params.model)?.maxOutputTokens ?? 8192;
+  const budget = params.thinkingEnabled
+    ? (params.reasoningEffort === "max" ? 131_072 : 65_536)
+    : 8192;
+  return Math.min(limit, budget);
+}
+
 export function responsesModel(model: string, provider: "deepseek" | "minimax" | "bailian") {
   const entry = getModelCatalogEntry(model);
   if (!entry?.enabled || entry.provider !== provider) {

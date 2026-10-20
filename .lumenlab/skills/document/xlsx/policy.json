@@ -6,7 +6,7 @@
   "enabled": true,
   "allowed_tools": ["project_files.list", "project_files.read", "artifact.save", "artifact.list", "web.fetch"],
   "allowed_risk_level": ["L1", "L2"],
-  "default_approval_policy": "ask_first",
+  "default_approval_policy": "auto",
   "required_scopes": ["project.read", "artifact.write"],
   "input_contract": { "type": "object", "properties": { "dataDescription": { "type": "string" } } },
   "output_contract": { "type": "object", "properties": { "artifactId": { "type": "string" }, "rowCount": { "type": "integer" } } },

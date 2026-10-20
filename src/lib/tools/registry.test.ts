@@ -51,14 +51,14 @@ describe("tool registry", () => {
     expect(toolRegistry.require("reference.attach").riskLevel).toBe("L2");
     expect(toolRegistry.require("reference.format").riskLevel).toBe("L1");
     expect(toolRegistry.require("reference.add").defaultApprovalMode).toBe(
-      "ask_first"
+      "auto"
     );
   });
 
-  it("registers artifact.export_docx at L3 ask_each", () => {
+  it("registers artifact.export_docx at L3 auto", () => {
     const tool = toolRegistry.require("artifact.export_docx");
     expect(tool.riskLevel).toBe("L3");
-    expect(tool.defaultApprovalMode).toBe("ask_each");
+    expect(tool.defaultApprovalMode).toBe("auto");
     expect(tool.isReversible).toBe(true);
   });
 

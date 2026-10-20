@@ -80,6 +80,8 @@ export interface ChatMessage {
 }
 
 export interface SendMessageInput {
+  /** Called once after the server accepts the request, before model streaming. */
+  onAccepted?: () => void;
   content: string;
   hiddenPrompt?: string;
   attachments?: FileAttachment[];
@@ -442,6 +444,8 @@ export function useChat(options: UseChatOptions = {}) {
         if (!response.ok) {
           throw new Error(await readChatError(response));
         }
+
+        if (streamSessionRef.current === streamSession) input.onAccepted?.();
 
         // 任务 08.4：把乐观预览替换为服务端持久化附件（真实 messageId 绑定的
         // 资源），随后回收本地 blob URL；缩略图与大图都走同源鉴权响应。
@@ -886,21 +890,20 @@ export function useChat(options: UseChatOptions = {}) {
 
   const approveExecution = useCallback(
     async (executionId: string, token: string, scope: ApprovalScope) => {
-      const entry = agentTimeline[executionId];
-      if (!entry) {
-        const missing = new Error("审批项不在当前时间线中");
-        setError(missing.message);
-        throw missing;
-      }
+      // Cards can be restored from persisted message.process or background
+      // replay without populating the foreground timeline. The server validates
+      // ownership, pending state, policy and token/durable-parent binding.
+      const streamSession = streamSessionRef.current;
       let result: ToolApprovalResponse;
       try {
         result = await requestToolApproval({ executionId, token, scope });
       } catch (approvalError) {
         const message =
           approvalError instanceof Error ? approvalError.message : "审批失败";
-        setError(message);
+        if (streamSessionRef.current === streamSession) setError(message);
         throw approvalError;
       }
+      if (streamSessionRef.current !== streamSession) return;
       setError(null);
       setAgentTimeline((prev) => {
         const existing = prev[executionId];
@@ -919,7 +922,7 @@ export function useChat(options: UseChatOptions = {}) {
       });
       setMessages((prev) =>
         prev.map((message) =>
-          message.isStreaming && message.process
+          message.process?.tools.some((tool) => tool.executionId === executionId)
             ? {
                 ...message,
                 process: reduceAssistantProcess(
@@ -936,16 +939,18 @@ export function useChat(options: UseChatOptions = {}) {
         void sendMessage("继续完成刚才的任务。").catch(() => {});
       }
     },
-    [agentTimeline, sendMessage]
+    [sendMessage]
   );
 
   const rejectExecution = useCallback(
     async (executionId: string) => {
+      const streamSession = streamSessionRef.current;
       const response = await fetch("/api/agent/reject", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ executionId }),
       });
+      if (streamSessionRef.current !== streamSession) return;
       if (!response.ok) {
         setError(`拒绝失败 (${response.status})`);
         return;
@@ -954,6 +959,7 @@ export function useChat(options: UseChatOptions = {}) {
         ok?: boolean;
         shouldContinue?: boolean;
       };
+      if (streamSessionRef.current !== streamSession) return;
       if (payload.ok && payload.shouldContinue) {
         void sendMessage(
           "继续完成刚才的任务，但不要执行刚才被拒绝的操作。"
@@ -977,7 +983,7 @@ export function useChat(options: UseChatOptions = {}) {
       });
       setMessages((prev) =>
         prev.map((message) =>
-          message.isStreaming && message.process
+          message.process?.tools.some((tool) => tool.executionId === executionId)
             ? {
                 ...message,
                 process: reduceAssistantProcess(message.process, {
@@ -991,6 +997,22 @@ export function useChat(options: UseChatOptions = {}) {
     },
     [sendMessage]
   );
+
+  const automaticApprovalsRef = useRef(new Set<string>());
+  useEffect(() => {
+    // Upgrade pre-existing waiting tasks when their persisted cards are loaded.
+    // New policy decisions never wait here; the server still revalidates every
+    // historical execution before claiming it, and the set prevents double runs.
+    for (const message of messages) {
+      if (message.process?.status !== "running") continue;
+      for (const tool of message.process.tools) {
+        if (tool.status !== "awaiting_approval" || !tool.approval || automaticApprovalsRef.current.has(tool.executionId)) continue;
+        automaticApprovalsRef.current.add(tool.executionId);
+        const token = tool.approval.expiresAt > Date.now() ? tool.approval.token ?? "" : "";
+        void approveExecution(tool.executionId, token, "once").catch(() => {});
+      }
+    }
+  }, [messages, approveExecution]);
 
   return {
     messages,

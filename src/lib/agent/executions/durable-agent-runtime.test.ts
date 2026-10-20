@@ -113,6 +113,24 @@ function run(
 }
 
 describe("durable Agent runtime bridge", () => {
+  it.each([true, false])("persists only validated Word download fields for replay (valid=%s)", async (valid) => {
+    const appendEvent = vi.fn();
+    const handler = createDurableAgentExecutionHandler({ recordUsage: vi.fn(), run: vi.fn(async () => run(
+      (async function* () {
+        yield { type: "tool_completed" as const, executionId: "word-tool", resultSummary: {
+          format: "docx", artifactId: "a", filename: "中文教案.docx",
+          downloadUrl: valid ? "/api/artifacts/a/export?format=docx" : "https://example.com/private",
+          base64: "secret-binary", content: "private document body",
+        } };
+      })(), "completed")) });
+    await handler({ execution: execution(), signal: new AbortController().signal, saveCheckpoint: vi.fn(), appendEvent });
+    const stored = appendEvent.mock.calls.map(([entry]) => entry).find((entry) => entry.type === "agent_event");
+    const event = JSON.parse(stored.payload.eventJson);
+    expect(event.resultSummary).toEqual(valid
+      ? { status: "completed", format: "docx", artifactId: "a", filename: "中文教案.docx", downloadUrl: "/api/artifacts/a/export?format=docx" }
+      : { status: "completed" });
+  });
+
   it("reconstructs the stable message pair and checkpoints output before replay", async () => {
     const runMock = vi.fn(async () =>
       run(

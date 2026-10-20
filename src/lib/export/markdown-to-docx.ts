@@ -10,9 +10,13 @@ import {
   TableCell,
   TableRow,
   TextRun,
+  WidthType,
+  TableLayoutType,
 } from "docx";
 import type { Content, PhrasingContent, Root } from "mdast";
 import sharp from "sharp";
+import { embedChineseDocxFont } from "./docx-fonts";
+import { chineseDocxStyles } from "./docx-styles";
 import { markdownNodeText, parseMarkdown } from "@/lib/export/markdown-ast";
 
 export type ResolveImage = (
@@ -59,7 +63,7 @@ async function inlineRuns(
       continue;
     }
     if (node.type === "inlineCode") {
-      runs.push(new TextRun({ text: node.value, font: "Courier New" }));
+      runs.push(new TextRun({ text: node.value, font: { ascii: "Courier New", hAnsi: "Courier New", eastAsia: "Noto Sans SC" } }));
       continue;
     }
     if (node.type === "strong") {
@@ -133,7 +137,7 @@ async function blocks(
                 node.lang === "mermaid"
                   ? `Mermaid 源码\n${node.value}`
                   : node.value,
-              font: "Courier New",
+              font: { ascii: "Courier New", hAnsi: "Courier New", eastAsia: "Noto Sans SC" },
             }),
           ],
           shading: { fill: "F3F4F6" },
@@ -164,19 +168,22 @@ async function blocks(
         }
       }
     } else if (node.type === "table") {
+      const columnCount = Math.max(1, ...node.children.map((row) => row.children.length));
+      const columnWidths = Array.from({ length: columnCount }, () => Math.floor(9000 / columnCount));
       const rows = [];
       for (const row of node.children) {
         const cells = [];
         for (const cell of row.children) {
           cells.push(
             new TableCell({
+              width: { size: columnWidths[cells.length], type: WidthType.DXA },
               children: [await paragraphFromNode(cell, "", resolveImage)],
             })
           );
         }
         rows.push(new TableRow({ children: cells }));
       }
-      output.push(new Table({ rows }));
+      output.push(new Table({ rows, columnWidths, width: { size: 9000, type: WidthType.DXA }, layout: TableLayoutType.FIXED }));
     } else if (node.type === "thematicBreak") {
       output.push(
         new Paragraph({
@@ -216,13 +223,7 @@ export async function legacyMarkdownToDocx(
         },
       ],
     },
-    styles: {
-      default: {
-        document: {
-          run: { font: "Noto Sans SC", size: 22 },
-        },
-      },
-    },
+    styles: chineseDocxStyles(),
     sections: [
       { children: await blocks(parseMarkdown(content), options.resolveImage) },
     ],
@@ -252,15 +253,15 @@ export async function markdownToDocx(
   options: { resolveImage?: ResolveImage } = {}
 ): Promise<Buffer> {
   if (process.env.DOCX_EXPORT_ENGINE === "legacy") {
-    return legacyMarkdownToDocx(content, options);
+    return embedChineseDocxFont(await legacyMarkdownToDocx(content, options));
   }
 
   const { markdownToPandocDocx } = await import("@/lib/export/pandoc-docx");
   try {
-    return await markdownToPandocDocx(content, options);
+    return embedChineseDocxFont(await markdownToPandocDocx(content, options));
   } catch (error) {
     if (isPandocUnavailable(error)) {
-      return legacyMarkdownToDocx(content, options);
+      return embedChineseDocxFont(await legacyMarkdownToDocx(content, options));
     }
     throw error;
   }

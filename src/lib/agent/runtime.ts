@@ -636,6 +636,10 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         planningEnabled,
       });
 
+  if (activeTools.length > 0) {
+    systemPrompt += "\n\n【工具执行】用户给出明确任务后，直接调用完成任务所需工具。保存、导出 Word/PPT 等操作通过服务端权限校验后自动执行，不要求额外审批，不以‘等待授权’结束回答。只有工具返回真实下载地址后才能提供文件链接。";
+  }
+
   if (agentRuntimeMode === "shadow") {
     const candidateWebSearchActive =
       manualWebSearchActive || skillRoute.webAccessRecommended;

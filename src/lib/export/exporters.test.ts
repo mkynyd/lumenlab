@@ -15,7 +15,7 @@ vi.mock("@/lib/export/pandoc-docx", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/export/pandoc-docx")>();
   return { ...actual, markdownToPandocDocx: vi.fn(actual.markdownToPandocDocx) };
 });
-import { markdownToDocx } from "@/lib/export/markdown-to-docx";
+import { legacyMarkdownToDocx, markdownToDocx } from "@/lib/export/markdown-to-docx";
 import { markdownToPandocDocx } from "@/lib/export/pandoc-docx";
 import { getPdfFont, markdownToPdf } from "@/lib/export/markdown-to-pdf";
 
@@ -41,6 +41,29 @@ describe("artifact exporters", () => {
   it("creates a DOCX package from Markdown", async () => {
     const buffer = await markdownToDocx(SAMPLE);
     expect(buffer.subarray(0, 2).toString()).toBe("PK");
+    const archive = new AdmZip(buffer);
+    expect(archive.readFile("word/fonts/font1.odttf")?.length).toBeGreaterThan(100_000);
+    expect(archive.readAsText("word/fontTable.xml")).toContain("w:embedRegular");
+    const styles = new AdmZip(buffer).readAsText("word/styles.xml");
+    expect(styles).toContain('w:eastAsia="Noto Sans SC"');
+    expect(styles).toContain('w:eastAsia="zh-CN"');
+  });
+
+  it("keeps explicit Chinese fonts and language in the fallback document and heading styles", async () => {
+    const zip = new AdmZip(await legacyMarkdownToDocx("# 中文标题\n\n中文正文与 English\n\n`中文代码`"));
+    const styles = zip.readAsText("word/styles.xml");
+    expect(styles).toContain('w:eastAsia="Noto Sans SC"');
+    expect(styles).toContain('w:eastAsia="zh-CN"');
+    const heading = styles.match(/<w:style[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/)?.[0];
+    expect(heading).toContain('w:eastAsia="Noto Sans SC"');
+    expect(zip.readAsText("word/document.xml")).toContain('w:eastAsia="Noto Sans SC"');
+  });
+
+  it("keeps fallback Chinese tables at readable page width", async () => {
+    const xml = new AdmZip(await legacyMarkdownToDocx("| 环节 | 活动 |\n| --- | --- |\n| 准备 | 整理书包 |" )).readAsText("word/document.xml");
+    expect(xml).toContain('w:tblW w:type="dxa" w:w="9000"');
+    expect(xml).toContain('w:tcW w:type="dxa" w:w="4500"');
+    expect(xml).toContain("整理书包");
   });
 
   it("embeds resolved Markdown images inside the DOCX package", async () => {

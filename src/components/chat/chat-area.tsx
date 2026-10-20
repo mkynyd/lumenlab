@@ -95,9 +95,16 @@ export function ChatArea({
     setUserSkillValue(value);
   };
 
-  const handleSend = async (content: string, files: FileAttachment[]) => {
+  const handleSend = async (content: string, files: FileAttachment[], onAccepted?: () => void) => {
     const input: Parameters<typeof sendMessage>[0] = {
       content,
+      onAccepted: () => {
+        // The empty and populated layouts mount different composer instances.
+        // Clear their shared controlled draft even if the submitting one unmounted.
+        setInputValue((current) => current === content ? "" : current);
+        setAttachments((current) => current === files ? [] : current);
+        onAccepted?.();
+      },
       attachments: files,
       webSearchActive: sendWithWebSearch,
     };
@@ -106,12 +113,7 @@ export function ChatArea({
     } else if (skillValue !== "auto") {
       input.manualSkillId = skillValue;
     }
-    const sent = await sendMessage(input);
-    if (sent !== false) {
-      setInputValue((current) => current === content ? "" : current);
-      setAttachments((current) => current === files ? [] : current);
-    }
-    return sent;
+    return sendMessage(input);
   };
 
   const handleSkillFollowUp = (skillId: string) => {

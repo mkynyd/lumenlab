@@ -36,6 +36,24 @@ describe("ChatInput", () => {
     expect(onAttachmentsChange).not.toHaveBeenCalled();
   });
 
+  it("clears the accepted prompt during streaming and preserves a newer draft when the stream ends", async () => {
+    let accept!: () => void;
+    let finish!: (value: boolean) => void;
+    const onSend = vi.fn((_message, _files, onAccepted) => {
+      accept = onAccepted;
+      return new Promise<boolean>((resolve) => { finish = resolve; });
+    });
+    render(<ChatInput onSend={onSend} />);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "已发送教案请求" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    act(() => accept());
+    expect(input).toHaveValue("");
+    fireEvent.change(input, { target: { value: "下一条草稿" } });
+    await act(async () => finish(true));
+    expect(input).toHaveValue("下一条草稿");
+  });
+
   it("blocks submission for unavailable models while leaving the selector usable", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();

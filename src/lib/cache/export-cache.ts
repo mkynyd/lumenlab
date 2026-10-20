@@ -5,7 +5,7 @@ export type ExportFormat = "markdown" | "docx" | "pdf";
 
 // Increment this whenever a renderer or its output contract changes. Old cache
 // entries remain harmless and expire naturally instead of being served again.
-export const ARTIFACT_EXPORT_RENDERER_VERSION = "2026-07-19.1";
+export const ARTIFACT_EXPORT_RENDERER_VERSION = "2026-10-20.2";
 
 export function buildExportCacheKey(
   artifactId: string,

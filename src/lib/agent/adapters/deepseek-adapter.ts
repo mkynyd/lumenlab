@@ -3,7 +3,7 @@ import {
   fromResponsesToolName,
   toResponsesToolName,
 } from "@/lib/agent/providers/responses/serialize";
-import { prepareResponsesMessages, responsesModel, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
+import { prepareResponsesMessages, responsesModel, responsesOutputBudget, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
 
 import type {
   ProviderAdapter,
@@ -45,7 +45,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
         model: responsesModel(params.model, "deepseek"),
         messages: prepareResponsesMessages(params),
         attachments: [],
-        maxOutputTokens: 8192,
+        maxOutputTokens: responsesOutputBudget(params),
         toolChoice: params.tools?.length ? "auto" : "none",
       }),
     });

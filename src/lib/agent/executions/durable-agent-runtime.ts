@@ -303,10 +303,19 @@ function sanitizeOperationalEvent(event: AgentEvent): Record<string, unknown> {
     return { ...event, preview: sanitizePreview(event.preview) };
   }
   if (event.type === "tool_completed") {
+    const result = event.resultSummary;
+    // Public replay may carry an owner-checked download reference, never file
+    // bytes or arbitrary tool output. Download GET rechecks authentication.
+    const download = result.format === "docx" &&
+      typeof result.artifactId === "string" && result.artifactId.length > 0 && result.artifactId.length <= 200 &&
+      typeof result.filename === "string" && result.filename.length <= 260 &&
+      result.downloadUrl === `/api/artifacts/${encodeURIComponent(result.artifactId)}/export?format=docx`
+      ? { format: "docx", artifactId: result.artifactId, filename: result.filename, downloadUrl: result.downloadUrl }
+      : {};
     return {
       type: event.type,
       executionId: event.executionId,
-      resultSummary: { status: "completed" },
+      resultSummary: { status: "completed", ...download },
     };
   }
   if (event.type === "tool_failed") {

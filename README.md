@@ -27,13 +27,13 @@
 LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导出成果，适用于课程学习、考试复习、论文阅读写作、实验与代码项目。
 
 - 通过 Skill Router 自动识别学习场景，在项目资料、论文、考试、代码和文档任务之间切换合适的 Skill。
-- 通过受控的 Agent 模式让模型以 Skill 绑定 + Tool 调用的方式完成多步任务，所有副作用由服务端 Policy Engine 审批。
+- 通过受控的 Agent 模式让模型以 Skill 绑定 + Tool 调用的方式完成多步任务，所有工具通过服务端 Policy Engine 校验后自动执行。
 - 上传课件、PDF、Office 文档、图片、代码和笔记后，系统自动解析、分块、索引，并在回答底部展示来源。
-- 把有长期价值的回答保存为 Artifact，并导出 Markdown、DOCX 或 PDF。
+- 把有长期价值的回答保存为 Artifact，并导出 Markdown、DOCX 或 PDF；可直接在聊天要求生成 Word，下载文件包含嵌入的 Noto 中文字体。
 
 ### 目标用户
 
-需要整理课程资料、论文、实验数据、代码和复习材料的学生、教师与自主学习者。桌面端适合持续项目工作，移动端用于查看、轻量输入和审批确认。
+需要整理课程资料、论文、实验数据、代码和复习材料的学生、教师与自主学习者。桌面端适合持续项目工作，移动端用于查看、轻量输入与文件下载。
 
 ## 核心特性
 
@@ -80,17 +80,17 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### 受控 Agent 模式
 
-入口处的 Skill Router 先识别用户意图，从 bundled catalog 中选择普通 Agent Skill；用户也可手动切换或关闭 Skill。Deep Research 使用独立的服务器端方法论编译路径，不走普通 Skill 激活与审批链。普通 Agent 后续统一进入 `AgentRuntime`：DeepSeek、MiniMax 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，三条路径共享同一套工具循环、Policy、审批、审计与结构化事件。
+入口处的 Skill Router 先识别用户意图，从 bundled catalog 中选择普通 Agent Skill；用户也可手动切换或关闭 Skill。Deep Research 使用独立的服务器端方法论编译路径，不走普通 Skill 激活与审批链。普通 Agent 后续统一进入 `AgentRuntime`：DeepSeek、MiniMax 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，三条路径共享同一套工具循环、Policy、自动执行、审计与结构化事件。
 
-服务端 Policy Engine 拦截所有 `tool_use`，按 L0–L4 风险等级决定执行、预批准或逐次确认。
+服务端 Policy Engine 校验所有 `tool_use` 的权限、允许列表、资源归属、参数和显式禁用策略，通过后直接执行。
 
 - L1 自动执行：项目资料读取、Artifact 列表、项目 RAG、网页检索、arXiv 与 Sciverse 只读检索、引用格式化、Skill 激活。
-- L2 首次询问：保存 Artifact、新增或挂载参考文献。
-- L3 每次询问：删除项目资料、导出 Artifact DOCX。
-- Skill 只能收紧权限，不能放宽。
-- 需要确认的工具通过一次性审批令牌（sha256 存储 + `argumentsHash` + user/conversation/tool/request 绑定）授权，模型或客户端在等待期间替换参数会被拒绝。
-- 审批端点原子抢占待执行记录，恢复原项目上下文并真实执行 handler；成功或失败终态会直接回写 UI。持久任务在批准或拒绝后重新入队，由 Worker 继续模型回合，拒绝不会执行被拒绝的工具。
-- 开启 `AGENT_DURABLE_EXECUTION_ENABLED=true` 后，聊天任务使用持久化 `AgentExecution`、租约 Worker、严格递增事件序号和 checkpoint；客户端可按事件游标续传，并可查询、取消或重试自己的任务。
+- L2 自动执行：保存 Artifact、新增或挂载参考文献。
+- 保存、导出、引用和已授权的资料操作通过服务端校验后自动执行，风险级别继续用于审计和 Skill 能力上限。
+- Scope、项目/资料归属、参数、Skill 工具允许列表和显式 block 继续生效；历史 ask_first / ask_each 设置不再暂停任务。
+- 存量等待任务在打开对话时自动恢复，旧批准/拒绝接口仅保留兼容。
+- 启用持久执行时，聊天任务使用 `AgentExecution`、租约 Worker、递增事件序号与 checkpoint；客户端可续传、查询、取消或重试自己的任务。
+
 
 ### 内置 Skills
 

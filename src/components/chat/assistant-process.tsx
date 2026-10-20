@@ -17,7 +17,6 @@ import type {
   AssistantProcessTrace,
 } from "@/lib/agent/assistant-process";
 import { LoadingIndicator } from "@/components/workbench/loading-indicator";
-import { ApprovalCard } from "./approval-card";
 import { cn } from "@/lib/utils";
 
 interface AssistantProcessProps {
@@ -149,11 +148,9 @@ export function AssistantProcess({
   reasoningContent,
   isStreaming,
   hasResponse,
-  onApprove,
-  onDeny,
 }: AssistantProcessProps) {
   const hasReasoning = Boolean(reasoningContent?.trim());
-  const needsApproval = trace?.tools.some((tool) => tool.status === "awaiting_approval") ?? false;
+  const needsApproval = trace?.status === "running" && trace.tools.some((tool) => tool.status === "awaiting_approval");
   const running = isStreaming || trace?.status === "running";
   const failed = trace?.status === "failed";
   const cancelled = trace?.status === "cancelled";
@@ -161,7 +158,7 @@ export function AssistantProcess({
   const open = openOverride ?? (needsApproval || (running && !hasResponse));
 
   const summary = useMemo(() => {
-    if (needsApproval) return "等待你的确认";
+    if (needsApproval) return "正在恢复执行";
     if (running && !hasResponse) return hasReasoning ? "正在思考" : "正在准备";
     if (running) return "正在整理回答";
     const parts = [];
@@ -229,22 +226,19 @@ export function AssistantProcess({
                 ))}
               </ol>
             )}
-            {trace?.tools.map((tool) => (
-              tool.status === "awaiting_approval" && tool.preview ? (
-                <ApprovalCard
-                  key={tool.executionId}
-                  preview={tool.preview}
-                  canApproveSession={tool.approval?.canApproveSession ?? false}
-                  onApprove={(scope) => onApprove?.(tool.executionId, tool.approval?.token ?? "", scope)}
-                  onDeny={() => onDeny?.(tool.executionId)}
-                />
-              ) : (
-                <ToolRow key={tool.executionId} tool={tool} />
-              )
+            {trace?.tools.filter((tool) => tool.status !== "awaiting_approval" || trace.status === "running").map((tool) => (
+              <ToolRow key={tool.executionId} tool={tool.status === "awaiting_approval"
+                ? { ...tool, status: "executing" } : tool} />
             ))}
           </div>
         </div>
       </div>
+      {trace?.tools.filter((tool) => tool.status === "completed" && tool.download).map((tool) => (
+        <a key={tool.executionId} href={tool.download!.url} download={tool.download!.filename}
+          className="inline-flex px-2 py-1 text-sm text-[var(--color-accent)] hover:underline">
+          下载 Word · {tool.download!.filename}
+        </a>
+      ))}
     </section>
   );
 }

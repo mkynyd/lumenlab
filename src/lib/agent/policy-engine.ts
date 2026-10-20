@@ -1,8 +1,8 @@
 /**
  * Policy Engine — 服务端独立决策
  *
- * 风险等级是 Tool 元数据静态定义的；Skill 不能放宽，只能叠加更严的策略；
- * 用户偏好可以更严，但 L3/L4 永远强制 ask_each，不能被永久 auto 覆盖。
+ * 工具在通过权限、资源归属、参数和显式禁用检查后自动执行。
+ * 风险等级保留用于审计和 Skill 能力边界，不再触发人工审批。
  */
 
 import {
@@ -30,17 +30,6 @@ const RISK_RANK: Record<RiskLevel, number> = {
   L3: 3,
   L4: 4,
 };
-
-const STRICTNESS_RANK: Record<ApprovalMode, number> = {
-  auto: 0,
-  ask_first: 1,
-  ask_each: 2,
-  block: 3,
-};
-
-function maxStrictness(a: ApprovalMode, b: ApprovalMode): ApprovalMode {
-  return STRICTNESS_RANK[a] >= STRICTNESS_RANK[b] ? a : b;
-}
 
 /**
  * 检查用户是否拥有参数引用的资源（按 projectId/ownerId 跨租户检查）
@@ -152,7 +141,8 @@ export async function evaluatePolicy(
     recordSessionApproval?: (toolId: string, scope: "session") => void;
   }
 ): Promise<PolicyDecision> {
-  const { user, workspace, conversation, skill, tool, arguments: args } = ctx;
+  const { user, workspace, skill, tool, arguments: args } = ctx;
+  void options; // Retained for compatibility with legacy approval callers.
   // The runtime exposes enabled web tools independently of a Skill's tools.
   // Apply their own scope/risk/approval policy; workspace and user restrictions
   // still apply below. This flag is supplied by the server, never tool arguments.
@@ -228,81 +218,20 @@ export async function evaluatePolicy(
     return denyDecision(tool, "INVALID_ARGUMENTS", "参数不合法", skill);
   }
 
-  // 7. 决定审批模式
-  let approvalMode: ApprovalMode = tool.defaultApprovalMode;
-  // skill.activate 是 Skill 切换元能力，本身只读取 Skill 元数据，不访问用户资源；
-  // 不应被当前激活 Skill 的 defaultApprovalPolicy 收紧为 ask_first，否则模型按提示切换 Skill 时会弹出审批。
-  if (policySkill && !isRuntimeMetaTool(tool.toolId)) {
-    approvalMode = maxStrictness(approvalMode, policySkill.defaultApprovalPolicy);
-  }
+  // Existing explicit blocks remain restrictions; legacy ask_* modes no longer
+  // interrupt a task. All allowed risk levels execute through the same runner.
   const userPref = await loadUserPreference(user.id, tool.toolId);
-  if (userPref) {
-    if (toolRisk >= 3 && userPref.approvalMode === "auto") {
-      approvalMode = "ask_each";
-    } else {
-      approvalMode = maxStrictness(approvalMode, userPref.approvalMode);
-    }
+  if (userPref?.approvalMode === "block") {
+    return denyDecision(tool, "USER_BLOCKED", "用户已禁用此工具", skill);
   }
-  if (toolRisk >= 3) {
-    approvalMode = "ask_each";
+  if (tool.defaultApprovalMode === "block" || policySkill?.defaultApprovalPolicy === "block") {
+    return denyDecision(tool, "POLICY_BLOCKED", "策略已禁用此工具", skill);
   }
-
-  // 8. 会话级 pre-approval
-  if (toolRisk <= 2) {
-    const sessionApproved = conversation.sessionApprovals.get(tool.toolId);
-    if (sessionApproved === "session") {
-      return {
-        decision: "allow",
-        reasonCode: "SESSION_PRE_APPROVED",
-        riskLevel: tool.riskLevel,
-        approvalRequired: false,
-        sanitizedPreview: buildPreview(tool, args, ctx),
-        auditRequirements: tool.auditLevel,
-      };
-    }
-  }
-
-  // 9. auto + 无需审批
-  if (toolRisk <= 2 && approvalMode === "auto") {
-    return {
-      decision: "allow",
-      reasonCode: "AUTO_APPROVED_BY_POLICY",
-      riskLevel: tool.riskLevel,
-      approvalRequired: false,
-      sanitizedPreview: buildPreview(tool, args, ctx),
-      auditRequirements: tool.auditLevel,
-    };
-  }
-
-  // 10. 需要审批：发一次性 token
-  if (options?.preApprovedToken) {
-    return {
-      decision: "require_approval",
-      reasonCode:
-        approvalMode === "ask_first"
-          ? "FIRST_TIME_USE_REQUIRES_APPROVAL"
-          : "POLICY_REQUIRES_APPROVAL",
-      riskLevel: tool.riskLevel,
-      approvalRequired: true,
-      approvalScope: "once",
-      sanitizedPreview: buildPreview(tool, args, ctx),
-      auditRequirements: tool.auditLevel,
-      approvalToken: options.preApprovedToken,
-    };
-  }
-
-  // 由调用方负责先把 ToolExecution 行写入并传 executionId；本函数不知道执行 ID。
-  // 约定：调用方在拿到 decision 后再决定要不要走 token 签发路径（approval_required）。
-  // 这里直接返回 require_approval 但不带 token；signAndAttachToken 是另一个独立步骤。
   return {
-    decision: "require_approval",
-    reasonCode:
-      approvalMode === "ask_first"
-        ? "FIRST_TIME_USE_REQUIRES_APPROVAL"
-        : "POLICY_REQUIRES_APPROVAL",
+    decision: "allow",
+    reasonCode: "AUTO_APPROVED_BY_POLICY",
     riskLevel: tool.riskLevel,
-    approvalRequired: true,
-    approvalScope: "once",
+    approvalRequired: false,
     sanitizedPreview: buildPreview(tool, args, ctx),
     auditRequirements: tool.auditLevel,
   };

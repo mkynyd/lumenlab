@@ -1,5 +1,5 @@
 import { fromResponsesToolName, buildMiniMaxResponsesBody } from "@/lib/agent/providers/responses/serialize";
-import { prepareResponsesMessages, responsesModel, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
+import { prepareResponsesMessages, responsesModel, responsesOutputBudget, streamResponsesAdapter } from "@/lib/agent/providers/responses/adapter-stream";
 
 
 import { isTextAttachment } from "@/lib/chat/router";
@@ -32,7 +32,7 @@ export class MiniMaxAdapter implements ProviderAdapter {
         model: responsesModel(params.model, "minimax"),
         messages: prepareResponsesMessages(params),
         attachments: [],
-        maxOutputTokens: 8192,
+        maxOutputTokens: responsesOutputBudget(params),
         toolChoice: params.tools?.length ? "auto" : "none",
       }),
     });

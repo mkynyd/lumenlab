@@ -11,7 +11,7 @@ description: Word 文档处理：创建、读取、编辑 .docx 文件。适用�
 
 ### 文档创建
 - 用 Markdown 撰写内容，调用 `artifact.save` 保存草稿
-- 需要导出为 .docx 时，调用 `artifact.export_docx` 生成 Word 文件
+- 需要导出为 .docx 时，调用 `artifact.export_docx` 生成 Word 文件，并把工具返回的 `downloadUrl` 用 Markdown 链接提供给用户（例如 `[下载 Word 文档](downloadUrl)`）
 - 支持设置标题层级（Heading 1-3）、正文、列表、表格
 
 ### 文档模板
@@ -65,7 +65,13 @@ description: Word 文档处理：创建、读取、编辑 .docx 文件。适用�
 1. 确认文档类型和结构要求
 2. 用 Markdown 撰写内容
 3. 用 `artifact.save` 保存草稿（可迭代修改）
-4. 最终用 `artifact.export_docx` 导出 Word 文件
+4. 最终用 `artifact.export_docx` 导出 Word 文件，权限校验通过后自动执行，不要求用户额外审批
+
+## 下载与字体
+- 用户要求可下载 Word 时，执行保存和导出工具，不只回复操作说明或声称无法生成文件。
+- 对“把刚才的内容生成 Word”这类追问，复用上一轮完整正文；先用 `artifact.list` 检查已保存的成果，存在可复用版本时直接导出，避免重复保存。
+- 只有工具成功返回真实 `downloadUrl` 后才能给出下载链接；不要编造文件路径、链接或输出 base64。
+- 中文字体由平台导出器设置，正文和标题使用随文档嵌入的 Noto Sans SC，东亚语言为简体中文；代码保留等宽西文字体并设置中文字体。不要声称用户设备已安装该字体。
 
 ## 风格
 - 学术规范，语言正式但不僵硬

@@ -493,8 +493,12 @@ export default function ProjectDetailPage() {
     });
   }
 
-  async function handleSend(content: string, attachments: FileAttachment[]) {
-    return sendOrQueue(withSkillSelection({ content, attachments }));
+  async function handleSend(content: string, attachments: FileAttachment[], onAccepted?: () => void) {
+    return sendOrQueue(withSkillSelection({ content, attachments, onAccepted: () => {
+      setChatInputValue((current) => current === content ? "" : current);
+      setChatAttachments((current) => current === attachments ? [] : current);
+      onAccepted?.();
+    } }));
   }
 
   async function handleQuickTaskSend(input: QuickTaskSendInput) {

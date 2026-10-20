@@ -4,6 +4,8 @@ import { MiniMaxAdapter } from "./minimax-adapter";
 import { BailianQwenAdapter } from "./bailian-qwen-adapter";
 import { call, collect, completed, image, mockSse, params, tool } from "./responses-test-helpers";
 import type { ResponsesStreamEvent } from "../providers/responses/types";
+import { OUTPUT_RESERVE } from "@/lib/tokens/budget";
+import { getModelCatalogEntry } from "@/lib/chat/model-catalog";
 import { runAgentLoop } from "../loop/agent-loop";
 afterEach(() => vi.unstubAllGlobals());
 const cases = [
@@ -12,6 +14,22 @@ const cases = [
   { model: "qwen3.8-flash", adapter: () => new BailianQwenAdapter("ba-test", "https://workspace.example/compatible-mode/v1"), url: "https://workspace.example/compatible-mode/v1/responses", nativeName: "project_ufiles_dlist", toolId: "project_files.list" },
 ];
 describe.each(cases)("$model Responses integration", ({ model, adapter, url, nativeName, toolId }) => {
+  it.each(["high", "max"] as const)("uses a catalog-bounded thinking budget at %s effort across tool rounds", async (reasoningEffort) => {
+    const { requests } = mockSse([call("c1", nativeName), completed]);
+    const instance = adapter();
+    const first = await instance.startRound({ ...params, reasoningEffort, model, activeTools: [tool(toolId)] });
+    await collect(first.events);
+    const second = await instance.continueRound({ ...params, reasoningEffort, model,
+      messages: first.requestMessages, activeTools: [tool(toolId)], rawContent: first.getRawContent(),
+      toolCalls: first.getToolCalls(), toolResults: [{ toolUseId: "c1", content: "ok" }],
+    });
+    await collect(second.events);
+    const expected = Math.min(getModelCatalogEntry(model)!.maxOutputTokens, reasoningEffort === "max" ? 131_072 : 65_536);
+    expect(requests.map((request) => request.body.max_output_tokens)).toEqual([expected, expected]);
+    // A prompt accepted by Runtime must still fit together with model output.
+    expect(OUTPUT_RESERVE).toBeGreaterThan(expected);
+  });
+
   it("streams and accounts for a round with no tools before the Runtime can mark it complete", async () => {
     mockSse([{ type: "response.output_text.delta", delta: "answer" }, completed]);
     const instance = adapter();

@@ -2,7 +2,7 @@ import { countMessageTokens } from "./tokenizer";
 import type { DeepSeekMessage } from "@/lib/deepseek";
 
 export const MODEL_CONTEXT_LIMIT = 1_000_000; // DeepSeek V4 / MiniMax M3
-export const OUTPUT_RESERVE = 64_000; // 预留输出 + RAG 余量
+export const OUTPUT_RESERVE = 160_000; // 容纳最大 128K 思考+正文输出及 RAG/工具余量
 export const CONTEXT_BUDGET = MODEL_CONTEXT_LIMIT - OUTPUT_RESERVE;
 
 export const WARN_THRESHOLD = 0.7;

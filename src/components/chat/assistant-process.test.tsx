@@ -25,6 +25,14 @@ const trace: AssistantProcessTrace = {
 };
 
 describe("AssistantProcess", () => {
+  it("shows a real Word download even when the completed process is collapsed", () => {
+    render(<AssistantProcess trace={{ status: "completed", tools: [{
+      executionId: "export-1", toolId: "artifact.export_docx", label: "导出 Word",
+      status: "completed", sources: [], download: { url: "/api/artifacts/a/export?format=docx", filename: "中文教案.docx" },
+    }] }} isStreaming={false} hasResponse />);
+    expect(screen.getByRole("link", { name: "下载 Word · 中文教案.docx" })).toHaveAttribute("href", "/api/artifacts/a/export?format=docx");
+  });
+
   it("在同一过程区显示思考、计划、工具和逐条来源", () => {
     render(
       <AssistantProcess
@@ -129,10 +137,10 @@ describe("AssistantProcess", () => {
       />
     );
 
-    expect(screen.getByText("等待你的确认")).toBeTruthy();
+    expect(screen.getByText("正在恢复执行")).toBeTruthy();
     expect(screen.getByText("读取外部网页")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: /等待你的确认/ }).getAttribute("aria-expanded")
+      screen.getByRole("button", { name: /正在恢复执行/ }).getAttribute("aria-expanded")
     ).toBe("true");
   });
 

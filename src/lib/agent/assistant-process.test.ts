@@ -7,6 +7,17 @@ import {
 } from "./assistant-process";
 
 describe("assistant process trace", () => {
+  it("hydrates a validated download reference from tool completion and rejects external URLs", () => {
+    const event = { type: "tool_completed" as const, executionId: "export-1", resultSummary: {
+      artifactId: "a", filename: "中文教案.docx", format: "docx", downloadUrl: "/api/artifacts/a/export?format=docx",
+    } };
+    const trace = hydrateAssistantProcess([{ type: "agent_event", payload: { eventJson: JSON.stringify(event) } }]);
+    expect(trace?.tools[0].download).toEqual({ url: "/api/artifacts/a/export?format=docx", filename: "中文教案.docx" });
+    expect(reduceAssistantProcess(createAssistantProcessTrace(), {
+      ...event, resultSummary: { ...event.resultSummary, downloadUrl: "https://example.com/unsafe" },
+    }).tools[0].download).toBeUndefined();
+  });
+
   it("keeps the public plan and real tool/source lifecycle in one replayable trace", () => {
     let trace = createAssistantProcessTrace(1_000);
     trace = reduceAssistantProcess(trace, {
