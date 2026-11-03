@@ -22,6 +22,7 @@
 
 说明：
 
+- 新普通会话和项目默认使用 `deepseek-flash`；MiniMax 活跃 ID 为 `minimax-m3.1`，上游 ID 为 `MiniMax-M3.1-Flash-Preview`。历史 `minimax-m3` 仅用于旧消息和账单，新请求升级到 M3.1。
 - 任务 05 起附件不再影响路由：三个活跃模型都能读图，因此 `requiresVisionModel` 与「多模态附件锁定 MiniMax」的行为都已删除，`shouldLock` 恒为 `false`。
 - 旧会话保存的模型在发起新回合时按目录升级：`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro` → `deepseek-flash`，`qwen3.7-plus` → `qwen3.8-flash`；未知 ID 原样保留并明确失败。
 - 未启用 `MODEL_QWEN_ENABLED`、未配置 `BAILIAN_WORKSPACE_ID` 或当前账号缺少 Bailian 凭据时，Qwen 不会出现在模型目录中，直接提交该模型也会被服务端拒绝。
@@ -87,7 +88,7 @@
 
 ### 统一 Tool loop
 
-`src/lib/agent/loop/agent-loop.ts` 负责 allowlist、跨前奏去重、无进展检测、最多轮次、取消信号和 Provider continuation；具体 Policy、审批、执行、审计与 `ToolExecution` 状态转换由 `ToolRunner` 负责。审批出现时 loop 进入 `awaiting_approval`，不会向 Provider 伪造“已跳过”结果。
+`src/lib/agent/loop/agent-loop.ts` 负责 allowlist、跨前奏去重、无进展检测、最多轮次、取消信号和 Provider continuation；具体 Policy 校验、执行、审计与 `ToolExecution` 状态转换由 `ToolRunner` 负责。校验通过后自动执行，结果按原生 Tool 协议反馈给模型。历史等待任务通过兼容接口恢复并继续原任务。
 
 ### 百炼 Embedding
 
@@ -98,4 +99,4 @@
 ## 相关文档
 
 - Provider 适配边界：见 `src/lib/agent/provider-adapter.ts` 与 `src/lib/agent/adapters/`
-- Tool 调用后的审批与执行：见 [Policy Engine](./policy-engine.md)
+- Tool 调用的策略校验与执行：见 [Policy Engine](./policy-engine.md)

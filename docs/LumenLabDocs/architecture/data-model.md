@@ -38,14 +38,36 @@ ORM 使用 Prisma 7，客户端生成到 `src/generated/prisma/client`。
 - `Reference` 保存文献元数据（DOI、arXiv ID、作者、年份等）。
 - `ReferenceListItem` 把文献挂到具体 `Artifact` 上，并记录显示顺序。
 
-### Agent 与审批
+### 消息附件与执行
 
-- `SkillPackage` 存储可安装的 Skill 元数据，包括允许调用的 Tool 列表与风险上限。
-- `ToolDefinition` 是 Tool 的静态注册信息，包含输入输出 schema、风险等级、默认审批模式。
-- `ToolExecution` 记录一次具体的工具调用生命周期（proposed → pending_approval → executing → succeeded / failed）。
-- `ApprovalToken` 是一次性审批令牌，绑定到 user、conversation、tool 与参数哈希。
-- `AgentAuditLog` 记录工具与 Skill 相关事件，用于审计。
-- `UserToolPreference` 保存用户对单个 Tool 的审批偏好。
+- `MessageAttachment` 保存 user、conversation、message 的关联、原件存储位置、类型、尺寸和内容哈希，图片包含缩略图元数据。读取时按当前用户重新校验。
+- `AgentExecution`、`AgentExecutionEvent` 保存持久任务、检查点、租约、取消状态和有序事件，供续传与恢复使用。
+- `SkillPackage`、`ToolDefinition` 保存能力声明、scope、风险与显式禁用策略。
+- `ToolExecution` 保存规范化参数、参数哈希及实际执行状态，`AgentAuditLog` 保存脱敏审计事件。
+- 工具通过校验后自动执行。`ApprovalToken` 和 `pending_approval` 保留兼容历史任务，`UserToolPreference` 中显式 `block` 仍然生效。
+
+### 学习题集与日程
+
+- `StudyCollection → MistakeNotebook → MistakeItem` 表示题集、错题本和所选完整题目。题集归属用户，独立于 Project。
+- `MistakeItem` 保存题干、裁片引用、考点、解答及核验证据。收录一道题只表示用户选择整理，不能据此推断真实作答或掌握程度。
+- `StudyJob` 保存扫描与处理任务的阶段、进度、租约、重试次数和临时素材清单。
+- `StudyTask` 保存截止时间、预计工作量和完成状态；`StudyEvent` 保存课程、学习安排和忙碌时段；`StudyPreferences` 保存时区、学期、节次和可用时间。
+- `BankPaper`、`BankQuestion` 保存人工核验发布的试卷与题目，附来源和授权。
+- 旧 LearningGoal、KnowledgeMap、PracticeAttempt、StudyPack 等领域已在 `20261001010000_retire_learning_loop` 迁移退役；当前模型以 `prisma/schema.prisma` 为准。
+
+### Deep Research
+
+- `ResearchWorkspace` 聚合用户的研究运行及长期研究资产，可关联 Project。
+- `ResearchRun`、`ResearchPlanVersion`、`ResearchQuestion`、`ResearchTask` 保存计划、问题与任务执行。运行使用持久 Agent 执行基础设施。
+- `ResearchSource`、`ResearchSourceSnapshot`、`Evidence`、`Claim` 与 `ClaimEvidenceRelation` 保存来源、读取范围、证据和命题关系。
+- `ResearchSourceRelation` 保存来源间引用关系；`ResearchReportSnapshot` 保存不可变报告快照。Follow-up Run 继承资产并保留 provenance。
+
+### 论文排版
+
+- `PaperWorkspace`、`PaperDocument`、`PaperDocumentVersion`、`PaperDocumentPatch` 保存排版工作区、文档结构、版本和修订。
+- `TemplateRegistryEntry`、`TemplateVariant`、`TemplateBinding`、`TemplateBindingVersion` 保存模板目录与绑定版本。
+- `PaperImport`、`PaperImportSnapshot`、`PaperFormattingTask`、`PaperFormattingMappingBatch` 保存导入、结构映射与后台格式化任务；`PaperCompilation` 保存编译结果。
+- `PaperResearchLink`、`PaperResearchMaterial` 关联研究材料并保留导入边界。
 
 ## API Key 与凭证模型
 

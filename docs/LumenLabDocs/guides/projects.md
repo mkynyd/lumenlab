@@ -51,7 +51,7 @@
 支持的资料类型：
 
 - 图片（上传即就绪，提问时作为原始资源交给所选模型识别）。
-- PDF（≤20MB 走 MiniMax M3 原生文档解析，更大或解析被拒时回退 MinerU）。
+- PDF（≤20MB 走 MiniMax M3.1 原生文档解析，更大或解析被拒时回退 MinerU）。
 - Office / WPS / iWork 文档（通过 MinerU 转为 Markdown，并保留文档内图片）。
 - 文本 / 代码文件（直接读取）。
 

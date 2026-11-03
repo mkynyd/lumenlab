@@ -32,6 +32,7 @@ export const DOCS_NAV: DocSection[] = [
   {
     title: "指南",
     items: [
+      { slug: "user-guide", title: "功能使用说明", filePath: "user-guide.md" },
       { slug: "guides/projects", title: "项目管理", filePath: "guides/projects.md" },
       { slug: "guides/files-and-rag", title: "资料与 RAG", filePath: "guides/files-and-rag.md" },
       { slug: "guides/artifacts", title: "成果与导出", filePath: "guides/artifacts.md" },
@@ -117,32 +118,23 @@ export function extractHeadings(content: string): DocHeading[] {
   return headings;
 }
 
-function splitPath(url: string): { dir: string; base: string } {
-  const lastSlash = url.lastIndexOf("/");
-  if (lastSlash === -1) {
-    return { dir: ".", base: url };
-  }
-  return { dir: url.slice(0, lastSlash), base: url.slice(lastSlash + 1) };
-}
-
-export function rewriteDocLinks(content: string): string {
+export function rewriteDocLinks(content: string, currentFilePath = "README.md"): string {
   return content.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     (match, linkText: string, rawUrl: string) => {
       const hashIndex = rawUrl.indexOf("#");
       const url = hashIndex === -1 ? rawUrl : rawUrl.slice(0, hashIndex);
       const hash = hashIndex === -1 ? "" : rawUrl.slice(hashIndex + 1);
-      if (!url || url.startsWith("http") || url.startsWith("mailto") || url.startsWith("/")) {
+      if (!url || /^(?:[a-z][a-z\d+.-]*:|\/)/i.test(url)) {
         return match;
       }
       if (!url.endsWith(".md")) {
         return match;
       }
-      const { dir, base } = splitPath(url);
-      const baseName = base.replace(/\.md$/, "");
-      const normalizedDir = dir === "." ? "" : dir.replace(/^\.\//, "");
-      const slug = normalizedDir ? `${normalizedDir}/${baseName}` : baseName;
-      const newUrl = `/docs/${slug}${hash ? `#${hash}` : ""}`;
+      const filePath = new URL(url, `https://docs.invalid/${currentFilePath}`).pathname.slice(1);
+      const doc = findDocByFilePath(filePath);
+      if (!doc && filePath !== "README.md") return match;
+      const newUrl = `${doc ? `/docs/${doc.slug}` : "/docs"}${hash ? `#${hash}` : ""}`;
       return `[${linkText}](${newUrl})`;
     }
   );

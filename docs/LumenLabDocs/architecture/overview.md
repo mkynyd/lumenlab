@@ -17,8 +17,8 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 
 | 路由分组 | 路径示例 | 说明 |
 |---|---|---|
-| `(auth)` | `/login`、`/register` | 登录、注册（邮箱验证）、密码重置 |
-| `(chat)` | `/chat`、`/chat/[id]`、`/projects`、`/tools`、`/tools/[id]` | 工作台：对话、项目、资料、快捷任务 |
+| `(auth)` | `/login`、`/register` | 邮箱或手机号注册登录、密码重置 |
+| `(chat)` | `/chat`、`/projects`、`/learning`、`/research`、`/papers`、`/tools` | 工作台中的对话、项目、学习、研究、排版与转换 |
 | `/docs` | `/docs` | 静态文档站点 |
 | `/api/*` | `/api/chat`、`/api/agent/*`、`/api/skills/catalog` | 服务端 API |
 
@@ -28,7 +28,7 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 src/
 ├── app/api/                  # Next.js API Routes（HTTP 鉴权、限流、请求/响应适配）
 │   └── chat/                 # 薄聊天 Route、请求映射器与 SSE 响应适配器
-├── components/chat/          # 聊天界面、消息卡片、附件、工具审批 UI
+├── components/chat/          # 聊天界面、消息卡片、附件与工具执行过程区
 ├── components/project/       # 项目详情、文件列表、快捷任务、成果库
 ├── lib/chat/                 # 模型路由、历史压缩
 ├── lib/rag/                  # 向量检索、全文检索、关键词检索、embedding
@@ -37,7 +37,7 @@ src/
 │   ├── context/              # ContextAssembler：项目与选中文件所有权校验
 │   ├── adapters/             # ProviderAdapter：厂商协议、Tool 映射与 continuation
 │   ├── loop/                 # AgentLoop：统一多轮工具循环、去重与停止条件
-│   ├── tools/                # ToolRunner：Policy、审批、执行、审计状态机
+│   ├── tools/                # ToolRunner：Policy 校验、自动执行与审计状态机
 │   ├── persistence/          # 对话与 ToolExecution 的 Prisma 适配器
 │   ├── providers/            # 上游流标准化为内部 ProviderStreamEvent
 │   ├── observability/        # shadow 模式的无副作用规划比较
@@ -46,7 +46,10 @@ src/
 │   └── sources.ts            # AgentSource 聚合与持久化
 ├── lib/skills/               # .lumenlab/skills discovery、metadata migration、legacy compat
 ├── lib/tools/                # project files / artifact / web / arxiv / reference / export tools
-├── lib/files/                # 项目文件上传解析、MiniMax PDF/图片、MinerU Office
+├── lib/files/                # 项目文件上传解析、MiniMax PDF、MinerU Office 与 direct-image
+├── lib/study/                # 题集、扫描选题、后台核验与学习日程
+├── lib/research/             # 持久化研究计划、来源、证据和报告
+├── lib/paper/                # 文档版本、模板绑定与后台排版
 ├── lib/cache/                # 应用级缓存、导出缓存、实验开关、缓存指标
 ├── lib/export/               # Markdown / DOCX / PDF 导出与格式转换
 └── lib/storage/              # 本地存储与七牛云对象存储抽象
@@ -72,7 +75,7 @@ AgentRuntime.run(input)
   ├─ ProviderAdapter.startRound() 统一 DeepSeek / MiniMax / Bailian Qwen 首轮调用
   ├─ new 模式可先运行确定性工具前奏
   ├─ AgentLoop 处理规范化 Tool call、去重、轮次与停止条件
-  │        └─ ToolRunner 统一执行 Policy → 审批 → handler → audit → persistence
+  │        └─ ToolRunner 统一执行 Policy 校验 → 自动执行 handler → audit → persistence
   ├─ ProviderAdapter.continueRound() 构造厂商正确的后续轮 transcript
   ├─ ConversationPersistence 创建并异步完成 assistant Message
   └─ 返回 AgentRun（metadata、内部事件流、completion）
@@ -118,7 +121,7 @@ response-stream.ts
 | PDF（>20MB，上限 200MB） | MinerU 解析 |
 | Office / WPS / iWork | MinerU 解析 Markdown，图片保存为 `FileAssetResource` |
 
-解析完成后会刷新 `ProjectIndex`，创建 `DocumentChunk`，并在可用时通过百炼 `qwen3-vl-embedding` 生成 1024 维向量。
+可提取正文的资料在解析完成后刷新 `ProjectIndex`、创建 `DocumentChunk`，并在凭据可用时通过百炼 `qwen3-vl-embedding` 生成 1024 维向量。`direct-image` 保留原图供模型读取。聊天附件与学习扫描使用独立管线，见[资料与 RAG](../guides/files-and-rag.md)。
 
 ## Skill 与 Tool 注册
 
@@ -131,6 +134,6 @@ Deep Research 的 `research-skills.ts` 只编译 methodology instruction。Run �
 ## 与其他文档的关联
 
 - 模型如何选择：见 [任务路由](./task-router.md)
-- Agent 审批与风险等级：见 [Policy Engine](./policy-engine.md)
+- Agent 策略校验与风险等级：见 [Policy Engine](./policy-engine.md)
 - 缓存分层与指标：见 [缓存架构](./cache.md)
 - 数据库表关系：见 [数据模型](./data-model.md)

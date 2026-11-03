@@ -19,7 +19,7 @@ A complete user-selected question, including all options, shared material, conti
 
 ## Verified Solution
 
-A manually checked bank answer, or a DeepSeek solution accepted only after independent Qwen solving and MiniMax checks for both correctness and complete evidence. Model verification remains fallible. Missing evidence or failed checks produce needs_review and no accepted answer.
+A manually checked bank answer, or a DeepSeek solution accepted only after independent second-model solving and MiniMax checks for both correctness and complete evidence. Qwen is the second solver when enabled; when disabled, DeepSeek performs recognition and MiniMax is both second solver and verifier, leaving two distinct providers. Model verification remains fallible. Missing evidence or failed checks produce needs_review and no accepted answer.
 
 ## Temporary Import
 

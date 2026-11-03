@@ -1,6 +1,6 @@
 # Token 用量统计 / 上下文窗口预算 / 上下文压缩 设计方案
 
-> 状态：已实现
+> 状态：已实现 · 2026-11-03 对照主线复核
 > 背景：为公测结束后的订阅制收费做数据准备，同时解决长对话可能超出模型上下文上限的问题。
 
 ---
@@ -18,7 +18,7 @@
 本次设计覆盖：
 
 - `light-ai-chat` 主业务应用
-- 三个活跃聊天模型：`deepseek-flash`（DeepSeek V4.1 Flash）、`minimax-m3` 和 `qwen3.8-flash`（受 `MODEL_QWEN_ENABLED` 门禁）；`deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` / `deepseek-v4-pro` / `qwen3.7-plus` 为历史 ID，仅用于历史消息与账单
+- 三个活跃聊天模型：`deepseek-flash`（DeepSeek V4.1 Flash）、`minimax-m3.1` 和 `qwen3.8-flash`（受 `MODEL_QWEN_ENABLED` 门禁）；`deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` / `deepseek-v4-pro` / `qwen3.7-plus` 为历史 ID，仅用于历史消息与账单
 - 一次完整的 `/api/chat` 请求生命周期：预算检查 → 压缩 → 模型调用 → 用量记录
 
 不覆盖：
@@ -38,11 +38,11 @@
 | Token 计数 | 本地 tokenizer 估算用于预算检查；API 返回的 usage 用于精确记账 |
 | 用量限制（A 测） | 不限制上限，所有 A 测用户默认 Premium，仅记录用量 |
 | 用量周期 | 按用户注册日起 30 天滚动窗口；同时支持每日 / 每周 / 每 5 小时聚合分析 |
-| 上下文预算 | 模型 1M 上下文预留 64K 输出空间，预算上限约 936K |
+| 上下文预算 | 模型 1M 上下文预留160,000 tokens用于输出及RAG/工具余量，预算上限840,000 |
 | 预算阈值 | 70% 时前端警告，90% 时服务端自动压缩 |
 | 压缩模型 | DeepSeek V4.1 Flash（`deepseek-flash`，成本低、速度快、上下文长） |
 | 压缩策略 | 滚动摘要超出保护窗口的最早若干轮对话 |
-| 受保护内容 | 系统提示、最近 6 - 10 轮对话、RAG 注入的上下文 |
+| 受保护内容 | 系统提示、默认最近6轮对话、RAG注入的上下文 |
 | 摘要持久化 | 作为 `role=system` 的摘要消息存入 `Message` 表，后续请求自动引用 |
 | 手动压缩 | 支持用户输入 `/compact [可选提示词]`，留空则使用默认摘要指令 |
 
@@ -126,9 +126,9 @@ model Message {
 | 历史 `deepseek-v4-flash-vision-exp`（低谷 / 高峰） | 输入 cache miss | 1.5 / 3.0 |
 | 历史 `deepseek-v4-flash-vision-exp`（低谷 / 高峰） | 输出 | 4.5 / 9.0 |
 | `qwen3.8-flash` | 输入 cache hit / miss / 输出 | 0.1 / 0.8 / 2.7 |
-| MiniMax M3 | 输入 | 2.1 |
-| MiniMax M3 | 输出 | 8.4 |
-| MiniMax M3 | 缓存读取 | 0.42 |
+| MiniMax M3.1（历史 M3 权重保留） | 输入 | 2.1 |
+| MiniMax M3.1（历史 M3 权重保留） | 输出 | 8.4 |
+| MiniMax M3.1（历史 M3 权重保留） | 缓存读取 | 0.42 |
 
 说明：
 
@@ -147,7 +147,7 @@ model Message {
 ```ts
 import { getEncoding } from "js-tiktoken";
 
-const enc = encoding_for_model("gpt-4o"); // 使用 cl100k_base
+const enc = getEncoding("cl100k_base");
 function estimateTokens(messages: Array<{ role: string; content: string }>) {
   return messages.reduce((sum, m) => {
     // 每条消息额外加上角色和格式开销，约 4 tokens
@@ -217,16 +217,20 @@ A 测期间可先用 Prisma 查询或脚本生成统计报告，不需要定时�
 
 ```ts
 const MODEL_CONTEXT_LIMIT = 1_000_000; // DeepSeek V4 / MiniMax M3
-const OUTPUT_RESERVE = 64_000;
-const CONTEXT_BUDGET = MODEL_CONTEXT_LIMIT - OUTPUT_RESERVE; // 936_000
+const OUTPUT_RESERVE = 160_000;
+const CONTEXT_BUDGET = MODEL_CONTEXT_LIMIT - OUTPUT_RESERVE; // 840_000
 
-const WARN_THRESHOLD = 0.7;     // 655K tokens
-const COMPRESS_THRESHOLD = 0.9; // 842K tokens
+const WARN_THRESHOLD = 0.7;     // 588_000 tokens
+const COMPRESS_THRESHOLD = 0.9; // 756_000 tokens
 ```
 
 ### 检查流程
 
-在 `/api/chat/route.ts` 组装最终 `messages` 数组前：
+在 `AgentRuntime` 的上下文组装与压缩阶段，使用 `src/lib/tokens/budget.ts` 进行检查。模型输出与思考共享预算，由 Responses Adapter 按模型目录上限裁剪。
+
+开启思考时，high 使用65,536、max 使用131,072 tokens的目标输出预算，实际受目录 `maxOutputTokens` 限制；未开启思考时目标为8,192。
+
+检查流程如下。
 
 1. 用本地 tokenizer 估算 `messages` 的总 token 数。
 2. 若超过 `WARN_THRESHOLD`：在 SSE 流首帧返回 `warning` 事件，前端显示“上下文接近上限”。
@@ -254,11 +258,11 @@ const compressible = history.slice(0, -protectedWindow * 2);
 
 ### 摘要生成
 
-调用 DeepSeek V4 Flash：
+调用目录中的 DeepSeek V4.1 Flash。以下为压缩逻辑示意，实际入口见 `src/lib/chat/compression.ts`。
 
 ```ts
 const summary = await completeChat({
-  model: "deepseek-v4-flash",
+  model: "deepseek-flash",
   messages: [
     { role: "system", content: buildSummaryPrompt(userPrompt) },
     { role: "user", content: formatHistoryForSummary(compressible) },
@@ -287,7 +291,7 @@ await prisma.message.create({
     metadata: {
       compressedRange: { startIndex, endIndex },
       userPrompt: userPrompt || null,
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
     },
   },
 });

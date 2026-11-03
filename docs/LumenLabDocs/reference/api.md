@@ -281,7 +281,7 @@
 
 ### `POST /api/files/[id]/parse`
 
-- 描述：触发文件解析，支持 PDF / Office / WPS / iWork / 图片 / 文本 / 代码等格式。项目 PDF 与图片走 MiniMax M3.1；Office/WPS/iWork 走 MinerU；文本和代码本地读取。
+- 描述：触发文件解析，支持 PDF / Office / WPS / iWork / 图片 / 文本 / 代码等格式。项目 PDF 走 MiniMax M3.1（超过 20MB 或请求被拒时回退 MinerU）；Office/WPS/iWork 走 MinerU；文本和代码本地读取；图片标记 `direct-image`，在聊天时交给所选模型。
 - 认证：需登录。
 - 响应：`{ id, status, parsedContent? }`
 
@@ -363,20 +363,17 @@
 
 ## Agent
 
-### `POST /api/agent/approve`
+### `POST /api/agent/approve`（历史兼容）
 
-- 描述：校验待审批执行的归属与状态，使用落库的规范化参数消费一次性 token，然后立即调用统一 Tool handler 并落为成功或失败终态。
-- 认证：需登录。
-- 请求：`{ executionId, token, scope?: 'once' | 'session' }`。L3 / L4 仅允许 `once`。
-- 成功响应：`{ ok: true, status: 'succeeded', scope, executionId, resultSummary }`。
-- 执行失败响应：`{ ok: false, status: 'failed', scope, executionId, error }`。审批成功后的执行结果会成为前端 Timeline 终态，但不会自动恢复此前暂停的 Provider continuation。
+- 恢复当前用户自己的 `pending_approval` 工具执行，重新检查原始参数、当前权限和归属，再原子领取并执行。
+- 请求为 `{ executionId, token?, scope?: 'once' | 'session' }`。历史非持久父任务要求 token；持久父任务按已保存的执行关系恢复。L3 / L4 只允许 `once`。
+- 成功响应包含 `{ ok: true, status: 'succeeded', scope, executionId, resultSummary }`。失败返回执行状态及错误。持久父任务恢复队列；非持久路径用 `shouldContinue` 指示客户端继续生成。
+- 新工具调用通过 Policy 校验后自动执行，聊天加载历史等待任务时才使用此兼容路径。
 
-### `POST /api/agent/reject`
+### `POST /api/agent/reject`（历史兼容）
 
-- 描述：拒绝一次 `pending_approval` ToolExecution，落库为 `rejected` 并写入审计；不会自动恢复暂停的 Provider continuation。
-- 认证：需登录。
-- 请求：`{ executionId, reason? }`
-- 响应：`{ ok: true, executionId }`。
+- 拒绝自己的 `pending_approval` 执行，写入终态与审计，并按父任务状态处理恢复。
+- 请求为 `{ executionId, reason? }`，响应包含 `{ ok: true, executionId }`。两项兼容接口均要求登录。
 
 ### `GET /api/agent/executions/*`
 
@@ -385,24 +382,41 @@
 
 ---
 
-## Learning
+## Study
 
-以下接口在 `LEARNING_LOOP_ROLLOUT` 不为 `off` 时开放，全部要求登录并按归属校验：
+当前学习工作区使用 `/api/study/*`。所有接口要求登录，题集、错题本、素材、任务和日程按用户归属校验。以下路径相对于 `/api/study`。
 
-### `GET /api/learning/today`
+| 方法 | 路径 | 合同概要 |
+|---|---|---|
+| GET / POST | `/collections` | 列出题集；创建题集与第一本错题本 |
+| POST | `/collections/[id]/notebooks` | 在自己的题集中新建错题本 |
+| GET | `/notebooks/[id]/items` | 列出错题本题目 |
+| GET / PATCH | `/items/[id]` | 获取题目详情；修订题面并重新提交处理 |
+| POST | `/imports` | multipart `file` 导入临时预览，原件30MB、最多80页 |
+| GET | `/imports/[id]/pages/[page]` | 读取当前用户的临时预览页 |
+| POST | `/imports/[id]/selection` | 提交选中区域，保存完整题目所需裁片并创建后台任务 |
+| DELETE | `/imports/[id]` | 取消导入并清除临时预览 |
+| POST | `/text-selection` | 收录选中的精确 Markdown 子串 |
+| GET | `/items/[id]/assets/[asset]` | 读取题目关联素材，重新校验归属 |
+| GET | `/jobs`、`/jobs/[id]` | 列出未完成任务或查询指定任务阶段、进度与失败原因 |
+| POST | `/jobs/[id]` | 重试符合条件的失败任务 |
+| GET | `/bank/papers`、`/bank/papers/[id]` | 查询人工核验发布的题库和试卷 |
+| POST | `/bank/select` | 将选中的题库题目收录到自己的错题本 |
+| GET | `/bank/questions/[id]/assets/[asset]` | 读取已核验发布题目的插图 |
+| GET / POST | `/tasks` | 列出任务或新建带截止时间与预计工作量的任务 |
+| PATCH | `/tasks/[id]` | 更新任务，包括完成或恢复状态 |
+| GET / POST | `/events` | 列出日程或添加课程、学习与忙碌时段 |
+| PATCH / DELETE | `/events/[id]` | 更新或移除自己的日程 |
+| GET | `/preferences` | 读取时区、学期起点、节次与空闲时段偏好 |
+| POST | `/timetable/preview` | 解析 Excel、ICS、图片或 PDF 课表，返回待确认内容 |
+| POST | `/timetable/apply` | 保存确认后的课程与节次规则 |
+| POST | `/extract` | 从大纲或老师要求提取待确认内容 |
+| POST / PUT | `/planning` | 根据空闲时段预览规划；带版本确认后保存。预览过期或任务变化返回冲突 |
+| POST | `/assistant` | 使用当前学习上下文进行讨论，无修改工具 |
 
-- 描述：聚合当前用户所有活跃学习目标，返回服务端选定的「今日下一步」。
-- 认证：需登录。
+题目解析通过 `StudyJob` 独立 Worker 执行。临时预览在提交、取消或过期后清除，长期只保存所选题目和必要素材。模型核验失败或证据不完整保留待校对状态。
 
-### `POST /api/learning/profile-resets`
-
-- 描述：用户级学习画像重置，重置边界之前的证据不再计入掌握度、复习与推荐投影。
-- 认证：需登录。
-
-### `/api/projects/[id]/learning/*`
-
-- 描述：项目级学习闭环接口族——学习目标（Goal）、学习范围（Scope）、知识点地图（Map）、诊断/复习会话、提示与答案曝光、append-only 作答与判分、进度、错题、到期复习、作答历史、错因修正与重判、Goal 修订、画像重置，以及学习资料包（Study Pack）的大纲确认、分节生成、编辑与发布为 Artifact。
-- 认证：需登录，且项目需属于当前用户。
+旧 `/api/learning/*` 和 `/api/projects/[id]/learning/*` 已退役，旧学习记录由迁移清除。运行依赖、题库发布和清理说明见[部署](../deployment.md#学习扫描与文档导出依赖)。
 
 ---
 

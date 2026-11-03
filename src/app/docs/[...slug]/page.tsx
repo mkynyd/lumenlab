@@ -43,7 +43,7 @@ export default async function DocsSlugPage({ params }: DocsPageParams) {
   }
 
   const rawContent = await readDocFile(doc.filePath);
-  const content = rewriteDocLinks(rawContent);
+  const content = rewriteDocLinks(rawContent, doc.filePath);
   const headings = extractHeadings(content);
   const { prev, next } = getDocNeighbors(slug);
 

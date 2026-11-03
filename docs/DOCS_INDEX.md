@@ -1,6 +1,6 @@
 # 文档索引
 
-> 更新日期：2026-09-10
+> 更新日期：2026-11-03
 
 本目录包含 LumenLab 自身文档与实现记录，以及开发时使用的第三方服务参考。面向用户的在线文档由 `docs/LumenLabDocs` 直接驱动，随应用一同发布在 `/docs` 页面。
 
@@ -12,7 +12,7 @@
 | [PROJECT_SUMMARY](../../PROJECT_SUMMARY.md)（工作区根目录，本地文档） | 当前实现与生产状态摘要 |
 | [PRODUCT](../PRODUCT.md) | 产品定位、目标用户与设计原则 |
 | [DESIGN](../DESIGN.md) | 前端视觉与动效规范 |
-| [SKILLS](../SKILLS.md) | 14 个 bundled Skill、Research methodology compiler、Managed updater、Tool 与审批模型 |
+| [SKILLS](../SKILLS.md) | 14 个 bundled Skill、Research methodology compiler、Managed updater、Tool 与自动执行策略 |
 | [AGENTS](../AGENTS.md) | 仓库协作、Git 与 UI 约束 |
 
 `REPOSITORY_INDEX.md` 是 gitignored 的本地 Agent 索引，不会显示在 GitHub；需要以当前工作区副本为准。`PROJECT_SUMMARY.md` 现在位于工作区根目录，属本地记录、不随仓库分发；原先的 `IMPLEMENTATION.md` 与 `agent-orchestrator-diff.md` 已不再单独维护，四层缓存与 Runtime 迁移说明见 `README.md` 与根目录 `PROJECT_SUMMARY.md`。
@@ -36,7 +36,7 @@
 | [项目管理](LumenLabDocs/guides/projects.md) | 项目类型、上下文与资料管理 |
 | [资料与 RAG](LumenLabDocs/guides/files-and-rag.md) | 上传、解析、检索与资料图谱 |
 | [成果与导出](LumenLabDocs/guides/artifacts.md) | Artifact、Markdown / DOCX / PDF |
-| [Agent 模式](LumenLabDocs/guides/agent-mode.md) | Tool loop、审批与 Provider 边界 |
+| [Agent 模式](LumenLabDocs/guides/agent-mode.md) | Tool loop、自动执行与 Provider 边界 |
 | [Skills 与 Tools](LumenLabDocs/guides/skills-and-tools.md) | 内置能力、风险等级与使用建议 |
 | [深度研究](LumenLabDocs/guides/deep-research.md) | 研究工作区、计划确认、来源与证据、报告引用追溯 |
 | [论文排版](LumenLabDocs/guides/papers.md) | 学校模板、原稿上传、结构确认、PDF 预览与下载 |
@@ -47,7 +47,7 @@
 |---|---|
 | [架构总览](LumenLabDocs/architecture/overview.md) | AgentRuntime、Provider、RAG 与部署边界 |
 | [任务路由](LumenLabDocs/architecture/task-router.md) | DeepSeek / MiniMax / Qwen 路由与 Adapter |
-| [Policy Engine](LumenLabDocs/architecture/policy-engine.md) | scope、风险、审批 token 与状态机 |
+| [Policy Engine](LumenLabDocs/architecture/policy-engine.md) | scope、风险、自动执行与历史兼容 |
 | [缓存架构](LumenLabDocs/architecture/cache.md) | 四层缓存与指标 |
 | [数据模型](LumenLabDocs/architecture/data-model.md) | Prisma 领域模型 |
 | [API 参考](LumenLabDocs/reference/api.md) | 当前主要 Route Handler 合同 |
@@ -58,6 +58,7 @@
 
 | 文档 | 说明 |
 |---|---|
+| [学习模块运行与数据边界](study-workspace.md) | 题集、错题本、扫描选题、核验、日程与题库发布 |
 | [Token 与上下文预算](token-usage-context-budget-compression.md) | 用量、预算与压缩策略 |
 | [Artifact 导出](artifact-export.md) | 导出实现笔记 |
 | [PostgreSQL + pgvector](database-postgresql-pgvector.md) | 数据库与向量配置 |

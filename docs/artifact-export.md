@@ -1,20 +1,8 @@
 # 成果库与导出
 
-## 设计目标
+## 正文与下载
 
-项目聊天中的 AI 回复可以由用户手动保存为 Artifact。系统不会自动保存每条回复，也不会为复习提纲、模拟题、实验报告等分别建立数据表，而是通过 `Artifact.type` 区分成果用途。
-
-## 唯一内容源
-
-`Artifact.content` 始终保存原始 Markdown。Markdown 是唯一事实来源，DOCX 和 PDF 仅在下载请求发生时即时生成，不写回数据库，也不修改原文。
-
-## 导出格式
-
-- Markdown：直接以 UTF-8 `.md` 文件下载。
-- Word：使用 `docx` 从 Markdown AST 生成 `.docx`，支持标题、段落、粗体、斜体、代码块、列表、表格、引用和分隔线。
-- PDF：渲染同源的打印页并用 Chromium（`playwright-core`）导出 `.pdf`，因此 Mermaid 与 KaTeX 公式在 PDF 中同样是渲染后的结果；需要配置 `CHROMIUM_EXECUTABLE_PATH`。
-
-导出接口：
+`Artifact.content` 保存原始 Markdown，标题与类型独立记录。用户可以手工保存助手回答，也可在聊天中要求保存并导出。导出读取同一正文，下载时重新验证登录与成果归属。
 
 ```text
 GET /api/artifacts/{id}/export?format=markdown
@@ -22,16 +10,25 @@ GET /api/artifacts/{id}/export?format=docx
 GET /api/artifacts/{id}/export?format=pdf
 ```
 
-所有接口都校验登录状态和 Artifact 的 `userId`。下载文件名会清理路径字符、换行和响应头危险字符。
+文件名清理路径字符、换行和响应头危险字符。导出结果缓存1小时，键包含正文和渲染器版本，命中返回 `X-Cache: HIT`。
 
-## 当前限制
+## Word 渲染
 
-- DOCX 中的 Mermaid 仍以源码文本保留；PDF 走打印页，渲染为真实图形。
-- LaTeX 公式在 PDF 中由 KaTeX 渲染；DOCX 不转换为 Word 公式对象。
-- 导出结果缓存 1 小时（Redis，命中时返回 `X-Cache: HIT`），不记录导出历史。
+入口为 `src/lib/export/markdown-to-docx.ts` 的 `markdownToDocx()`。
 
-## 部署要求
+- 默认调用 Pandoc，使用参考 DOCX 与统一中文样式。数学公式由 Pandoc 处理，Mermaid / LumenFlow 渲染为图片后嵌入，项目图片经授权解析后写入文档。
+- 主机未安装 Pandoc 时，自动回退到纯 JS `docx` 渲染器；设置 `DOCX_EXPORT_ENGINE=legacy` 可显式选择备用路径。Pandoc 其他错误会直接报告。
+- 备用路径支持基本标题、列表、表格、引用、代码与图片，复杂公式和图表的保真能力受引擎限制。部署和验收时应记录实际使用的引擎。
+- 两条路径共用 Noto Sans SC 东亚字体和 `zh-CN` 样式，并嵌入 OFL 中文字体。阅读器未支持字体嵌入时，显示取决于本机字体。
 
-PDF 导出使用 Node.js runtime 并需要可用的 Chromium（`CHROMIUM_EXECUTABLE_PATH`，服务器上由部署脚本提供）。PDF 资料解析使用 `pdfjs-dist` 与 `@napi-rs/canvas`，扫描型 PDF 最多同步处理前 8 页。
+`artifact.export_docx` 复用同一渲染器和缓存，只返回包含 `downloadUrl`、文件名、MIME 类型与字节数的小型下载引用。DOCX 二进制与字体数据保留在下载链路内，每次下载校验成果归属。
 
-后续可以扩展学校模板封面、实验报告固定格式与导出历史。
+## PDF 与 Markdown
+
+Markdown 直接以 UTF-8 下载。PDF 使用服务端 Chromium 打印同源渲染页面，包含 KaTeX 数学公式与图表，需配置 `CHROMIUM_EXECUTABLE_PATH`。
+
+## 输入与运行依赖
+
+项目资料 PDF 由 MiniMax M3.1 解析，必要时回退 MinerU。聊天 PDF/DOCX 优先提取正文，扫描 PDF 使用有数量上限的页图。学习扫描通过 PDF.js 和 canvas 生成临时预览，Office 预览另需 LibreOffice。各入口的原件、图片资源和临时素材按独立归属与生命周期管理。
+
+详细说明见[资料与 RAG](LumenLabDocs/guides/files-and-rag.md)和[部署](LumenLabDocs/deployment.md)。

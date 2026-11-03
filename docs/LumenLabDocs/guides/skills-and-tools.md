@@ -67,6 +67,9 @@ Managed updater 与 CLI 共用一套 service。候选先下载到隔离 staging�
 | L1 | `sciverse.search` | Sciverse 学术检索（标题 / 摘要） |
 | L1 | `sciverse.semantic_search` | Sciverse 语义检索，按 docId 返回命中段落 |
 | L1 | `sciverse.read` | 按偏移读取 Sciverse 文献正文片段 |
+| L1 | `sciverse.paper_relations` | 查询文献引用关系 |
+| L1 | `sciverse.resource` | 获取文献图表资源 |
+| L0 | `plan.update` | 更新受限公开计划 |
 | L1 | `reference.list` | 列出参考文献 |
 | L1 | `reference.format` | 格式化 Artifact 上的引用 |
 | L1 | `skill.activate` | 激活指定 Skill 指令 |
@@ -78,7 +81,7 @@ Managed updater 与 CLI 共用一套 service。候选先下载到隔离 staging�
 
 `web.fetch` 会做公开 URL 校验、DNS/重定向复核、SSRF 防护、8 秒超时和 1.5MB body 上限，并受 `WEB_FETCH_ALLOWLIST` 控制。即使显式加入 allowlist，IPv4、IPv6、IPv4-mapped IPv6 的 loopback、私网、link-local、ULA、multicast 和 IANA 特殊用途地址仍会被拒绝。连接使用已验证的 DNS 结果，不会在连接时再解析域名；每个重定向目标都会独立复核和固定。
 
-除上表外，学习闭环还注册了 `learning.*` 系列工具（目标、地图、练习、作答、复习、进度，L1 / L2）和 `plan.update`（L0，研究/工作流路由的计划步骤），它们只在项目学习场景中进入候选工具集。
+`plan.update`（L0）更新研究或工作流的受限公开计划。当前学习工作区通过 `/api/study/*` 和独立 Worker 操作题集、错题本和日程，旧 `learning.*` 工具已退役。
 
 ## 从聊天下载 Word
 

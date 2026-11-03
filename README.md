@@ -122,10 +122,10 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 | 风险 | Tool |
 |------|------|
 | L1 自动执行 | `project_files.list`、`project_files.read`、`artifact.list`、`project_rag.search`、`web.search`、`web.fetch`、`arxiv.search`、`arxiv.read`、`arxiv.fetch`、`sciverse.search`、`sciverse.semantic_search`、`sciverse.read`、`sciverse.paper_relations`、`sciverse.resource`、`reference.list`、`reference.format`、`skill.activate` |
-| L2 首次询问 | `artifact.save`、`reference.add`、`reference.attach` |
-| L3 每次询问 | `project_files.delete`、`artifact.export_docx` |
+| L2 自动执行 | `artifact.save`、`reference.add`、`reference.attach` |
+| L3 自动执行 | `project_files.delete`、`artifact.export_docx` |
 
-`web.search` 是平台统一的联网搜索能力，调用链固定为 `AnySearch → Bing RSS → DuckDuckGo`，与对话模型供应商无关；AnySearch 结果只做结构校验、URL 校验与规范化去重，Bing/DuckDuckGo 仍保留查询词相关性闸门。`web.search` 与 `web.fetch` 走 host 白名单与 SSRF 校验，IPv4、IPv6 和 IPv4-mapped IPv6 都会先排除非公网地址；`web.fetch` 的实际连接会固定到已验证 DNS 地址，每次重定向都重新解析与固定，阻断 DNS rebinding。抓取设置 8 秒超时和 1.5MB body 上限。项目与成果 Tool 还会检查持久化的 `User.scopes`，空权限集合按无权限处理，不会回退到默认全集。所有 Tool 在执行前都要做跨租户预检和参数校验，`artifact.save` 的 handler 会再次确认目标项目归属。待审批记录在 token 兑换前还会用当前 Tool/Skill、scope 与资源归属重新评估，防止审批等待期的权限撤销被绕过。
+`web.search` 是平台统一的联网搜索能力，调用链固定为 `AnySearch → Bing RSS → DuckDuckGo`，与对话模型供应商无关；AnySearch 结果只做结构校验、URL 校验与规范化去重，Bing/DuckDuckGo 仍保留查询词相关性闸门。`web.search` 与 `web.fetch` 走 host 白名单与 SSRF 校验，IPv4、IPv6 和 IPv4-mapped IPv6 都会先排除非公网地址；`web.fetch` 的实际连接会固定到已验证 DNS 地址，每次重定向都重新解析与固定，阻断 DNS rebinding。抓取设置 8 秒超时和 1.5MB body 上限。项目与成果 Tool 还会检查持久化的 `User.scopes`，空权限集合按无权限处理，不会回退到默认全集。所有 Tool 在执行前都要做跨租户预检和参数校验，`artifact.save` 的 handler 会再次确认目标项目归属。历史待审批记录在兼容恢复前会重新检查当前 Tool/Skill、scope、原始参数与资源归属，并原子领取执行。
 
 ### SSE Agent 事件流
 
@@ -136,20 +136,20 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 - `skill_activated` / `skill_suggested` / `skill_deactivated` — Skill 状态变化。
 - `web_access_enabled` — 当前请求启用联网。
 - `model_adapter_selected` — 当前使用的模型 provider（DeepSeek / MiniMax / Bailian Qwen）。
-- `approval_required` — 等待用户授权。
+- `approval_required` — 历史任务兼容事件，新工具调用通过服务端校验后自动执行。
 - `tool_started` / `tool_completed` / `tool_failed` — 工具执行生命周期。
 
 调试事件（如 `profile_changed`、`tool_loop_stop_reason`）仅在 `AGENT_DEBUG_EVENTS=1` 时发送，不默认入库。
 
-前端 `AgentTimeline` 把事件流折叠成时间线，`ApprovalCard` 展示受影响资源、可逆性与样本，提供 **仅本次允许**、**本会话同类允许**（仅 L1/L2）、**拒绝** 三个动作。
+前端把工具开始、完成和失败事件折叠到聊天过程区，Word 导出完成后展示真实下载入口。历史等待任务在加载对话时自动恢复，兼容接口重新校验权限、参数与归属。
 
 来源统一在助手消息底部 UI 展示，模型正文不插引用。Agent Orchestrator 路径的 `web.fetch`、`project_files.read`、`project_rag.search`、`web.search`、`arxiv.read` 等结果，以及旧版 RAG 路径检索到的项目资料，都会聚合为 `Message.sources` 持久化并去重显示。
 
 ### 多模型流式对话
 
-- 新普通会话和新项目默认使用 Qwen3.8-Flash。已有会话保留自身选择，已有项目的新对话继承项目默认；历史模型在发起新请求时升级到同供应商的活跃模型，历史账单不改写。
+- 新普通会话和新项目默认使用 DeepSeek V4.1 Flash（`deepseek-flash`）。已有会话保留自身选择，已有项目的新对话继承项目默认；历史模型在发起新请求时升级到同供应商的活跃模型，历史账单不改写。
 - 活跃模型包括 Qwen3.8-Flash、DeepSeek V4.1 Flash（`deepseek-flash`）和 MiniMax M3.1，均支持文本与图片输入。DeepSeek 已把 V4 Flash、V4 Flash Vision Exp 与 V4 Pro 统一路由到 V4.1 Flash，平台侧只保留 `deepseek-flash` 用于新请求，历史 ID 仅用于历史消息与账单。Qwen 需启用 `MODEL_QWEN_ENABLED`、配置百炼工作空间，并为目标账号提供有效聊天凭证。不可用或请求失败时显示原因，保留当前选择、草稿和附件，由用户手动选择其他模型。
-- 三个聊天适配器使用 Responses，平台管理历史、工具审批和调用结果；原生图片在当前工具回合间保留。
+- 三个聊天适配器使用 Responses，平台管理历史、工具策略校验和调用结果；原生图片在当前工具回合间保留。
 - PDF/DOCX 聊天输入先提取正文，扫描 PDF 转为有数量上限的页图；Qwen 视频附件走独立的 DashScope 兼容路径。独立文档解析保留。聊天图片附件会持久化并在历史回合中重新鉴权渲染，支持缩略图网格与大图查看器。
 - `AGENT_PROVIDER_ADAPTER=responses` 为默认配置，`legacy` 为兼容别名；旧 Pi POC 不用于当前活跃模型。各供应商可独立暂停，暂停后请求返回 503。
 - SSE 流式输出，Markdown / KaTeX / Mermaid / 代码高亮实时渲染。
@@ -161,6 +161,8 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 - 项目 PDF 走 MiniMax M3.1 原生文档解析（超过 20MB 或被拒绝时回退 MinerU，上限 200MB）；Office/WPS/iWork 文档走 MinerU 转 Markdown 并保存图片资源；文本和代码本地解析。上传的图片不再单独 OCR，标记为 `direct-image` 后作为原始资源直通所选模型。
 - 独立 `/tools` 文档转换继续使用 MinerU Precision，将 PDF 转为含公式、表格和图片的 Markdown。
 - 在线预览完整渲染结果，下载含 Markdown、图片目录、样式 PDF 和 DOCX 的 ZIP 包，并可保存到项目资料。
+
+项目资料、聊天附件和学习选题使用独立的数据管线。项目资料长期保存原文件与解析结果；聊天图片绑定消息并在读取时校验归属；学习扫描只长期保留选中的题目素材。详见[资料与 RAG](docs/LumenLabDocs/guides/files-and-rag.md)。
 
 ### RAG 检索与资料图谱
 
@@ -195,8 +197,8 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 | 认证 | NextAuth.js v5 (Credentials Provider, JWT) |
 | 样式 | Tailwind CSS 4 |
 | 虚拟化 | TanStack Virtual |
-| 文件解析 | MiniMax M3.1, MinerU Precision, PDF.js, @napi-rs/canvas |
-| 文档导出 | docx, sharp, Playwright/Chromium, pdfkit, unified/remark |
+| 文件解析 | MiniMax M3.1, MinerU Precision, PDF.js, @napi-rs/canvas, LibreOffice（学习扫描预览 Office） |
+| 文档导出 | Pandoc（DOCX 默认）, docx（备用）, sharp, Playwright/Chromium, unified/remark |
 | 存储 | 七牛云 Kodo 私有对象存储 (生产), 本地文件系统 (开发降级) |
 | 加密 | AES-256-GCM, bcrypt, RSA-OAEP, HMAC-SHA256 |
 | 验证 | Zod 4 |
@@ -296,7 +298,7 @@ src/
 │   │   └── project-conversation-state.ts
 │   ├── vision/minimax.ts               # MiniMax 项目 PDF 原生解析客户端
 │   ├── rag/                            # 文档分块 + 关键词 + 向量 + 项目索引
-│   ├── files/                          # 解析任务、M3 文档流水线
+│   ├── files/                          # 解析任务、M3.1 文档流水线
 │   ├── parse/                          # MinerU 文本解析（独立 /tools 流程）
 │   ├── export/                         # Markdown → DOCX / PDF / ZIP
 │   ├── storage/object-storage.ts       # 七牛云 Kodo 对象存储
@@ -315,7 +317,7 @@ src/
 ├── components/
 │   ├── chat/                           # 聊天组件
 │   │   ├── agent-timeline.tsx          # Agent 事件时间线
-│   │   ├── approval-card.tsx           # 审批卡片
+│   │   ├── approval-card.tsx           # 历史审批组件，常规过程区使用自动执行状态
 │   │   ├── tool-call-card.tsx          # 工具调用卡片
 │   │   ├── skill-badge.tsx             # Skill 标签
 │   │   ├── model-selector.tsx
@@ -366,16 +368,15 @@ Agent 聊天：
 ```
 Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
   → AgentEvent: tool_proposed
-  → policy-engine 校验：风险等级 + Skill 白名单 + 范围 + 参数 + 会话预批准
-  ├─ blocked    → AgentEvent: tool_blocked
-  ├─ L1 auto    → tool-executor 执行
-  ├─ L2 session → 检查会话预批准，否则进入 L3 路径
-  └─ L3/L4 ask  → AgentEvent: approval_required
-                 → 用户通过 approval-card 触发 /api/agent/approve
-                 → approval-token 兑换（sha256 + argumentsHash + 绑定校验）
-                 → 原子 claim → 恢复执行上下文 → tool-executor 执行
+  → policy-engine 校验：Tool 注册、scope、Skill 允许列表与风险上限、归属、参数、显式 block
+  ├─ blocked → AgentEvent: tool_blocked
+  └─ allow   → ToolRunner 自动执行 handler
   → AgentEvent: tool_started / tool_progress / tool_completed / tool_failed
-  → audit-log 写入 AgentAuditLog
+  → AgentAuditLog 与 ToolExecution 保存脱敏事件及执行状态
+
+历史 pending_approval → 加载对话时调用兼容恢复接口
+  → 重新校验当前权限和原始参数 → 原子领取 → 继续原任务
+
 ```
 
 `AGENT_RUNTIME_MODE` 在开发和生产中使用同一默认值 `legacy`。`shadow` 只比较 Skill、联网和预规划工具等无副作用决策并记录结构化差异；`new` 启用 Runtime-owned Skill 状态与确定性 prelude。旧 `AGENT_ORCHESTRATOR_ENABLED=0/1` 仅作为未配置新变量时的兼容桥。
@@ -398,9 +399,9 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 | `ConversationSkill` | 单次对话中的 Skill 激活日志。 |
 | `ToolDefinition` | 声明式 Tool 包（风险等级, 副作用标记, 默认审批模式, 审计级别, 允许的 Skill ID）。 |
 | `ToolExecution` | 每次 tool_use 一行：标准化参数、sha256 `argumentsHash`、状态、审批快照、scope、执行上下文、时间戳、结果/错误摘要；一次性令牌哈希单独保存在绑定的 `ApprovalToken`。 |
-| `ApprovalToken` | 一次性审批令牌，只存 sha256；消费时重新校验 `argumentsHash`，阻止参数替换攻击。 |
+| `ApprovalToken` | 历史审批兼容令牌，只存 sha256；兼容恢复仍校验原始参数、权限和执行归属。 |
 | `AgentAuditLog` | `tool_proposed` / `tool_blocked` / `approval_required` / `approval_granted` / `tool_started` / `tool_completed` / `tool_failed` / `user_rejected` / `token_consumed` 等事件。 |
-| `UserToolPreference` | 用户级 Tool 审批覆盖（L3/L4 不能存为 `auto`）。 |
+| `UserToolPreference` | 用户级 Tool 偏好；显式 `block` 生效，历史 `ask_first` / `ask_each` 不再暂停执行。 |
 
 ### 安全模型
 
@@ -408,7 +409,7 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 请求 → NextAuth JWT 中间件 (proxy.ts)
      → 路由层 userId 归属校验
      → 数据层 projectId / conversationId 关联校验
-     → Agent 层 User.scopes + policy-engine 拦截 + 一次性审批令牌
+     → Agent 层 User.scopes + policy-engine 校验 + ToolRunner 自动执行与审计
      → 密码 bcrypt 哈希, API Key AES-256-GCM 加密（16-byte auth tag）
      → 同步协议: RSA-OAEP + AES-256-GCM（16-byte auth tag）+ HMAC + nonce 防重放
 ```
@@ -478,7 +479,17 @@ npx prisma migrate deploy
 npm run dev
 ```
 
-打开 `http://localhost:3000`。中央模式使用邮箱或大陆手机号验证注册；自托管开发模式可先运行 `USER_API_KEYS_ENABLED=1 npm run seed:dev-access` 创建本地账号与凭据。
+打开 `http://localhost:3000`。中央模式使用邮箱或大陆手机号验证注册；自托管开发模式可使用以下命令创建本地账号与凭据，并将 `USER_API_KEYS_ENABLED=1` 写入本地环境配置，让应用读取用户级密钥。
+
+```bash
+USER_API_KEYS_ENABLED=1 \
+DEV_USER_EMAIL=dev@example.com \
+DEV_USER_PASSWORD='replace-with-a-strong-password' \
+DEV_DEEPSEEK_API_KEY='sk-...' \
+npx tsx --env-file=.env scripts/seed-dev-access.ts
+```
+
+`DEV_USER_PASSWORD` 必须显式设置。项目 PDF 解析另需 MiniMax 凭据，Office 文档解析另需 MinerU 凭据，详见[部署文档](docs/LumenLabDocs/deployment.md)。
 
 ## 使用指南
 
@@ -514,8 +525,8 @@ npm run dev
 
 1. 普通 Agent 的 Skill Router 会在 bundled catalog 中选择合适能力；Deep Research 单独编译研究方法论。用户仍可手动切换或关闭普通 Skill。
 2. 模型需要调用 Tool 时，Agent 事件流会把工具调用以时间线方式展示在对话中。
-3. L3 Tool（如 `project_files.delete`）会在执行前弹出审批卡片，展示受影响资源、可逆性与样本。
-4. 选择「仅本次允许」会立即兑换一次性审批令牌；选择「本会话同类允许」会预批准该 Skill 的同类 L1/L2 Tool。
+3. 所有 Tool 在服务端校验注册信息、scope、Skill 允许范围、资源归属和参数，通过后自动执行；显式禁用的操作会被阻止。
+4. 工具结果会交回模型继续生成。历史等待任务在加载对话时自动恢复，Word 下载入口随消息保存。
 
 ### 保存成果
 

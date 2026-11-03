@@ -8,7 +8,7 @@
 
 - Node.js 20+
 - PostgreSQL 16 + pgvector
-- Redis 7（可选；多实例和生产环境建议启用）
+- Redis 7（多实例和生产建议启用，短信验证码发送必需）
 - DeepSeek / MiniMax / MinerU / Bailian 中与你要使用的能力对应的凭据
 - 腾讯云 SES 邮件服务凭据（注册邮箱验证与密码重置邮件；未配置时本地开发回退为控制台 dry-run）
 - 生产文件存储建议使用七牛云 Kodo；开发环境可回退到本地存储
@@ -22,21 +22,30 @@ npx prisma generate
 npx prisma migrate deploy
 ```
 
+### 学习扫描与文档导出依赖
+
+- 项目 PDF 使用 MiniMax M3.1，必要时回退 MinerU；项目 Office/WPS/iWork 使用 MinerU，图片直通所选模型。
+- 学习扫描预览的 Word/PPT/ODT/ODP 需要主机安装 LibreOffice。可通过 `STUDY_OFFICE_BINARY` 指定 `soffice` 路径；图片/PDF 使用 Sharp、PDF.js、canvas 及随构建复制的 CMap、字体、WASM 和 worker。
+- DOCX 默认使用 Pandoc，缺失时回退 JS；需要保持公式和图表时应安装 Pandoc，并提供可用的 Chromium。`DOCX_EXPORT_ENGINE=legacy` 可显式选择备用路径。
+- PDF 打印与图表渲染通过 `CHROMIUM_EXECUTABLE_PATH` 指定 Chromium。Word 使用仓库内 OFL 中文字体，字体会嵌入导出文件。
+- 当前学习 API 使用独立 Study Worker，Node instrumentation 启动任务处理和临时素材清理。旧 `LEARNING_LOOP_ROLLOUT` 已移除。
+- 学习扫描原件30MB、最多80页，临时预览2小时过期。提交或取消后清除预览，只长期保留所选题目和必要素材。
+
 ### 2. 选择账号与凭据模式
 
 中央管理模式需要另行部署的管理端发布注册码和加密凭据快照；主应用只接收并校验加密同步结果，不持有管理端凭据。
 
-单机自托管可开启用户 API Key 模式，并用种子脚本创建本地账号。`DEV_USER_PASSWORD` 必须显式设置，种子脚本不提供默认密码：
+单机自托管可开启用户 API Key 模式，并用种子脚本创建本地账号。`DEV_USER_PASSWORD` 必须显式设置，种子脚本不提供默认密码。还需在应用的 `.env` 配置 `USER_API_KEYS_ENABLED=1`，让后续聊天读取种子脚本写入的用户级密钥。
 
 ```bash
 USER_API_KEYS_ENABLED=1 \
 DEV_USER_EMAIL=dev@example.com \
 DEV_USER_PASSWORD='replace-with-a-strong-password' \
 DEV_DEEPSEEK_API_KEY='sk-...' \
-npm run seed:dev-access
+npx tsx --env-file=.env scripts/seed-dev-access.ts
 ```
 
-还可提供 `DEV_MINIMAX_API_KEY`、`DEV_MINERU_API_KEY`、`DEV_BAILIAN_API_KEY`。已有用户可使用 `npm run setup:api-key -- --email=... --provider=... --key=...` 单独写入凭据。
+还可提供 `DEV_MINIMAX_API_KEY`、`DEV_MINERU_API_KEY`、`DEV_BAILIAN_API_KEY`。已有用户可使用 `npx tsx --env-file=.env scripts/setup-api-key.ts --email=... --provider=... --key=...` 单独写入凭据。
 
 能力与 provider 的最小关系：
 

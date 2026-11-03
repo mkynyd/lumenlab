@@ -1,8 +1,8 @@
 # LumenLab Agent Skills
 
-> 更新日期：2026-09-14
+> 更新日期：2026-11-03
 
-LumenLab 当前发现 14 个 bundled Skill。每个 Skill 由 `SKILL.md` 和 `policy.json` 组成；服务端把声明转换为 `SkillMetadata`，再由 Policy Engine 按 Tool allowlist、风险上限、用户 scope、资源归属和审批策略逐次校验。
+LumenLab 当前发现 14 个 bundled Skill。每个 Skill 由 `SKILL.md` 和 `policy.json` 组成；服务端把声明转换为 `SkillMetadata`，再由 Policy Engine 按 Tool allowlist、风险上限、用户 scope、资源归属和显式禁用策略逐次校验。
 
 ## 内置 Skill
 
@@ -47,7 +47,7 @@ Managed manifest 为共享目录下的 `skills.lock.json`，记录来源 URL/路
 
 ## 内置 Tool 与风险
 
-| 风险 | Tool | 默认审批 | 说明 |
+| 风险 | Tool | 校验通过后的执行方式 | 说明 |
 |---|---|---|---|
 | L1 | `project_files.list` | auto | 列出项目资料 |
 | L1 | `project_files.read` | auto | 读取已解析项目资料 |
@@ -57,14 +57,16 @@ Managed manifest 为共享目录下的 `skills.lock.json`，记录来源 URL/路
 | L1 | `web.fetch` | auto | 抓取 allowlist 内的公开网页 |
 | L1 | `arxiv.search` / `arxiv.read` / `arxiv.fetch` | auto | 搜索、读取与抓取 arXiv |
 | L1 | `sciverse.search` / `sciverse.semantic_search` / `sciverse.read` | auto | Sciverse 学术检索与正文片段读取 |
+| L1 | `sciverse.paper_relations` / `sciverse.resource` | auto | 引用关系与图表资源 |
+| L0 | `plan.update` | auto | 更新受限公开计划 |
 | L1 | `reference.list` / `reference.format` | auto | 列出与格式化引用 |
 | L1 | `skill.activate` | auto | 激活已发现的 Skill 指令 |
-| L2 | `artifact.save` | ask_first | 保存 Markdown 成果 |
-| L2 | `reference.add` / `reference.attach` | ask_first | 新增或挂载参考文献 |
-| L3 | `project_files.delete` | ask_each | 删除项目资料，不可恢复 |
-| L3 | `artifact.export_docx` | ask_each | 生成 DOCX 下载 |
+| L2 | `artifact.save` | auto | 保存 Markdown 成果 |
+| L2 | `reference.add` / `reference.attach` | auto | 新增或挂载参考文献 |
+| L3 | `project_files.delete` | auto | 删除项目资料，不可恢复 |
+| L3 | `artifact.export_docx` | auto | 生成 DOCX 下载 |
 
-L4 为预留的阻断级风险，当前没有生产 Tool 使用。Skill 只能收紧 Tool 权限和审批策略，不能提升风险上限或放宽用户 scope。
+L4 为预留的阻断级风险，当前没有生产 Tool 使用。风险用于限制 Skill 能力范围并记录审计；Tool、Skill 和用户偏好中的显式 `block` 会阻止执行。历史 `ask_first` / `ask_each` 不再要求人工确认。
 
 ## 运行时数据流
 
@@ -75,12 +77,12 @@ L4 为预留的阻断级风险，当前没有生产 Tool 使用。Skill 只能�
   → AgentLoop 去重并控制轮次
   → ToolRunner 加载当前 User.scopes
   → Policy Engine 检查 allowlist、风险、参数和资源归属
-  → auto 执行，或签发一次性审批 token
+  → 校验通过后自动执行，校验失败或显式 block 则阻止
   → handler 执行并更新 ToolExecution / AgentAuditLog
   → 结构化 AgentEvent 通过 SSE 回到前端
 ```
 
-审批 token 只保存 sha256，绑定 user、conversation、tool、request 和规范化参数哈希。批准时服务端会重新读取当前 Tool、Skill、用户 scope 与资源归属，再原子抢占 `pending_approval` 记录；权限撤销、参数变化或并发状态变化都会阻止执行。
+历史审批 token 只保存 sha256，绑定 user、conversation、tool、request 和规范化参数哈希。存量 `pending_approval` 任务在加载对话时自动恢复；兼容接口重新读取当前 Tool、Skill、scope、原始参数及归属，并原子领取任务。新工具调用使用 `AUTO_APPROVED_BY_POLICY`，通过校验后直接执行。
 
 ## 注册与维护
 
@@ -98,4 +100,4 @@ L4 为预留的阻断级风险，当前没有生产 Tool 使用。Skill 只能�
 
 运维 CLI 与 scheduler 共用同一 service：`npx tsx scripts/skills-managed.ts status|check|update|approve|rollback [skillId]`。受认证状态 API 为 `GET /api/skills/managed`；`POST` 的 check/update/approve/rollback 仅允许 `SKILL_UPDATE_ADMIN_EMAILS` 中的 operator。只有显式 `approve` 才能 promotion 已审阅的 `review_required` candidate，定时任务和普通 `update` 都不能越过审核。
 
-面向用户的完整说明见 [Skills 与 Tools](docs/LumenLabDocs/guides/skills-and-tools.md)，审批状态机见 [Policy Engine](docs/LumenLabDocs/architecture/policy-engine.md)。
+面向用户的完整说明见 [Skills 与 Tools](docs/LumenLabDocs/guides/skills-and-tools.md)，执行与历史兼容策略见 [Policy Engine](docs/LumenLabDocs/architecture/policy-engine.md)。

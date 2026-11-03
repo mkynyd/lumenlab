@@ -9,7 +9,7 @@
 | 变量名 | 是否必需 | 默认值 / 示例 | 用途 |
 |---|---|---|---|
 | `DATABASE_URL` | 必需 | `postgresql://postgres:postgres@localhost:5432/ai_workspace?schema=public` | PostgreSQL 连接串，需启用 `pgvector` 扩展 |
-| `REDIS_URL` | 可选 | `redis://localhost:6379` | 共享缓存与限流存储；不可用时回退到内存 |
+| `REDIS_URL` | 短信必需，其他缓存可选 | `redis://localhost:6379` | 共享缓存与限流存储；短信发送在 Redis 不可用时暂停 |
 | `AUTH_SECRET` | 必需 | `please-change-this` | Auth.js v5 会话签名密钥，建议用 `openssl rand -base64 32` 生成 |
 | `AUTH_URL` | 必需 | `https://app.example.com` | 认证回调地址，需与最终访问域名一致 |
 | `ENCRYPTION_KEY` | 必需 | `please-generate-a-64-char-hex-string` | AES-256-GCM 加密密钥，需 64 位十六进制字符；用 `openssl rand -hex 32` 生成 |
@@ -31,7 +31,6 @@
 | `AGENT_ORCHESTRATOR_ENABLED` | 已弃用 | — | 仅在未设置 `AGENT_RUNTIME_MODE` 时兼容旧部署：`0` → `legacy`，`1` → `new` |
 | `AGENT_PROVIDER_ADAPTER` | 可选 | `responses` | 模型协议层：`responses` 使用三家 Responses 原生调用；`legacy` 只是同一实现的配置别名；`pi` / `pi-ai` 已被拒绝 |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 可选 | `false` | 持久化 Agent 执行（`AgentExecution` 队列、Worker 租约与断点恢复）开关 |
-| `LEARNING_LOOP_ROLLOUT` | 可选 | `off` | 学习闭环灰度：`off` 隐藏入口；`preview` 开放独立学习工作区；`default` 将 `/learning` 设为默认首页（要求 `AGENT_DURABLE_EXECUTION_ENABLED=true`） |
 | `ADMIN_EMAILS` | 可选 | — | 管理控制台允许访问的邮箱列表（逗号分隔），控制 `/admin` 页面与 `/api/admin/**` 接口 |
 | `TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` | 生产必需 | — | 腾讯云 SES 凭据，用于注册验证、密码重置与反馈通知邮件 |
 | `SES_ENABLED` | 可选 | — | 设为 `1` 启用 SES 发送；未配置时回退为控制台 dry-run |
@@ -62,18 +61,26 @@
 
 ### Redis
 
-`REDIS_URL` 为可选项。未配置或连接失败时，应用会使用内存作为降级缓存与限流存储；多实例部署时建议配置 Redis。
+应用缓存可在 Redis 不可用时降级为内存；多实例应配置共享 Redis。短信验证码发送依赖共享限流，Redis 不可用时暂停发送。
 
 ### 自托管模式
 
 `src/lib/config.ts` 中的 `USER_API_KEYS_ENABLED` 控制部署模式：
 
-- 默认 `false`：使用 `CredentialProfile` 中的中央密钥组（中央凭据流程，用户经邮箱 + 验证码注册）。
+- 默认 `false`：使用 `CredentialProfile` 中的中央密钥组（中央凭据流程，用户经邮箱或大陆手机号验证注册）。
 - 设为 `1` 或 `true`：优先读取 `ApiKey` 表中用户自行提供的 API Key，未找到时回退到中央密钥组。
 
 该开关没有前端 UI，需由部署者通过环境变量控制。
 
 支持的 provider 包括 `deepseek`、`minimax`、`mineru`、`bailian`。项目资料的 PDF 解析依赖 MiniMax（可回退 MinerU），Office/WPS/iWork 解析依赖 MinerU，向量检索与可选的 Qwen3.8-Flash 聊天共用 Bailian 凭据；缺失对应密钥时，相关能力会报错、从模型目录隐藏或降级。图片不走解析 provider，上传后直接交给所选聊天模型。
+
+### 学习扫描与文档导出
+
+- 当前学习入口为 `/learning`，学习接口为 `/api/study/*`，由独立 Study Worker 处理。旧 `LEARNING_LOOP_ROLLOUT` 已移除。
+- `STUDY_OFFICE_BINARY` 指向主机 LibreOffice 的 `soffice`，用于学习模块 Word/PPT/ODT/ODP 扫描预览；默认命令为 `soffice`。图片/PDF 使用随构建收录的 Sharp、PDF.js 和 canvas 依赖。
+- `DOCX_EXPORT_ENGINE` 默认走 Pandoc；显式 `legacy` 使用 JS 备用导出。Pandoc 不存在时自动回退 JS，其他转换错误直接报告。两条路径均嵌入 Noto Sans SC 中文字体。
+- `CHROMIUM_EXECUTABLE_PATH` 为 PDF 打印和图表渲染提供 Chromium 路径。学习模型和 Qwen 的回退关系见上表 `MODEL_QWEN_ENABLED`。
+- `ALIYUN_SMS_SIGN_NAME`、`ALIYUN_SMS_TEMPLATE_CODE_REGISTER`、`ALIYUN_SMS_TEMPLATE_CODE_BIND_IDENTITY` 及 Alibaba Credential chain 用于短信验证码，`SES_TEMPLATE_BIND_IDENTITY` 用于邮箱绑定。短信要求可用的共享 Redis。
 
 ### Agent 与联网
 
@@ -83,6 +90,7 @@
 - 旧变量 `AGENT_ORCHESTRATOR_ENABLED` 只用于迁移兼容；两者同时存在时 `AGENT_RUNTIME_MODE` 优先。新部署不要再配置旧变量。
 - `AGENT_PROVIDER_ADAPTER` 默认是 `responses`，`legacy` 为同一实现的兼容别名。`pi` / `pi-ai` 不支持当前活跃模型，命中时会抛出配置错误而不是静默降级。
 - `MODEL_QWEN_ENABLED=true` 且配置 `BAILIAN_WORKSPACE_ID` 后，已获得 Bailian 凭据的用户可选择 `qwen3.8-flash`。Qwen 走百炼 compatible-mode Responses，图片用 data URL，视频委托 DashScope 原生端点并使用上传到七牛后的短期受限链接；视频临时对象会在请求结束或取消后删除。它只提供文本、图片/视频理解，不提供图片或视频生成。
+- 新普通会话和项目默认使用 `deepseek-flash`；MiniMax 活跃 ID 为 `minimax-m3.1`（上游 `MiniMax-M3.1-Flash-Preview`）。
 - DeepSeek 侧当前只有一个活跃模型 `deepseek-flash`（DeepSeek V4.1 Flash）：历史 `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro` 已由官方下线并路由到该模型，平台保留其 ID 只用于历史消息与历史账单展示。
 - `AGENT_DEBUG_EVENTS=1` 会把 router candidates、confidence、stop reason 等调试事件写入 SSE，生产环境默认关闭。
 - `WEB_FETCH_ALLOWLIST` 控制 `web.fetch` 可抓取的域名。即使主机在 allowlist 中，服务端仍会对 IPv4、IPv6、IPv4-mapped IPv6 做公开地址判断，并复核 DNS、重定向和 SSRF 边界。实际出站连接固定到复核通过的 DNS 地址，每个重定向目标都重新执行同样的校验。
