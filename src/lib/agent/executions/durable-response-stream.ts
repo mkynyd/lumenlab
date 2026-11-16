@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@/lib/agent/types";
-import { formatAgentEvent } from "@/lib/agent/event-stream";
+import { formatAgentEvent, formatMessageAttachmentsEvent } from "@/lib/agent/event-stream";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import { resolveAgentRuntimeMode } from "@/lib/agent/runtime-mode";
 import type {
   AgentExecutionRecord,
@@ -119,8 +120,9 @@ export function createDurableReplayResponse(input: {
   signal?: AbortSignal;
   format?: "durable" | "chat";
   chatHeaders?: boolean;
-  /** 任务 08.3：本轮持久化附件元数据等附加响应头。 */
+  /** Compatibility headers for clients that predate attachment events. */
   extraHeaders?: Record<string, string>;
+  messageAttachments?: ChatAttachmentDto[];
 }): Response {
   const localAbort = new AbortController();
   const abort = () => localAbort.abort();
@@ -136,6 +138,9 @@ export function createDurableReplayResponse(input: {
   let keepAlive: ReturnType<typeof setInterval> | null = null;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
+      if (input.messageAttachments?.length) {
+        controller.enqueue(encoder.encode(formatMessageAttachmentsEvent(input.messageAttachments)));
+      }
       keepAlive = setInterval(() => {
         if (!localAbort.signal.aborted) {
           controller.enqueue(encoder.encode(": keep-alive\n\n"));

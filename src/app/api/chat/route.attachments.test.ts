@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readSSEStream } from "@/lib/sse-client";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   bindChatAttachmentsToMessage: vi.fn(),
   toMediaRef: vi.fn(),
   encodeChatAttachmentsHeader: vi.fn(),
+  toChatAttachmentDto: vi.fn(),
   loggerError: vi.fn(),
 }));
 
@@ -34,6 +36,7 @@ vi.mock("@/lib/chat/message-attachments", () => ({
   bindChatAttachmentsToMessage: mocks.bindChatAttachmentsToMessage,
   toMediaRef: mocks.toMediaRef,
   encodeChatAttachmentsHeader: mocks.encodeChatAttachmentsHeader,
+  toChatAttachmentDto: mocks.toChatAttachmentDto,
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -61,7 +64,7 @@ const PNG_BYTES = Buffer.concat([
   Buffer.from("fake-png-body"),
 ]);
 
-function chatRequest() {
+function chatRequest(attachmentEvents = false) {
   const form = new FormData();
   form.append(
     "message",
@@ -78,6 +81,7 @@ function chatRequest() {
   }));
   return new NextRequest("http://localhost/api/chat", {
     method: "POST",
+    headers: attachmentEvents ? { "X-Chat-Attachment-Events": "1" } : undefined,
     body: form,
   });
 }
@@ -183,6 +187,32 @@ describe("POST /api/chat attachment persistence", () => {
     });
     expect(mocks.run).not.toHaveBeenCalled();
     expect(mocks.loggerError).toHaveBeenCalled();
+  });
+
+  it("delivers five long Chinese PDF names in SSE without a growing response header", async () => {
+    const attachments = Array.from({ length: 5 }, (_, position) => ({
+      ...persistedRow(),
+      id: `pdf-${position}`,
+      kind: "file" as const,
+      originalName: `${position}-${"循环系统临床教学资料".repeat(10)}.pdf`,
+      mimeType: "application/pdf",
+      position,
+    }));
+    mocks.persistChatAttachments.mockResolvedValue(attachments);
+    const dtos = attachments.map((row) => ({
+      id: row.id, kind: row.kind, name: row.originalName, mimeType: row.mimeType,
+      size: row.size, width: null, height: null, status: "bound",
+      url: `/api/chat/attachments/${row.id}?variant=original`,
+      thumbnailUrl: `/api/chat/attachments/${row.id}`,
+    }));
+    expect(encodeURIComponent(JSON.stringify(dtos)).length).toBeGreaterThan(4096);
+    mocks.toChatAttachmentDto.mockImplementation((row) => dtos[row.position]);
+    const response = await POST(chatRequest(true));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Message-Attachments")).toBeNull();
+    const onMessageAttachments = vi.fn();
+    await readSSEStream(response.body!.getReader(), vi.fn(), { onMessageAttachments });
+    expect(onMessageAttachments).toHaveBeenCalledExactlyOnceWith(dtos);
   });
 
   it("does not put persisted non-image attachments into mediaRefs", async () => {

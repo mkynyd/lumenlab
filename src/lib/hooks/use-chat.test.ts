@@ -26,6 +26,14 @@ describe("readChatError", () => {
       readChatError(Response.json({ error: "模型服务不可用" }, { status: 502 }))
     ).resolves.toBe("模型服务不可用");
   });
+
+  it("shows a retry message for an HTML gateway error", async () => {
+    const response = new Response("<html><title>502 Bad Gateway</title></html>", {
+      status: 502,
+      headers: { "Content-Type": "text/html" },
+    });
+    await expect(readChatError(response)).resolves.toBe("聊天服务暂时无法连接，请稍后重试（502）");
+  });
 });
 
 describe("requestToolApproval", () => {
@@ -202,6 +210,29 @@ describe("useChat conversation URL sync", () => {
     expect(requestBody).not.toContain("onAccepted");
     await act(async () => { stream.enqueue(new TextEncoder().encode("data: [DONE]\n\n")); stream.close(); await sending; });
     expect(accepted).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes rejected attachment placeholders and leaves the draft unacknowledged", async () => {
+    const accepted = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/api/chat"
+        ? new Response("<html>502 Bad Gateway</html>", { status: 502 })
+        : Response.json({ models: ["deepseek-flash"] })
+    ));
+    const { result } = renderHook(() => useChat(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.modelBlockedReason).toBeUndefined());
+    const pdf = new File(["test"], "课程讲义.pdf", { type: "application/pdf" });
+    await act(async () => {
+      await expect(result.current.sendMessage({
+        content: "请阅读附件",
+        onAccepted: accepted,
+        attachments: [{ id: "draft-pdf", name: pdf.name, size: pdf.size, mimeType: pdf.type, data: pdf }],
+      })).resolves.toBe(false);
+    });
+    expect(accepted).not.toHaveBeenCalled();
+    expect(result.current.error).toBe("聊天服务暂时无法连接，请稍后重试（502）");
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.isStreaming).toBe(false);
   });
 
   it.each(["initial", "loaded"])("approves a %s persisted card without a transient timeline entry", async (source) => {

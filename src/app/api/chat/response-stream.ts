@@ -1,6 +1,7 @@
-import { formatAgentEvent } from "@/lib/agent/event-stream";
+import { formatAgentEvent, formatMessageAttachmentsEvent } from "@/lib/agent/event-stream";
 import type { AgentRun } from "@/lib/agent/contracts";
 import type { AgentEvent } from "@/lib/agent/types";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 
 const encoder = new TextEncoder();
 
@@ -17,12 +18,18 @@ function encodeData(payload: unknown) {
  */
 export function createChatResponse(
   run: AgentRun,
-  extraHeaders?: Record<string, string>
+  options: {
+    extraHeaders?: Record<string, string>;
+    messageAttachments?: ChatAttachmentDto[];
+  } = {}
 ): Response {
   const iterator = run.events[Symbol.asyncIterator]();
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
+      if (options.messageAttachments?.length) {
+        controller.enqueue(encoder.encode(formatMessageAttachmentsEvent(options.messageAttachments)));
+      }
       void (async () => {
         try {
           while (!cancelled) {
@@ -97,7 +104,7 @@ export function createChatResponse(
         run.metadata.runtimeMode === "new" ? "enabled" : "disabled",
       "X-Agent-Runtime-Version": run.metadata.runtimeVersion,
       "X-Agent-Tool-Protocol": run.metadata.toolProtocol,
-      ...extraHeaders,
+      ...options.extraHeaders,
     },
   });
 }

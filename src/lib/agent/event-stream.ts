@@ -10,6 +10,14 @@
  */
 
 import type { AgentEvent } from "./types";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
+
+export const MESSAGE_ATTACHMENTS_EVENT = "message_attachments";
+export const CHAT_ATTACHMENT_EVENTS_HEADER = "X-Chat-Attachment-Events";
+
+export function formatMessageAttachmentsEvent(attachments: ChatAttachmentDto[]): string {
+  return `event: ${MESSAGE_ATTACHMENTS_EVENT}\ndata: ${JSON.stringify(attachments)}\n\n`;
+}
 
 export function formatAgentEvent(event: AgentEvent): string {
   return `event: agent\ndata: ${JSON.stringify(event)}\n\n`;

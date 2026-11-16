@@ -18,6 +18,7 @@ import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { queryKeys } from "@/lib/query-keys";
 import type { AgentEvent, ApprovalScope } from "@/lib/agent/types";
 import type { AgentSource } from "@/lib/agent/sources";
+import { CHAT_ATTACHMENT_EVENTS_HEADER } from "@/lib/agent/event-stream";
 import type { AgentPlan } from "@/lib/agent/plan";
 import {
   completeAssistantProcess,
@@ -112,6 +113,8 @@ function hasStreamingMessage(messages: ChatMessage[]) {
 
 export async function readChatError(response: Response) {
   const fallback = `Request failed (${response.status})`;
+  const htmlFallback = `聊天服务暂时无法连接，请稍后重试（${response.status}）`;
+  if (response.headers.get("content-type")?.includes("text/html")) return htmlFallback;
   const text = await response.text().catch(() => "");
   if (!text.trim()) return fallback;
   try {
@@ -121,6 +124,7 @@ export async function readChatError(response: Response) {
       ? data.reason
       : fallback;
   } catch {
+    if (text.trimStart().startsWith("<")) return htmlFallback;
     return text.slice(0, 500) || fallback;
   }
 }
@@ -346,6 +350,22 @@ export function useChat(options: UseChatOptions = {}) {
       };
       let streamingId = `assistant-${Date.now()}`;
       const streamingStartedAt = Date.now();
+      const releaseSendPreviews = () => {
+        for (const url of previewUrls) {
+          if (previewUrlsRef.current.delete(url)) URL.revokeObjectURL(url);
+        }
+      };
+      let receivedAttachments = false;
+      const updatePersistedAttachments = (persisted: ChatAttachmentDto[]) => {
+        if (persisted.length === 0) return;
+        receivedAttachments = true;
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === userMessage.id ? { ...message, attachments: persisted } : message
+          )
+        );
+        releaseSendPreviews();
+      };
 
       // 本轮工具调用跟踪：executionId → toolId、进行中的执行集合、已完成的数量
       const toolIdByExecution = new Map<string, string>();
@@ -391,6 +411,7 @@ export function useChat(options: UseChatOptions = {}) {
       setContextBudget(null);
 
       let controller: AbortController | null = null;
+      let accepted = false;
       try {
         controller = new AbortController();
         abortRef.current = controller;
@@ -417,6 +438,7 @@ export function useChat(options: UseChatOptions = {}) {
           signal: controller.signal,
         };
         if (attachments.length > 0) {
+          fetchOptions.headers = { [CHAT_ATTACHMENT_EVENTS_HEADER]: "1" };
           const formData = new FormData();
           formData.append("message", JSON.stringify(requestBody));
           for (const attachment of attachments) {
@@ -445,27 +467,20 @@ export function useChat(options: UseChatOptions = {}) {
           throw new Error(await readChatError(response));
         }
 
+        accepted = true;
         if (streamSessionRef.current === streamSession) input.onAccepted?.();
 
-        // 任务 08.4：把乐观预览替换为服务端持久化附件（真实 messageId 绑定的
-        // 资源），随后回收本地 blob URL；缩略图与大图都走同源鉴权响应。
+        // Read the legacy header when a server rollback restores the old API.
         const persistedHeader = response.headers.get("X-Message-Attachments");
         if (persistedHeader) {
           try {
             const persisted = JSON.parse(
               decodeURIComponent(persistedHeader)
             ) as ChatAttachmentDto[];
-            if (Array.isArray(persisted) && persisted.length > 0) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === userMessage.id ? { ...m, attachments: persisted } : m
-                )
-              );
-            }
+            if (Array.isArray(persisted)) updatePersistedAttachments(persisted);
           } catch {
             // 头部损坏时保留本地预览，不阻断对话。
           }
-          releasePreviewUrls();
         }
 
         // Get conversation ID from header if new
@@ -551,6 +566,7 @@ export function useChat(options: UseChatOptions = {}) {
           );
           },
           {
+            onMessageAttachments: updatePersistedAttachments,
             onEventId: (sequence) => {
               lastEventSequence = Math.max(lastEventSequence, sequence);
             },
@@ -714,7 +730,12 @@ export function useChat(options: UseChatOptions = {}) {
           }
           const replayResponse = await fetch(
             `/api/agent/executions/${encodeURIComponent(agentExecutionId)}/events?format=chat&afterSequence=${lastEventSequence}`,
-            { signal: controller.signal }
+            {
+              signal: controller.signal,
+              headers: attachments.length > 0 && !receivedAttachments
+                ? { [CHAT_ATTACHMENT_EVENTS_HEADER]: "1" }
+                : undefined,
+            }
           );
           if (!replayResponse.ok) {
             throw new Error(await readChatError(replayResponse));
@@ -802,6 +823,14 @@ export function useChat(options: UseChatOptions = {}) {
           }
         }
       } finally {
+        if (!accepted && attachments.length > 0) {
+          releaseSendPreviews();
+          if (streamSessionRef.current === streamSession) {
+            setMessages((prev) => prev.filter((message) =>
+              message.id !== userMessage.id && message.id !== streamingId
+            ));
+          }
+        }
         if (streamSessionRef.current === streamSession) {
           setIsStreaming(false);
         }
@@ -821,7 +850,6 @@ export function useChat(options: UseChatOptions = {}) {
       options.selectedFileIds,
       options.mode,
       queryClient,
-      releasePreviewUrls,
     ]
   );
   const sendMutation = useMutation({ mutationFn: performSend });

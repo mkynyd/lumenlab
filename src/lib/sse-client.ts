@@ -26,10 +26,13 @@ export interface SSEParseResult {
 }
 
 import type { AgentEvent } from "@/lib/agent/types";
+import { MESSAGE_ATTACHMENTS_EVENT } from "@/lib/agent/event-stream";
+import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 
 export interface SSEAgentCallbacks {
   onAgentEvent?: (event: AgentEvent) => void;
   onEventId?: (sequence: number) => void;
+  onMessageAttachments?: (attachments: ChatAttachmentDto[]) => void;
 }
 
 export class SSEExecutionError extends Error {
@@ -84,6 +87,16 @@ export async function readSSEStream(
         if (!line || !line.startsWith("data: ")) continue;
 
         const data = line.slice(6);
+        if (pendingEventName === MESSAGE_ATTACHMENTS_EVENT) {
+          pendingEventName = null;
+          try {
+            const attachments = JSON.parse(data) as ChatAttachmentDto[];
+            if (Array.isArray(attachments)) options.onMessageAttachments?.(attachments);
+          } catch {
+            // A malformed attachment frame must not interrupt model output.
+          }
+          continue;
+        }
         if (pendingEventName === "agent") {
           pendingEventName = null;
           try {

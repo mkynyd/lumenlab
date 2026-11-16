@@ -17,10 +17,12 @@ import { dispatchDurableChat } from "@/lib/agent/executions/durable-chat-dispatc
 import { createDurableReplayResponse } from "@/lib/agent/executions/durable-response-stream";
 import { startAgentExecutionWorker } from "@/lib/agent/executions/durable-agent-runtime";
 import { AgentExecutionStoreError } from "@/lib/agent/executions/agent-execution-store";
+import { CHAT_ATTACHMENT_EVENTS_HEADER } from "@/lib/agent/event-stream";
 import {
   bindChatAttachmentsToMessage,
   encodeChatAttachmentsHeader,
   persistChatAttachments,
+  toChatAttachmentDto,
   toMediaRef,
   type PersistedChatAttachment,
 } from "@/lib/chat/message-attachments";
@@ -81,13 +83,19 @@ export async function POST(request: NextRequest) {
         );
       }
     }
-    const attachmentHeaders: Record<string, string> =
-      persistedAttachments.length > 0
-        ? {
-            "X-Message-Attachments":
-              encodeChatAttachmentsHeader(persistedAttachments),
-          }
-        : {};
+    const messageAttachments = persistedAttachments.map(toChatAttachmentDto);
+    const attachmentHeaders: Record<string, string> = {};
+    if (
+      messageAttachments.length > 0 &&
+      request.headers.get(CHAT_ATTACHMENT_EVENTS_HEADER) !== "1"
+    ) {
+      const legacyHeader = encodeChatAttachmentsHeader(persistedAttachments);
+      // Older tabs still read this header. Leave room for other response
+      // headers in the production proxy's 128 KiB buffer.
+      if (legacyHeader.length <= 96 * 1024) {
+        attachmentHeaders["X-Message-Attachments"] = legacyHeader;
+      }
+    }
 
     const runInput = mapAgentRunInput({
       userId: session.user.id,
@@ -131,11 +139,12 @@ export async function POST(request: NextRequest) {
         format: "chat",
         chatHeaders: true,
         extraHeaders: attachmentHeaders,
+        messageAttachments,
       });
     }
 
     const run = await agentRuntime.run(runInput);
-    return createChatResponse(run, attachmentHeaders);
+    return createChatResponse(run, { extraHeaders: attachmentHeaders, messageAttachments });
   } catch (error) {
     if (error instanceof AgentExecutionStoreError) {
       return NextResponse.json(
