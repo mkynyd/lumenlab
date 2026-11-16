@@ -104,12 +104,8 @@ export async function POST(request: NextRequest) {
       signal: request.signal,
     });
     if (persistedAttachments.length > 0) {
-      // 任务 08.7：Checkpoint 只保存资源引用，Worker 恢复时按资源 ID 重新鉴权。
-      // 只有图片进入 mediaRefs：文档/视频仅持久化用于历史展示，模型输入语义
-      // 保持不变（文档走请求内提取，视频由本轮 serializer 处理，历史不自动回传）。
-      runInput.prompt.mediaRefs = persistedAttachments
-        .filter((attachment) => attachment.kind === "image")
-        .map(toMediaRef);
+      // The worker restores every current-turn attachment from its stored reference.
+      runInput.prompt.mediaRefs = persistedAttachments.map(toMediaRef);
     }
     if (process.env.AGENT_DURABLE_EXECUTION_ENABLED === "true") {
       if (!parsed.body.clientRunKey) {

@@ -262,8 +262,7 @@ export function toMediaRef(row: PersistedChatAttachment): MediaRef {
 /**
  * 持久化本轮全部附件（图片/视频/文档等展示类型都会落库）。
  * 仅图片探测尺寸并生成缩略图；视频与文档只保存原对象，
- * width/height/thumbnailPath 均为 null。文档仍走既有的请求内提取链路，
- * 落库只服务于历史展示，不改变模型输入语义。
+ * width/height/thumbnailPath 均为 null。后台任务会通过资源引用恢复原件。
  */
 export async function persistChatAttachments(input: {
   userId: string;
@@ -421,14 +420,21 @@ export async function bindChatAttachmentsToMessage(input: {
   return result.count;
 }
 
-/** 按资源 ID 读取附件引用，供 durable Checkpoint 恢复解析。 */
-export async function loadAttachmentRefsByIds(input: {
+/** Read this turn's bound attachments and its referenced, not-yet-bound uploads. */
+export async function loadExecutionAttachmentRefs(input: {
   userId: string;
-  ids: string[];
+  messageId: string;
+  checkpointIds: string[];
 }): Promise<MediaRef[]> {
-  if (input.ids.length === 0) return [];
   const rows = await prisma.messageAttachment.findMany({
-    where: { userId: input.userId, id: { in: input.ids } },
+    where: {
+      userId: input.userId,
+      OR: [
+        { messageId: input.messageId },
+        { messageId: null, id: { in: input.checkpointIds } },
+      ],
+    },
+    orderBy: { position: "asc" },
     select: {
       id: true,
       originalName: true,

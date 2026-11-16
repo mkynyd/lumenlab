@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mediaMocks = vi.hoisted(() => ({
-  loadAttachmentRefsByIds: vi.fn(),
+  loadExecutionAttachmentRefs: vi.fn().mockResolvedValue([]),
   readStoredObject: vi.fn(),
 }));
 
 vi.mock("@/lib/chat/message-attachments", () => ({
-  loadAttachmentRefsByIds: mediaMocks.loadAttachmentRefsByIds,
+  loadExecutionAttachmentRefs: mediaMocks.loadExecutionAttachmentRefs,
 }));
 
 vi.mock("@/lib/storage/object-storage", () => ({
@@ -590,8 +590,8 @@ describe("durable Agent runtime bridge", () => {
     expect(serialized).not.toContain("local");
   });
 
-  it("re-reads checkpoint attachments by resource id on resume", async () => {
-    mediaMocks.loadAttachmentRefsByIds.mockResolvedValue([
+  it("restores a referenced image and a bound PDF omitted by an older checkpoint", async () => {
+    mediaMocks.loadExecutionAttachmentRefs.mockResolvedValueOnce([
       {
         source: "message-attachment",
         id: "att-1",
@@ -601,8 +601,19 @@ describe("durable Agent runtime bridge", () => {
         storagePath: "chat-attachments/user-1/run-1/0-abc.png",
         contentHash: "hash-1",
       },
+      {
+        source: "message-attachment",
+        id: "att-2",
+        originalName: "讲义.pdf",
+        mimeType: "application/pdf",
+        storageProvider: "local",
+        storagePath: "chat-attachments/user-1/run-1/1-abc.pdf",
+        contentHash: "hash-2",
+      },
     ]);
-    mediaMocks.readStoredObject.mockResolvedValue(Buffer.from("image-bytes"));
+    mediaMocks.readStoredObject
+      .mockResolvedValueOnce(Buffer.from("image-bytes"))
+      .mockResolvedValueOnce(Buffer.from("pdf-bytes"));
 
     const runMock = vi.fn(async (input: AgentRunInput) => {
       expect(input.prompt.attachments).toEqual([
@@ -611,6 +622,12 @@ describe("durable Agent runtime bridge", () => {
           mimeType: "image/png",
           size: 11,
           data: Buffer.from("image-bytes"),
+        },
+        {
+          name: "讲义.pdf",
+          mimeType: "application/pdf",
+          size: 9,
+          data: Buffer.from("pdf-bytes"),
         },
       ]);
       return run(
@@ -670,9 +687,10 @@ describe("durable Agent runtime bridge", () => {
       appendEvent: vi.fn(),
     });
 
-    expect(mediaMocks.loadAttachmentRefsByIds).toHaveBeenCalledWith({
+    expect(mediaMocks.loadExecutionAttachmentRefs).toHaveBeenCalledWith({
       userId: "user-1",
-      ids: ["att-1"],
+      messageId: "message-user",
+      checkpointIds: ["att-1"],
     });
     expect(mediaMocks.readStoredObject).toHaveBeenCalledWith({
       provider: "local",

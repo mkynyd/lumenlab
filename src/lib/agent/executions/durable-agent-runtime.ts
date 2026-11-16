@@ -18,11 +18,8 @@ import {
   type CatalogModelId,
 } from "@/lib/chat/model-catalog";
 import { prisma } from "@/lib/db";
-import { loadAttachmentRefsByIds } from "@/lib/chat/message-attachments";
-import {
-  loadMediaRefsWithinBudget,
-  type MediaRef,
-} from "@/lib/agent/context/media-ref";
+import { loadExecutionAttachmentRefs } from "@/lib/chat/message-attachments";
+import { loadMediaRefsWithinBudget } from "@/lib/agent/context/media-ref";
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import { mergeAgentUsage } from "@/lib/agent/usage";
 import { logger } from "@/lib/logger";
@@ -187,31 +184,25 @@ export function upgradeAgentCheckpoint(
 }
 
 /**
- * 任务 08.7：从 Checkpoint 的 `media_ref` 部件恢复本轮附件字节。
- * 只按当前执行所属用户重新鉴权读取；读取失败或不存在的资源被跳过，
- * 不让恢复流程因为一张历史图片而整体失败。
+ * Recover only this turn's attachments, including documents omitted by older
+ * checkpoints. Checkpoint IDs also cover uploads the route has yet to bind.
  */
 async function resolveCheckpointAttachments(
   userId: string,
+  messageId: string,
   items: AgentCheckpointItem[]
 ): Promise<ServerFileAttachment[]> {
   const parts = items
     .flatMap((item) => (item.type === "message" ? item.content : []))
     .filter((part) => part.type === "media_ref");
-  if (parts.length === 0) return [];
-
   const attachmentIds = parts
     .filter((part) => part.source === "message-attachment")
     .map((part) => part.refId);
-  const refs = await loadAttachmentRefsByIds({ userId, ids: attachmentIds });
-  const byId = new Map(refs.map((ref) => [ref.id, ref]));
-  const ordered = parts
-    .map((part) => byId.get(part.refId))
-    .filter((ref): ref is MediaRef => Boolean(ref));
+  const refs = await loadExecutionAttachmentRefs({ userId, messageId, checkpointIds: attachmentIds });
   // 不重复施加数量上限：这些引用来自用户已受理的同一轮请求，
   // 恢复时必须与原请求携带的附件一致。
-  const { attachments } = await loadMediaRefsWithinBudget(ordered, {
-    maxCount: ordered.length,
+  const { attachments } = await loadMediaRefsWithinBudget(refs, {
+    maxCount: refs.length,
     maxBytes: Number.MAX_SAFE_INTEGER,
   });
   return attachments;
@@ -243,6 +234,7 @@ async function runInputFromExecution(
       ...(request.hiddenPrompt ? { hiddenPrompt: request.hiddenPrompt } : {}),
       attachments: await resolveCheckpointAttachments(
         execution.userId,
+        execution.userMessageId,
         checkpoint.version === 2 ? checkpoint.items : []
       ),
     },

@@ -215,7 +215,8 @@ describe("POST /api/chat attachment persistence", () => {
     expect(onMessageAttachments).toHaveBeenCalledExactlyOnceWith(dtos);
   });
 
-  it("does not put persisted non-image attachments into mediaRefs", async () => {
+  it("keeps persisted document references in the request for durable execution", async () => {
+    mocks.toMediaRef.mockImplementation((row) => ({ id: row.id, mimeType: row.mimeType }));
     mocks.persistChatAttachments.mockResolvedValue([
       persistedRow(),
       {
@@ -231,12 +232,11 @@ describe("POST /api/chat attachment persistence", () => {
     const response = await POST(chatRequest());
 
     expect(response.status).toBe(200);
-    // 文档仅持久化用于历史展示；mediaRefs 只保留图片，模型输入语义不变。
     const runInput = mocks.run.mock.calls[0][0];
     expect(runInput.prompt.mediaRefs).toEqual([
-      mocks.toMediaRef.mock.results[0].value,
+      { id: "att-1", mimeType: "image/png" },
+      { id: "att-2", mimeType: "application/pdf" },
     ]);
-    expect(mocks.toMediaRef).toHaveBeenCalledTimes(1);
   });
 
   it("does not persist or add a header when there are no attachments", async () => {
