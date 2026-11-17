@@ -1,7 +1,8 @@
+import type { ArtifactDownloadFormat } from "@/lib/artifacts/download";
 import { createHash } from "node:crypto";
 import { getRedis } from "@/lib/redis";
 
-export type ExportFormat = "markdown" | "docx" | "pdf";
+export type ExportFormat = ArtifactDownloadFormat;
 
 // Increment this whenever a renderer or its output contract changes. Old cache
 // entries remain harmless and expire naturally instead of being served again.

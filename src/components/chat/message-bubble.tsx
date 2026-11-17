@@ -24,8 +24,9 @@ import {
   suggestArtifactTitle,
 } from "@/lib/artifacts/content";
 import type { AgentSource } from "@/lib/agent/sources";
+import type { ArtifactDownload } from "@/lib/artifacts/download";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
-import type { ApprovalScope } from "@/lib/agent/types";
+import { MessageDownloads } from "./message-downloads";
 import { AssistantProcess } from "@/components/chat/assistant-process";
 import { MessageAttachments } from "@/components/chat/message-attachments";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
@@ -45,12 +46,7 @@ interface MessageBubbleProps {
   /** 本轮已完成的工具调用数，用于输出末尾的摘要行 */
   toolsUsed?: number;
   process?: AssistantProcessTrace;
-  onApproveTool?: (
-    executionId: string,
-    token: string,
-    scope: ApprovalScope
-  ) => Promise<void> | void;
-  onDenyTool?: (executionId: string) => Promise<void> | void;
+  artifactDownloads?: ArtifactDownload[];
   onSaveArtifact?: (input: {
     messageId: string;
     title: string;
@@ -188,8 +184,7 @@ function MessageBubbleComponent({
   activeToolId,
   toolsUsed,
   process,
-  onApproveTool,
-  onDenyTool,
+  artifactDownloads,
   onSaveArtifact,
   onSkillFollowUp,
 }: MessageBubbleProps) {
@@ -207,6 +202,14 @@ function MessageBubbleComponent({
   const showProcess =
     isAssistant &&
     (hasReasoning || hasProcessDetails || (Boolean(process) && processRunning));
+  const downloads = new Map(
+    (artifactDownloads ?? []).map((file) => [file.downloadUrl, file] as const)
+  );
+  for (const tool of process?.tools ?? []) {
+    if (tool.status === "completed" && tool.download && !downloads.has(tool.download.downloadUrl)) {
+      downloads.set(tool.download.downloadUrl, tool.download);
+    }
+  }
   const canSaveArtifact =
     isAssistant && !isStreaming && isArtifactContentSavable(content);
   const toolStatus =
@@ -247,8 +250,6 @@ function MessageBubbleComponent({
             reasoningContent={reasoningContent}
             isStreaming={isStreaming}
             hasResponse={Boolean(content)}
-            onApprove={onApproveTool}
-            onDeny={onDenyTool}
           />
         )}
 
@@ -342,6 +343,8 @@ function MessageBubbleComponent({
           </div>
         )}
 
+        {isAssistant && downloads.size > 0 && <MessageDownloads files={[...downloads.values()]} />}
+
         {(summaryParts.length > 0 || tokenCount != null) && (
           <div className="mt-1 flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)]">
             {summaryParts.length > 0 && <span>{summaryParts.join(" · ")}</span>}
@@ -372,6 +375,7 @@ export const MessageBubble = memo(
         previous.content === next.content &&
         previous.reasoningContent === next.reasoningContent &&
         previous.activeToolId === next.activeToolId &&
+        previous.artifactDownloads === next.artifactDownloads &&
         previous.process === next.process
       );
     }
@@ -383,9 +387,8 @@ export const MessageBubble = memo(
       previous.attachments === next.attachments &&
       previous.toolsUsed === next.toolsUsed &&
       previous.process === next.process &&
-      previous.onSaveArtifact === next.onSaveArtifact &&
-      previous.onApproveTool === next.onApproveTool &&
-      previous.onDenyTool === next.onDenyTool
+      previous.artifactDownloads === next.artifactDownloads &&
+      previous.onSaveArtifact === next.onSaveArtifact
     );
   }
 );

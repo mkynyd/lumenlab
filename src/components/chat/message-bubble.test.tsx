@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MessageBubble } from "./message-bubble";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
@@ -32,6 +32,8 @@ describe("MessageBubble 思考过程渲染", () => {
       />
     );
 
+    expect(reasoningSurfaces()).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "思考过程" }));
     expect(reasoningSurfaces()).toHaveLength(1);
     expect(screen.getAllByText("先核对事实，再组织回答。")).toHaveLength(1);
     expect(screen.getAllByText("思考过程")).toHaveLength(1);
@@ -47,6 +49,7 @@ describe("MessageBubble 思考过程渲染", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /思考/ }));
     expect(reasoningSurfaces()).toHaveLength(1);
     expect(screen.getAllByText("需要先检索资料。")).toHaveLength(1);
     expect(screen.getAllByText("搜索公开资料")).toHaveLength(1);
@@ -97,7 +100,24 @@ describe("MessageBubble 思考过程渲染", () => {
 
     const header = screen.getByRole("button", { name: /思考/ });
     expect(within(header).queryByText(/已中断|失败/)).toBeTruthy();
+    fireEvent.click(header);
     expect(reasoningSurfaces()).toHaveLength(1);
+  });
+
+  it("shows a validated file after the answer while the process stays collapsed", () => {
+    const { container } = render(<MessageBubble role="assistant" content="交付资料已就绪" process={{
+      status: "completed", tools: [{
+        executionId: "file", toolId: "artifact.publish", label: "生成下载文件",
+        status: "completed", sources: [], download: {
+          artifactId: "a", format: "docx", filename: "教案.docx",
+          downloadUrl: "/api/artifacts/a/export?format=docx",
+        },
+      }],
+    }} />);
+    const file = screen.getByRole("region", { name: "生成的文件" });
+    expect(within(file).getByRole("button", { name: "下载 教案.docx" })).toBeTruthy();
+    expect(screen.queryByText("生成下载文件")).toBeNull();
+    expect(container.querySelector(".chat-message-text")!.compareDocumentPosition(file) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("用户消息不渲染思考过程区域", () => {

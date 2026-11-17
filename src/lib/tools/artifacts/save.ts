@@ -1,3 +1,4 @@
+import type { ArtifactDownloadFormat } from "@/lib/artifacts/download";
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { assertProjectOwned } from "@/lib/tools/shared/sanitize";
@@ -12,6 +13,7 @@ export async function saveArtifact(
     type?: string;
     format?: string;
     content: string;
+    delivery?: ArtifactDownloadFormat;
   }
 ): Promise<Record<string, unknown>> {
   if (projectId) {
@@ -34,8 +36,8 @@ export async function saveArtifact(
       type: args.type ?? "general",
       format: args.format ?? "markdown",
       content: args.content,
-      metadata: message?.sources
-        ? ({ sources: message.sources } as Prisma.InputJsonValue)
+      metadata: args.delivery || message?.sources
+        ? ({ ...(args.delivery ? { delivery: args.delivery } : {}), ...(message?.sources ? { sources: message.sources } : {}) } as Prisma.InputJsonValue)
         : undefined,
     },
     select: { id: true, title: true, type: true, createdAt: true },

@@ -12,7 +12,7 @@ describe("assistant process trace", () => {
       artifactId: "a", filename: "中文教案.docx", format: "docx", downloadUrl: "/api/artifacts/a/export?format=docx",
     } };
     const trace = hydrateAssistantProcess([{ type: "agent_event", payload: { eventJson: JSON.stringify(event) } }]);
-    expect(trace?.tools[0].download).toEqual({ url: "/api/artifacts/a/export?format=docx", filename: "中文教案.docx" });
+    expect(trace?.tools[0].download).toEqual(event.resultSummary);
     expect(reduceAssistantProcess(createAssistantProcessTrace(), {
       ...event, resultSummary: { ...event.resultSummary, downloadUrl: "https://example.com/unsafe" },
     }).tools[0].download).toBeUndefined();

@@ -189,6 +189,7 @@ function buildAllowedTools(input: {
 
   // Always expose skill activation.
   add("skill.activate");
+  add("artifact.publish");
 
   if (input.projectId) {
     for (const tool of toolRegistry.list()) {
@@ -215,7 +216,7 @@ function buildAllowedTools(input: {
   if (skill?.allowedTools?.length) {
     const baseIds = new Set(allowed.keys());
     for (const id of baseIds) {
-      if (id === "skill.activate") continue;
+      if (id === "skill.activate" || id === "artifact.publish") continue;
       if (!skill.allowedTools.includes(id)) {
         // Keep web tools if the user explicitly enabled web search.
         if (
@@ -628,7 +629,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
         webSearchActive,
         activeSkillId: null,
         planningEnabled: false,
-      }).filter((tool) => tool.toolId === "web.search" || tool.toolId === "web.fetch")
+      }).filter((tool) => tool.toolId === "web.search" || tool.toolId === "web.fetch" || tool.toolId === "artifact.publish")
     : buildAllowedTools({
         projectId: project?.id,
         webSearchActive,
@@ -637,7 +638,10 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       });
 
   if (activeTools.length > 0) {
-    systemPrompt += "\n\n【工具执行】用户给出明确任务后，直接调用完成任务所需工具。保存、导出 Word/PPT 等操作通过服务端权限校验后自动执行，不要求额外审批，不以‘等待授权’结束回答。只有工具返回真实下载地址后才能提供文件链接。";
+    systemPrompt += "\n\n【工具执行】直接执行合法操作，不向用户请求批准。只有工具确认成功后才能说操作已完成。";
+  }
+  if (activeTools.some((tool) => tool.toolId === "artifact.publish")) {
+    systemPrompt += "\n\n【文件交付】用户要求生成、保存、导出或下载具体文件时，必须调用 artifact.publish，把完整正文写入文件，包含用户要求的栏目、数据、解释与来源。不要先把完整文档重复发到聊天。按用户指定的格式选择 docx、pdf、xlsx、pptx 或 markdown；要文档文件但未指定格式时用 docx。Excel 每个有数据的表加标题及表头；PowerPoint 每主题一个二级标题，写要点而非长段。文件名不带扩展名。涉及上传资料时标出处（文件名及可用页码），原文内容与外部补充应区分；如资料无法读取或覆盖不全，应如实指出，严禁补造。文件生成成功后，聊天仅简述交付内容，系统会显示下载按钮。失败时根据错误调整参数重试；最终没有可下载文件时必须说明。此交付规则优先于技能里的旧导出步骤。";
   }
 
   if (agentRuntimeMode === "shadow") {
@@ -1092,7 +1096,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   ];
   type StringMessage = { role: string; content: string };
   const stringMessages =
-    (cacheExperiments.adaptivePromptOrdering.enabled
+    (cacheExperiments.adaptivePromptOrdering.enabled && !input.durable?.continuationMessages?.length
       ? reorderMessagesForCache(
           experimentalBaseMessages as unknown as StringMessage[],
           systemPrompt,

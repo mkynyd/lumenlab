@@ -412,11 +412,14 @@ export function ResearchWorkspaceView({ workspaceId }: { workspaceId: string }) 
   const directivePanel = (
     <div className="mt-5 bg-[var(--color-panel)] px-5 py-5">
       <h2 className="text-base font-semibold text-[var(--color-text-primary)]">追加研究方向</h2>
-      <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">普通调整会在后续评估中吸收；明显扩大范围或预算会暂停并等待确认。</p>
+      <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">系统会在本次预算内处理新的研究方向。</p>
       <form className="mt-3 flex gap-2" onSubmit={(event) => { event.preventDefault(); if (!directive.trim()) return; appendDirective.mutate(directive.trim(), { onSuccess: () => setDirective("") }); }}>
         <input value={directive} onChange={(event) => setDirective(event.target.value)} placeholder="例如：补充近三年的官方数据" className="min-w-0 flex-1 rounded-[var(--radius-md)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none ring-1 ring-transparent placeholder:text-[var(--color-text-tertiary)] focus:ring-[var(--color-accent)]" />
         <Button type="submit" variant="secondary" size="sm" disabled={appendDirective.isPending}>追加</Button>
       </form>
+      {appendDirective.isError ? (
+        <p role="alert" className="mt-2 text-xs text-[var(--color-danger)]">{appendDirective.error.message}</p>
+      ) : null}
     </div>
   );
 

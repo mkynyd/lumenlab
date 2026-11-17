@@ -88,7 +88,7 @@ export function ResearchDashboard() {
             <p className="mt-4 px-1 text-sm text-[var(--color-text-tertiary)]">正在加载研究工作区…</p>
           ) : workspaces.length === 0 ? (
             <p className="mt-4 px-1 text-sm leading-6 text-[var(--color-text-tertiary)]">
-              还没有研究记录。在上方输入你的第一个研究问题，确认计划后系统会自动检索、阅读并生成可引用的报告。
+              还没有研究记录。提交问题后，系统会制定计划、检索资料并生成带引用的报告。
             </p>
           ) : (
             <div className="mt-3 grid gap-2 md:grid-cols-2" role="list">

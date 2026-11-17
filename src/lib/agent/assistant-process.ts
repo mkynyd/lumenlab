@@ -1,3 +1,4 @@
+import { readArtifactDownload, type ArtifactDownload } from "@/lib/artifacts/download";
 import type { AgentPlan } from "./plan";
 import type { AgentSource } from "./sources";
 import type { AgentEvent, ToolCallPreview } from "./types";
@@ -19,7 +20,7 @@ export interface AssistantProcessTool {
   error?: string;
   sources: AgentSource[];
   preview?: ToolCallPreview;
-  download?: { url: string; filename: string };
+  download?: ArtifactDownload;
   approval?: {
     token?: string;
     expiresAt: number;
@@ -121,16 +122,12 @@ export function reduceAssistantProcess(
     });
   }
   if (event.type === "tool_completed") {
+    const download = readArtifactDownload(event.resultSummary);
     return updateTool(trace, event.executionId, (tool) => ({
       ...tool,
       status: "completed",
       progress: 100,
-      ...(event.resultSummary.format === "docx" &&
-        typeof event.resultSummary.artifactId === "string" &&
-        typeof event.resultSummary.filename === "string" &&
-        event.resultSummary.downloadUrl === `/api/artifacts/${encodeURIComponent(event.resultSummary.artifactId)}/export?format=docx`
-        ? { download: { url: event.resultSummary.downloadUrl, filename: event.resultSummary.filename } }
-        : {}),
+      ...(download ? { download } : {}),
     }));
   }
   if (event.type === "tool_failed" || event.type === "tool_blocked") {

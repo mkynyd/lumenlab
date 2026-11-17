@@ -4,7 +4,6 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
-import type { ApprovalScope } from "@/lib/agent/types";
 
 type SaveArtifact = (input: {
   messageId: string;
@@ -30,14 +29,10 @@ const Bubble = memo(function Bubble({
   message,
   onSaveArtifact,
   onSkillFollowUp,
-  onApproveTool,
-  onDenyTool,
 }: {
   message: ChatMessage;
   onSaveArtifact?: SaveArtifact;
   onSkillFollowUp?: SkillFollowUp;
-  onApproveTool?: (executionId: string, token: string, scope: ApprovalScope) => Promise<void> | void;
-  onDenyTool?: (executionId: string) => Promise<void> | void;
 }) {
   return (
     <MessageBubble
@@ -52,14 +47,13 @@ const Bubble = memo(function Bubble({
       activeToolId={message.activeToolId}
       toolsUsed={message.toolsUsed}
       process={message.process}
+      artifactDownloads={message.artifactDownloads}
       onSaveArtifact={
         message.role === "assistant" ? onSaveArtifact : undefined
       }
       onSkillFollowUp={
         message.role === "assistant" ? onSkillFollowUp : undefined
       }
-      onApproveTool={message.role === "assistant" ? onApproveTool : undefined}
-      onDenyTool={message.role === "assistant" ? onDenyTool : undefined}
     />
   );
 });
@@ -76,14 +70,10 @@ export function VirtualMessageList({
   messages,
   onSaveArtifact,
   onSkillFollowUp,
-  onApproveTool,
-  onDenyTool,
 }: {
   messages: ChatMessage[];
   onSaveArtifact?: SaveArtifact;
   onSkillFollowUp?: SkillFollowUp;
-  onApproveTool?: (executionId: string, token: string, scope: ApprovalScope) => Promise<void> | void;
-  onDenyTool?: (executionId: string) => Promise<void> | void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const lastMessage = messages.at(-1);
@@ -183,8 +173,6 @@ export function VirtualMessageList({
             message={message}
             onSaveArtifact={onSaveArtifact}
             onSkillFollowUp={onSkillFollowUp}
-            onApproveTool={onApproveTool}
-            onDenyTool={onDenyTool}
           />
         ))}
       </div>

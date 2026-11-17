@@ -1,4 +1,5 @@
 import type { AgentSource } from "@/lib/agent/sources";
+import type { ArtifactDownload } from "@/lib/artifacts/download";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 export interface ConversationSummary {
@@ -21,6 +22,8 @@ export interface ConversationMessage {
   cacheMissTokens?: number | null;
   sources?: AgentSource[] | null;
   process?: AssistantProcessTrace;
+  artifactDownloads?: ArtifactDownload[];
+  backgroundExecutionId?: string;
   /** 任务 08：已持久化的附件（含同源鉴权 URL 与 kind 分类）。 */
   attachments?: ChatAttachmentDto[];
   createdAt?: string;

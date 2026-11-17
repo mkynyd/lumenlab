@@ -25,14 +25,6 @@ const trace: AssistantProcessTrace = {
 };
 
 describe("AssistantProcess", () => {
-  it("shows a real Word download even when the completed process is collapsed", () => {
-    render(<AssistantProcess trace={{ status: "completed", tools: [{
-      executionId: "export-1", toolId: "artifact.export_docx", label: "导出 Word",
-      status: "completed", sources: [], download: { url: "/api/artifacts/a/export?format=docx", filename: "中文教案.docx" },
-    }] }} isStreaming={false} hasResponse />);
-    expect(screen.getByRole("link", { name: "下载 Word · 中文教案.docx" })).toHaveAttribute("href", "/api/artifacts/a/export?format=docx");
-  });
-
   it("在同一过程区显示思考、计划、工具和逐条来源", () => {
     render(
       <AssistantProcess
@@ -102,6 +94,8 @@ describe("AssistantProcess", () => {
 
     expect(screen.getByText("思考过程")).toBeTruthy();
     expect(document.querySelector(".assistant-process")?.getAttribute("data-state")).toBe("completed");
+    expect(document.querySelector(".assistant-process-reasoning")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "思考过程" }));
     expect(document.querySelector(".assistant-process-reasoning")?.textContent).toBe("历史推理内容");
   });
 

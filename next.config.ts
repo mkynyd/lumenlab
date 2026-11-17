@@ -51,7 +51,13 @@ const nextConfig: NextConfig = {
   // PDF.js loads its Node worker dynamically relative to the package. Bundling
   // relocates that import to a Next chunk; tracing alone also misses the worker.
   outputFileTracingIncludes: {
-    "/*": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs", "./assets/export/**/*"],
+    "/*": [
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./node_modules/playwright-core/browsers.json",
+      "./node_modules/@img/sharp-libvips-*/lib/**/*",
+      "./node_modules/mermaid/dist/mermaid.min.js",
+      "./assets/export/**/*",
+    ],
     "/api/study/**": ["./node_modules/pdfjs-dist/wasm/**/*"],
   },
   // Turbopack root fix

@@ -8,6 +8,7 @@ import sharp from "sharp";
 
 import type { ResolveImage } from "@/lib/export/markdown-to-docx";
 import { renderMermaidPng } from "@/lib/export/mermaid-image";
+import { DOCX_CHINESE_FONT } from "./docx-styles";
 import { parseLumenFlow, renderLumenFlowSvg } from "@/lib/lumenflow";
 
 const PANDOC_TIMEOUT_MS = 60_000;
@@ -295,6 +296,46 @@ export function ensureDocxImageContentTypes(buffer: Buffer): Buffer {
   return archive.toBuffer();
 }
 
+/** Use Pandoc's native table styles as the base, then set print and CJK defaults. */
+function applyEditableDocumentLayout(buffer: Buffer): Buffer {
+  const archive = new AdmZip(buffer);
+  const stylesPath = "word/styles.xml";
+  const styles = archive.readAsText(stylesPath).replace(/<w:rFonts\b[^>]*\bw:eastAsiaTheme="[^"]+"[^>]*\/>/g,
+    `<w:rFonts w:ascii="${DOCX_CHINESE_FONT}" w:hAnsi="${DOCX_CHINESE_FONT}" w:eastAsia="${DOCX_CHINESE_FONT}"/>`);
+  archive.updateFile(stylesPath, Buffer.from(styles));
+  const entry = "word/document.xml";
+  const xml = archive.readAsText(entry)
+    .replace(/<w:pgSz\b[^>]*\/>/, '<w:pgSz w:w="11906" w:h="16838"/>')
+    .replace(/<w:tbl>[\s\S]*?<\/w:tbl>/g, (table) => {
+      const grid = /<w:gridCol\s+w:w="\d+"\s*\/>/g;
+      const weights = Array.from(table.matchAll(grid), () => 7);
+      if (!weights.length) return table;
+      for (const [row] of table.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)) {
+        [...row.matchAll(/<w:tc>([\s\S]*?)<\/w:tc>/g)].forEach(([, cell], index) => {
+          const value = [...cell.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map(([, text]) => text).join("");
+          weights[index] = Math.max(weights[index] ?? 7, Math.min(35, displayWidth(value)));
+        });
+      }
+      const total = weights.reduce((sum, weight) => sum + weight, 0);
+      const widths = weights.map((weight) => Math.floor(8_900 * weight / total));
+      const borders = ["top", "left", "bottom", "right", "insideH", "insideV"]
+        .map((side) => `<w:${side} w:val="single" w:sz="4" w:color="CED7E2"/>`).join("");
+      let gridIndex = 0;
+      return table
+        .replace(grid, () => `<w:gridCol w:w="${widths[gridIndex++]}"/>`)
+        .replace(/<w:tblW\b[^>]*\/>/, `<w:tblW w:type="dxa" w:w="${widths.reduce((sum, width) => sum + width, 0)}"/><w:tblBorders>${borders}</w:tblBorders><w:tblLayout w:type="fixed"/>`)
+        .replace(/<w:tr>[\s\S]*?<\/w:tr>/g, (row) => {
+          let column = 0;
+          return row.replace(/<w:tcPr\s*\/>/g, () => {
+            const width = widths[column++] ?? widths.at(-1);
+            return `<w:tcPr><w:tcW w:type="dxa" w:w="${width}"/>${row.includes("<w:tblHeader") ? '<w:shd w:val="clear" w:fill="EAF0F7"/>' : ""}<w:vAlign w:val="center"/></w:tcPr>`;
+          });
+        });
+    });
+  archive.updateFile(entry, Buffer.from(xml));
+  return archive.toBuffer();
+}
+
 function runPandoc(args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("pandoc", args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
@@ -340,12 +381,14 @@ function runPandoc(args: string[], cwd: string): Promise<void> {
 
 export async function markdownToPandocDocx(
   content: string,
-  options: { resolveImage?: ResolveImage } = {}
+  options: { resolveImage?: ResolveImage; editableTables?: boolean } = {}
 ): Promise<Buffer> {
   const workdir = await mkdtemp(path.join(tmpdir(), "lumenlab-docx-"));
   try {
     let normalized = normalizeHtmlTablesForPandoc(content);
-    const tables = materializeMarkdownTables(normalized, workdir);
+    const tables = options.editableTables
+      ? { normalized, writes: [] }
+      : materializeMarkdownTables(normalized, workdir);
     await Promise.all(tables.writes);
     const diagrams = materializeLumenFlowDiagrams(tables.normalized, workdir);
     await Promise.all(diagrams.writes);
@@ -354,6 +397,7 @@ export async function markdownToPandocDocx(
 
     const inputPath = path.join(workdir, "document.md");
     const outputPath = path.join(workdir, "document.docx");
+    const filterPath = path.join(workdir, "local-images.lua");
     const referenceDocument = path.join(
       process.cwd(),
       "assets",
@@ -361,19 +405,41 @@ export async function markdownToPandocDocx(
       "reference.docx"
     );
     await writeFile(inputPath, normalized, "utf8");
+    // Pandoc can resolve reference-style images that the Markdown preprocessor
+    // never sees. Only allow files materialized under this export's directory.
+    await writeFile(filterPath, `
+function Image(image)
+  local source = image.src
+  local root = source:match("^([a-z]+)/")
+  if (root == "pics" or root == "diagrams" or root == "tables")
+    and not source:find("[^%w%p%s\\128-\\255]")
+    and not source:find("[\\\\:?#%%]")
+    and not source:find("..", 1, true) then
+    local file = io.open(source, "rb")
+    if file then
+      file:close()
+      return image
+    end
+  end
+  return image.caption
+end
+`, "utf8");
     await runPandoc(
       [
         inputPath,
-        "--from=gfm+raw_html",
+        "--from=gfm-raw_html+tex_math_dollars",
         "--to=docx",
+        `--lua-filter=${filterPath}`,
         `--output=${outputPath}`,
         `--resource-path=${workdir}`,
-        `--reference-doc=${referenceDocument}`,
+        // The old image-oriented template is missing Pandoc's native table styles.
+        ...(options.editableTables ? [] : [`--reference-doc=${referenceDocument}`]),
         "--standalone",
       ],
       workdir
     );
-    return ensureDocxImageContentTypes(await readFile(outputPath));
+    const file = ensureDocxImageContentTypes(await readFile(outputPath));
+    return options.editableTables ? applyEditableDocumentLayout(file) : file;
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }

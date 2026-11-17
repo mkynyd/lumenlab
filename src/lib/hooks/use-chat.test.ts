@@ -4,8 +4,6 @@ import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   readChatError,
-  requestToolApproval,
-  toolApprovalEvent,
   useChat,
 } from "./use-chat";
 
@@ -33,103 +31,6 @@ describe("readChatError", () => {
       headers: { "Content-Type": "text/html" },
     });
     await expect(readChatError(response)).resolves.toBe("聊天服务暂时无法连接，请稍后重试（502）");
-  });
-});
-
-describe("requestToolApproval", () => {
-  it("throws on a non-2xx response so the approval UI stays pending", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Response.json(
-          { error: "ToolExecution 已被其他请求执行" },
-          { status: 409 }
-        )
-      )
-    );
-
-    await expect(
-      requestToolApproval({
-        executionId: "execution-1",
-        token: "token-1.secret",
-        scope: "once",
-      })
-    ).rejects.toThrow("ToolExecution 已被其他请求执行");
-  });
-
-  it("returns the completed result summary from a successful approval", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Response.json({
-          ok: true,
-          status: "succeeded",
-          scope: "once",
-          executionId: "execution-1",
-          resultSummary: { saved: true },
-        })
-      )
-    );
-
-    await expect(
-      requestToolApproval({
-        executionId: "execution-1",
-        token: "token-1.secret",
-        scope: "once",
-      })
-    ).resolves.toEqual({
-      ok: true,
-      status: "succeeded",
-      scope: "once",
-      executionId: "execution-1",
-      resultSummary: { saved: true },
-    });
-  });
-
-  it("returns a terminal tool failure separately from approval transport errors", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Response.json({
-          ok: false,
-          status: "failed",
-          scope: "once",
-          executionId: "execution-1",
-          error: { code: "HANDLER_ERROR", message: "工具执行失败" },
-        })
-      )
-    );
-
-    await expect(
-      requestToolApproval({
-        executionId: "execution-1",
-        token: "token-1.secret",
-        scope: "once",
-      })
-    ).resolves.toMatchObject({
-      ok: false,
-      status: "failed",
-      error: { code: "HANDLER_ERROR", message: "工具执行失败" },
-    });
-  });
-});
-
-describe("toolApprovalEvent", () => {
-  it("maps approved handler failures to a tool_failed timeline event", () => {
-    expect(
-      toolApprovalEvent({
-        ok: false,
-        status: "failed",
-        scope: "once",
-        executionId: "execution-1",
-        error: { code: "HANDLER_ERROR", message: "工具执行失败" },
-      })
-    ).toEqual({
-      type: "tool_failed",
-      executionId: "execution-1",
-      errorCode: "HANDLER_ERROR",
-      error: "工具执行失败",
-    });
   });
 });
 
@@ -235,87 +136,20 @@ describe("useChat conversation URL sync", () => {
     expect(result.current.isStreaming).toBe(false);
   });
 
-  it.each(["initial", "loaded"])("approves a %s persisted card without a transient timeline entry", async (source) => {
-    const message = {
-      id: "persisted-assistant", role: "assistant" as const, content: "",
-      process: {
-        status: "running" as const,
-        tools: [{ executionId: "pending-tool", toolId: "artifact.save", label: "保存教案",
-          status: "awaiting_approval" as const, sources: [],
-          approval: { token: "", expiresAt: Date.now() + 60_000, canApproveSession: true } }],
-      },
-    };
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/agent/approve") return Response.json({
-        ok: true, status: "succeeded", scope: "once", executionId: "pending-tool", resultSummary: { saved: true },
-      });
-      return Response.json({ models: ["deepseek-flash"] });
-    });
+  it("never asks the browser to approve a restored tool", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ models: ["deepseek-flash"] }));
     vi.stubGlobal("fetch", fetchMock);
-    const { result } = renderHook(() => useChat({
-      initialConversationId: "existing", initialMessages: source === "initial" ? [message] : [],
-    }), { wrapper: createWrapper() });
-    if (source === "loaded") act(() => result.current.loadConversation("existing", [message]));
-    expect(result.current.agentTimeline).toEqual({});
-    await waitFor(() => expect(result.current.messages[0].process?.tools[0].status).toBe("completed"));
-    expect(fetchMock).toHaveBeenCalledWith("/api/agent/approve", expect.objectContaining({
-      body: JSON.stringify({ executionId: "pending-tool", token: "", scope: "once" }),
-    }));
-    expect(result.current.messages[0].process?.tools[0].status).toBe("completed");
+    const { result } = renderHook(() => useChat({ initialConversationId: "existing", initialMessages: [{
+      id: "persisted-assistant", role: "assistant", content: "",
+      process: { status: "running", tools: [{
+        executionId: "legacy", toolId: "artifact.save", label: "保存",
+        status: "awaiting_approval", sources: [],
+        approval: { expiresAt: Date.now() + 60_000, canApproveSession: true },
+      }] },
+    }] }), { wrapper: createWrapper() });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.current.error).toBeNull();
-  });
-
-  it("keeps a restored approval pending when server ownership validation fails", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) =>
-      String(input) === "/api/agent/approve"
-        ? Response.json({ error: "无权审批" }, { status: 403 })
-        : Response.json({ models: ["deepseek-flash"] })
-    ));
-    const { result } = renderHook(() => useChat(), { wrapper: createWrapper() });
-    await act(async () => {
-      await expect(result.current.approveExecution("other-tool", "token", "once")).rejects.toThrow("无权审批");
-    });
-    expect(result.current.error).toBe("无权审批");
-  });
-
-  it.each(["approve", "reject"])("does not apply a late %s result or continuation to another conversation", async (action) => {
-    let resolveApproval!: (value: Response) => void;
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).startsWith("/api/agent/")) return new Promise<Response>((resolve) => { resolveApproval = resolve; });
-      return Response.json({ models: ["deepseek-flash"] });
-    }));
-    const { result } = renderHook(() => useChat({ initialConversationId: "old" }), { wrapper: createWrapper() });
-    await waitFor(() => expect(result.current.modelBlockedReason).toBeUndefined());
-    let approval!: Promise<void>;
-    act(() => { approval = action === "approve"
-      ? result.current.approveExecution("pending-tool", "", "once")
-      : result.current.rejectExecution("pending-tool"); });
-    act(() => result.current.loadConversation("new", [{ id: "new-user", role: "user", content: "new conversation" }]));
-    await act(async () => {
-      resolveApproval(Response.json({ ok: true, status: "succeeded", scope: "once",
-        executionId: "pending-tool", resultSummary: {}, shouldContinue: true }));
-      await approval;
-    });
-    expect(result.current.conversationId).toBe("new");
-    expect(result.current.messages).toHaveLength(1);
-    expect(result.current.agentTimeline).toEqual({});
-    expect(result.current.error).toBeNull();
-  });
-
-  it("updates only the restored tool's message after rejection", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/agent/reject"
-      ? Response.json({ ok: true, shouldContinue: false }) : Response.json({ models: ["deepseek-flash"] })));
-    const trace = (executionId: string) => ({ status: "running" as const, tools: [{
-      executionId, toolId: "artifact.save", label: "保存", status: "awaiting_approval" as const, sources: [],
-    }] });
-    const { result } = renderHook(() => useChat({ initialMessages: [
-      { id: "old", role: "assistant", content: "", process: trace("pending-tool") },
-      { id: "other", role: "assistant", content: "", isStreaming: true, process: trace("other-tool") },
-    ] }), { wrapper: createWrapper() });
-    await act(async () => { await result.current.rejectExecution("pending-tool"); });
-    expect(result.current.messages[0].process?.tools[0].status).toBe("failed");
-    expect(result.current.messages[1].process?.tools).toHaveLength(1);
-    expect(result.current.messages[1].process?.tools[0].status).toBe("awaiting_approval");
   });
 
   it("retains unavailable Qwen until the user explicitly selects an alternative", async () => {

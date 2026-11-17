@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { hydrateAssistantProcess } from "@/lib/agent/assistant-process";
-import {
-  CHAT_ATTACHMENT_SELECT,
-  toChatAttachmentDtos,
-  deleteConversationAttachmentObjects,
-} from "@/lib/chat/message-attachments";
+import { chatMessageSelect, toChatMessage } from "@/lib/data/conversations";
+import { deleteConversationAttachmentObjects } from "@/lib/chat/message-attachments";
 
 // GET — 获取对话及其消息
 export async function GET(
@@ -23,31 +19,7 @@ export async function GET(
   const conversation = await prisma.conversation.findFirst({
     where: { id, userId: session.user.id },
     include: {
-      messages: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          role: true,
-          content: true,
-          reasoningContent: true,
-          tokenCount: true,
-          cacheHitTokens: true,
-          cacheMissTokens: true,
-          sources: true,
-          createdAt: true,
-          attachments: CHAT_ATTACHMENT_SELECT,
-          agentExecutionsAsAssistantMessage: {
-            take: 1,
-            orderBy: { createdAt: "desc" },
-            select: {
-              events: {
-                orderBy: { sequence: "asc" },
-                select: { type: true, payload: true, createdAt: true },
-              },
-            },
-          },
-        },
-      },
+      messages: { orderBy: { createdAt: "asc" }, select: chatMessageSelect(session.user.id) },
     },
   });
 
@@ -58,14 +30,7 @@ export async function GET(
   return NextResponse.json({
     conversation: {
       ...conversation,
-      messages: conversation.messages.map((message) => ({
-        ...message,
-        attachments: toChatAttachmentDtos(message.attachments),
-        process: hydrateAssistantProcess(
-          message.agentExecutionsAsAssistantMessage?.[0]?.events ?? []
-        ),
-        agentExecutionsAsAssistantMessage: undefined,
-      })),
+      messages: conversation.messages.map(toChatMessage),
     },
   });
 }

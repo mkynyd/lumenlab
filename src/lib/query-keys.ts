@@ -1,4 +1,5 @@
 export const queryKeys = {
+  chatModels: ["chat-models"] as const,
   conversations: {
     all: ["conversations"] as const,
     detail: (id: string) => ["conversations", id] as const,

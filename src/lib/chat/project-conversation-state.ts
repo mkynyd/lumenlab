@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@/lib/hooks/use-chat";
+import type { ArtifactDownload } from "@/lib/artifacts/download";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
 import type { AgentSource } from "@/lib/agent/sources";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
@@ -13,6 +14,8 @@ export type PersistedConversationMessage = {
   cacheMissTokens?: number | null;
   sources?: AgentSource[] | null;
   process?: AssistantProcessTrace;
+  artifactDownloads?: ArtifactDownload[];
+  backgroundExecutionId?: string;
   /** 任务 08：历史消息的持久化图片附件。 */
   attachments?: ChatAttachmentDto[];
   createdAt?: string | Date | null;
@@ -35,6 +38,7 @@ function isRecoverableAssistantPlaceholder(
   message: PersistedConversationMessage,
   nowMs: number
 ) {
+  if (message.backgroundExecutionId) return true;
   if (!isEmptyAssistantPlaceholder(message) || !message.createdAt) {
     return false;
   }

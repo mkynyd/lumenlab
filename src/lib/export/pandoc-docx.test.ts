@@ -62,4 +62,20 @@ describe("Pandoc DOCX exporter", () => {
         .some((entry) => entry.entryName.startsWith("word/media/"))
     ).toBe(true);
   });
+
+  it("delivers editable tables and equations without embedding unmanaged resources", async () => {
+    const buffer = await markdownToPandocDocx([
+      "# 核验", "", "| 名称 | 数量 |", "| --- | --- |", "| LAB-ASTER-101 | 3 |",
+      "", "$a^2+b^2=c^2$", "", "![外部图片][resource]", "",
+      "[resource]: http://127.0.0.1:1/private",
+    ].join("\n"), { editableTables: true });
+    const zip = new AdmZip(buffer);
+    const document = zip.readAsText("word/document.xml");
+    expect(document).toContain("<w:tbl>");
+    expect(document).toContain("<m:oMath>");
+    expect(document).toContain("LAB-ASTER-101");
+    expect(document).toContain("外部图片");
+    expect(document).not.toContain("<w:drawing>");
+    expect(zip.readAsText("word/_rels/document.xml.rels")).not.toContain("127.0.0.1");
+  });
 });

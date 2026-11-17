@@ -3,19 +3,19 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { startAgentExecutionWorker } from "@/lib/agent/executions/durable-agent-runtime";
-import {
-  confirmResearchRunPlan,
-  createResearchRun,
-  createResearchWorkspace,
-} from "./service";
+import { createResearchRun, createResearchWorkspace } from "./service";
 
 const enabled =
   process.env.RESEARCH_FULL_RUN_E2E === "1" &&
   Boolean(process.env.RESEARCH_E2E_USER_ID);
 
 type WorkerGlobal = typeof globalThis & {
-  __lumenAgentExecutionWorker?: { stop(): Promise<void> };
+  __lumenAgentExecutionWorkers?: Array<{ stop(): Promise<void> }>;
 };
+
+async function stopWorkers() {
+  await Promise.all((globalThis as WorkerGlobal).__lumenAgentExecutionWorkers?.map((worker) => worker.stop()) ?? []);
+}
 
 async function waitForRunStatus(
   runId: string,
@@ -38,11 +38,11 @@ async function waitForRunStatus(
 }
 
 afterAll(async () => {
-  await (globalThis as WorkerGlobal).__lumenAgentExecutionWorker?.stop();
+  await stopWorkers();
 });
 
 describe("real Research durable run", () => {
-  it.runIf(enabled)("plans, confirms, researches, verifies, and freezes a report", async () => {
+  it.runIf(enabled)("plans and delivers a verified report without an approval request", async () => {
     const userId = process.env.RESEARCH_E2E_USER_ID!;
     const workspace = await createResearchWorkspace({
       userId,
@@ -64,11 +64,12 @@ describe("real Research durable run", () => {
 
       const planned = await waitForRunStatus(
         created.id,
-        ["awaiting_confirmation", "failed"],
+        ["researching", "evaluating", "synthesizing", "verifying", "completed", "failed", "awaiting_confirmation", "awaiting_scope_confirmation"],
         90_000
       );
-      expect(planned.status).toBe("awaiting_confirmation");
       conversationId = planned.agentExecution?.conversationId ?? null;
+      expect(planned.status).not.toMatch(/awaiting|failed/);
+      expect(planned.startedAt).toBeTruthy();
       const planningCheckpoint = planned.agentExecution?.checkpoint as
         | { version?: number; researchState?: { modelCalls?: number; totalTokens?: number } }
         | null;
@@ -76,10 +77,9 @@ describe("real Research durable run", () => {
       expect(planningCheckpoint?.researchState?.modelCalls).toBeGreaterThan(0);
       expect(planningCheckpoint?.researchState?.totalTokens).toBeGreaterThan(0);
 
-      await confirmResearchRunPlan(userId, created.id);
       const finished = await waitForRunStatus(
         created.id,
-        ["completed", "failed", "awaiting_scope_confirmation"],
+        ["completed", "failed", "awaiting_confirmation", "awaiting_scope_confirmation"],
         300_000
       );
 
@@ -104,7 +104,7 @@ describe("real Research durable run", () => {
         contentHash: finished.reportSnapshot?.contentHash ?? null,
       }));
     } finally {
-      await (globalThis as WorkerGlobal).__lumenAgentExecutionWorker?.stop();
+      await stopWorkers();
       await prisma.researchWorkspace
         .delete({ where: { id: workspace.id } })
         .catch(() => {});

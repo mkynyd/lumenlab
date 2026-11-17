@@ -10,7 +10,8 @@ import { RESEARCH_RUN_STATUSES } from "./contracts";
 
 describe("research run state machine", () => {
   it("allows confirmation and durable execution stages", () => {
-    expect(canTransitionResearchRun("planning", "awaiting_confirmation")).toBe(true);
+    expect(canTransitionResearchRun("planning", "queued")).toBe(true);
+    expect(canTransitionResearchRun("planning", "awaiting_confirmation")).toBe(false);
     expect(canTransitionResearchRun("researching", "evaluating")).toBe(true);
     expect(canTransitionResearchRun("verifying", "researching")).toBe(true);
     expect(canTransitionResearchRun("verifying", "completed")).toBe(true);

@@ -256,6 +256,7 @@ export function createToolRunner(dependencies: ToolRunnerDependencies): ToolRunn
             conversationId: request.context.conversationId,
             projectId: request.context.projectId,
             selectedFileIds: request.context.selectedFileIds,
+            ...(request.context.agentExecutionId ? { agentExecutionId: request.context.agentExecutionId } : {}),
             signal: executeSignal,
           },
           request.call.arguments

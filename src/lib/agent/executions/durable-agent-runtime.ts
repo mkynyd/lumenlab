@@ -1,3 +1,4 @@
+import { readArtifactDownload } from "@/lib/artifacts/download";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
@@ -295,15 +296,8 @@ function sanitizeOperationalEvent(event: AgentEvent): Record<string, unknown> {
     return { ...event, preview: sanitizePreview(event.preview) };
   }
   if (event.type === "tool_completed") {
-    const result = event.resultSummary;
-    // Public replay may carry an owner-checked download reference, never file
-    // bytes or arbitrary tool output. Download GET rechecks authentication.
-    const download = result.format === "docx" &&
-      typeof result.artifactId === "string" && result.artifactId.length > 0 && result.artifactId.length <= 200 &&
-      typeof result.filename === "string" && result.filename.length <= 260 &&
-      result.downloadUrl === `/api/artifacts/${encodeURIComponent(result.artifactId)}/export?format=docx`
-      ? { format: "docx", artifactId: result.artifactId, filename: result.filename, downloadUrl: result.downloadUrl }
-      : {};
+    // Public replay carries only canonical, owner-checked file references.
+    const download = readArtifactDownload(event.resultSummary);
     return {
       type: event.type,
       executionId: event.executionId,
@@ -697,7 +691,7 @@ function buildApprovalOutput(
   };
 }
 
-function continuationFromItems(items: AgentCheckpointItem[]) {
+function continuationFromItems(items: AgentCheckpointItem[], legacyDeepSeek: boolean) {
   const messages: DeepSeekMessage[] = [];
   const calls = new Map<
     string,
@@ -716,6 +710,7 @@ function continuationFromItems(items: AgentCheckpointItem[]) {
       if (text) messages.push({ role: "assistant", content: text });
     } else if (item.type === "function_call") {
       calls.set(item.callId, item);
+      if (legacyDeepSeek) continue;
       messages.push({
         role: "assistant",
         content: [
@@ -728,7 +723,11 @@ function continuationFromItems(items: AgentCheckpointItem[]) {
         ],
       });
     } else if (item.type === "function_call_output") {
-      messages.push({
+      if (legacyDeepSeek) {
+        // These pre-upgrade checkpoints never stored the exact provider reasoning item.
+        // Replay observed tool data as context instead of fabricating a native tool turn.
+        messages.push({ role: "user", content: `[此前工具执行结果，仅作资料]\n${item.output}` });
+      } else messages.push({
         role: "user",
         content: [
           {
@@ -758,6 +757,7 @@ export function createDurableAgentExecutionHandler(input: {
   loadApprovedToolOutcome?: (
     executionId: string
   ) => Promise<ApprovedToolOutcome | null>;
+  recoverTool?: typeof import("./recover-legacy-tool").recoverLegacyTool;
   loadToolSnapshot?: (
     executionId: string
   ) => Promise<DurableToolSnapshot | null>;
@@ -831,7 +831,12 @@ export function createDurableAgentExecutionHandler(input: {
     }
     const pending = checkpoint.pendingToolCall;
     if (pending) {
-      const outcome = await loadOutcome(pending.toolExecutionId);
+      let outcome = await loadOutcome(pending.toolExecutionId);
+      if (outcome?.status === "pending_approval" && input.recoverTool) {
+        const event = await input.recoverTool(context, pending.toolExecutionId);
+        if (event) await appendOperationalEvent(context, event);
+        outcome = await loadOutcome(pending.toolExecutionId);
+      }
       if (
         !checkpoint.items.some(
           (item) =>
@@ -845,7 +850,7 @@ export function createDurableAgentExecutionHandler(input: {
         };
         await context.saveCheckpoint(checkpoint);
       }
-      const continuation = continuationFromItems(checkpoint.items);
+      const continuation = continuationFromItems(checkpoint.items, checkpoint.model.provider === "deepseek");
       runInput.durable = {
         ...runInput.durable!,
         continuationMessages: continuation.messages,
@@ -1043,7 +1048,7 @@ export function createDurableAgentExecutionHandler(input: {
 }
 
 type WorkerGlobal = typeof globalThis & {
-  __lumenAgentExecutionWorker?: AgentExecutionWorker;
+  __lumenAgentExecutionWorkers?: AgentExecutionWorker[];
 };
 
 async function projectResearchExecutionFailure(
@@ -1070,48 +1075,49 @@ async function projectResearchExecutionFailure(
 
 export function startAgentExecutionWorker() {
   const globalWorker = globalThis as WorkerGlobal;
-  if (globalWorker.__lumenAgentExecutionWorker?.isRunning) {
+  if (globalWorker.__lumenAgentExecutionWorkers?.some((worker) => worker.isRunning)) {
     return { started: false, workerId: "existing-process-worker" };
   }
 
-  const store = new PrismaAgentExecutionStore(prisma, {
-    onExecutionFailed: ({ checkpoint, code, message }) =>
-      projectResearchExecutionFailure(checkpoint, code, message),
-  });
   const retryPolicy = new AgentExecutionRetryPolicy({
     maxAttempts: 3,
     baseDelayMs: 1_000,
     maxDelayMs: 30_000,
   });
-  const runner = new AgentExecutionRunner({
-    store,
-    handler: createDurableAgentExecutionHandler(),
-    retryPolicy,
-    hooks: {
-      // Research run 的终态失败必须投影回 ResearchRun：execution 在 worker 内
-      // 重试耗尽时 API 层无法感知，否则 run 会永远停在 queued/researching。
-      onTerminalFailure: ({ execution, code, message }) =>
-        projectResearchExecutionFailure(execution.checkpoint, code, message),
-    },
-  });
   const workerId = `${hostname()}:${process.pid}:${randomUUID()}`;
-  const worker = new AgentExecutionWorker({
-    workerId,
-    store,
-    runner,
-    retryPolicy,
-    leaseMs: 30_000,
-    // 心跳同时承担取消感知：cancelOwned 清空租约后续约失败即中断运行。
-    // 2s 节奏让用户停止的延迟控制在秒级。
-    heartbeatMs: 2_000,
-    pollIntervalMs: 250,
-  });
-  globalWorker.__lumenAgentExecutionWorker = worker;
-  void worker.start().catch((error) => {
-    logger.error("Agent execution worker stopped unexpectedly", {
-      error: error instanceof Error ? error.message : String(error),
+  const workers = (["chat", "background"] as const).map((queue) => {
+    const store = new PrismaAgentExecutionStore(prisma, {
+      queue,
+      autoResumeLegacyApprovals: true,
+      onExecutionFailed: ({ checkpoint, code, message }) =>
+        projectResearchExecutionFailure(checkpoint, code, message),
+    });
+    const runner = new AgentExecutionRunner({
+      store,
+      handler: createDurableAgentExecutionHandler({
+        recoverTool: async (context, id) => (await import("./recover-legacy-tool")).recoverLegacyTool(context, id),
+      }),
+      retryPolicy,
+      hooks: {
+        onTerminalFailure: ({ execution, code, message }) =>
+          projectResearchExecutionFailure(execution.checkpoint, code, message),
+      },
+    });
+    return new AgentExecutionWorker({
+      workerId: `${workerId}:${queue}`, store, runner, retryPolicy,
+      leaseMs: 30_000, heartbeatMs: 2_000,
+      pollIntervalMs: queue === "chat" ? 250 : 1_000,
+      maintenanceIntervalMs: 5_000,
     });
   });
+  globalWorker.__lumenAgentExecutionWorkers = workers;
+  for (const worker of workers) {
+    void worker.start().catch((error) => {
+      logger.error("Agent execution worker stopped unexpectedly", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   return { started: true, workerId };
 }
 

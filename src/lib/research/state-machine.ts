@@ -3,7 +3,7 @@ import type { ResearchRunStatus, ResearchStageKey } from "./contracts";
 const TERMINAL = new Set<ResearchRunStatus>(["completed", "cancelled", "failed"]);
 
 const ALLOWED: Record<ResearchRunStatus, readonly ResearchRunStatus[]> = {
-  planning: ["awaiting_confirmation", "cancelled", "failed"],
+  planning: ["queued", "cancelled", "failed"],
   awaiting_confirmation: ["queued", "planning", "cancelled", "failed"],
   queued: ["researching", "cancelled", "failed"],
   researching: ["evaluating", "awaiting_scope_confirmation", "cancelled", "failed"],

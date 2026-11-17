@@ -365,6 +365,9 @@ export async function reviseResearchPlan(input: {
 export async function confirmResearchRunPlan(userId: string, runId: string) {
   const run = await prisma.researchRun.findFirst({ where: { id: runId, userId }, include: { questions: true } });
   if (!run) throw new ResearchServiceError("NOT_FOUND", "研究运行不存在或无权访问");
+  if (run.status !== "awaiting_confirmation") {
+    throw new ResearchServiceError("INVALID_STATE", "当前研究会自动开始，无需确认计划");
+  }
   assertResearchRunTransition(run.status as ResearchRunStatus, "queued");
   const tasks = run.questions.map((question) => ({
     runId: run.id,
@@ -401,29 +404,18 @@ export async function appendResearchDirective(input: { userId: string; runId: st
     throw new ResearchServiceError("INVALID_STATE", "终态运行不能追加执行指令，请创建 Follow-up Run");
   }
   const impact = classifyResearchDirective(input.text);
-  const needsConfirmation = impact !== "normal";
-  const directive = await prisma.researchUserDirective.create({
+  // A directive can change the focus, but cannot acquire a higher budget.
+  return prisma.researchUserDirective.create({
     data: {
       workspaceId: run.workspaceId,
       runId: run.id,
       userId: input.userId,
       text: input.text.trim(),
       impact,
-      status: needsConfirmation ? "needs_confirmation" : "applied",
-      appliedAt: needsConfirmation ? null : new Date(),
+      status: "applied",
+      appliedAt: new Date(),
     },
   });
-  if (needsConfirmation) {
-    if (run.status !== "awaiting_scope_confirmation") {
-      try {
-        assertResearchRunTransition(run.status as ResearchRunStatus, "awaiting_scope_confirmation");
-      } catch (error) {
-        throw new ResearchServiceError("INVALID_STATE", error instanceof Error ? error.message : "当前阶段不能暂停等待范围确认");
-      }
-    }
-    await prisma.researchRun.update({ where: { id: run.id }, data: { status: "awaiting_scope_confirmation" } });
-  }
-  return directive;
 }
 
 export async function confirmResearchScope(input: {

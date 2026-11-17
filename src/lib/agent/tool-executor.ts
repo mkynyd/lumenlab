@@ -15,6 +15,7 @@ export interface ToolExecutionContext {
   userId: string;
   conversationId: string;
   projectId?: string;
+  agentExecutionId?: string;
   selectedFileIds?: string[];
   signal?: AbortSignal;
 }

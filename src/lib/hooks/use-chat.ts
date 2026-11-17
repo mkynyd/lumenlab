@@ -2,7 +2,7 @@
 
 import { chatModelForPreference, chatModelLabel, DEFAULT_CHAT_MODELS } from "@/lib/chat/model-catalog";
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   readSSEStream,
   SSEExecutionError,
@@ -16,7 +16,7 @@ import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import { attachmentKindFromMimeType } from "@/lib/files/attachment-kind";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 import { queryKeys } from "@/lib/query-keys";
-import type { AgentEvent, ApprovalScope } from "@/lib/agent/types";
+import type { ArtifactDownload } from "@/lib/artifacts/download";
 import type { AgentSource } from "@/lib/agent/sources";
 import { CHAT_ATTACHMENT_EVENTS_HEADER } from "@/lib/agent/event-stream";
 import type { AgentPlan } from "@/lib/agent/plan";
@@ -26,17 +26,6 @@ import {
   reduceAssistantProcess,
   type AssistantProcessTrace,
 } from "@/lib/agent/assistant-process";
-
-export interface AgentTimelineEntry {
-  executionId: string;
-  /** Latest event for this execution, replaces previous state. */
-  latestEvent: AgentEvent;
-  /** Resolved on approve; only present once user has acted. */
-  approvedScope?: ApprovalScope;
-  /** Stored when awaiting approval so the UI can call /api/agent/approve. */
-  approvalToken?: string;
-  approvalExpiresAt?: number;
-}
 
 export interface AgentSessionState {
   plan?: AgentPlan;
@@ -73,6 +62,8 @@ export interface ChatMessage {
   toolsUsed?: number;
   /** Persisted, replayable public process state for this assistant response. */
   process?: AssistantProcessTrace;
+  artifactDownloads?: ArtifactDownload[];
+  backgroundExecutionId?: string;
   /**
    * 任务 08：附件。上传期间是本地乐观 DTO（图片/视频为 blob 预览，
    * status: "uploading"），发送成功后替换为服务端持久化附件的同源鉴权 URL。
@@ -129,69 +120,12 @@ export async function readChatError(response: Response) {
   }
 }
 
-export type ToolApprovalResponse =
-  | {
-      ok: true;
-      status: "succeeded";
-      scope: ApprovalScope;
-      executionId: string;
-      resultSummary: Record<string, unknown>;
-      /** 非 durable 父执行需要客户端续跑一次,模型才会继续回答。 */
-      shouldContinue?: boolean;
-    }
-  | {
-      ok: false;
-      status: "failed";
-      scope: ApprovalScope;
-      executionId: string;
-      error: { code: string; message: string };
-      shouldContinue?: boolean;
-    };
-
-export async function requestToolApproval(input: {
-  executionId: string;
-  token: string;
-  scope: ApprovalScope;
-}): Promise<ToolApprovalResponse> {
-  const response = await fetch("/api/agent/approve", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) {
-    throw new Error(await readChatError(response));
-  }
-  const payload = (await response.json()) as Partial<ToolApprovalResponse>;
-  if (
-    (payload.status !== "succeeded" && payload.status !== "failed") ||
-    payload.executionId !== input.executionId
-  ) {
-    throw new Error("审批响应格式无效");
-  }
-  return payload as ToolApprovalResponse;
-}
-
-export function toolApprovalEvent(result: ToolApprovalResponse): AgentEvent {
-  return result.status === "succeeded"
-    ? {
-        type: "tool_completed",
-        executionId: result.executionId,
-        resultSummary: result.resultSummary,
-      }
-    : {
-        type: "tool_failed",
-        executionId: result.executionId,
-        errorCode: result.error.code,
-        error: result.error.message,
-      };
-}
-
 export function useChat(options: UseChatOptions = {}) {
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>(
     options.initialMessages || []
   );
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(() => hasStreamingMessage(options.initialMessages ?? []));
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>(
     options.initialConversationId
@@ -203,22 +137,35 @@ export function useChat(options: UseChatOptions = {}) {
     ratio: number;
   } | null>(null);
   const [model, setModel] = useState(() => chatModelForPreference(options.model));
-  const [availableModels, setAvailableModels] = useState<readonly string[] | null>(null);
-  const [modelUnavailableReasons, setModelUnavailableReasons] = useState<Record<string, string>>({});
-  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const catalog = useQuery({
+    queryKey: queryKeys.chatModels,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const response = await fetch("/api/chat/models", { cache: "no-store", signal });
+      if (!response.ok) throw new Error(`model catalog ${response.status}`);
+      const data = await response.json() as { models?: unknown; unavailableReasons?: Record<string, string> };
+      if (!Array.isArray(data.models) || !data.models.every((id) => typeof id === "string")) {
+        throw new Error("invalid model catalog");
+      }
+      return { models: data.models as string[], unavailableReasons: data.unavailableReasons ?? {} };
+    },
+  });
+  // Core model choices can render immediately. The chat POST still checks the
+  // authenticated user's effective provider access before accepting a message.
+  const availableModels: readonly string[] = catalog.data?.models ?? DEFAULT_CHAT_MODELS;
   const modelBlockedReason = options.modelLoading
     ? "正在加载项目模型设置，请稍候"
-    : catalogError ?? (availableModels === null
-      ? "正在检查模型可用性，请稍候"
-      : availableModels.includes(model) ? undefined
-        : modelUnavailableReasons[model] ?? `${chatModelLabel(model)} 当前不可用，请选择其他可用模型`);
+    : availableModels.includes(model)
+      ? undefined
+      : catalog.isPending
+        ? "正在检查所选模型，请稍候"
+        : catalog.data?.unavailableReasons[model] ?? `${chatModelLabel(model)} 当前不可用，请选择其他可用模型`;
   const [thinkingEnabled, setThinkingEnabledState] = useState(true);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
     options.reasoningEffort ?? "max"
   );
-  const [agentTimeline, setAgentTimeline] = useState<
-    Record<string, AgentTimelineEntry>
-  >({});
   const [agentSession, setAgentSession] = useState<AgentSessionState>({
     suggestions: [],
   });
@@ -235,31 +182,6 @@ export function useChat(options: UseChatOptions = {}) {
   const releasePreviewUrls = useCallback(() => {
     for (const url of previewUrlsRef.current) URL.revokeObjectURL(url);
     previewUrlsRef.current.clear();
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetch("/api/chat/models", {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`model catalog ${response.status}`);
-        const payload = await response.json() as { models?: unknown; unavailableReasons?: Record<string, string> };
-        if (!Array.isArray(payload.models) || !payload.models.every((model) => typeof model === "string")) {
-          throw new Error("invalid model catalog");
-        }
-        const nextModels = payload.models as string[];
-        setAvailableModels(nextModels);
-        setModelUnavailableReasons(payload.unavailableReasons ?? {});
-      })
-      .catch((catalogError: unknown) => {
-        if (controller.signal.aborted) return;
-        console.warn("Failed to load chat model catalog", catalogError);
-        setAvailableModels(DEFAULT_CHAT_MODELS);
-        setCatalogError("无法检查模型可用性，请刷新后重试；当前选择已保留");
-      });
-    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -306,7 +228,6 @@ export function useChat(options: UseChatOptions = {}) {
           { method: "POST", signal: AbortSignal.timeout(3_000) }
         ).catch(() => {});
       }
-      setAgentTimeline({});
       setAgentSession({ suggestions: [] });
       const streamSession = streamSessionRef.current + 1;
       streamSessionRef.current = streamSession;
@@ -673,38 +594,7 @@ export function useChat(options: UseChatOptions = {}) {
                 });
                 return;
               }
-              if (!("executionId" in event)) {
-                // Skill/web/model lifecycle is informational; timeline only tracks executions.
-                return;
-              }
-              const executionId = event.executionId;
-              setAgentTimeline((prev) => {
-                const existing = prev[executionId];
-                if (event.type === "approval_required") {
-                  return {
-                    ...prev,
-                    [executionId]: {
-                      executionId,
-                      latestEvent: event,
-                      approvalToken: event.token,
-                      approvalExpiresAt: event.expiresAt,
-                    },
-                  };
-                }
-                return {
-                  ...prev,
-                  [executionId]: {
-                    executionId,
-                    latestEvent: event,
-                    ...(existing?.approvalToken
-                      ? { approvalToken: existing.approvalToken }
-                      : {}),
-                    ...(existing?.approvalExpiresAt
-                      ? { approvalExpiresAt: existing.approvalExpiresAt }
-                      : {}),
-                  },
-                };
-              });
+
             },
           }
         );
@@ -817,8 +707,17 @@ export function useChat(options: UseChatOptions = {}) {
             setError(
               err instanceof Error ? err.message : "An unexpected error occurred"
             );
-            // Remove the streaming placeholder on foreground error.
-            setMessages((prev) => prev.filter((m) => m.id !== streamingId));
+            // A renderer may have finished even if the final model summary failed.
+            setMessages((prev) => prev.flatMap((message) => {
+              if (message.id !== streamingId) return [message];
+              if (!message.process?.tools.some((tool) => tool.download)) return [];
+              return [{
+                ...message,
+                isStreaming: false,
+                streamingSource: undefined,
+                process: completeAssistantProcess(message.process, "failed"),
+              }];
+            }));
             return false;
           }
         }
@@ -861,10 +760,52 @@ export function useChat(options: UseChatOptions = {}) {
     [sendMutation]
   );
 
+  const backgroundId = messages.find((message) => message.isStreaming && message.backgroundExecutionId)?.backgroundExecutionId;
+  useEffect(() => {
+    // Project conversations already have a recovery poll. The standalone chat
+    // checks the light status DTO and fetches the transcript once at completion.
+    if (!backgroundId || !conversationId || options.projectId) return;
+    const executionPath = `/api/agent/executions/${encodeURIComponent(backgroundId)}?view=status`;
+    const detailPath = `/api/conversations/${encodeURIComponent(conversationId)}`;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function refresh() {
+      try {
+        const response = await fetch(executionPath, { signal: controller.signal });
+        if (response.ok) {
+          const { status } = await response.json() as { status: string };
+          if (["completed", "failed", "cancelled"].includes(status)) {
+            const detail = await fetch(detailPath, { signal: controller.signal });
+            if (detail.ok) {
+              const { conversation } = await detail.json() as { conversation: { messages: ChatMessage[] } };
+              if (!controller.signal.aborted) {
+                setMessages(conversation.messages);
+                setIsStreaming(false);
+              }
+              return;
+            }
+          }
+        } else if ([401, 404].includes(response.status)) {
+          if (!controller.signal.aborted) {
+            setIsStreaming(false);
+            setMessages((current) => current.map((message) => message.backgroundExecutionId === backgroundId
+              ? { ...message, isStreaming: false, backgroundExecutionId: undefined, streamingSource: undefined } : message));
+          }
+          return;
+        }
+      } catch {
+        // Reconnect on the next tick unless the user switched conversation.
+      }
+      if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 3_000);
+    }
+    void refresh();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [backgroundId, conversationId, options.projectId]);
+
   const abort = useCallback(() => {
     // durable 模式下仅断开本地流不会让模型停止：执行跑在后台 worker。
     // 先通知服务端取消（worker 心跳感知后软停止），再断开本地渲染。
-    const executionId = agentExecutionIdRef.current;
+    const executionId = agentExecutionIdRef.current ?? backgroundId;
     if (executionId) {
       agentExecutionIdRef.current = null;
       void fetch(
@@ -873,7 +814,7 @@ export function useChat(options: UseChatOptions = {}) {
       ).catch(() => {});
     }
     abortRef.current?.abort();
-  }, []);
+  }, [backgroundId]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -889,7 +830,6 @@ export function useChat(options: UseChatOptions = {}) {
     setContextBudget(null);
     setError(null);
     setIsStreaming(false);
-    setAgentTimeline({});
     setAgentSession({ suggestions: [] });
   }, [options.projectId, options.model]);
 
@@ -910,137 +850,10 @@ export function useChat(options: UseChatOptions = {}) {
       setContextBudget(null);
       setError(null);
       setIsStreaming(hasStreamingMessage(nextMessages));
-      setAgentTimeline({});
       setAgentSession({ suggestions: [] });
     },
     []
   );
-
-  const approveExecution = useCallback(
-    async (executionId: string, token: string, scope: ApprovalScope) => {
-      // Cards can be restored from persisted message.process or background
-      // replay without populating the foreground timeline. The server validates
-      // ownership, pending state, policy and token/durable-parent binding.
-      const streamSession = streamSessionRef.current;
-      let result: ToolApprovalResponse;
-      try {
-        result = await requestToolApproval({ executionId, token, scope });
-      } catch (approvalError) {
-        const message =
-          approvalError instanceof Error ? approvalError.message : "审批失败";
-        if (streamSessionRef.current === streamSession) setError(message);
-        throw approvalError;
-      }
-      if (streamSessionRef.current !== streamSession) return;
-      setError(null);
-      setAgentTimeline((prev) => {
-        const existing = prev[executionId];
-        if (!existing) return prev;
-        const latestEvent = toolApprovalEvent(result);
-        return {
-          ...prev,
-          [executionId]: {
-            ...existing,
-            latestEvent,
-            approvedScope: scope,
-            approvalToken: undefined,
-            approvalExpiresAt: undefined,
-          },
-        };
-      });
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.process?.tools.some((tool) => tool.executionId === executionId)
-            ? {
-                ...message,
-                process: reduceAssistantProcess(
-                  message.process,
-                  toolApprovalEvent(result)
-                ),
-              }
-            : message
-        )
-      );
-      // 非 durable 父执行:批准后原流已结束,自动续跑一次让模型基于
-      // 工具结果继续输出最终回答(durable 由服务端 worker 自动恢复)。
-      if (result.ok && result.shouldContinue) {
-        void sendMessage("继续完成刚才的任务。").catch(() => {});
-      }
-    },
-    [sendMessage]
-  );
-
-  const rejectExecution = useCallback(
-    async (executionId: string) => {
-      const streamSession = streamSessionRef.current;
-      const response = await fetch("/api/agent/reject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ executionId }),
-      });
-      if (streamSessionRef.current !== streamSession) return;
-      if (!response.ok) {
-        setError(`拒绝失败 (${response.status})`);
-        return;
-      }
-      const payload = (await response.json()) as {
-        ok?: boolean;
-        shouldContinue?: boolean;
-      };
-      if (streamSessionRef.current !== streamSession) return;
-      if (payload.ok && payload.shouldContinue) {
-        void sendMessage(
-          "继续完成刚才的任务，但不要执行刚才被拒绝的操作。"
-        ).catch(() => {});
-      }
-      setAgentTimeline((prev) => {
-        const existing = prev[executionId];
-        if (!existing) return prev;
-        return {
-          ...prev,
-          [executionId]: {
-            ...existing,
-            latestEvent: {
-              type: "approval_denied",
-              executionId,
-            },
-            approvalToken: undefined,
-            approvalExpiresAt: undefined,
-          },
-        };
-      });
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.process?.tools.some((tool) => tool.executionId === executionId)
-            ? {
-                ...message,
-                process: reduceAssistantProcess(message.process, {
-                  type: "approval_denied",
-                  executionId,
-                }),
-              }
-            : message
-        )
-      );
-    },
-    [sendMessage]
-  );
-
-  const automaticApprovalsRef = useRef(new Set<string>());
-  useEffect(() => {
-    // Upgrade pre-existing waiting tasks when their persisted cards are loaded.
-    // New policy decisions never wait here; the server still revalidates every
-    // historical execution before claiming it, and the set prevents double runs.
-    for (const message of messages) {
-      if (message.process?.status !== "running") continue;
-      for (const tool of message.process.tools) {
-        if (tool.status !== "awaiting_approval" || !tool.approval || automaticApprovalsRef.current.has(tool.executionId)) continue;
-        automaticApprovalsRef.current.add(tool.executionId);
-        const token = tool.approval.expiresAt > Date.now() ? tool.approval.token ?? "" : "";
-        void approveExecution(tool.executionId, token, "once").catch(() => {});
-      }
-    }
-  }, [messages, approveExecution]);
 
   return {
     messages,
@@ -1049,7 +862,7 @@ export function useChat(options: UseChatOptions = {}) {
     conversationId,
     usage,
     model,
-    availableModels: availableModels ?? [],
+    availableModels,
     modelBlockedReason,
     thinkingEnabled,
     reasoningEffort,
@@ -1061,10 +874,7 @@ export function useChat(options: UseChatOptions = {}) {
     clearError,
     newConversation,
     loadConversation,
-    agentTimeline,
     agentSession,
-    approveExecution,
-    rejectExecution,
     contextBudget,
   };
 }

@@ -11,7 +11,6 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import type { ApprovalScope } from "@/lib/agent/types";
 import type {
   AssistantProcessTool,
   AssistantProcessTrace,
@@ -24,12 +23,6 @@ interface AssistantProcessProps {
   reasoningContent?: string | null;
   isStreaming: boolean;
   hasResponse: boolean;
-  onApprove?: (
-    executionId: string,
-    token: string,
-    scope: ApprovalScope
-  ) => Promise<void> | void;
-  onDeny?: (executionId: string) => Promise<void> | void;
 }
 
 function hostOf(url?: string) {
@@ -205,7 +198,7 @@ export function AssistantProcess({
         )}
       </button>
 
-      <div className={cn("assistant-process-collapsible", !open && "is-collapsed")}>
+      {open && <div className="assistant-process-collapsible">
         <div>
           <div className="assistant-process-body">
             {hasReasoning && (
@@ -232,13 +225,7 @@ export function AssistantProcess({
             ))}
           </div>
         </div>
-      </div>
-      {trace?.tools.filter((tool) => tool.status === "completed" && tool.download).map((tool) => (
-        <a key={tool.executionId} href={tool.download!.url} download={tool.download!.filename}
-          className="inline-flex px-2 py-1 text-sm text-[var(--color-accent)] hover:underline">
-          下载 Word · {tool.download!.filename}
-        </a>
-      ))}
+      </div>}
     </section>
   );
 }

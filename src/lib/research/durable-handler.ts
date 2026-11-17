@@ -78,6 +78,9 @@ const VISUAL_SCAN_WINDOW = 6_000;
 const VISUAL_BODY_CONTEXT_CHARS = 4_000;
 /** checkpoint 中保留的 provider 降级代码上限。 */
 const MAX_RESEARCH_DEGRADATIONS = 12;
+// Old user-paused plans can still be resumed by their original controls.
+// They do not need to occupy a worker slot once a day forever.
+const LEGACY_RESEARCH_PAUSE_UNTIL = new Date("9999-12-31T00:00:00.000Z");
 /**
  * 阶段 prompt 内 Evidence 摘录的确定性上限（全文仍在 Evidence 行，经 evidenceId
  * + locator 可追溯）。历史重发消除后，终审阶段 prompt 的主要构成是 evidence
@@ -296,8 +299,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
     if (!run) return { kind: "failed", code: "research_run_not_found", message: "Research Run 不存在", retryable: false };
     if (run.status === "cancelled") return { kind: "cancelled", message: "Research Run 已取消", checkpoint };
     if (run.status === "awaiting_confirmation") {
-      await context.saveCheckpoint(checkpoint);
-      return { kind: "rescheduled", checkpoint, scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1_000) };
+      return { kind: "rescheduled", checkpoint, scheduledAt: LEGACY_RESEARCH_PAUSE_UNTIL };
     }
     if (run.status === "awaiting_scope_confirmation") {
       await appendPublicEvent(context, {
@@ -313,7 +315,7 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
         checkpoint,
         // The existing durable execution remains queued and is explicitly
         // resumed by the scope-confirmation API; this avoids a hot loop.
-        scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+        scheduledAt: LEGACY_RESEARCH_PAUSE_UNTIL,
       };
     }
 
@@ -386,6 +388,12 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       const activePlanVersion = run.activePlanVersion;
       const currentPlan = activePlanVersion?.plan as unknown as ResearchPlanSnapshot | undefined;
       if (!activePlanVersion || !currentPlan) return { kind: "failed", code: "research_plan_missing", message: "Research Plan 不存在", retryable: false };
+      if (run.status === "queued") {
+        // Plan and jobs were committed before a restart, but the checkpoint
+        // had yet to move forward. Do not call the planner twice.
+        state.stage = "researching";
+        return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
+      }
       const plannerResult = await runResearchModelStage<ResearchPlannerDecision>({
         role: "research.planner",
         userId: context.execution.userId,
@@ -398,9 +406,15 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
       recordResearchModelStage(state, plannerResult, { estimateRole: "research.planner" });
       const revisedPlan = applyResearchPlannerDecision(currentPlan, normalizeResearchPlannerDecision(plannerResult.value));
       const changed = JSON.stringify(revisedPlan) !== JSON.stringify(currentPlan);
-      let planVersionId = activePlanVersion.id;
-      if (changed) {
-        const result = await prisma.$transaction(async (tx) => {
+      const planVersionId = await prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const started = await tx.researchRun.updateMany({
+          where: { id: run.id, status: "planning" },
+          data: { status: "queued", startedAt: now },
+        });
+        if (started.count !== 1) return null;
+        let versionId = activePlanVersion.id;
+        if (changed) {
           const maxVersion = await tx.researchPlanVersion.aggregate({ where: { workspaceId: run.workspaceId }, _max: { version: true } });
           const nextVersion = await tx.researchPlanVersion.create({
             data: {
@@ -408,7 +422,8 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
               runId: run.id,
               version: (maxVersion._max.version ?? 0) + 1,
               plan: json(revisedPlan),
-              reason: "Planner 初始结构化规划",
+            reason: "Planner 初始结构化规划",
+            confirmedAt: now,
             },
           });
           for (const [index, question] of revisedPlan.researchQuestions.entries()) {
@@ -419,15 +434,28 @@ export function createDurableResearchExecutionHandler(options: { provider?: Rese
             });
           }
           await tx.researchRun.update({ where: { id: run.id }, data: { question: revisedPlan.researchGoal, planVersionId: nextVersion.id } });
-          return nextVersion;
+          versionId = nextVersion.id;
+        } else {
+          await tx.researchPlanVersion.update({ where: { id: versionId }, data: { confirmedAt: now } });
+        }
+        const questions = await tx.researchQuestion.findMany({
+          where: { runId: run.id, key: { in: revisedPlan.researchQuestions.map((question) => question.key) } },
         });
-        planVersionId = result.id;
-      }
+        await tx.researchTask.createMany({
+          data: questions.map((question) => ({
+            runId: run.id, questionId: question.id, kind: "researcher", priority: question.priority,
+            title: `研究：${question.title}`, instructions: question.question,
+            idempotencyKey: `${run.id}:${question.key}:research:0`,
+          })),
+          skipDuplicates: true,
+        });
+        return versionId;
+      });
+      if (!planVersionId) return { kind: "cancelled", message: "研究已停止", checkpoint };
       state.stage = "researching";
-      await transitionRun(run.id, "awaiting_confirmation");
       await context.saveCheckpoint(checkpointWithResearch(checkpoint, state));
-      await appendPublicEvent(context, { key: `research:plan:created:${run.id}:${planVersionId}`, kind: "plan_created", runId: run.id, message: "Planner 已生成结构化研究计划，等待确认", publicData: { planVersionId, questionCount: revisedPlan.researchQuestions.length, modelAttempted: plannerResult.attempted } });
-      return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state), scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1_000) };
+      await appendPublicEvent(context, { key: `research:plan:created:${run.id}:${planVersionId}`, kind: "plan_created", runId: run.id, message: "研究计划已生成，开始检索资料", publicData: { planVersionId, questionCount: revisedPlan.researchQuestions.length, modelAttempted: plannerResult.attempted } });
+      return { kind: "rescheduled", checkpoint: checkpointWithResearch(checkpoint, state) };
     }
 
     if (state.stage === "researching") {

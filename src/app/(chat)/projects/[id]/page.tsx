@@ -160,8 +160,6 @@ export default function ProjectDetailPage() {
     loadConversation,
     conversationId,
     agentSession,
-    approveExecution,
-    rejectExecution,
   } = useChat({
     initialConversationId: undefined,
     initialMessages: [],
@@ -803,8 +801,6 @@ export default function ProjectDetailPage() {
           <VirtualMessageList
             messages={messages}
             onSaveArtifact={saveArtifact}
-            onApproveTool={approveExecution}
-            onDenyTool={rejectExecution}
           />
         )}
 

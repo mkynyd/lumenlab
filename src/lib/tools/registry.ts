@@ -33,6 +33,8 @@ import {
   attachReferenceToArtifact,
   formatAttachedReferences,
 } from "./reference/manage";
+import { isArtifactDownloadFormat } from "@/lib/artifacts/download";
+import { publishArtifact } from "./artifact-export/publish";
 import { exportArtifactAsDocx } from "./artifact-export/docx";
 import { activateSkill, buildActivateSkillEnum } from "../agent/skill-activate-handler";
 import { parsePlanUpdate } from "../agent/plan";
@@ -136,6 +138,33 @@ const TOOLS: ToolMetadata[] = [
     allowedSkillIds: [],
     auditLevel: "verbose",
     requiredScopes: ["project.write"],
+  },
+  {
+    toolId: "artifact.publish",
+    name: "生成下载文件",
+    description: "根据用户要求直接交付一份完整的文件，并返回真实文件名与下载链接。每次调用发布一个文件。用 Markdown 写完整正文；Excel 用带表头的 GFM 表格（每表一个工作表，上一标题作为工作表名），PPT 用二级标题分主题、简短列表写每页正文。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", minLength: 1, maxLength: 150, description: "文件名，不含扩展名" },
+        format: { type: "string", enum: ["docx", "pdf", "markdown", "xlsx", "pptx"] },
+        content: { type: "string", minLength: 1, maxLength: 300000, description: "可直接使用的完整 Markdown 正文" },
+      },
+      required: ["title", "format", "content"],
+      additionalProperties: false,
+    },
+    outputSchema: { type: "object" },
+    riskLevel: "L2",
+    isReadOnly: false,
+    hasExternalSideEffect: false,
+    isReversible: true,
+    containsSensitiveData: false,
+    requiresNetwork: false,
+    estimatedCost: "free",
+    defaultApprovalMode: "auto",
+    allowedSkillIds: [],
+    auditLevel: "standard",
+    requiredScopes: ["artifact.write"],
   },
   {
     toolId: "artifact.save",
@@ -777,6 +806,14 @@ export function registerBuiltinTools(): void {
       String(args.projectId),
       String(args.fileId)
     );
+  });
+  registerToolHandler("artifact.publish", async (ctx, args) => {
+    if (!isArtifactDownloadFormat(args.format)) throw new Error("不支持的文件格式");
+    return publishArtifact(ctx, {
+      title: String(args.title ?? ""),
+      content: String(args.content ?? ""),
+      format: args.format,
+    });
   });
   registerToolHandler("artifact.save", async (ctx, args) => {
     return saveArtifact(ctx.userId, ctx.projectId, ctx.conversationId, undefined, {

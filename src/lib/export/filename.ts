@@ -1,10 +1,11 @@
 export function safeExportFilename(title: string, extension: string): string {
   const safe = title
     .normalize("NFKC")
-    .replace(/[\r\n"\\/<>:*?|]+/g, "-")
+    .replace(/[\p{Cc}"\\/<>:*?|]+/gu, "-")
     .replace(/^\.+/g, "")
     .replace(/\.+$/g, "")
     .trim()
-    .slice(0, 80);
-  return `${safe || "artifact"}.${extension}`;
+    .replace(/[\uD800-\uDFFF]/gu, "");
+  const base = Array.from(safe).slice(0, 80).join("");
+  return `${base || "artifact"}.${extension}`;
 }

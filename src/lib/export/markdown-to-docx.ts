@@ -250,7 +250,7 @@ function isPandocUnavailable(error: unknown): boolean {
  */
 export async function markdownToDocx(
   content: string,
-  options: { resolveImage?: ResolveImage } = {}
+  options: { resolveImage?: ResolveImage; editableTables?: boolean } = {}
 ): Promise<Buffer> {
   if (process.env.DOCX_EXPORT_ENGINE === "legacy") {
     return embedChineseDocxFont(await legacyMarkdownToDocx(content, options));

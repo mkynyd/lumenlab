@@ -79,6 +79,8 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
   constructor(
     private readonly client: PrismaClient = prisma,
     private readonly hooks: {
+      autoResumeLegacyApprovals?: boolean;
+      queue?: "chat" | "background";
       onExecutionFailed?: (input: {
         checkpoint: unknown;
         code: string;
@@ -403,6 +405,9 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
       const candidate = await this.client.agentExecution.findFirst({
         where: {
           status: "queued",
+          ...(this.hooks.queue ? {
+            conversation: { kind: this.hooks.queue === "chat" ? "chat" : { not: "chat" } },
+          } : {}),
           scheduledAt: { lte: input.now },
           ...(lostCandidates.length > 0
             ? { id: { notIn: lostCandidates } }
@@ -1072,6 +1077,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
     executionId: string;
     toolExecutionId: string;
     now: Date;
+    automatic?: boolean;
   }) {
     return this.client.$transaction(async (transaction) => {
       const execution = await transaction.agentExecution.findFirst({
@@ -1092,6 +1098,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           conversationId: execution.conversationId,
           status: {
             in: [
+              ...(input.automatic ? ["pending_approval"] : []),
               "approved",
               "succeeded",
               "failed",
@@ -1402,6 +1409,13 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         (item) => item.id === candidate.waitingToolExecutionId
       );
       if (!tool) continue;
+      if (tool.status === "pending_approval" && this.hooks.autoResumeLegacyApprovals) {
+        if (await this.enqueueAfterApproval({
+          executionId: candidate.id, toolExecutionId: tool.id, now: input.now, automatic: true,
+        })) reconciled += 1;
+        continue;
+      }
+
       if (
         tool.status === "pending_approval" &&
         tool.expiresAt &&

@@ -29,7 +29,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 - 通过 Skill Router 自动识别学习场景，在项目资料、论文、考试、代码和文档任务之间切换合适的 Skill。
 - 通过受控的 Agent 模式让模型以 Skill 绑定 + Tool 调用的方式完成多步任务，所有工具通过服务端 Policy Engine 校验后自动执行。
 - 上传课件、PDF、Office 文档、图片、代码和笔记后，系统自动解析、分块、索引，并在回答底部展示来源。
-- 把有长期价值的回答保存为 Artifact，并导出 Markdown、DOCX 或 PDF；可直接在聊天要求生成 Word，下载文件包含嵌入的 Noto 中文字体。
+- 直接在普通聊天或项目中生成 Word、PDF、Excel、PowerPoint 或 Markdown；文件出现在本轮回答末尾，刷新后仍可下载。Word 文件包含嵌入的 Noto 中文字体。
 
 ### 目标用户
 
@@ -69,7 +69,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### Deep Research
 
-- 入口是聊天式输入框：像普通聊天一样输入研究问题即可发起，可上传文件（自动归入关联项目并进入证据链）、选择研究领域/强度与指挥模型（含 Qwen3.8-Max）；发送后先生成研究计划，用户在计划审阅卡中确认后才进入执行。
+- 在聊天式输入框输入研究问题即可发起，可上传文件（自动归入关联项目并进入证据链）、选择研究领域、强度与指挥模型（含 Qwen3.8-Max）；发送后系统生成计划，并在所选预算内自动执行。
 - 研究运行按 Planner → Retrieval / Source Triage → Evaluator → Claim / Verifier → Report Architect / Writer / Auditor 的 durable 阶段执行，复用 AgentExecution 租约、checkpoint 与事件回放，报告冻结为不可变快照。
 - 每个 Run 默认加载 `deep-research-core`，并按 Research Brief 选择 `literature-review` 或 `paper-reader` 的相关方法论章节。它们只作为低优先级的 compiled methodology 注入 structured prompt；Research 保持 `skillOff: true`、不向 ToolRunner 传 `skillId`，不会改变工具、联网、scope、风险、审批、预算或 Evidence 边界。Run 创建时锁定 Skill version/content hash，ReportSnapshot 仅记录可审计元数据。
 - 检索分三条并列通道：Web（web.search/web.fetch）、学术（Sciverse 主通道，OpenAlex/Crossref/Semantic Scholar/PubMed 为回退，arXiv 为专项来源）、项目资料（project_rag/project_files）；评估发现证据缺口时，沿核心论文的引用关系（sciverse.paper_relations）做有界的 Citation Graph 扩展；学术检索支持 catalog-aware 高级筛选，图表视觉证据按需在硬预算内启用（sciverse.resource + research.visual_evaluator）。
@@ -141,7 +141,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 调试事件（如 `profile_changed`、`tool_loop_stop_reason`）仅在 `AGENT_DEBUG_EVENTS=1` 时发送，不默认入库。
 
-前端把工具开始、完成和失败事件折叠到聊天过程区，Word 导出完成后展示真实下载入口。历史等待任务在加载对话时自动恢复，兼容接口重新校验权限、参数与归属。
+前端把工具开始、完成和失败事件折叠到聊天过程区。文件渲染完成后显示在本轮答案末尾；后台自动处理仍可继续的旧等待任务，并重新校验权限、参数与归属。
 
 来源统一在助手消息底部 UI 展示，模型正文不插引用。Agent Orchestrator 路径的 `web.fetch`、`project_files.read`、`project_rag.search`、`web.search`、`arxiv.read` 等结果，以及旧版 RAG 路径检索到的项目资料，都会聚合为 `Message.sources` 持久化并去重显示。
 
@@ -526,7 +526,7 @@ npx tsx --env-file=.env scripts/seed-dev-access.ts
 1. 普通 Agent 的 Skill Router 会在 bundled catalog 中选择合适能力；Deep Research 单独编译研究方法论。用户仍可手动切换或关闭普通 Skill。
 2. 模型需要调用 Tool 时，Agent 事件流会把工具调用以时间线方式展示在对话中。
 3. 所有 Tool 在服务端校验注册信息、scope、Skill 允许范围、资源归属和参数，通过后自动执行；显式禁用的操作会被阻止。
-4. 工具结果会交回模型继续生成。历史等待任务在加载对话时自动恢复，Word 下载入口随消息保存。
+4. 工具结果会交回模型继续生成。后台自动处理仍可继续的旧等待任务，生成的文件随原消息保存。
 
 ### 保存成果
 

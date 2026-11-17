@@ -799,8 +799,8 @@ describe("durable Agent runtime bridge", () => {
     expect(JSON.stringify(captured.value?.durable?.continuationMessages)).toContain(
       "artifact-1"
     );
-    expect(JSON.stringify(captured.value?.durable?.continuationMessages)).toContain(
-      "provider-call-1"
+    expect(JSON.stringify(captured.value?.durable?.continuationMessages)).not.toContain(
+      "tool_use"
     );
     expect(captured.value?.durable?.completedToolCalls).toEqual([
       { toolId: "artifact.save", arguments: { title: "笔记" } },

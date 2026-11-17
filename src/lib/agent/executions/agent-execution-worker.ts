@@ -71,6 +71,9 @@ export class AgentExecutionWorker {
   private loopPromise: Promise<void> | null = null;
   private idleController: AbortController | null = null;
   private stopRequested = false;
+  private readonly maintenanceIntervalMs: number;
+  private lastReconcileAt = -Infinity;
+  private lastLeaseRecoveryAt = -Infinity;
 
   constructor(input: {
     workerId: string;
@@ -80,6 +83,7 @@ export class AgentExecutionWorker {
     leaseMs: number;
     heartbeatMs: number;
     pollIntervalMs: number;
+    maintenanceIntervalMs?: number;
     now?: () => Date;
     sleep?: AgentExecutionWorkerSleep;
   }) {
@@ -99,6 +103,7 @@ export class AgentExecutionWorker {
     this.leaseMs = input.leaseMs;
     this.heartbeatMs = input.heartbeatMs;
     this.pollIntervalMs = input.pollIntervalMs;
+    this.maintenanceIntervalMs = input.maintenanceIntervalMs ?? 0;
     this.now = input.now ?? (() => new Date());
     this.sleep = input.sleep ?? defaultSleep;
   }
@@ -137,7 +142,11 @@ export class AgentExecutionWorker {
   }
 
   async drainOnce(): Promise<boolean> {
-    await this.store.reconcileWaitingApprovals({ now: this.now(), limit: 100 });
+    const now = this.now();
+    if (now.getTime() - this.lastReconcileAt >= this.maintenanceIntervalMs) {
+      await this.store.reconcileWaitingApprovals({ now, limit: 100 });
+      this.lastReconcileAt = now.getTime();
+    }
     const execution = await this.store.claimNext({
       workerId: this.workerId,
       now: this.now(),
@@ -150,8 +159,10 @@ export class AgentExecutionWorker {
   }
 
   private async recoverExpiredRuns(): Promise<void> {
+    const now = this.now();
+    if (now.getTime() - this.lastLeaseRecoveryAt < this.maintenanceIntervalMs) return;
     await this.store.recoverExpired({
-      now: this.now(),
+      now,
       maxAttempts: this.retryPolicy.maxAttempts,
       retryDelayMs: (attempt) => {
         const decision = this.retryPolicy.decide({
@@ -161,6 +172,7 @@ export class AgentExecutionWorker {
         return decision.action === "retry" ? decision.delayMs : 0;
       },
     });
+    this.lastLeaseRecoveryAt = now.getTime();
   }
 
   private async runLoop(): Promise<void> {

@@ -12,6 +12,7 @@ import { ContextBudgetWarning } from "@/components/chat/context-budget-warning";
 import { AlertCircle } from "lucide-react";
 import type { AgentSource } from "@/lib/agent/sources";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
+import type { ArtifactDownload } from "@/lib/artifacts/download";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
 import type { SkillSelectorValue } from "@/components/chat/skill-selector";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,8 @@ interface ChatAreaProps {
     cacheMissTokens?: number | null;
     sources?: AgentSource[] | null;
     process?: AssistantProcessTrace;
+    artifactDownloads?: ArtifactDownload[];
+    backgroundExecutionId?: string;
     attachments?: ChatAttachmentDto[];
   }>;
 }
@@ -54,8 +57,6 @@ export function ChatArea({
     abort,
     clearError,
     agentSession,
-    approveExecution,
-    rejectExecution,
     contextBudget,
     newConversation,
   } = useChat({
@@ -64,6 +65,7 @@ export function ChatArea({
     initialMessages: initialMessages?.map((m) => ({
       ...m,
       role: m.role as "user" | "assistant" | "system",
+      ...(m.backgroundExecutionId ? { isStreaming: true, streamingSource: "background" as const } : {}),
     })),
   });
   const [inputValue, setInputValue] = useState("");
@@ -190,8 +192,6 @@ export function ChatArea({
         <VirtualMessageList
           messages={messages}
           onSkillFollowUp={handleSkillFollowUp}
-          onApproveTool={approveExecution}
-          onDenyTool={rejectExecution}
         />
       )}
 

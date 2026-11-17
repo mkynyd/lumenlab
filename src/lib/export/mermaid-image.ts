@@ -26,6 +26,7 @@ export async function renderMermaidPng(code: string): Promise<Buffer> {
   });
   try {
     const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+    await page.route("**/*", (route) => route.abort("blockedbyclient"));
     await page.setContent('<main id="diagram" style="padding:24px;background:#fff"></main>');
     await page.addScriptTag({ path: mermaidScript });
     const svg = await page.evaluate(async (definition) => {

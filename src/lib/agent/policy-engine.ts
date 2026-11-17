@@ -184,10 +184,11 @@ export async function evaluatePolicy(
     );
   }
 
-  // 4. Skill allowlist
+  // 4. Skill allowlist. Publishing is an app-level operation scoped to the
+  // current conversation; account scopes and explicit blocks still apply.
   // skill.activate 是全局 Skill 切换能力，runtime 始终将其暴露给模型，
   // 不应被单个 Skill 的 allowedTools 限制（否则模型按系统提示切换 Skill 时会被拒绝）。
-  if (policySkill && !isRuntimeMetaTool(tool.toolId)) {
+  if (policySkill && !isRuntimeMetaTool(tool.toolId) && tool.toolId !== "artifact.publish") {
     if (!policySkill.allowedTools.includes(tool.toolId)) {
       return denyDecision(
         tool,
