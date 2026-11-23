@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
+import { IntelligentUIAuthoring } from "@/lib/chat/intelligent-ui/authoring";
 import {
   normalizeResponsesStream,
   ResponsesStreamAccumulator,
@@ -35,6 +36,16 @@ function completedEvent(usage?: ResponsesUsage): ResponsesStreamEvent {
 }
 
 describe("ResponsesStreamAccumulator text channels", () => {
+  it("forwards a complete UI group when its own line ends, before more output arrives", () => {
+    const acc = new ResponsesStreamAccumulator();
+    const parser = new IntelligentUIAuthoring();
+    const push = (delta: string) => parser.push(textOf(acc.push({ type: "response.output_text.delta", delta })));
+    expect(push("独立正文。\n").text).toBe("独立正文。\n");
+    const group = { id: "sample", nodes: [{ id: "value", type: "text", props: { text: "分组内容" } }] };
+    expect(push(`:::lumen-ui v1\n${JSON.stringify(group)}\n`).groups).toEqual([group]);
+    expect(parser.snapshot("message")).toBeNull();
+  });
+
   it("fills done text independently for multiple output items and content parts", () => {
     const acc = new ResponsesStreamAccumulator();
     const events: NormalizedResponsesEvent[] = [];

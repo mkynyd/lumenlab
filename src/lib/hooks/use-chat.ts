@@ -12,6 +12,7 @@ import {
   buildChatRequestBody,
 } from "@/lib/chat-request";
 import { ChatUIStream } from "@/lib/chat/intelligent-ui/client-state";
+import { preloadSurface } from "@/components/chat/intelligent-ui/loaders";
 import type { UIEvent } from "@/lib/chat/intelligent-ui/events";
 import type { FileAttachment } from "@/lib/chat/router";
 import type { UISurface } from "@/lib/chat/intelligent-ui/catalog";
@@ -516,6 +517,7 @@ export function useChat(options: UseChatOptions = {}) {
           {
             onMessageAttachments: updatePersistedAttachments,
             onIntelligentUI: handleUI,
+            onIntelligentUIAppend: preloadSurface,
             onDiscardUIPreview: () => intelligentUIStream.discard(streamingId),
             onEventId: (sequence) => {
               lastEventSequence = Math.max(lastEventSequence, sequence);
@@ -828,6 +830,7 @@ export function useChat(options: UseChatOptions = {}) {
         const result = await readSSEStream(response.body.getReader(), () => {}, {
           onEventId: (id) => { sequence = Math.max(sequence, id); },
           onDiscardUIPreview: () => intelligentUIStream.discard(messageId),
+          onIntelligentUIAppend: preloadSurface,
           onIntelligentUI: (event) => {
             if (!active() || event.messageId !== backgroundMessageId) return;
             if (event.kind === "commit") {

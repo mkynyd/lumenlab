@@ -152,7 +152,7 @@ function resolveToolCall(
  * This is intentionally aggressive: complete blocks, malformed fragments,
  * nested tags, and standalone tags are all removed.
  */
-export function sanitizeModelText(text: string): string {
+export function sanitizeModelText(text: string, options?: { preserveTrailingWhitespace?: boolean }): string {
   if (!text) return text;
 
   let cleaned = text;
@@ -219,7 +219,7 @@ export function sanitizeModelText(text: string): string {
   // 5. Collapse excessive whitespace left behind.
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
 
-  return cleaned.trim();
+  return options?.preserveTrailingWhitespace ? cleaned.trimStart() : cleaned.trim();
 }
 
 /**

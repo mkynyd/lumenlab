@@ -24,6 +24,7 @@ describe("sanitizeAuditPayload", () => {
           model: "deepseek-v4-pro",
           totalDurationMs: 100,
           firstTokenMs: 20,
+          firstIntelligentUIPreviewMs: 47.5,
           approvalWaitRatio: null,
           approvalsRequested: 0,
           approvalExecutionIds: ["execution-1"],
@@ -42,6 +43,7 @@ describe("sanitizeAuditPayload", () => {
     ).toEqual(
       expect.objectContaining({
         runId: "run-1",
+        firstIntelligentUIPreviewMs: 47.5,
         approvalExecutionIds: ["execution-1"],
       })
     );

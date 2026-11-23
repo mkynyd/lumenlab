@@ -16,6 +16,7 @@ describe("agent run metrics store", () => {
         model: "deepseek-v4-pro",
         totalDurationMs: 200,
         firstTokenMs: 50,
+        firstIntelligentUIPreviewMs: 76.25,
         approvalWaitRatio: null,
         approvalsRequested: 0,
         approvalExecutionIds: [],
@@ -32,7 +33,11 @@ describe("agent run metrics store", () => {
     });
 
     expect(run).not.toHaveProperty("prompt");
-    expect(run).toMatchObject({ status: "completed", createdAt: "2026-07-19T00:00:00.000Z" });
+    expect(run).toMatchObject({
+      status: "completed",
+      createdAt: "2026-07-19T00:00:00.000Z",
+      firstIntelligentUIPreviewMs: 76.25,
+    });
     expect(summarizeAgentRunMetrics([run!])).toMatchObject({
       runCount: 1,
       successRate: 1,

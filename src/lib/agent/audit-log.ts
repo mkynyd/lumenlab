@@ -95,6 +95,7 @@ export async function recordAuditEvent(event: AgentAuditPayload): Promise<void> 
 function sanitizeRunMetric(payload: Record<string, unknown>): Record<string, unknown> {
   const number = (key: string) => nonNegativeNumber(payload[key]);
   const tool = asRecord(payload.tool);
+  const firstUiPreview = payload.firstIntelligentUIPreviewMs;
   return {
     runId: stringValue(payload.runId),
     status: stringValue(payload.status),
@@ -103,6 +104,9 @@ function sanitizeRunMetric(payload: Record<string, unknown>): Record<string, unk
     model: stringValue(payload.model),
     totalDurationMs: number("totalDurationMs"),
     firstTokenMs: payload.firstTokenMs === null ? null : number("firstTokenMs"),
+    ...(typeof firstUiPreview === "number" && Number.isFinite(firstUiPreview) && firstUiPreview >= 0
+      ? { firstIntelligentUIPreviewMs: firstUiPreview }
+      : {}),
     approvalWaitRatio:
       payload.approvalWaitRatio === null ? null : unitNumber(payload.approvalWaitRatio),
     approvalsRequested: number("approvalsRequested"),

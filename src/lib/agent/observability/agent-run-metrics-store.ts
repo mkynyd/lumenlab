@@ -61,6 +61,9 @@ export function readAgentRunMetricRow(row: AgentRunMetricRow): AgentRunMetricVie
     model: input.model,
     totalDurationMs: input.totalDurationMs,
     firstTokenMs: input.firstTokenMs,
+    ...(isNonNegativeNumber(input.firstIntelligentUIPreviewMs)
+      ? { firstIntelligentUIPreviewMs: input.firstIntelligentUIPreviewMs }
+      : {}),
     approvalWaitRatio: input.approvalWaitRatio,
     approvalsRequested: input.approvalsRequested,
     approvalExecutionIds: input.approvalExecutionIds,

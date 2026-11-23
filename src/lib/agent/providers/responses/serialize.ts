@@ -521,7 +521,9 @@ export class ResponsesStreamAccumulator {
     state: TextChannelState,
     out: NormalizedResponsesEvent[]
   ) {
-    const cleaned = sanitizeModelText(state.raw);
+    // The authoring parser needs a line terminator as soon as it arrives.
+    // The runtime still trims the final reply and its visible Markdown stream.
+    const cleaned = sanitizeModelText(state.raw, { preserveTrailingWhitespace: kind === "text" });
     const slice = cleaned.slice(state.cleanedStreamed.length);
     state.cleanedStreamed = cleaned;
     if (!slice) return;

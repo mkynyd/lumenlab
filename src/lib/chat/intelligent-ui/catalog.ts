@@ -7,6 +7,7 @@ const MAX_GROUP_BYTES = 14 * 1024;
 const MAX_GROUPS = 8;
 const MAX_NODES = 64;
 const MAX_NODE_DEPTH = 6;
+const MAX_TABLE_COLUMNS = 6;
 
 const identifier = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,39}$/).refine(
   (value) => value !== "constructor" && value !== "prototype",
@@ -88,8 +89,8 @@ const sequence = z.strictObject({
 
 const dataSource = z.enum(["demo", "project-files"]);
 const table = z.strictObject({
-  label, source: dataSource, columns: z.array(label).min(1).max(6),
-  rows: z.array(z.array(expression).min(1).max(6)).max(30),
+  label, source: dataSource, columns: z.array(label).min(1).max(MAX_TABLE_COLUMNS),
+  rows: z.array(z.array(expression).min(1).max(MAX_TABLE_COLUMNS)).max(30),
 }).refine(({ columns, rows }) => rows.every((row) => row.length === columns.length));
 const chart = z.strictObject({
   label, unit: label, source: dataSource, labels: z.array(label).min(1).max(24),
@@ -108,9 +109,9 @@ export const UI_CATALOG = {
   text: component(z.strictObject({ text: z.union([z.string().trim().min(1).max(1200), expression]) }), '{text:文字或 E} 简单 Markdown，链接留在正文'),
   value: component(z.strictObject({ label, value: expression, unit: label.optional(), digits: z.number().int().min(0).max(6).optional() }), '{label,value:E,unit?,digits?}'),
   list: component(z.strictObject({ items: z.array(expression).max(24), ordered: z.boolean().optional() }), '{items:E[],ordered?}'),
-  sequence: component(sequence, '{label,bind,frames:[{segments:[{label,span,detail?}],note?}]}。流程中的分段图，bind 用初值 0、最小值 0、最大值为帧数减 1、步长 1 的 number。自带前后切换和当前分段，不另加按钮或列表'),
-  steps: component(z.strictObject({ items: z.array(label).min(1).max(20), current: expression.optional() }), '{items:文字[],current?:E}，从 0 开始'),
-  table: component(table, '{label,source:"demo",columns:文字[],rows:E[][]}'),
+  sequence: component(sequence, '{label,bind,frames:[{segments:[{label,span,detail?}],note?}]}。仅用于按比例展示区间拆分或分配。必须在 state 声明绑定的 number，初值和最小值为 0，最大值为帧数减 1，步长为 1。自带前后切换和分段明细'),
+  steps: component(z.strictObject({ items: z.array(label).min(1).max(20), current: expression.optional() }), '{items:文字[],current?:E}。普通算法和操作步骤用 steps，current 从 0 开始，可与滑杆共用索引'),
+  table: component(table, `{label,source:"demo",columns:文字[],rows:E[][]}。最多 ${MAX_TABLE_COLUMNS} 列，每行格数相同。数组等较长序列用行展示`),
   bar: component(chart, '{label,unit,source:"demo",labels:文字[],series:[{label,values:E[]}]}'),
   line: component(chart, '{label,unit,source:"demo",labels:文字[],series:[{label,values:E[]}]}'),
   input: component(z.strictObject({ label, bind: identifier }), '{label,bind}，绑定 number'),
