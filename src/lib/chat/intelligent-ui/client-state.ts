@@ -1,7 +1,11 @@
 import type { UISurface } from "./catalog";
+import type { UIEvent } from "./events";
 
 const loadCatalog = () => import("./catalog");
-import type { UIEvent } from "./events";
+
+export function preloadIntelligentUICatalog() {
+  void loadCatalog().catch(() => {});
+}
 
 type Commit = Extract<UIEvent, { kind: "commit" }>;
 interface Preview {
