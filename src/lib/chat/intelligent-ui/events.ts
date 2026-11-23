@@ -14,7 +14,7 @@ function integerInRange(value: unknown, min: number, max = Number.MAX_SAFE_INTEG
   return typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
 }
 
-export function readUIEvent(raw: unknown): UIEvent | null {
+export function readUIEvent(raw: unknown): UIEvent | (EventIdentity & { kind: "prepare" }) | null {
   // Validate the small SSE envelope without loading the UI catalog in the chat transport.
   if (raw === null || typeof raw !== "object" || Object.getPrototypeOf(raw) !== Object.prototype) return null;
   const { kind, messageId, attempt, round, from, revision, groups, digest } = raw as Record<string, unknown>;
@@ -23,7 +23,7 @@ export function readUIEvent(raw: unknown): UIEvent | null {
   const identity = { messageId, attempt, round };
   const keys = Object.keys(raw).length;
 
-  if (kind === "reset") return keys === 4 ? { ...identity, kind } : null;
+  if (kind === "prepare" || kind === "reset") return keys === 4 ? { ...identity, kind } : null;
   if (!integerInRange(revision, 1, 8)) return null;
   if (kind === "commit" && keys === 6 && typeof digest === "string" && /^[a-f0-9]{64}$/.test(digest)) {
     return { ...identity, kind, revision, digest };

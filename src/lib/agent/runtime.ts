@@ -1233,9 +1233,9 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
             ...(uiMessageId ? { intelligentUI: {
               surfaceId: uiMessageId,
               projectFiles: uiProjectFiles,
-              onPreview: (round, groups, reset) => {
+              onPreview: (round, groups, reset, prepare) => {
                 if (groups.length > 0) runMetrics.observeIntelligentUIPreview();
-                emitRuntimeEvent({ type: "ui_preview", round, groups, reset });
+                emitRuntimeEvent({ type: "ui_preview", round, groups, reset, prepare });
               },
             } } : {}),
           });

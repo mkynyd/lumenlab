@@ -55,7 +55,7 @@ export interface AgentLoopInput {
   intelligentUI?: {
     surfaceId: string;
     projectFiles?: ProjectFilesProjection;
-    onPreview(round: number, groups: UIGroup[], reset: boolean): void;
+    onPreview(round: number, groups: UIGroup[], reset: boolean, prepare?: boolean): void;
   };
 }
 
@@ -89,13 +89,16 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
   };
 
   let roundUI: AgentLoopResult["intelligentUI"];
+  let preparedUI = false;
   let projectFiles = input.intelligentUI?.projectFiles;
   const bufferModelRound = async (providerRound: ProviderRound, round: number) => {
     const ui = input.intelligentUI;
     const parser = ui ? new IntelligentUIAuthoring(projectFiles) : undefined;
     const buffered = await bufferRound(providerRound, input.signal, input.onModelEvent, parser,
       (update) => {
-        if (update.reset || update.groups.length > 0) ui?.onPreview(round, update.groups, update.reset);
+        const prepare = update.prepare && !preparedUI;
+        if (prepare || update.groups.length > 0) preparedUI = true;
+        if (prepare || update.reset || update.groups.length > 0) ui?.onPreview(round, update.groups, update.reset, prepare);
       });
     const surface = ui && parser?.snapshot(ui.surfaceId);
     roundUI = surface ? { surface, round } : undefined;

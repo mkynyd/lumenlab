@@ -946,6 +946,14 @@ export function createDurableAgentExecutionHandler(input: {
         attempt,
         round: event.round,
       };
+      if (event.prepare) {
+        await flushLiveSegment("assistant_text", true);
+        await context.appendEvent({
+          key: `ui:prepare:${attempt}`,
+          type: INTELLIGENT_UI_EVENT,
+          payload: { ...common, kind: "prepare" },
+        });
+      }
       if (event.reset && uiRevision > 0) {
         await context.appendEvent({
           key: `ui:reset:${attempt}:${event.round}`,

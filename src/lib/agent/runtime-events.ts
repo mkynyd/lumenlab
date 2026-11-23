@@ -14,6 +14,6 @@ export type AgentRuntimeEvent =
   | { type: "text_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
   | { type: "usage"; usage: AgentUsage }
-  | { type: "ui_preview"; round: number; groups: UIGroup[]; reset: boolean }
+  | { type: "ui_preview"; round: number; groups: UIGroup[]; reset: boolean; prepare?: boolean }
   | { type: "sources_updated"; sources: AgentSource[] }
   | { type: "completed"; conversationId: string; messageId: string };

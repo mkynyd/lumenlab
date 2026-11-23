@@ -35,7 +35,7 @@ export interface SSEAgentCallbacks {
   onEventId?: (sequence: number) => void;
   onMessageAttachments?: (attachments: ChatAttachmentDto[]) => void;
   onIntelligentUI?: (event: UIEvent) => void | Promise<void>;
-  onIntelligentUIAppend?: () => void;
+  onIntelligentUIPreload?: () => void;
   onDiscardUIPreview?: () => void;
 }
 
@@ -74,8 +74,8 @@ export async function readSSEStream(
 
   async function applyUI(data: string) {
     const event = readUIEvent(json(data));
-    if (event?.kind === "append") options.onIntelligentUIAppend?.();
-    if (event) await options.onIntelligentUI?.(event);
+    if (event?.kind === "prepare" || event?.kind === "append") options.onIntelligentUIPreload?.();
+    if (event && event.kind !== "prepare") await options.onIntelligentUI?.(event);
     return false;
   }
 

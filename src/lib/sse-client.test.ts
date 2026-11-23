@@ -118,20 +118,22 @@ describe("complete SSE frames", () => {
     expect(order).toEqual(["reset", "id:4"]);
   });
 
-  it("preloads the renderer only for a valid append envelope", async () => {
+  it("preloads for a valid hint or append and only applies actual updates", async () => {
+    const prepare = { kind: "prepare", messageId: "m1", attempt: 1, round: 0 };
     const valid = { kind: "append", messageId: "m1", attempt: 1, round: 0, from: 0, revision: 1, groups: ["{}"] };
     const malformed = [
       { ...valid, extra: true },
       { ...valid, revision: 9 },
       { ...valid, groups: [" ".repeat(14 * 1024 + 1)] },
+      { ...prepare, revision: 1 },
     ];
-    const payload = [...malformed, valid].map((value) =>
+    const payload = [...malformed, prepare, valid].map((value) =>
       `event: intelligent_ui\ndata: ${JSON.stringify(value)}\n\n`
     ).join("");
     const preload = vi.fn();
     const consume = vi.fn();
-    await readSSEStream(reader(payload), vi.fn(), { onIntelligentUIAppend: preload, onIntelligentUI: consume });
-    expect(preload).toHaveBeenCalledOnce();
+    await readSSEStream(reader(payload), vi.fn(), { onIntelligentUIPreload: preload, onIntelligentUI: consume });
+    expect(preload).toHaveBeenCalledTimes(2);
     expect(consume).toHaveBeenCalledExactlyOnceWith(valid);
   });
 });

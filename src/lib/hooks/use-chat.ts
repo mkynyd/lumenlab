@@ -522,7 +522,7 @@ export function useChat(options: UseChatOptions = {}) {
           {
             onMessageAttachments: updatePersistedAttachments,
             onIntelligentUI: handleUI,
-            onIntelligentUIAppend: preloadIntelligentUI,
+            onIntelligentUIPreload: preloadIntelligentUI,
             onDiscardUIPreview: () => intelligentUIStream.discard(streamingId),
             onEventId: (sequence) => {
               lastEventSequence = Math.max(lastEventSequence, sequence);
@@ -835,7 +835,7 @@ export function useChat(options: UseChatOptions = {}) {
         const result = await readSSEStream(response.body.getReader(), () => {}, {
           onEventId: (id) => { sequence = Math.max(sequence, id); },
           onDiscardUIPreview: () => intelligentUIStream.discard(messageId),
-          onIntelligentUIAppend: preloadIntelligentUI,
+          onIntelligentUIPreload: preloadIntelligentUI,
           onIntelligentUI: (event) => {
             if (!active() || event.messageId !== backgroundMessageId) return;
             if (event.kind === "commit") {

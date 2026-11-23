@@ -29,7 +29,7 @@ export function permitsIntelligentUI(message: string): boolean {
   return !/(?:只(?:需要|使用|需|要|用|写|输出|返回|给|回复)?\s*(?:纯)?(?:文本|文字|Markdown)|(?:纯文字|纯文本)(?:回答|回复|输出)|(?:不要|不用|无需|禁止)(?:任何|添加|使用|生成)?\s*(?:互动|交互|界面|图表)|(?:text|markdown)[ -]only|only (?:plain )?text|no (?:interactive )?(?:widgets?|charts?|ui)\b)/iu.test(message);
 }
 
-export type AuthoringUpdate = { text: string; groups: UIGroup[]; reset: boolean };
+export type AuthoringUpdate = { text: string; groups: UIGroup[]; reset: boolean; prepare?: true };
 
 export class IntelligentUIAuthoring {
   private pending = "";
@@ -42,6 +42,7 @@ export class IntelligentUIAuthoring {
   private candidateBlanks = "";
   private closed = false;
   private invalid = false;
+  private prepared = false;
 
   constructor(private readonly projectFiles?: ProjectFilesProjection) {}
 
@@ -79,6 +80,12 @@ export class IntelligentUIAuthoring {
       } else {
         this.pending = line;
       }
+    }
+    if (!this.prepared && !this.invalid && !this.closed && !this.groups.length && (
+      (this.mode === "candidate" && this.pending.trimStart().startsWith("{")) ||
+      (this.mode === "ui" && this.recordDepth > 0)
+    )) {
+      update.prepare = this.prepared = true;
     }
     return update;
   }

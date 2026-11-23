@@ -43,10 +43,24 @@ describe("host intelligence UI contract", () => {
       const value = parser.push(character);
       output += value.text;
       expect(value.groups).toEqual([]);
+      expect(value.prepare).toBeUndefined();
     }
     output += parser.finish().text;
     expect(output).toBe(source);
     expect(parser.snapshot("m1")).toBeNull();
+  });
+
+  it("signals a first partial group once and skips the hint for a complete group", () => {
+    const serialized = groupLine(group);
+    const parser = new IntelligentUIAuthoring();
+    expect(parser.push("正文\n" + open).prepare).toBeUndefined();
+    expect(parser.push(serialized.slice(0, 20))).toEqual({
+      text: "", groups: [], reset: false, prepare: true,
+    });
+    expect(parser.push(serialized.slice(20, 30)).prepare).toBeUndefined();
+    expect(parser.push(serialized.slice(30)).groups.map(({ id }) => id)).toEqual(["inputs"]);
+    expect(parser.push(groupLine(result).slice(0, 20)).prepare).toBeUndefined();
+    expect(new IntelligentUIAuthoring().push(open + serialized).prepare).toBeUndefined();
   });
 
   it("drops provisional UI on invalid or truncated groups and leaves the explanation", () => {
