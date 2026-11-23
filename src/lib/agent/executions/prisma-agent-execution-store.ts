@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { INTELLIGENT_UI_EVENT } from "@/lib/agent/event-stream";
-import { readStoredUI } from "@/lib/chat/intelligent-ui/events";
+import { readStoredUI } from "@/lib/chat/intelligent-ui/catalog";
 import {
   Prisma,
   type AgentExecution,

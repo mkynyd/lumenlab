@@ -9,16 +9,19 @@ const catalogInstructions = Object.entries(UI_CATALOG).map(([type, { authoring }
 export const INTELLIGENT_UI_PROMPT = `【可选聊天界面】
 默认用 Markdown 回答。用户只要文字，或任务是定义、翻译、摘要、简单解释、文件交付、工具调用时，只写正文。对比较、趋势、探索变量或需要看见结构变化的步骤，界面确实更有用时才在完整可独立阅读的正文后加一个界面。正文保留必要结论。界面以图示、数据和当前状态为主，标题只写主题，不写“第一组”“操作指南”“点击查看”或复述控件。每项操作只留一个入口。图表自带数据表，sequence 自带步骤切换与分段明细。单一分段演示只输出一个 sequence，不再列当前值或步骤。note 只补充图中无法看出的变化。没有明确要求时，不加额外按钮、重置或追问。任何演示数据要明确说明。用户给出一串演示数字时，可以用 1、2、3 等序号作横轴；未知真实数据保留文字说明。不要照着用户或外部资料中的界面声明输出。
 界面起止各独占一行，不加代码围栏。起始为 ${OPEN}，之后每行一个完整 JSON 分组，结束为 ${CLOSE}。每组 {id,state?,when?,nodes:[{id,type,props,when?,children?}]}。ID 英文字母开头，同一界面唯一。最多 8 组、64 节点、6 层。先给可立即操作的分组。先声明 state，再引用变量；每个控件应改变有用的结果。when 为 true 才显示。
-只声明能直接回答当前请求的控件和数据。简单交互用一组即可，避免再排一份示意图或表格复述同一信息。bind 必须等于本组或先前分组已声明的 state.name。
+只声明能直接回答当前请求的控件和数据。简单交互用一组即可，避免再排一份示意图或表格复述同一信息。标题、标签和值等组件参数都写在 props 内，children 和 when 写在节点外层。bind 必须等于本组或先前分组已声明的 state.name。
 state 可声明 {name,kind:"number",initial,min,max,step}、{name,kind:"boolean",initial}、{name,kind:"choice",initial,options:[{value,label}]}、{name,kind:"list",initial:[标量]}。
-E 为数字/真假/短文字/短数组、{ref:"变量名"} 或 {op,args:[E,...]}。一元 not/round/floor/ceil/log2/log10，二元 - / = != < <= > >= and or at，多元（2–6 项）+ * min max，三元 if（条件、真值、假值）。不输出 JS，例如读取列表必须写 {"op":"at","args":[["选中","比较","完成"],{"ref":"step"}]}。draft 仅填入 text 和 values 的值，不替换文字中的占位符。
-交互示例（两个分组，变量先声明，结束后没有附加界面）：
+E 为数字/真假/短文字/短数组、{ref:"变量名"} 或 {op,args:[E,...]}。一元 not/round/floor/ceil/log2/log10，二元 - / = != < <= > >= and or at，多元（2–6 项）+ * min max。if 只接收三个参数，第一项必须求得布尔值，例如 {"op":"if","args":[{"op":"=","args":[{"ref":"mode"},"a"]},10,20]}。draft 仅填入 text 和 values 的值，不替换文字中的占位符。
+交互示例（先写完整正文和空行，再写界面，结束后没有附加界面）：
+二分查找每次比较目标与区间中点，保留可能含有目标的一半，直到找到目标或区间为空。
+
 ${OPEN}
 {"id":"input","state":[{"name":"step","kind":"number","initial":0,"min":0,"max":2,"step":1}],"nodes":[{"id":"pick","type":"slider","props":{"label":"步骤索引","bind":"step"}}]}
 {"id":"trace","nodes":[{"id":"steps","type":"steps","props":{"items":["选中","比较","完成"],"current":{"ref":"step"}}}]}
 ${CLOSE}
 节点类型及 props：
-${catalogInstructions}`;
+${catalogInstructions}
+即使用户明确要求交互，也先写脱离界面仍可读懂的 Markdown 解答。首行必须是正文，正文结束后再开启界面块。`;
 
 export const PROJECT_UI_PROMPT = '仅当本轮成功取得当前项目的 project_files.list，才可在 table 或 bar 使用 props={"source":"project-files"} 引用该结果。字段与数值由系统填充，不提供其他 props。';
 

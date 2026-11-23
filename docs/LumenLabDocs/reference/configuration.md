@@ -29,7 +29,7 @@
 | `USER_API_KEYS_ENABLED` | 可选 | `false` | 自托管开关；设为 `1` 或 `true` 时优先读取用户自行配置的 API Key |
 | `AGENT_RUNTIME_MODE` | 可选 | `legacy` | Agent Runtime 发布模式：`legacy` / `shadow` / `new` |
 | `AGENT_ORCHESTRATOR_ENABLED` | 已弃用 | — | 仅在未设置 `AGENT_RUNTIME_MODE` 时兼容旧部署：`0` → `legacy`，`1` → `new` |
-| `AGENT_PROVIDER_ADAPTER` | 可选 | `responses` | 模型协议层：`responses` 使用三家 Responses 原生调用；`legacy` 只是同一实现的配置别名；`pi` / `pi-ai` 已被拒绝 |
+| `AGENT_PROVIDER_ADAPTER` | 可选 | `responses` | DeepSeek 与 Qwen 使用 Responses 原生调用。`legacy` 是同一实现的配置别名。`pi` / `pi-ai` 返回配置错误 |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 可选 | `false` | 持久化 Agent 执行（`AgentExecution` 队列、Worker 租约与断点恢复）开关 |
 | `CHAT_INTELLIGENT_UI_ENABLED` | 可选 | `0` | 设为 `1` 后允许持久化普通聊天和项目聊天生成交互界面 |
 | `CHAT_INTELLIGENT_UI_RENDER` | 可选 | `1` | 设为 `0` 后以正文显示实时和历史回答 |

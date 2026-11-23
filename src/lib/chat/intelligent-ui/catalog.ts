@@ -314,3 +314,12 @@ export function readUISurface(raw: unknown): UISurface | null {
   }
   return makeSurface(parsed.data.surfaceId, groups);
 }
+
+export function readStoredUI(serialized: string | undefined): UISurface | null {
+  if (!serialized || serialized.length > MAX_SNAPSHOT_BYTES) return null;
+  try {
+    return readUISurface(JSON.parse(serialized));
+  } catch {
+    return null;
+  }
+}

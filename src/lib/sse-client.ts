@@ -28,7 +28,7 @@ export interface SSEParseResult {
 import type { AgentEvent } from "@/lib/agent/types";
 import { INTELLIGENT_UI_EVENT, MESSAGE_ATTACHMENTS_EVENT } from "@/lib/agent/event-stream";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
-import type { UIEvent } from "@/lib/chat/intelligent-ui/events";
+import { readUIEvent, type UIEvent } from "@/lib/chat/intelligent-ui/events";
 
 export interface SSEAgentCallbacks {
   onAgentEvent?: (event: AgentEvent) => void;
@@ -73,10 +73,8 @@ export async function readSSEStream(
   }
 
   async function applyUI(data: string) {
-    const raw = json(data) as { kind?: unknown } | null;
-    if (raw?.kind === "append") options.onIntelligentUIAppend?.();
-    const codec = await import("@/lib/chat/intelligent-ui/events").catch(() => null);
-    const event = codec?.readUIEvent(raw);
+    const event = readUIEvent(json(data));
+    if (event?.kind === "append") options.onIntelligentUIAppend?.();
     if (event) await options.onIntelligentUI?.(event);
     return false;
   }
