@@ -1,7 +1,7 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
-import { lazy, memo, Suspense, useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { Expression, StateValue, UIGroup, UINode, UISurface, Variable } from "@/lib/chat/intelligent-ui/catalog";
 import { acceptsValue, nodeRefs } from "@/lib/chat/intelligent-ui/surface-data";
 import { evaluate, formatValue } from "@/lib/chat/intelligent-ui/expression";
+import { startChatInpReporter } from "@/lib/chat/intelligent-ui/inp-reporter";
 
 import { Sequence } from "./sequence";
 import { loadChart } from "./loaders";
@@ -270,6 +271,9 @@ const Group = memo(function Group({
   previous.prefix === next.prefix && previous.onDraft === next.onDraft);
 
 export default memo(function IntelligentSurface({ surface, onDraft }: { surface: UISurface; onDraft?: Draft }) {
+  useEffect(() => {
+    startChatInpReporter();
+  }, []);
   const [state] = useState(() => new SurfaceState());
   const groups = useMemo(() => {
     const variables = new Map<string, Variable>();

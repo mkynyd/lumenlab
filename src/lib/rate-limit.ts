@@ -143,6 +143,8 @@ export const RateLimits = {
   FEEDBACK: { max: 20, window: 86_400_000 },
   // 错误上报：每 IP 30 条/分钟
   ERROR_REPORT: { max: 30, window: 60_000 },
+  // 智能 UI 现场 INP：每用户 60 条/小时（每次页面访问最多 1 条）
+  CHAT_INP: { max: 60, window: 3_600_000 },
   // 反馈通知邮件：全局 50 封/天兜底
   FEEDBACK_NOTIFY: { max: 50, window: 86_400_000 },
 } as const;
