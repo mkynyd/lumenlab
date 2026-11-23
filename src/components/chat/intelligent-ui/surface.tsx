@@ -7,7 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { acceptsValue, nodeRefs, type Expression, type StateValue, type UIGroup, type UINode, type UISurface, type Variable } from "@/lib/chat/intelligent-ui/catalog";
+import type { Expression, StateValue, UIGroup, UINode, UISurface, Variable } from "@/lib/chat/intelligent-ui/catalog";
+import { acceptsValue, nodeRefs } from "@/lib/chat/intelligent-ui/surface-data";
 import { evaluate, formatValue } from "@/lib/chat/intelligent-ui/expression";
 
 import { Sequence } from "./sequence";

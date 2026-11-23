@@ -163,4 +163,25 @@ describe("host intelligence UI contract", () => {
     expect(recover).toHaveBeenCalledOnce();
     expect(client.get("m1")).toEqual(copy);
   });
+
+  it("drops malformed or oversized published groups before updating the preview", () => {
+    const client = new ChatUIStream();
+    const event = { kind: "append" as const, messageId: "m1", attempt: 1, round: 0, revision: 1, from: 0 };
+    client.accept({ ...event, groups: ['{"id":"incomplete"}'] });
+    client.accept({ ...event, groups: [JSON.stringify({ ...group, nodes: [{ ...group.nodes[0],
+      props: { ...group.nodes[0].props, label: "数".repeat(5000) } }] })] });
+    expect(client.get("m1")).toBeUndefined();
+    client.accept({ ...event, groups: [JSON.stringify(group)] });
+    expect(client.get("m1")?.groups).toEqual([group]);
+  });
+
+  it("does not restore a history snapshot from an unsupported catalog version", async () => {
+    const client = new ChatUIStream();
+    const incompatible = { ...makeSurface("m1", [readUIGroup(group, [])!]), catalogVersion: 2 };
+    const digest = createHash("sha256").update(JSON.stringify(incompatible)).digest("hex");
+    await client.commit({
+      kind: "commit", messageId: "m1", attempt: 1, round: 0, revision: 1, digest,
+    }, async () => incompatible, () => true);
+    expect(client.get("m1")).toBeUndefined();
+  });
 });

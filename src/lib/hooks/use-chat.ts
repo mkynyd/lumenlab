@@ -11,7 +11,7 @@ import {
 import {
   buildChatRequestBody,
 } from "@/lib/chat-request";
-import { ChatUIStream, preloadIntelligentUICatalog } from "@/lib/chat/intelligent-ui/client-state";
+import { ChatUIStream } from "@/lib/chat/intelligent-ui/client-state";
 import { preloadSurface } from "@/components/chat/intelligent-ui/loaders";
 import type { UIEvent } from "@/lib/chat/intelligent-ui/events";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -30,11 +30,6 @@ import {
   reduceAssistantProcess,
   type AssistantProcessTrace,
 } from "@/lib/agent/assistant-process";
-
-function preloadIntelligentUI() {
-  preloadSurface();
-  preloadIntelligentUICatalog();
-}
 
 export interface AgentSessionState {
   plan?: AgentPlan;
@@ -522,7 +517,7 @@ export function useChat(options: UseChatOptions = {}) {
           {
             onMessageAttachments: updatePersistedAttachments,
             onIntelligentUI: handleUI,
-            onIntelligentUIPreload: preloadIntelligentUI,
+            onIntelligentUIPreload: preloadSurface,
             onDiscardUIPreview: () => intelligentUIStream.discard(streamingId),
             onEventId: (sequence) => {
               lastEventSequence = Math.max(lastEventSequence, sequence);
@@ -835,7 +830,7 @@ export function useChat(options: UseChatOptions = {}) {
         const result = await readSSEStream(response.body.getReader(), () => {}, {
           onEventId: (id) => { sequence = Math.max(sequence, id); },
           onDiscardUIPreview: () => intelligentUIStream.discard(messageId),
-          onIntelligentUIPreload: preloadIntelligentUI,
+          onIntelligentUIPreload: preloadSurface,
           onIntelligentUI: (event) => {
             if (!active() || event.messageId !== backgroundMessageId) return;
             if (event.kind === "commit") {
