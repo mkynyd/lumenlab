@@ -71,6 +71,14 @@ LumenLab 是一个**项目化**的 AI 学习工作台。它把以下能力整合
 - 流式输出，Markdown、公式、流程图、代码高亮实时渲染。
 - 通过 ProviderAdapter 统一厂商协议：DeepSeek 和 Qwen 均使用 Responses 原生 Function Calling，并在各自 Adapter 内完成名称与参数差异转换；两条路径都进入同一 AgentLoop。
 
+### 智能界面与可视化
+
+- 模型会按问题选择呈现方式：简单结论仍用文字；顺序步骤、状态迁移和因果链使用 LumenFlow 流程图；比较、趋势和可调参数追加可交互组件。
+- 正文先完整回答，界面只做补充。即使组件没有加载，回答仍可独立读懂。
+- 交互组件与聊天共用同一套真实渲染器，支持滑杆、步骤切换、对照表格和联动图表；当前值随操作实时重算。
+- 示例和项目数据会明确区分，界面不能执行任意 HTML 或脚本，所有分组在服务端校验后才展示。
+- 生成与渲染分别由 `CHAT_INTELLIGENT_UI_ENABLED` 和 `CHAT_INTELLIGENT_UI_RENDER` 控制，管理员可按部署需要关闭。详见 [智能界面](./guides/intelligent-ui.md)。
+
 ### 文档解析与转换
 
 - 项目资料支持 PDF、Office/WPS/iWork、图片、文本、代码等文件类型。

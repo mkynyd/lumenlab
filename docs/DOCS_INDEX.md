@@ -33,6 +33,8 @@
 
 | 文档 | 说明 |
 |---|---|
+| [功能使用说明](LumenLabDocs/user-guide.md) | 面向用户的完整功能说明 |
+| [智能界面](LumenLabDocs/guides/intelligent-ui.md) | 生成式交互组件、适用场景、开关与 INP |
 | [项目管理](LumenLabDocs/guides/projects.md) | 项目类型、上下文与资料管理 |
 | [资料与 RAG](LumenLabDocs/guides/files-and-rag.md) | 上传、解析、检索与资料图谱 |
 | [成果与导出](LumenLabDocs/guides/artifacts.md) | Artifact、Markdown / DOCX / PDF |
@@ -46,7 +48,7 @@
 | 文档 | 说明 |
 |---|---|
 | [架构总览](LumenLabDocs/architecture/overview.md) | AgentRuntime、Provider、RAG 与部署边界 |
-| [任务路由](LumenLabDocs/architecture/task-router.md) | DeepSeek / MiniMax / Qwen 路由与 Adapter |
+| [任务路由](LumenLabDocs/architecture/task-router.md) | DeepSeek / Qwen 路由与 Adapter |
 | [Policy Engine](LumenLabDocs/architecture/policy-engine.md) | scope、风险、自动执行与历史兼容 |
 | [缓存架构](LumenLabDocs/architecture/cache.md) | 四层缓存与指标 |
 | [数据模型](LumenLabDocs/architecture/data-model.md) | Prisma 领域模型 |

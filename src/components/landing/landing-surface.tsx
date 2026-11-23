@@ -7,6 +7,7 @@ import { LandingFooter } from "./landing-footer";
 import { LandingNav } from "./landing-nav";
 import { LandingAtmosphere } from "./landing-atmosphere";
 import { LearningHowToSection } from "./learning-howto-section";
+import { SmartUiSection } from "./smart-ui-section";
 
 /**
  * 公开主页壳层。
@@ -23,6 +24,7 @@ export function LandingSurface() {
         <main className="flex-1">
           <HeroSection />
           <FeaturesSection />
+          <SmartUiSection />
           <HowToSection />
           <LearningHowToSection />
         </main>

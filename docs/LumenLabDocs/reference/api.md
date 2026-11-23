@@ -145,6 +145,7 @@
 - multipart 请求：`message` 字段放置上述 JSON 字符串，`attachments` 字段可重复提交文件。
 - 响应：`text/event-stream`。模型增量保持 OpenAI-compatible `data:` 帧；Agent 状态使用 `event: agent`；结束帧为 `data: [DONE]`。
 - 响应头：`X-Conversation-Id`、`X-Message-Id`、`X-Model-Provider`、`X-Agent-Runtime-Version`、`X-Agent-Tool-Protocol`；兼容头 `X-Agent-Orchestrator` 在 `new` 模式为 `enabled`。
+- 智能界面：当 `CHAT_INTELLIGENT_UI_ENABLED=1` 时，回答正文后可能跟随 `:::lumen-ui v1` 分组，经服务端校验后持久化为消息的界面快照；`CHAT_INTELLIGENT_UI_RENDER=0` 时客户端只显示正文。
 
 ### `POST /api/chat/compact`
 
@@ -152,6 +153,13 @@
 - 认证：需登录。
 - 请求：`{ conversationId }`
 - 响应：压缩结果摘要。
+
+### `POST /api/chat/metrics/inp`
+
+- 描述：智能界面挂载后的匿名 INP 样本入口。仅在渲染开关开启、同源、已登录且通过限流时写入 Redis；任何失败都返回 204，不影响对话。
+- 认证：需登录。
+- 请求：`{ id, day, screen, ms }`。`id` 为随机 UUID v4，`day` 为 UTC 日期，`screen` 为 `narrow` / `wide`，`ms` 为取整毫秒；请求体上限 256 字节。
+- 响应：`204 No Content`（无论是否实际写入）。
 
 ---
 

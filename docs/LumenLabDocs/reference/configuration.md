@@ -64,6 +64,14 @@
 
 应用缓存可在 Redis 不可用时降级为内存；多实例应配置共享 Redis。短信验证码发送依赖共享限流，Redis 不可用时暂停发送。
 
+### 智能界面与 INP
+
+- `CHAT_INTELLIGENT_UI_ENABLED` 控制是否允许生成并持久化智能界面；关闭后模型只输出 Markdown。
+- `CHAT_INTELLIGENT_UI_RENDER` 控制是否渲染界面；关闭后实时和历史回答都只显示正文，原始界面数据仍保留在消息记录中。
+- 已渲染界面会匿名采样生产 INP，写入 Redis 的有序集合 `lumenlab:chat-inp:v1:<day>:<screen>`，保留 14 天。每用户每小时最多 60 条，单条不超过 256 字节。
+- 读取命令：`npm run diag:chat-inp -- 7`，输出最近 7 天的 P50 / P75 / P95。Redis 不可用时会明确报错，避免把“没有样本”误判为达标。
+- 采样不记录用户、路由或交互目标；webdriver 会话不上报。落地页与文档示例使用真实渲染器，但关闭上报。
+
 ### 自托管模式
 
 `src/lib/config.ts` 中的 `USER_API_KEYS_ENABLED` 控制部署模式：

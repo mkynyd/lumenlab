@@ -33,6 +33,7 @@ export const DOCS_NAV: DocSection[] = [
     title: "指南",
     items: [
       { slug: "user-guide", title: "功能使用说明", filePath: "user-guide.md" },
+      { slug: "guides/intelligent-ui", title: "智能界面", filePath: "guides/intelligent-ui.md" },
       { slug: "guides/projects", title: "项目管理", filePath: "guides/projects.md" },
       { slug: "guides/files-and-rag", title: "资料与 RAG", filePath: "guides/files-and-rag.md" },
       { slug: "guides/artifacts", title: "成果与导出", filePath: "guides/artifacts.md" },

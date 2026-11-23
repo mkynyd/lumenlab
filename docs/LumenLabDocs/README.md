@@ -2,7 +2,7 @@
 
 > 本文档面向 LumenLab 普通用户。LumenLab 是一个面向学习、研究与课程项目的 AI 工作台，集成 AI 对话、项目资料管理、文档解析、受控 Agent 和成果导出。
 >
-> 在线版本随应用发布在站点的 `/docs` 路径 · 更新日期：2026-11-03
+> 在线版本随应用发布在站点的 `/docs` 路径 · 更新日期：2026-11-23
 
 ## 文档导航
 
@@ -15,6 +15,7 @@
 ### 使用指南
 
 - [功能使用说明（用户版）](./user-guide.md) — 按模块汇总全部面向用户的功能用法
+- [智能界面](./guides/intelligent-ui.md) — 生成式交互组件、适用场景、开关与隐私
 - [项目管理](./guides/projects.md) — 项目类型、上下文与默认模型
 - [资料与 RAG](./guides/files-and-rag.md) — 上传、MinerU 解析、资料图谱、关键词与语义检索
 - [成果与导出](./guides/artifacts.md) — Artifact 库、Markdown / DOCX / PDF 导出

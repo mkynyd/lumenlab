@@ -86,7 +86,28 @@ response-stream.ts
   └─ 浏览器 useChat 按原协议消费
 ```
 
-`AgentRuntime` 不依赖 `NextRequest`、`NextResponse` 或供应商 SSE 文本格式；Provider 特有的工具名、Responses items 与 continuation transcript 只存在于 `ProviderAdapter` 边界内。三家活跃模型均走项目自有 Responses Adapter；旧 Pi POC 不承接这组模型。来源由 `src/lib/agent/sources.ts` 聚合去重，并通过 `ConversationPersistence` 写入同一条 `Message.sources` JSON 字段，前端来源展示协议保持不变。
+`AgentRuntime` 不依赖 `NextRequest`、`NextResponse` 或供应商 SSE 文本格式；Provider 特有的工具名、Responses items 与 continuation transcript 只存在于 `ProviderAdapter` 边界内。活跃模型均走项目自有 Responses Adapter；旧 Pi POC 不承接这组模型。来源由 `src/lib/agent/sources.ts` 聚合去重，并通过 `ConversationPersistence` 写入同一条 `Message.sources` JSON 字段，前端来源展示协议保持不变。
+
+## 智能界面管线
+
+智能界面与正文共用一条 SSE 流，不额外开接口：
+
+```
+模型流
+  ├─ 正文增量 ───────────────→ Markdown 实时渲染
+  └─ :::lumen-ui v1 分组
+        ├─ IntelligentUIAuthoring 逐行缓冲、分片解析
+        ├─ 首个完整分组触发 prepare，客户端预加载渲染器
+        ├─ readUIGroup / readUISurface 校验版本、变量、表达式与预算
+        └─ 结束后写入 Message 的界面快照
+                                   │
+客户端 MessageUI ──────────────────┘
+  ├─ 历史消息直接读快照
+  ├─ 流式消息按 generation 订阅增量
+  └─ Surface 渲染器按需加载；图表再按需加载
+```
+
+服务端是目录与预算的唯一权威：最多 8 组、64 节点、6 层，单组和整条快照都有字节上限。校验失败时回退为正文，不执行任意 HTML 或脚本。渲染器挂载后启动匿名 INP 采样，`POST /api/chat/metrics/inp` 只做尽力写入并始终返回 204；落地页与文档示例复用同一渲染器但关闭上报。
 
 ## Runtime 发布模式
 

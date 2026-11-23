@@ -270,10 +270,12 @@ const Group = memo(function Group({
 }, (previous, next) => previous.group === next.group && previous.state === next.state &&
   previous.prefix === next.prefix && previous.onDraft === next.onDraft);
 
-export default memo(function IntelligentSurface({ surface, onDraft }: { surface: UISurface; onDraft?: Draft }) {
+export default memo(function IntelligentSurface({
+  surface, onDraft, reportInp = true,
+}: { surface: UISurface; onDraft?: Draft; reportInp?: boolean }) {
   useEffect(() => {
-    startChatInpReporter();
-  }, []);
+    if (reportInp) startChatInpReporter();
+  }, [reportInp]);
   const [state] = useState(() => new SurfaceState());
   const groups = useMemo(() => {
     const variables = new Map<string, Variable>();

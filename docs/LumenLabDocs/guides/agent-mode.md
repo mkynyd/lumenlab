@@ -22,7 +22,7 @@ Agent 模式通过 Skill Router、统一 Runtime 和工具循环完成多步任�
 ## 模型与来源
 
 - 新普通会话默认使用 DeepSeek V4.1 Flash。Qwen 仅在服务端开放且账号具有相应凭据时可用。
-- 三家模型通过 Responses 原生 Function Calling 接入同一 AgentLoop 和 ToolRunner，工具名由 Adapter 可逆编码，调用与结果按 call_id 配对。
+- 活跃模型通过 Responses 原生 Function Calling 接入同一 AgentLoop 和 ToolRunner，工具名由 Adapter 可逆编码，调用与结果按 call_id 配对。
 - 图片、PDF/DOCX 聊天附件和项目资料走各自处理管线，详见[资料与 RAG](./files-and-rag.md)。
 - 回答底部显示项目资料、网页和学术来源。Web 抓取受 allowlist、SSRF 校验、超时和大小限制。
 

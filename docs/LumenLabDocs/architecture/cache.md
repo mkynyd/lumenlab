@@ -71,7 +71,7 @@ Redis 不可用时，各消费者必须优雅降级；核心链路（聊天、�
 `src/app/api/metrics/cache/route.ts` 暴露 `GET /api/metrics/cache`，返回：
 
 - 当前用户近 N 天的 prompt cache 命中 / 未命中 token 汇总（按 overall、daily、provider、project 聚合）。
-- Token 使用量（按 DeepSeek / MiniMax / Bailian Qwen 拆分）。
+- Token 使用量（按 DeepSeek / Bailian Qwen 拆分）。
 - 导出缓存命中 / 未命中统计。
 
 `days` 查询参数可指定 1–90 天，默认 7 天。

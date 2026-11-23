@@ -2,6 +2,7 @@
 
 import type { ComponentProps } from "react";
 import React from "react";
+import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
@@ -16,6 +17,11 @@ interface DocsMarkdownProps {
   content: string;
   className?: string;
 }
+
+const SmartUiDemo = dynamic(
+  () => import("@/components/docs/smart-ui-demo").then((module) => module.DocsSmartUiDemo),
+  { loading: () => <p className="my-6 text-sm text-[var(--color-text-tertiary)]">正在加载交互示例…</p> }
+);
 
 function makeHeadingId(text: string): string {
   return text
@@ -90,10 +96,13 @@ export function DocsMarkdown({ content, className }: DocsMarkdownProps) {
           },
           code(props) {
             const { className: codeClassName, children, ...rest } = props;
-            const match = /language-(\w+)/.exec(codeClassName || "");
+            const match = /language-([\w-]+)/.exec(codeClassName || "");
             const code = String(children).replace(/\n$/, "");
             if (match?.[1] === "mermaid") {
               return <MermaidBlock code={code} isStreaming={false} />;
+            }
+            if (match?.[1] === "smart-ui-demo") {
+              return <SmartUiDemo />;
             }
             return (
               <code className={codeClassName} {...rest}>
