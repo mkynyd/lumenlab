@@ -1,7 +1,7 @@
 "use client";
 
 import { lazy, memo, Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { loadSurface, loadChart } from "./loaders";
+import { getLoadedSurface, loadSurface, loadChart } from "./loaders";
 import { UIRenderBoundary } from "./render-boundary";
 import type { UINode, UISurface } from "@/lib/chat/intelligent-ui/catalog";
 import type { ChatUIStream } from "@/lib/chat/intelligent-ui/client-state";
@@ -28,7 +28,8 @@ export const MessageUI = memo(function MessageUI({
   const generation = useSyncExternalStore(subscribe, getGeneration, getGeneration);
   const [initiallyArchived] = useState(() => saved !== undefined);
   const [renderer, setRenderer] = useState<SurfaceComponent | "unavailable" | null>(null);
-  const needsRenderer = !initiallyArchived && Boolean(surface) && renderer === null;
+  const Surface = renderer ?? getLoadedSurface();
+  const needsRenderer = !initiallyArchived && Boolean(surface) && !Surface;
   useEffect(() => {
     if (!needsRenderer) return;
     let active = true;
@@ -45,8 +46,7 @@ export const MessageUI = memo(function MessageUI({
       void loadChart().catch(() => {});
     }
   }, [surface]);
-  if (!surface || renderer === "unavailable") return null;
-  const Surface = renderer;
+  if (!surface || Surface === "unavailable") return null;
   return (
     <div className="mt-3 min-w-0 max-w-full">
       <UIRenderBoundary key={generation}>

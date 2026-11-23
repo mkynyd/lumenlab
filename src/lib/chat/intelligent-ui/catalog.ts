@@ -70,13 +70,13 @@ export function acceptsValue(variable: Variable, value: unknown): value is State
   }
 }
 
-const action = z.discriminatedUnion("kind", [
+const action = () => z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("set"), name: identifier, value: expression }),
   z.strictObject({ kind: z.literal("reset") }),
   z.strictObject({ kind: z.literal("draft"), text: label, values: z.array(expression).max(4).optional() }),
 ]);
 
-const sequence = z.strictObject({
+const sequence = () => z.strictObject({
   label,
   bind: identifier,
   frames: z.array(z.strictObject({
@@ -88,37 +88,45 @@ const sequence = z.strictObject({
 });
 
 const dataSource = z.enum(["demo", "project-files"]);
-const table = z.strictObject({
+const table = () => z.strictObject({
   label, source: dataSource, columns: z.array(label).min(1).max(MAX_TABLE_COLUMNS),
   rows: z.array(z.array(expression).min(1).max(MAX_TABLE_COLUMNS)).max(30),
 }).refine(({ columns, rows }) => rows.every((row) => row.length === columns.length));
-const chart = z.strictObject({
+const chart = () => z.strictObject({
   label, unit: label, source: dataSource, labels: z.array(label).min(1).max(24),
   series: z.array(z.strictObject({ label, values: z.array(expression).max(24) })).min(1).max(3),
 }).refine(({ labels, series }) => series.every(({ values }) => values.length === labels.length));
 
-function component<T extends z.ZodType>(props: T, authoring: string, children = false) {
-  return { props, authoring, children };
+function component<T extends z.ZodType>(createProps: () => T, authoring: string, children = false) {
+  let props: T | undefined;
+  return {
+    get props() { return props ??= createProps(); },
+    authoring,
+    children,
+  };
 }
 
+const titled = () => z.strictObject({ title: label.optional() });
+const bound = () => z.strictObject({ label, bind: identifier });
+
 export const UI_CATALOG = {
-  stack: component(z.strictObject({ title: label.optional() }), '{title?} + children', true),
-  group: component(z.strictObject({ title: label.optional() }), '{title?} + children，可换行', true),
-  compare: component(z.strictObject({ title: label.optional() }), '{title?} + 两个 children，窄屏用纵向', true),
-  disclosure: component(z.strictObject({ label }), '{label} + children，可展开', true),
-  text: component(z.strictObject({ text: z.union([z.string().trim().min(1).max(1200), expression]) }), '{text:文字或 E} 简单 Markdown，链接留在正文'),
-  value: component(z.strictObject({ label, value: expression, unit: label.optional(), digits: z.number().int().min(0).max(6).optional() }), '{label,value:E,unit?,digits?}'),
-  list: component(z.strictObject({ items: z.array(expression).max(24), ordered: z.boolean().optional() }), '{items:E[],ordered?}'),
+  stack: component(titled, '{title?} + children', true),
+  group: component(titled, '{title?} + children，可换行', true),
+  compare: component(titled, '{title?} + 两个 children，窄屏用纵向', true),
+  disclosure: component(() => z.strictObject({ label }), '{label} + children，可展开', true),
+  text: component(() => z.strictObject({ text: z.union([z.string().trim().min(1).max(1200), expression]) }), '{text:文字或 E} 简单 Markdown，链接留在正文'),
+  value: component(() => z.strictObject({ label, value: expression, unit: label.optional(), digits: z.number().int().min(0).max(6).optional() }), '{label,value:E,unit?,digits?}'),
+  list: component(() => z.strictObject({ items: z.array(expression).max(24), ordered: z.boolean().optional() }), '{items:E[],ordered?}'),
   sequence: component(sequence, '{label,bind,frames:[{segments:[{label,span,detail?}],note?}]}。仅用于按比例展示区间拆分或分配。必须在 state 声明绑定的 number，初值和最小值为 0，最大值为帧数减 1，步长为 1。自带前后切换和分段明细'),
-  steps: component(z.strictObject({ items: z.array(label).min(1).max(20), current: expression.optional() }), '{items:文字[],current?:E}。普通算法和操作步骤用 steps，current 从 0 开始，可与滑杆共用索引'),
+  steps: component(() => z.strictObject({ items: z.array(label).min(1).max(20), current: expression.optional() }), '{items:文字[],current?:E}。普通算法和操作步骤用 steps，current 从 0 开始，可与滑杆共用索引'),
   table: component(table, `{label,source:"demo",columns:文字[],rows:E[][]}。最多 ${MAX_TABLE_COLUMNS} 列，每行格数相同。数组等较长序列用行展示`),
   bar: component(chart, '{label,unit,source:"demo",labels:文字[],series:[{label,values:E[]}]}'),
   line: component(chart, '{label,unit,source:"demo",labels:文字[],series:[{label,values:E[]}]}'),
-  input: component(z.strictObject({ label, bind: identifier }), '{label,bind}，绑定 number'),
-  slider: component(z.strictObject({ label, bind: identifier }), '{label,bind}，绑定 number'),
-  select: component(z.strictObject({ label, bind: identifier }), '{label,bind}，绑定 choice'),
-  checkbox: component(z.strictObject({ label, bind: identifier }), '{label,bind}，绑定 boolean'),
-  button: component(z.strictObject({ label, action, disabled: expression.optional() }), '{label,disabled?:E,action:{kind:"set",name,value:E}|{kind:"reset"}|{kind:"draft",text,values?:E[]}}'),
+  input: component(bound, '{label,bind}，绑定 number'),
+  slider: component(bound, '{label,bind}，绑定 number'),
+  select: component(bound, '{label,bind}，绑定 choice'),
+  checkbox: component(bound, '{label,bind}，绑定 boolean'),
+  button: component(() => z.strictObject({ label, action: action(), disabled: expression.optional() }), '{label,disabled?:E,action:{kind:"set",name,value:E}|{kind:"reset"}|{kind:"draft",text,values?:E[]}}'),
 } as const;
 
 type Catalog = typeof UI_CATALOG;
