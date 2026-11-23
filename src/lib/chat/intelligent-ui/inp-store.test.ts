@@ -53,9 +53,8 @@ describe("chat INP report", () => {
     expect(report.sinceDay).toBe("2026-11-10");
   });
 
-  it("ignores unreadable Redis keys instead of failing the report", async () => {
+  it("fails the report when Redis is unreachable", async () => {
     mocks.zrange.mockRejectedValue(new Error("redis down"));
-    const report = await getChatInpReport(1, new Date("2026-11-23T12:00:00Z"));
-    expect(report.screens.wide.count).toBe(0);
+    await expect(getChatInpReport(1, new Date("2026-11-23T12:00:00Z"))).rejects.toThrow("redis down");
   });
 });

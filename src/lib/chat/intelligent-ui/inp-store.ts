@@ -13,8 +13,8 @@ import {
  * Read the browser INP samples collected from intelligent UI visits.
  *
  * Keys expire on their UTC day + retention window, so a read only touches the
- * requested range. A missing or unreadable Redis instance returns an empty
- * report instead of failing the operator query.
+ * requested range. Redis failures propagate: an operator must not mistake an
+ * unreachable store for "no traffic yet".
  */
 export async function getChatInpReport(days = 7, now: Date = new Date()): Promise<ChatInpReport> {
   const dayKeys = recentUtcDays(days, now);
@@ -44,15 +44,11 @@ export async function getChatInpReport(days = 7, now: Date = new Date()): Promis
 }
 
 async function readSamples(key: string): Promise<number[]> {
-  try {
-    const rows = await getRedis().zrange(key, 0, -1, "WITHSCORES");
-    const values: number[] = [];
-    for (let index = 1; index < rows.length; index += 2) {
-      const value = Number(rows[index]);
-      if (Number.isFinite(value) && value >= 0) values.push(value);
-    }
-    return values;
-  } catch {
-    return [];
+  const rows = await getRedis().zrange(key, 0, -1, "WITHSCORES");
+  const values: number[] = [];
+  for (let index = 1; index < rows.length; index += 2) {
+    const value = Number(rows[index]);
+    if (Number.isFinite(value) && value >= 0) values.push(value);
   }
+  return values;
 }
