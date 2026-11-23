@@ -16,7 +16,7 @@
 
 - [功能使用说明（用户版）](./user-guide.md) — 按模块汇总全部面向用户的功能用法
 - [项目管理](./guides/projects.md) — 项目类型、上下文与默认模型
-- [资料与 RAG](./guides/files-and-rag.md) — 上传、MiniMax / MinerU 解析、资料图谱、关键词与语义检索
+- [资料与 RAG](./guides/files-and-rag.md) — 上传、MinerU 解析、资料图谱、关键词与语义检索
 - [成果与导出](./guides/artifacts.md) — Artifact 库、Markdown / DOCX / PDF 导出
 - [Agent 模式](./guides/agent-mode.md) — Skill Router、Tool、自动执行与历史恢复
 - [Skills 与 Tools](./guides/skills-and-tools.md) — 14 个 bundled Skill、多来源 discovery、Managed 更新、Tool 调用与风险等级

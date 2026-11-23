@@ -64,7 +64,7 @@ export interface ParseInput {
   filename: string;
   mimeType: string;
   data: Buffer;
-  apiKeys: { minimax?: string; mineru?: string; bailian?: string; };
+  apiKeys: { mineru?: string };
 }
 
 export type ProgressCallback = (stage: string, progress?: { current: number; total: number }) => void;

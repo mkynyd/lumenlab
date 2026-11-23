@@ -1,4 +1,3 @@
-import { getModelCatalogEntry, MINIMAX_WIRE_MODEL } from "@/lib/chat/model-catalog";
 /**
  * Serialization between the internal `DeepSeekMessage` transcript and
  * Responses API items, the normalized stream-event accumulator, and the
@@ -782,39 +781,6 @@ export function buildDeepSeekResponsesBody(
   if (input.temperature !== undefined) body.temperature = input.temperature;
   if (input.topP !== undefined) body.top_p = input.topP;
   if (input.toolChoice) body.tool_choice = input.toolChoice;
-  return body;
-}
-
-/**
- * MiniMax M3.1 requires adaptive thinking and supports high/max effort.
- * A disabled thinking preference uses low effort; none is rejected upstream.
- * Legacy M3 keeps its previous effort mapping. Temperature is
- * capped at the documented (0, 1] range and `tool_choice` only knows
- * `none` / `auto`.
- */
-export function buildMiniMaxResponsesBody(
-  input: BuildResponsesBodyInput
-): ResponsesRequestBody {
-  const body = baseBody(input);
-  body.model = getModelCatalogEntry(input.model)?.wireId ?? input.model;
-  body.reasoning = {
-    effort: body.model === MINIMAX_WIRE_MODEL
-      ? (input.thinkingEnabled ? input.reasoningEffort : "low")
-      : (input.thinkingEnabled ? mapNonNoneEffort(input.reasoningEffort) : "none"),
-  };
-  if (input.temperature !== undefined) {
-    body.temperature = Math.min(1, Math.max(0.01, input.temperature));
-  }
-  if (input.topP !== undefined) {
-    body.top_p = Math.min(1, Math.max(0.01, input.topP));
-  }
-  if (input.toolChoice) {
-    body.tool_choice =
-      input.toolChoice === "none" || input.toolChoice === "auto"
-        ? input.toolChoice
-        : "auto";
-  }
-  encodeFunctionNames(body);
   return body;
 }
 

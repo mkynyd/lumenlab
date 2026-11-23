@@ -3,22 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DocumentPipeline } from "../pipeline";
 import * as mineru from "@/lib/parse/mineru";
-import * as minimax from "@/lib/vision/minimax";
 
 vi.mock("@/lib/parse/mineru");
-vi.mock("@/lib/vision/minimax", () => {
-  class MiniMaxError extends Error {
-    constructor(public status: number, message: string) {
-      super(message);
-      this.name = "MiniMaxError";
-    }
-  }
-  return {
-    MiniMaxError,
-    mapAnthropicErrorToMiniMaxError: vi.fn(),
-    parseDocumentWithMiniMax: vi.fn(),
-  };
-});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -28,7 +14,7 @@ function makeInput(
   filename: string,
   mimeType: string,
   data: Buffer,
-  apiKeys: { minimax?: string; mineru?: string; bailian?: string } = {}
+  apiKeys: { mineru?: string } = {}
 ) {
   return {
     userId: "u1",
@@ -56,137 +42,26 @@ describe("DocumentPipeline", () => {
     ).rejects.toThrow("不支持的文件类型: .mp3");
   });
 
-  it("routes PDFs above the MiniMax size limit to MinerU", async () => {
+  it.each([["small", 512], ["large", 21 * 1024 * 1024]])("routes a %s PDF to MinerU", async (size, bytes) => {
     vi.mocked(mineru.parseFileWithMinerU).mockResolvedValue({
-      content: "# Big PDF",
+      content: "# Parsed PDF",
       assets: [],
-      metadata: {
-        parser: "mineru-pipeline",
-        taskId: "task-big",
-        parsedAt: new Date().toISOString(),
-      },
+      metadata: { parser: "mineru-pipeline", taskId: "task-pdf", parsedAt: new Date().toISOString() },
     });
 
-    const pipeline = new DocumentPipeline();
-    const result = await pipeline.run(
-      makeInput("big.pdf", "application/pdf", Buffer.alloc(21 * 1024 * 1024), {
-        minimax: "sk-minimax",
-        mineru: "token",
-      })
+    const result = await new DocumentPipeline().run(
+      makeInput(size + ".pdf", "application/pdf", Buffer.alloc(bytes), { mineru: "token" })
     );
 
     expect(mineru.parseFileWithMinerU).toHaveBeenCalledTimes(1);
-    expect(minimax.parseDocumentWithMiniMax).not.toHaveBeenCalled();
-    expect(result.metadata.parser).toBe("mineru-office");
-    expect(result.content).toContain("# Big PDF");
+    expect(result.metadata).toMatchObject({ parser: "mineru-pdf", sourceKind: "pdf" });
+    expect(result.content).toContain("# Parsed PDF");
   });
 
-  it("routes PDFs within the MiniMax size limit to MiniMax", async () => {
-    vi.mocked(minimax.parseDocumentWithMiniMax).mockResolvedValue("# Small PDF");
-
+  it("reports missing MinerU access for PDFs before an upstream request", async () => {
     const pipeline = new DocumentPipeline();
-    const result = await pipeline.run(
-      makeInput("small.pdf", "application/pdf", Buffer.from("pdf"), {
-        minimax: "sk-minimax",
-        mineru: "token",
-      })
-    );
-
-    expect(minimax.parseDocumentWithMiniMax).toHaveBeenCalledTimes(1);
-    expect(mineru.parseFileWithMinerU).not.toHaveBeenCalled();
-    expect(result.metadata.parser).toBe("minimax-m3-pdf");
-    expect(result.content).toContain("# Small PDF");
-  });
-
-  it("falls back to MinerU when MiniMax rejects an oversized PDF request", async () => {
-    vi.mocked(minimax.parseDocumentWithMiniMax).mockRejectedValue(
-      new minimax.MiniMaxError(413, "文档或请求体超过 MiniMax 限制")
-    );
-    vi.mocked(mineru.parseFileWithMinerU).mockResolvedValue({
-      content: "# Recovered",
-      assets: [],
-      metadata: {
-        parser: "mineru-pipeline",
-        taskId: "task-fallback",
-        parsedAt: new Date().toISOString(),
-      },
-    });
-
-    const pipeline = new DocumentPipeline();
-    const result = await pipeline.run(
-      makeInput("doc.pdf", "application/pdf", Buffer.from("pdf"), {
-        minimax: "sk-minimax",
-        mineru: "token",
-      })
-    );
-
-    expect(minimax.parseDocumentWithMiniMax).toHaveBeenCalledTimes(1);
-    expect(mineru.parseFileWithMinerU).toHaveBeenCalledTimes(1);
-    expect(result.metadata.parser).toBe("mineru-office");
-    expect(result.content).toContain("# Recovered");
-    expect(
-      result.metadata.parseWarnings.some((w) => w.includes("回退到 MinerU"))
-    ).toBe(true);
-  });
-
-  it("falls back to MinerU on MiniMax 400 format errors", async () => {
-    vi.mocked(minimax.parseDocumentWithMiniMax).mockRejectedValue(
-      new minimax.MiniMaxError(400, "MiniMax 文档请求格式无效")
-    );
-    vi.mocked(mineru.parseFileWithMinerU).mockResolvedValue({
-      content: "# Recovered",
-      assets: [],
-      metadata: {
-        parser: "mineru-pipeline",
-        taskId: "task-fallback-400",
-        parsedAt: new Date().toISOString(),
-      },
-    });
-
-    const pipeline = new DocumentPipeline();
-    const result = await pipeline.run(
-      makeInput("doc.pdf", "application/pdf", Buffer.from("pdf"), {
-        minimax: "sk-minimax",
-        mineru: "token",
-      })
-    );
-
-    expect(result.metadata.parser).toBe("mineru-office");
-    expect(
-      result.metadata.parseWarnings.some((w) => w.includes("回退到 MinerU"))
-    ).toBe(true);
-  });
-
-  it("does not fall back to MinerU for non-size MiniMax errors", async () => {
-    vi.mocked(minimax.parseDocumentWithMiniMax).mockRejectedValue(
-      new minimax.MiniMaxError(500, "MiniMax 服务异常，请稍后重试")
-    );
-
-    const pipeline = new DocumentPipeline();
-    await expect(
-      pipeline.run(
-        makeInput("doc.pdf", "application/pdf", Buffer.from("pdf"), {
-          minimax: "sk-minimax",
-          mineru: "token",
-        })
-      )
-    ).rejects.toThrow("MiniMax 服务异常");
-    expect(mineru.parseFileWithMinerU).not.toHaveBeenCalled();
-  });
-
-  it("does not fall back to MinerU without a MinerU token", async () => {
-    vi.mocked(minimax.parseDocumentWithMiniMax).mockRejectedValue(
-      new minimax.MiniMaxError(413, "文档或请求体超过 MiniMax 限制")
-    );
-
-    const pipeline = new DocumentPipeline();
-    await expect(
-      pipeline.run(
-        makeInput("doc.pdf", "application/pdf", Buffer.from("pdf"), {
-          minimax: "sk-minimax",
-        })
-      )
-    ).rejects.toThrow("超过 MiniMax 限制");
+    await expect(pipeline.run(makeInput("doc.pdf", "application/pdf", Buffer.from("pdf"))))
+      .rejects.toThrow("MinerU Token");
     expect(mineru.parseFileWithMinerU).not.toHaveBeenCalled();
   });
 
@@ -195,12 +70,10 @@ describe("DocumentPipeline", () => {
     await expect(
       pipeline.run(
         makeInput("huge.pdf", "application/pdf", Buffer.alloc(200 * 1024 * 1024 + 1), {
-          minimax: "sk-minimax",
           mineru: "token",
         })
       )
     ).rejects.toThrow("PDF 文件超过 200MB 解析上限");
     expect(mineru.parseFileWithMinerU).not.toHaveBeenCalled();
-    expect(minimax.parseDocumentWithMiniMax).not.toHaveBeenCalled();
   });
 });

@@ -104,7 +104,7 @@
 
 - 描述：保存或更新用户自行提供的 API Key。
 - 认证：需登录。
-- 请求：`{ provider, apiKey }`，其中 provider 为 `deepseek`、`minimax`、`mineru` 或 `bailian`。
+- 请求：`{ provider, apiKey }`，其中 provider 为 `deepseek`、`mineru` 或 `bailian`。
 - 响应：`{ provider, keyPrefix }`。仅在 `USER_API_KEYS_ENABLED=1|true` 时开放。
 
 ### `POST /api/user/generate-profile`
@@ -135,7 +135,7 @@
 
 - 描述：返回当前部署和当前账号实际可用的聊天模型。Qwen 只有在灰度开关、百炼工作空间和用户凭据都可用时才会出现。
 - 认证：需登录。
-- 响应：`{ models: ['qwen3.8-flash'?, 'deepseek-flash', 'minimax-m3.1'], defaultModel, unavailableReasons }`；`models` 只包含活跃模型，历史模型 ID 只出现在历史消息与账单中。
+- 响应：`{ models: ['qwen3.8-flash'?, 'qwen3.8-max'?, 'deepseek-flash'], defaultModel, unavailableReasons }`；`models` 只包含活跃模型，历史模型 ID 只出现在历史消息与账单中。
 
 ### `POST /api/chat`
 
@@ -281,7 +281,7 @@
 
 ### `POST /api/files/[id]/parse`
 
-- 描述：触发文件解析，支持 PDF / Office / WPS / iWork / 图片 / 文本 / 代码等格式。项目 PDF 走 MiniMax M3.1（超过 20MB 或请求被拒时回退 MinerU）；Office/WPS/iWork 走 MinerU；文本和代码本地读取；图片标记 `direct-image`，在聊天时交给所选模型。
+- 描述：触发文件解析，支持 PDF / Office / WPS / iWork / 图片 / 文本 / 代码等格式。项目 PDF（上限 200 MB）和 Office/WPS/iWork 走 MinerU；文本和代码本地读取；图片标记 `direct-image`，在聊天时交给所选模型。
 - 认证：需登录。
 - 响应：`{ id, status, parsedContent? }`
 

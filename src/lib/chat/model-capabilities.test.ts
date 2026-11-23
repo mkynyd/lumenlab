@@ -10,8 +10,8 @@ describe("model capabilities", () => {
     expect(effectiveWebSearchActive("deepseek-v4-flash", true)).toBe(true);
   });
 
-  it("allows manual web search on MiniMax through server-side prefetch", () => {
-    expect(modelSupportsWebSearch("minimax-m3.1")).toBe(true);
-    expect(effectiveWebSearchActive("minimax-m3.1", true)).toBe(true);
+  it("allows manual web search on Qwen", () => {
+    expect(modelSupportsWebSearch("qwen3.8-flash")).toBe(true);
+    expect(effectiveWebSearchActive("qwen3.8-flash", true)).toBe(true);
   });
 });

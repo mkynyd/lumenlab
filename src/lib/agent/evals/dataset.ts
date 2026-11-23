@@ -41,7 +41,7 @@ export const AGENT_EVALUATION_DATASET: readonly AgentEvaluationCase[] = [
 
   model("model-route-01", "对纯文本概念作简短解释。", "deepseek", ["简短", "概念"]),
   model("model-route-02", "阅读一张匿名图片中的表格。", "bailian", ["表格", "图片"]),
-  model("model-route-03", "为长篇匿名文档给出快速概览。", "minimax", ["概览", "文档"]),
+  model("model-route-03", "为长篇匿名文档给出快速概览。", "deepseek", ["概览", "文档"]),
   model("model-route-04", "对普通课程问题给出带步骤的回答。", "deepseek", ["步骤", "回答"]),
   model("model-route-05", "对匿名图像附件总结可见内容与不确定性。", "bailian", ["可见", "不确定性"]),
 ];

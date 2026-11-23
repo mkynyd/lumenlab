@@ -822,7 +822,9 @@ function TokensSection() {
               服务拆分
             </p>
             <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
-              {(["deepseek", "minimax", "bailian"] as const).map((provider) => (
+              {(["deepseek", "minimax", "bailian"] as const)
+                .filter((provider) => provider !== "minimax" || (cacheMetrics.data?.tokenUsage.providers.minimax.requestCount ?? 0) > 0)
+                .map((provider) => (
                 <div
                   key={provider}
                   className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-3 text-sm"

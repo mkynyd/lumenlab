@@ -18,7 +18,7 @@ import { encrypt, maskApiKey } from "@/lib/crypto";
 import { USER_API_KEYS_ENABLED } from "@/lib/config";
 import type { ProviderName } from "@/lib/provider-access";
 
-const providerSchema = z.enum(["deepseek", "minimax", "mineru", "bailian"]);
+const providerSchema = z.enum(["deepseek", "mineru", "bailian"]);
 
 const requestSchema = z.object({
   provider: providerSchema,

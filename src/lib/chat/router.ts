@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_MODEL, providerForChatModel } from "./model-catalog";
+import { chatModelForPreference, DEFAULT_CHAT_MODEL, providerForChatModel } from "./model-catalog";
 
 export interface FileAttachment {
   id: string;
@@ -91,27 +91,24 @@ export function hasMultimodalContent(
 
 /**
  * 任务 05：全部活跃模型都能看图，附件不再触发强制模型路由或模型锁。
- * 优先级：显式选择 > 旧会话 modelLock（只读兼容，不再新写）> 默认 Qwen。
+ * 优先级：显式选择 > 旧会话 modelLock（只读兼容，不再新写）> 默认 DeepSeek。
  */
 export function routeModel(
   conversation: { modelLock: string | null } | null,
   attachments: Array<Pick<FileAttachment | ServerFileAttachment, "name" | "mimeType">>,
   options: { requestedModel?: string } = {}
 ): {
-  provider: "deepseek" | "minimax" | "bailian";
+  provider: "deepseek" | "bailian";
   shouldLock: boolean;
 } {
   if (options.requestedModel) {
-    const requestedProvider = providerForChatModel(options.requestedModel);
+    const requestedProvider = providerForChatModel(chatModelForPreference(options.requestedModel));
     if (requestedProvider) {
       return { provider: requestedProvider, shouldLock: false };
     }
   }
   if (conversation?.modelLock === "qwen") {
     return { provider: "bailian", shouldLock: false };
-  }
-  if (conversation?.modelLock === "minimax") {
-    return { provider: "minimax", shouldLock: false };
   }
   return { provider: providerForChatModel(DEFAULT_CHAT_MODEL)!, shouldLock: false };
 }

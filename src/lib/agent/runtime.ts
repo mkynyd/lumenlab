@@ -8,9 +8,7 @@ import {
   DeepSeekError,
   DeepSeekMessage,
 } from "@/lib/deepseek";
-import { MiniMaxChatError } from "@/lib/chat/minimax-error";
 import { createProviderAdapter } from "@/lib/agent/adapters";
-import { PiAiProviderError } from "@/lib/agent/adapters/pi-ai-adapter";
 import { BailianQwenError } from "@/lib/agent/adapters/bailian-qwen-adapter";
 import type { ProviderRound, ProviderToolProtocol } from "@/lib/agent/provider-adapter";
 import {
@@ -78,7 +76,6 @@ import {
 } from "@/lib/agent/context/context-assembler";
 import { PrismaConversationAdapter } from "@/lib/agent/persistence/prisma-conversation-adapter";
 import type { ConversationPersistence } from "@/lib/agent/persistence/conversation-persistence";
-import { runWebSearch } from "@/lib/tools/web/search-engine";
 import type {
   AgentCompletion,
   AgentRun,
@@ -108,34 +105,6 @@ function shouldPreInject(route: { source: string; confidence: number }): boolean
   if (route.source === "manual") return true;
   if (route.source === "rule" && route.confidence >= 0.85) return true;
   return false;
-}
-
-function formatManualWebContext(input: {
-  query: string;
-  summary: string;
-  sources: Array<{ url: string; title?: string }>;
-}) {
-  const sourceLines = input.sources.length
-    ? input.sources
-        .map((source, index) => {
-          const title = source.title || source.url;
-          return `${index + 1}. ${title}\n   ${source.url}`;
-        })
-        .join("\n")
-    : "无可用来源 URL";
-
-  return [
-    "# 联网搜索结果",
-    "",
-    `查询: ${input.query}`,
-    "",
-    input.summary || "未获得可用联网摘要。",
-    "",
-    "## 来源",
-    sourceLines,
-    "",
-    "请基于以上联网搜索结果回答。不要声称自己没有联网能力；如果联网结果不足，请明确说明不足之处。",
-  ].join("\n");
 }
 
 function getServerTimeZone() {
@@ -250,7 +219,7 @@ function adapterFallbackEvent(
 
 function providerForRequestedModel(
   model: AgentRunInput["model"]["requestedModel"]
-): "deepseek" | "minimax" | "bailian" {
+): "deepseek" | "bailian" {
   return providerForChatModel(model) ?? "deepseek";
 }
 
@@ -681,13 +650,6 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     });
   }
 
-  if (modelRoute.shouldLock) {
-    conversation = await conversationPersistence.lockModel({
-      conversationId: conversation.id,
-      provider: modelRoute.provider === "bailian" ? "qwen" : "minimax",
-    });
-  }
-
   let publicPlan: ReturnType<typeof buildInitialAgentPlan> = null;
   const emitAgentEvent = (event: AgentEvent) => {
     emitRuntimeEvent(event);
@@ -715,8 +677,6 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
       userId,
       conversationId: conversation.id,
     });
-  let manualWebContext = "";
-  let manualWebSources: AgentSource[] = [];
 
   if (agentOrchestratorEnabled) {
     const initialPlan = buildInitialAgentPlan({
@@ -812,78 +772,6 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     }
   }
 
-  if (modelRoute.provider === "minimax" && manualWebSearchActive) {
-    // 搜索走平台自有栈（AnySearch → Bing RSS → DuckDuckGo），不再解析任何
-    // 模型供应商密钥；缺少 ANYSEARCH_API_KEY 时自动降级到 Bing/DDG。
-    const searchExecutionId = `manual-web-search:${runId}`;
-    emitAgentEvent({
-      type: "tool_proposed",
-      executionId: searchExecutionId,
-      preview: {
-        toolId: "web.search",
-        toolName: "联网搜索",
-        summary: "搜索公开资料",
-        affectedResources: [],
-        sendsToExternal: true,
-        externalTargets: ["公开互联网"],
-        isReversible: false,
-        dataTypes: ["用户问题"],
-      },
-    });
-    emitAgentEvent({ type: "tool_started", executionId: searchExecutionId });
-    const webResult = await runWebSearch(effectivePrompt).catch((error) => {
-      emitAgentEvent({
-        type: "tool_failed",
-        executionId: searchExecutionId,
-        errorCode: "WEB_SEARCH_FAILED",
-        error: "联网搜索失败，本次回答将不包含联网内容",
-      });
-      // 降级继续:预取失败不应把整单打成 5xx,模型仍可基于项目资料回答。
-      logger.warn("manual web prefetch failed, continuing without web context", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    });
-    if (webResult) {
-      manualWebContext = formatManualWebContext(webResult);
-      manualWebSources = webResult.sources.map((source) => ({
-        type: "web",
-        title: source.title || source.url,
-        url: source.url,
-        snippet: webResult.summary.slice(0, 240),
-        metadata: {
-          query: webResult.query,
-          mode: "manual-prefetch",
-          provider: "deepseek-web-search",
-        },
-      }));
-      manualWebSources.forEach((source, index) => {
-        emitAgentEvent({
-          type: "tool_source_discovered",
-          executionId: searchExecutionId,
-          source,
-          index,
-          total: manualWebSources.length,
-        });
-      });
-      if (manualWebSources.length > 0) {
-        emitAgentEvent({
-          type: "sources_updated",
-          sources: manualWebSources,
-        });
-      }
-      emitAgentEvent({
-        type: "tool_completed",
-        executionId: searchExecutionId,
-        resultSummary: { sourceCount: manualWebSources.length },
-      });
-      explainRetrieval(manualWebSources.length, "联网资料");
-    }
-    if (manualWebSources.length === 0) {
-      explainRetrieval(0, "联网资料");
-    }
-  }
-
   // 7. 获取对话历史
   // isolatedTurn（Research 结构化阶段等一次性调用）：prompt 自包含，模型上下文
   // 只含 system + 本轮，不重放历史——历史重放会把之前每次阶段调用的 prompt 与
@@ -949,7 +837,6 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   const preludePendingExecutionIds: string[] = [];
   let orchestratorSources: AgentSource[] = [
     ...quickTaskMaterialSources,
-    ...manualWebSources,
   ];
   if (agentOrchestratorEnabled && projectMaterialQuickTask) {
     if (quickTaskMaterialSources.length > 0) {
@@ -1063,7 +950,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   const materialContext = quickTaskMaterialContext
     ? `# 项目资料\n\n${quickTaskMaterialContext}`
     : "";
-  const toolContext = [materialContext, manualWebContext, orchestratorToolContext]
+  const toolContext = [materialContext, orchestratorToolContext]
     .filter(Boolean)
     .join("\n\n");
   const userPromptWithTools = toolContext
@@ -1496,14 +1383,6 @@ function mapProviderError(error: unknown): AgentRuntimeError | null {
   if (error instanceof ResponsesModelError || error instanceof ResponsesSerializationError) {
     return new AgentRuntimeError(400, error.message);
   }
-  if (error instanceof PiAiProviderError) {
-    const status =
-      error.status >= 400 && error.status < 500 ? error.status : 502;
-    return new AgentRuntimeError(status, error.message, {
-      piAiStatus: error.status,
-      piAiProvider: error.provider,
-    });
-  }
   if (error instanceof BailianQwenError) {
     const status =
       error.status >= 400 && error.status < 500 ? error.status : 502;
@@ -1517,13 +1396,6 @@ function mapProviderError(error: unknown): AgentRuntimeError | null {
       error.status >= 400 && error.status < 500 ? error.status : 502;
     return new AgentRuntimeError(status, error.message, {
       deepseekStatus: error.status,
-    });
-  }
-  if (error instanceof MiniMaxChatError) {
-    const status =
-      error.status >= 400 && error.status < 500 ? error.status : 502;
-    return new AgentRuntimeError(status, error.message, {
-      minimaxStatus: error.status,
     });
   }
   return null;

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   attachmentsToContentParts,
   buildDeepSeekResponsesBody,
-  buildMiniMaxResponsesBody,
   buildQwenResponsesBody,
   messagesToInputItems,
   toResponsesFunctionTool,
@@ -270,43 +269,6 @@ describe("buildDeepSeekResponsesBody", () => {
 
     const off = buildDeepSeekResponsesBody(baseInput({ thinkingEnabled: false }));
     expect(off.reasoning).toEqual({ effort: "none" });
-  });
-});
-
-describe("buildMiniMaxResponsesBody", () => {
-  it("uses the M3.1 wire ID and never disables its required thinking", () => {
-    const body = buildMiniMaxResponsesBody(baseInput({ model: "minimax-m3.1", thinkingEnabled: false }));
-    expect(body.model).toBe("MiniMax-M3.1-Flash-Preview");
-    expect(body.reasoning).toEqual({ effort: "low" });
-    expect(buildMiniMaxResponsesBody(baseInput({ model: "MiniMax-M3.1-Flash-Preview", thinkingEnabled: true, reasoningEffort: "max" })).reasoning).toEqual({ effort: "max" });
-  });
-  it("defaults reasoning to none and requires non-none effort when thinking", () => {
-    const off = buildMiniMaxResponsesBody(baseInput({ thinkingEnabled: false }));
-    expect(off.reasoning).toEqual({ effort: "none" });
-
-    const on = buildMiniMaxResponsesBody(
-      baseInput({ thinkingEnabled: true, reasoningEffort: "high" })
-    );
-    expect(on.reasoning?.effort).not.toBe("none");
-
-    const max = buildMiniMaxResponsesBody(
-      baseInput({ thinkingEnabled: true, reasoningEffort: "max" })
-    );
-    expect(max.reasoning).toEqual({ effort: "high" });
-  });
-
-  it("clamps temperature to (0, 1] and restricts tool_choice to none/auto", () => {
-    const hot = buildMiniMaxResponsesBody(baseInput({ temperature: 1.5 }));
-    expect(hot.temperature).toBe(1);
-    const cold = buildMiniMaxResponsesBody(baseInput({ temperature: 0 }));
-    expect(cold.temperature).toBeGreaterThan(0);
-
-    const forced = buildMiniMaxResponsesBody(
-      baseInput({ toolChoice: { type: "function", name: "x" } })
-    );
-    expect(forced.tool_choice).toBe("auto");
-    const none = buildMiniMaxResponsesBody(baseInput({ toolChoice: "none" }));
-    expect(none.tool_choice).toBe("none");
   });
 });
 

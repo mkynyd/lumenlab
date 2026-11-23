@@ -9,8 +9,8 @@ LumenLab 是一个基于 Next.js 16 App Router 的在线 AI 学习工作台：
 - **前端框架**：Next.js 16 App Router、React 19、TypeScript、Tailwind CSS 4
 - **数据库**：PostgreSQL + pgvector，使用 Prisma 7 作为 ORM
 - **缓存**：Redis 可选；Redis 不可用时核心功能会降级到内存或数据库
-- **AI 调用**：DeepSeek V4.1 Flash（对话 / 推理 / 图片理解）、MiniMax M3.1（多模态与文档解析）、阿里云百炼（RAG 嵌入与可选的 Qwen3.8-Flash 聊天）
-- **Provider 层**：项目自有 DeepSeek / MiniMax / Bailian Qwen Adapter，三家都走 Responses 原生 Function Calling
+- **AI 调用**：DeepSeek V4.1 Flash（对话 / 推理 / 图片理解）、阿里云百炼（RAG 嵌入与可选的 Qwen3.8-Flash 聊天）
+- **Provider 层**：项目自有 DeepSeek / Bailian Qwen Adapter，两家都走 Responses 原生 Function Calling
 - **部署**：生产使用 Next.js standalone + systemd + Nginx，PostgreSQL / Redis 绑定本机环回；本地依赖也可用 Docker Compose 启动
 
 ## 应用路由结构
@@ -46,7 +46,7 @@ src/
 │   └── sources.ts            # AgentSource 聚合与持久化
 ├── lib/skills/               # .lumenlab/skills discovery、metadata migration、legacy compat
 ├── lib/tools/                # project files / artifact / web / arxiv / reference / export tools
-├── lib/files/                # 项目文件上传解析、MiniMax PDF、MinerU Office 与 direct-image
+├── lib/files/                # 项目文件上传解析、MinerU PDF / Office 与 direct-image
 ├── lib/study/                # 题集、扫描选题、后台核验与学习日程
 ├── lib/research/             # 持久化研究计划、来源、证据和报告
 ├── lib/paper/                # 文档版本、模板绑定与后台排版
@@ -72,7 +72,7 @@ src/app/api/chat/route.ts
 AgentRuntime.run(input)
   ├─ ContextAssembler 校验项目、文件与用户边界
   ├─ Skill Router、系统提示词、检索上下文与模型路由
-  ├─ ProviderAdapter.startRound() 统一 DeepSeek / MiniMax / Bailian Qwen 首轮调用
+  ├─ ProviderAdapter.startRound() 统一 DeepSeek / Bailian Qwen 首轮调用
   ├─ new 模式可先运行确定性工具前奏
   ├─ AgentLoop 处理规范化 Tool call、去重、轮次与停止条件
   │        └─ ToolRunner 统一执行 Policy 校验 → 自动执行 handler → audit → persistence
@@ -117,8 +117,7 @@ response-stream.ts
 |---|---|
 | 文本、Markdown、CSV、代码 | 本地读取 UTF-8 文本 |
 | 图片 | 不解析：标记为 `direct-image` 后直接作为原始资源交给所选多模态模型 |
-| PDF（≤20MB） | MiniMax M3.1 原生文档解析，请求过大或格式无效时自动回退 MinerU 一次 |
-| PDF（>20MB，上限 200MB） | MinerU 解析 |
+| PDF（上限 200 MB） | MinerU 解析 |
 | Office / WPS / iWork | MinerU 解析 Markdown，图片保存为 `FileAssetResource` |
 
 可提取正文的资料在解析完成后刷新 `ProjectIndex`、创建 `DocumentChunk`，并在凭据可用时通过百炼 `qwen3-vl-embedding` 生成 1024 维向量。`direct-image` 保留原图供模型读取。聊天附件与学习扫描使用独立管线，见[资料与 RAG](../guides/files-and-rag.md)。

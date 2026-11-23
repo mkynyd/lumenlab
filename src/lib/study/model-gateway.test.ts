@@ -15,15 +15,16 @@ beforeEach(() => {
   mocks.quota.mockResolvedValue({ allowed: true });
 });
 describe("independent solvers and bounded verification", () => {
-  it("replaces disabled Qwen with independent MiniMax solving and records the actual candidates", async () => {
+  it("stores same-model candidates for review when Qwen is disabled", async () => {
     vi.stubEnv("MODEL_QWEN_ENABLED", "false");
     mocks.post.mockResolvedValueOnce(response(solution)).mockResolvedValueOnce(response(solution)).mockResolvedValueOnce(response({ deepseekCorrect: true, qwenCorrect: true, evidenceComplete: true, reason: "复算通过" }));
     const progress = vi.fn().mockResolvedValue(undefined);
     const result = await solveSelectedQuestion({ userId: "owner", question: "题目", syllabus: "", sources: [], progress });
-    expect(mocks.key.mock.calls.map(call => call[1])).toEqual(["deepseek", "minimax", "minimax"]);
-    expect(mocks.post.mock.calls.map(call => call[0].body.model)).toEqual(["deepseek-flash", "MiniMax-M3.1-Flash-Preview", "MiniMax-M3.1-Flash-Preview"]);
-    expect(result.candidateModels).toEqual({ deepseek: "deepseek-flash", qwen: "minimax-m3.1" });
-    expect(progress).toHaveBeenCalledWith("MiniMax M3.1 独立解析");
+    expect(mocks.key.mock.calls.map(call => call[1])).toEqual(["deepseek", "deepseek", "deepseek"]);
+    expect(mocks.post.mock.calls.map(call => call[0].body.model)).toEqual(["deepseek-flash", "deepseek-flash", "deepseek-flash"]);
+    expect(result.candidateModels).toEqual({ deepseek: "deepseek-flash", qwen: "deepseek-flash" });
+    expect(result.solution).toBeNull();
+    expect(progress).toHaveBeenCalledWith("DeepSeek 第二份独立解析");
   });
   it("uses DeepSeek for OCR and extraction when Qwen is disabled, including billed model provenance", async () => {
     vi.stubEnv("MODEL_QWEN_ENABLED", "false");

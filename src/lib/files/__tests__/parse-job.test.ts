@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { parseFileContent, parseFileAsset, rewriteAssetReferences } from "../parse-job";
 import * as storage from "@/lib/storage/object-storage";
 import * as providerAccess from "@/lib/data/provider-access";
-import * as minimax from "@/lib/vision/minimax";
 import * as mineru from "@/lib/parse/mineru";
 import * as vectorStore from "@/lib/rag/vector-store";
 import * as projectIndex from "@/lib/rag/project-index";
@@ -11,7 +10,6 @@ import { prisma } from "@/lib/db";
 
 vi.mock("@/lib/storage/object-storage");
 vi.mock("@/lib/data/provider-access");
-vi.mock("@/lib/vision/minimax");
 vi.mock("@/lib/parse/mineru");
 vi.mock("@/lib/rag/vector-store");
 vi.mock("@/lib/rag/project-index");
@@ -59,8 +57,12 @@ describe("parseFileContent", () => {
     expect(result.metadata.parser).toBe("text-local");
   });
 
-  it("routes pdf to minimax-m3-pdf parser", async () => {
-    vi.mocked(minimax.parseDocumentWithMiniMax).mockResolvedValue("# PDF\n\nText");
+  it("routes project PDFs through MinerU", async () => {
+    vi.mocked(mineru.parseFileWithMinerU).mockResolvedValue({
+      content: "# PDF",
+      assets: [],
+      metadata: { parser: "mineru-pipeline", taskId: "task-pdf", parsedAt: new Date().toISOString() },
+    });
     const result = await parseFileContent({
       userId: "u1",
       file: {
@@ -72,7 +74,7 @@ describe("parseFileContent", () => {
         processingMetadata: {},
       },
     });
-    expect(result.metadata.parser).toBe("minimax-m3-pdf");
+    expect(result.metadata.parser).toBe("mineru-pdf");
   });
 
   it("routes office files to mineru-office parser", async () => {

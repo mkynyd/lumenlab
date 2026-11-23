@@ -35,7 +35,7 @@ describe("research model routing", () => {
 
   it("allows active overrides, upgrades legacy IDs, and rejects unknown models", () => {
     vi.stubEnv("RESEARCH_MODEL_RESEARCH_WORKER", "minimax-m3.1");
-    expect(selectResearchModel("research.worker")).toMatchObject({ provider: "minimax", model: "minimax-m3.1", source: "environment" });
+    expect(selectResearchModel("research.worker")).toMatchObject({ provider: "deepseek", model: "deepseek-flash", source: "environment" });
     vi.stubEnv("RESEARCH_MODEL_RESEARCH_VERIFIER", "deepseek-v4-pro");
     expect(selectResearchModel("research.verifier")).toMatchObject({ provider: "deepseek", model: "deepseek-flash", source: "environment" });
     vi.stubEnv("RESEARCH_MODEL_RESEARCH_CLAIM_EXTRACTOR", "qwen3.8-flash");
@@ -50,7 +50,7 @@ describe("research model routing", () => {
     expect(selectResearchModel("research.worker", "qwen3.8-max")).toMatchObject({ provider: "bailian", model: "qwen3.8-max", source: "run_override" });
     vi.stubEnv("RESEARCH_MODEL_RESEARCH_WORKER", "minimax-m3.1");
     expect(selectResearchModel("research.worker", "qwen3.8-max")).toMatchObject({ provider: "bailian", model: "qwen3.8-max", source: "run_override" });
-    expect(selectResearchModel("research.worker", null)).toMatchObject({ provider: "minimax", model: "minimax-m3.1", source: "environment" });
+    expect(selectResearchModel("research.worker", null)).toMatchObject({ provider: "deepseek", model: "deepseek-flash", source: "environment" });
   });
 
   it("keeps role reasoning rules under the per-run override", () => {

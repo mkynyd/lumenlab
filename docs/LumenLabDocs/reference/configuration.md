@@ -17,7 +17,7 @@
 | `REGISTRATION_SYNC_SECRET` | 必需 | — | 注册码同步请求校验密钥，与管理端使用同一值 |
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | 必需 | — | Base64 编码的 RSA 私钥 PEM，用于解密注册码同步快照 |
 | `DEEPSEEK_BASE_URL` | 必需 | `https://api.deepseek.com` | DeepSeek API 基础地址 |
-| `MODEL_QWEN_ENABLED` | 可选 | `false` | Qwen Flash/Max 开关；仅 `true` 时允许调用。关闭时学习识别/提取改用 DeepSeek，第二求解改用 MiniMax，Research 已存 Qwen 路由回退 DeepSeek |
+| `MODEL_QWEN_ENABLED` | 可选 | `false` | Qwen Flash/Max 开关；仅 `true` 时允许调用。关闭时学习识别/提取改用 DeepSeek，学习解析保留待人工核对，Research 已存 Qwen 路由回退 DeepSeek |
 | `BAILIAN_WORKSPACE_ID` | Qwen 启用时必需 | — | 百炼工作空间 ID，用于构造 Qwen DashScope 区域端点；不包含 API Key |
 | `QINIU_ACCESS_KEY` | 必需 | — | 七牛云 Access Key |
 | `QINIU_SECRET_KEY` | 必需 | — | 七牛云 Secret Key，仅服务端使用 |
@@ -44,7 +44,6 @@
 | `WEB_FETCH_ALLOWLIST` | 可选 | — | 允许 `web.fetch` 抓取的域名列表，建议生产环境显式配置 |
 | `CACHE_EXPERIMENT_PROMPT_REORDER` | 可选 | `false` | 是否启用提示词重排实验 |
 | `CACHE_EXPERIMENT_REORDER_STRATEGY` | 可选 | `rag-to-last-user` | 提示词重排策略 |
-| `CACHE_EXPERIMENT_MINIMAX_ACTIVE` | 可选 | `false` | 是否启用 MiniMax 模型缓存实验 |
 
 ---
 
@@ -74,7 +73,7 @@
 
 该开关没有前端 UI，需由部署者通过环境变量控制。
 
-支持的 provider 包括 `deepseek`、`minimax`、`mineru`、`bailian`。项目资料的 PDF 解析依赖 MiniMax（可回退 MinerU），Office/WPS/iWork 解析依赖 MinerU，向量检索与可选的 Qwen3.8-Flash 聊天共用 Bailian 凭据；缺失对应密钥时，相关能力会报错、从模型目录隐藏或降级。图片不走解析 provider，上传后直接交给所选聊天模型。
+支持的 provider 包括 `deepseek`、`mineru`、`bailian`。项目 PDF 和 Office/WPS/iWork 解析依赖 MinerU，向量检索与可选的 Qwen3.8-Flash 聊天共用 Bailian 凭据；缺失对应密钥时，相关能力会报错、从模型目录隐藏或降级。图片不走解析 provider，上传后直接交给所选聊天模型。
 
 ### 学习扫描与文档导出
 
@@ -92,7 +91,7 @@
 - 旧变量 `AGENT_ORCHESTRATOR_ENABLED` 只用于迁移兼容；两者同时存在时 `AGENT_RUNTIME_MODE` 优先。新部署不要再配置旧变量。
 - `AGENT_PROVIDER_ADAPTER` 默认是 `responses`，`legacy` 为同一实现的兼容别名。`pi` / `pi-ai` 不支持当前活跃模型，命中时会抛出配置错误而不是静默降级。
 - `MODEL_QWEN_ENABLED=true` 且配置 `BAILIAN_WORKSPACE_ID` 后，已获得 Bailian 凭据的用户可选择 `qwen3.8-flash`。Qwen 走百炼 compatible-mode Responses，图片用 data URL，视频委托 DashScope 原生端点并使用上传到七牛后的短期受限链接；视频临时对象会在请求结束或取消后删除。它只提供文本、图片/视频理解，不提供图片或视频生成。
-- 新普通会话和项目默认使用 `deepseek-flash`；MiniMax 活跃 ID 为 `minimax-m3.1`（上游 `MiniMax-M3.1-Flash-Preview`）。
+- 新普通会话和项目默认使用 `deepseek-flash`。
 - DeepSeek 侧当前只有一个活跃模型 `deepseek-flash`（DeepSeek V4.1 Flash）：历史 `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro` 已由官方下线并路由到该模型，平台保留其 ID 只用于历史消息与历史账单展示。
 - `AGENT_DEBUG_EVENTS=1` 会把 router candidates、confidence、stop reason 等调试事件写入 SSE，生产环境默认关闭。
 - `WEB_FETCH_ALLOWLIST` 控制 `web.fetch` 可抓取的域名。即使主机在 allowlist 中，服务端仍会对 IPv4、IPv6、IPv4-mapped IPv6 做公开地址判断，并复核 DNS、重定向和 SSRF 边界。实际出站连接固定到复核通过的 DNS 地址，每个重定向目标都重新执行同样的校验。

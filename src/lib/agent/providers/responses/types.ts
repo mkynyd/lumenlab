@@ -1,12 +1,12 @@
 /**
  * Provider-neutral wire types for the OpenAI-compatible Responses API shared
- * by DeepSeek (`https://api.deepseek.com`), MiniMax (`https://api.minimax.cn/v1`),
+ * by DeepSeek (`https://api.deepseek.com`)
  * and Qwen Bailian compatible-mode (`.../compatible-mode/v1`).
  *
- * Only the subset all three providers actually support is modeled. Stateful
+ * Only the subset both providers actually support is modeled. Stateful
  * capabilities (`previous_response_id`, `conversation`, built-in
  * tools such as `web_search` / `code_interpreter`) are intentionally absent:
- * DeepSeek is stateless, MiniMax offers no state, and Qwen's
+ * DeepSeek is stateless and Qwen's
  * `previous_response_id` is not relied on for task reliability (state is
  * replayed explicitly from platform-side items). Qwen alone sends `store: false`.
  */
@@ -49,7 +49,7 @@ export interface ResponsesFunctionCallItem {
   arguments: string;
 }
 
-/** MiniMax and DeepSeek both accept a plain string or a content-part array. */
+/** Responses accepts a plain string or a content-part array. */
 export type ResponsesFunctionCallOutput = string | ResponsesInputContentPart[];
 
 export interface ResponsesFunctionCallOutputItem {
@@ -71,7 +71,7 @@ export type ResponsesInputItem =
   | ResponsesReasoningItem;
 
 /**
- * `max` is DeepSeek's top effort level; MiniMax accepts
+ * `max` is DeepSeek's top effort level. Qwen accepts
  * minimal/low/medium/high (any non-`none` value enables Adaptive Thinking)
  * and Qwen accepts none/minimal/low/medium/high with `medium` as default.
  * Provider serializers are responsible for mapping onto supported values.
@@ -120,7 +120,7 @@ export interface ResponsesRequestBody {
   top_p?: number;
   max_output_tokens?: number;
   stream?: boolean;
-  /** Qwen only; omitted for stateless DeepSeek and MiniMax. */
+  /** Qwen only; omitted for stateless DeepSeek. */
   store?: false;
 }
 

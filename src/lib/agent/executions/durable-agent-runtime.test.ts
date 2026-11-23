@@ -504,7 +504,7 @@ describe("durable Agent runtime bridge", () => {
         attachments: [],
       },
       model: {
-        requestedModel: "minimax-m3.1",
+        requestedModel: "deepseek-flash",
         thinkingEnabled: true,
         reasoningEffort: "high",
       },
@@ -519,7 +519,7 @@ describe("durable Agent runtime bridge", () => {
 
     expect(initial).toMatchObject({
       version: 2,
-      model: { provider: "minimax", name: "minimax-m3.1" },
+      model: { provider: "deepseek", name: "deepseek-flash" },
       rag: { selectedFileIds: ["file-1"] },
       request: { message: "Start" },
       items: [
@@ -728,10 +728,20 @@ describe("durable Agent runtime bridge", () => {
     expect(upgraded.researchState).toEqual(researchState);
   });
 
+  it.each(["minimax-m3", "minimax-m3.1"])("upgrades a stored %s checkpoint before resuming", (name) => {
+    const previous = checkpoint();
+    const upgraded = upgradeAgentCheckpoint({
+      ...previous,
+      model: { provider: "minimax", name },
+    });
+
+    expect(upgraded.model).toEqual({ provider: "deepseek", name: "deepseek-flash" });
+    expect(upgraded.items).toHaveLength(previous.messages.length);
+  });
+
   it("maps new active models to providers through the catalog", () => {
     const cases = [
       ["deepseek-flash", "deepseek"],
-      ["minimax-m3.1", "minimax"],
       ["qwen3.8-flash", "bailian"],
     ] as const;
     for (const [requestedModel, provider] of cases) {

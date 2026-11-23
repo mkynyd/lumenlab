@@ -9,8 +9,8 @@
  *
  * Optional env:
  *   DEV_USER_EMAIL, DEV_USER_NAME
- *   DEV_DEEPSEEK_API_KEY, DEV_MINIMAX_API_KEY, DEV_MINERU_API_KEY, DEV_BAILIAN_API_KEY
- *   or DEEPSEEK_API_KEY, MINIMAX_API_KEY, MINERU_API_KEY, BAILIAN_API_KEY
+ *   DEV_DEEPSEEK_API_KEY, DEV_MINERU_API_KEY, DEV_BAILIAN_API_KEY
+ *   or DEEPSEEK_API_KEY, MINERU_API_KEY, BAILIAN_API_KEY
  */
 
 import bcrypt from "bcryptjs";
@@ -19,7 +19,7 @@ import { encrypt, maskApiKey } from "@/lib/crypto";
 import { USER_API_KEYS_ENABLED } from "@/lib/config";
 import type { ProviderName } from "@/lib/provider-access";
 
-const PROVIDERS: ProviderName[] = ["deepseek", "minimax", "mineru", "bailian"];
+const PROVIDERS: ProviderName[] = ["deepseek", "mineru", "bailian"];
 
 function envName(provider: ProviderName) {
   return provider.toUpperCase();

@@ -219,14 +219,6 @@ async function updateStage(
   });
 }
 
-async function getMiniMaxKey(userId: string) {
-  try {
-    return await getProviderApiKey(userId, "minimax");
-  } catch {
-    return undefined;
-  }
-}
-
 async function getBailianKey(userId: string) {
   try {
     return await getProviderApiKey(userId, "bailian");
@@ -393,9 +385,7 @@ async function runDocumentPipelineForFile(
     mimeType: file.mimeType,
     data,
     apiKeys: {
-      minimax: await getMiniMaxKey(userId),
       mineru: await getMinerUToken(userId),
-      bailian: await getBailianKey(userId),
     },
   };
 

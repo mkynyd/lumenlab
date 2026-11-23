@@ -107,16 +107,8 @@ describe("sendMessageSchema", () => {
     });
   });
 
-  it("allows explicit MiniMax M3 selection", () => {
-    expect(
-      sendMessageSchema.parse({
-        message: "分析图片资料",
-        model: "minimax-m3.1",
-      })
-    ).toMatchObject({
-      model: "minimax-m3.1",
-      thinkingEnabled: true,
-    });
+  it.each(["minimax-m3", "minimax-m3.1"])("rejects explicit selection of %s", (model) => {
+    expect(sendMessageSchema.safeParse({ message: "分析图片资料", model }).success).toBe(false);
   });
 
   it("rejects Qwen until its server-side rollout is enabled", () => {

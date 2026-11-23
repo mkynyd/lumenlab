@@ -9,7 +9,7 @@
 - Node.js 20+
 - PostgreSQL 16 + pgvector
 - Redis 7（多实例和生产建议启用，短信验证码发送必需）
-- DeepSeek / MiniMax / MinerU / Bailian 中与你要使用的能力对应的凭据
+- DeepSeek / MinerU / Bailian 中与你要使用的能力对应的凭据
 - 腾讯云 SES 邮件服务凭据（注册邮箱验证与密码重置邮件；未配置时本地开发回退为控制台 dry-run）
 - 生产文件存储建议使用七牛云 Kodo；开发环境可回退到本地存储
 
@@ -24,7 +24,7 @@ npx prisma migrate deploy
 
 ### 学习扫描与文档导出依赖
 
-- 项目 PDF 使用 MiniMax M3.1，必要时回退 MinerU；项目 Office/WPS/iWork 使用 MinerU，图片直通所选模型。
+- 项目 PDF 和 Office/WPS/iWork 使用 MinerU，图片直通所选模型。
 - 学习扫描预览的 Word/PPT/ODT/ODP 需要主机安装 LibreOffice。可通过 `STUDY_OFFICE_BINARY` 指定 `soffice` 路径；图片/PDF 使用 Sharp、PDF.js、canvas 及随构建复制的 CMap、字体、WASM 和 worker。
 - DOCX 默认使用 Pandoc，缺失时回退 JS；需要保持公式和图表时应安装 Pandoc，并提供可用的 Chromium。`DOCX_EXPORT_ENGINE=legacy` 可显式选择备用路径。
 - PDF 打印与图表渲染通过 `CHROMIUM_EXECUTABLE_PATH` 指定 Chromium。Word 使用仓库内 OFL 中文字体，字体会嵌入导出文件。
@@ -45,15 +45,14 @@ DEV_DEEPSEEK_API_KEY='sk-...' \
 npx tsx --env-file=.env scripts/seed-dev-access.ts
 ```
 
-还可提供 `DEV_MINIMAX_API_KEY`、`DEV_MINERU_API_KEY`、`DEV_BAILIAN_API_KEY`。已有用户可使用 `npx tsx --env-file=.env scripts/setup-api-key.ts --email=... --provider=... --key=...` 单独写入凭据。
+还可提供 `DEV_MINERU_API_KEY`、`DEV_BAILIAN_API_KEY`。已有用户可使用 `npx tsx --env-file=.env scripts/setup-api-key.ts --email=... --provider=... --key=...` 单独写入凭据。
 
 能力与 provider 的最小关系：
 
 | 能力 | 需要的 provider |
 |---|---|
 | DeepSeek 文字聊天 | `deepseek` |
-| PDF 项目解析、MiniMax 聊天 | `minimax`（PDF 解析被拒时回退 MinerU） |
-| Office/WPS/iWork 与 `/tools` PDF 转 Markdown | `mineru` |
+| PDF、Office/WPS/iWork 与 `/tools` PDF 转 Markdown | `mineru` |
 | 向量检索 | `bailian`，缺失时降级为关键词检索 |
 | Qwen3.8-Flash 聊天 | `bailian` + `MODEL_QWEN_ENABLED=true` + `BAILIAN_WORKSPACE_ID` |
 

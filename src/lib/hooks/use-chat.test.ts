@@ -65,7 +65,7 @@ describe("useChat conversation URL sync", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url === "/api/chat/models") {
-          return Response.json({ models: ["qwen3.8-flash", "deepseek-flash", "minimax-m3.1"] });
+          return Response.json({ models: ["qwen3.8-flash", "deepseek-flash"] });
         }
         if (url === "/api/chat") return sseChatResponse(conversationId);
         if (url.startsWith("/api/conversations/")) {
@@ -154,7 +154,7 @@ describe("useChat conversation URL sync", () => {
 
   it("retains unavailable Qwen until the user explicitly selects an alternative", async () => {
     const fetchMock = vi.fn(async () => Response.json({
-      models: ["minimax-m3.1"], unavailableReasons: { "qwen3.8-flash": "Qwen 暂未开放" },
+      models: ["deepseek-flash"], unavailableReasons: { "qwen3.8-flash": "Qwen 暂未开放" },
     }));
     vi.stubGlobal("fetch", fetchMock);
     const { result } = renderHook(() => useChat({ model: "qwen3.8-flash" }), { wrapper: createWrapper() });
@@ -163,12 +163,12 @@ describe("useChat conversation URL sync", () => {
     await act(async () => { expect(await result.current.sendMessage("hello")).toBe(false); });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.current.messages).toHaveLength(0);
-    act(() => result.current.setModel("minimax-m3.1"));
+    act(() => result.current.setModel("deepseek-flash"));
     expect(result.current.modelBlockedReason).toBeUndefined();
   });
 
   it.each([
-    ["minimax-m3.1", "minimax-m3.1"],
+    ["minimax-m3.1", "deepseek-flash"],
     ["deepseek-v4-pro", "deepseek-flash"],
     ["qwen3.7-plus", "qwen3.8-flash"],
   ])("restores %s and resets an ordinary new chat to DeepSeek", async (saved, expected) => {
@@ -189,11 +189,11 @@ describe("useChat conversation URL sync", () => {
     );
     await act(async () => { expect(await result.current.sendMessage("hello")).toBe(false); });
     rerender({ model: "minimax-m3.1", loading: false });
-    await waitFor(() => expect(result.current.model).toBe("minimax-m3.1"));
+    await waitFor(() => expect(result.current.model).toBe("deepseek-flash"));
     await act(async () => { await result.current.sendMessage("hello"); });
     const calls = vi.mocked(fetch).mock.calls;
     const sent = calls.find(([url]) => url === "/api/chat");
-    expect(JSON.parse(sent![1]!.body as string).model).toBe("minimax-m3.1");
+    expect(JSON.parse(sent![1]!.body as string).model).toBe("deepseek-flash");
   });
 
   it("moves /chat to /chat/<id> in place when the first send creates a conversation", async () => {
@@ -252,7 +252,7 @@ describe("useChat conversation URL sync", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url === "/api/chat/models") {
-          return Response.json({ models: ["qwen3.8-flash", "deepseek-flash", "minimax-m3.1"] });
+          return Response.json({ models: ["qwen3.8-flash", "deepseek-flash"] });
         }
         if (url === "/api/chat") {
           const headers = new Headers({

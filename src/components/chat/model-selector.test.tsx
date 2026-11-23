@@ -16,7 +16,7 @@ describe("ModelSelector", () => {
           onChange={setModel}
           reasoningEffort="max"
           onReasoningEffortChange={vi.fn()}
-          availableModels={["deepseek-flash", "minimax-m3.1"]}
+          availableModels={["deepseek-flash", "qwen3.8-flash"]}
         />
       );
     }
@@ -24,11 +24,11 @@ describe("ModelSelector", () => {
     render(<Harness />);
     const desktopTrigger = screen.getAllByRole("button", { name: "选择模型" })[0];
     await user.click(desktopTrigger);
-    await user.click(screen.getByRole("menuitemradio", { name: /MiniMax M3/ }));
+    await user.click(screen.getByRole("menuitemradio", { name: /Qwen3\.8-Flash/ }));
 
     expect(screen.getByRole("menu")).toBeVisible();
-    expect(screen.getByRole("menuitemradio", { name: /MiniMax M3/ })).toBeChecked();
-    expect(desktopTrigger).toHaveTextContent("MiniMax M3");
+    expect(screen.getByRole("menuitemradio", { name: /Qwen3\.8-Flash/ })).toBeChecked();
+    expect(desktopTrigger).toHaveTextContent("Qwen3.8-Flash");
   });
 
   it("shows the catalog-backed model detail and reasoning meter on desktop", async () => {
@@ -40,7 +40,7 @@ describe("ModelSelector", () => {
         onChange={vi.fn()}
         reasoningEffort="max"
         onReasoningEffortChange={onReasoningEffortChange}
-        availableModels={["deepseek-flash", "minimax-m3.1"]}
+        availableModels={["deepseek-flash", "qwen3.8-flash"]}
       />
     );
 
@@ -88,6 +88,7 @@ describe("ModelSelector", () => {
     render(
       <ModelSelector
         model="deepseek-v4-pro"
+        availableModels={["deepseek-flash", "qwen3.8-flash"]}
         onChange={onChange}
         reasoningEffort="max"
         onReasoningEffortChange={onReasoningEffortChange}
@@ -96,9 +97,9 @@ describe("ModelSelector", () => {
 
     const triggers = screen.getAllByRole("button", { name: "选择模型" });
     await user.click(triggers.at(-1)!);
-    await user.click(screen.getByRole("button", { name: /MiniMax M3/ }));
+    await user.click(screen.getByRole("button", { name: /Qwen3\.8-Flash/ }));
 
-    expect(onChange).toHaveBeenCalledWith("minimax-m3.1");
+    expect(onChange).toHaveBeenCalledWith("qwen3.8-flash");
     expect(onReasoningEffortChange).not.toHaveBeenCalled();
   });
 });

@@ -10,11 +10,6 @@ export function buildCacheExperiments(environment: Environment) {
         | "rag-to-last-user"
         | "frequent-context-to-system",
     },
-    minimaxActiveCache: {
-      enabled: environment.CACHE_EXPERIMENT_MINIMAX_ACTIVE === "true",
-      minTokens: 512,
-      ttlSeconds: 300,
-    },
   } as const;
 }
 

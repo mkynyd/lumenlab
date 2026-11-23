@@ -28,7 +28,6 @@ const mocks = vi.hoisted(() => ({
   shouldUseProjectContext: vi.fn(),
   embedQuery: vi.fn(),
   deepseekStream: vi.fn(),
-  minimaxStream: vi.fn(),
   completeChat: vi.fn(),
   createTextMessage: vi.fn(),
   runWebSearch: vi.fn(),
@@ -99,15 +98,6 @@ vi.mock("@/lib/deepseek", () => ({
   createTextMessage: mocks.createTextMessage,
 }));
 
-vi.mock("@/lib/chat/minimax-error", () => ({
-  MiniMaxChatError: class MiniMaxChatError extends Error {
-    constructor(public status: number, message: string) {
-      super(message);
-    }
-  },
-
-}));
-
 // Route tests exercise Runtime/Policy/persistence with controlled provider results.
 // Wire serialization and fetch/SSE are covered by responses-adapters.test.ts.
 vi.mock("@/lib/agent/adapters/deepseek-adapter", async (importOriginal) => {
@@ -115,14 +105,6 @@ vi.mock("@/lib/agent/adapters/deepseek-adapter", async (importOriginal) => {
   return { ...original, DeepSeekAdapter: class extends original.DeepSeekAdapter {
     async stream(params: import("@/lib/agent/provider-adapter").AdapterStreamParams) {
       return mocks.deepseekStream(params);
-    }
-  } };
-});
-vi.mock("@/lib/agent/adapters/minimax-adapter", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/agent/adapters/minimax-adapter")>();
-  return { ...original, MiniMaxAdapter: class extends original.MiniMaxAdapter {
-    async stream(params: import("@/lib/agent/provider-adapter").AdapterStreamParams) {
-      return mocks.minimaxStream(params);
     }
   } };
 });
@@ -140,7 +122,6 @@ describe("POST /api/chat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.deepseekStream.mockReset();
-    mocks.minimaxStream.mockReset();
     mocks.completeChat.mockReset();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
     mocks.projectFindFirst.mockResolvedValue({
@@ -215,27 +196,6 @@ describe("POST /api/chat", () => {
       thinkingEnabled: false,
       activeSkillId: null,
       skillDisabled: false,
-    });
-    mocks.minimaxStream.mockResolvedValue({
-      stream: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(
-            new TextEncoder().encode(
-              `data: ${JSON.stringify({ choices: [{ delta: { content: "MiniMax 回复" } }] })}\n\n`
-            )
-          );
-          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
-          controller.close();
-        },
-      }),
-      getUsage: () => ({
-        prompt_tokens: 1,
-        completion_tokens: 1,
-        total_tokens: 2,
-      }),
-      getToolCalls: () => [],
-      getRawContent: () => "MiniMax 回复",
-      getRawReasoning: () => "",
     });
   });
 
@@ -455,98 +415,17 @@ describe("POST /api/chat", () => {
     }
   });
 
-  it("prefetches web search context for MiniMax manual web search", async () => {
-    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
-    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-10T15:44:17.000Z"));
-    mocks.getProviderApiKey.mockResolvedValue("sk-test");
-    mocks.projectFindFirst.mockResolvedValue(null);
-    mocks.conversationCreate.mockResolvedValue({
-      id: "conversation-1",
-      userId: "user-1",
-      projectId: null,
-      model: "minimax-m3.1",
-      modelLock: null,
-      thinkingEnabled: true,
-      activeSkillId: null,
-      skillDisabled: false,
-    });
-    mocks.runWebSearch.mockResolvedValue({
-      query: "今天有什么 AI 新闻",
-      summary: "联网摘要：AI 新闻更新。",
-      sources: [{ title: "AI News", url: "https://example.com/ai" }],
-    });
-    mocks.messageCreate
-      .mockResolvedValueOnce({ id: "user-message-1" })
-      .mockResolvedValueOnce({ id: "assistant-message-1" });
-
-    try {
-      const request = new NextRequest("http://localhost/api/chat", {
+  it.each(["minimax-m3", "minimax-m3.1"])("rejects a request for the retired %s model before execution", async (model) => {
+    const response = await POST(
+      new NextRequest("http://localhost/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: "今天有什么 AI 新闻",
-          model: "minimax-m3.1",
-          thinkingEnabled: true,
-          reasoningEffort: "max",
-          webSearchActive: true,
-        }),
-      });
-
-      const response = await POST(request);
-      expect(response.status).toBe(200);
-      // 搜索走平台自有栈，不再解析任何模型供应商密钥。
-      expect(mocks.runWebSearch).toHaveBeenCalledWith(
-        expect.stringContaining("当前服务器时间")
-      );
-      expect(mocks.runWebSearch).toHaveBeenCalledWith(
-        expect.stringContaining("2026-07-10T15:44:17.000Z")
-      );
-      expect(mocks.runWebSearch).toHaveBeenCalledWith(
-        expect.stringContaining("今天有什么 AI 新闻")
-      );
-      expect(mocks.minimaxStream).toHaveBeenCalledWith(
-        expect.objectContaining({
-          messages: expect.arrayContaining([
-            expect.objectContaining({
-              role: "user",
-              content: expect.stringContaining("# 联网搜索结果"),
-            }),
-            expect.objectContaining({
-              role: "user",
-              content: expect.stringContaining("# 当前时间上下文"),
-            }),
-          ]),
-        })
-      );
-      expect(mocks.messageCreate).toHaveBeenNthCalledWith(1, {
-        data: {
-          conversationId: "conversation-1",
-          role: "user",
-          content: "今天有什么 AI 新闻",
-        },
-        select: { id: true },
-      });
-
-      const body = await response.text();
-      expect(body).toContain("web_access_enabled");
-      expect(body).toContain("tool_proposed");
-      expect(body).toContain('"isReversible":false');
-      expect(body).toContain("tool_started");
-      expect(body).toContain("tool_source_discovered");
-      expect(body).toContain("https://example.com/ai");
-      expect(body).toContain("tool_completed");
-      expect(body).toContain("sources_updated");
-      expect(body).toContain("MiniMax 回复");
-    } finally {
-      if (originalFlag === undefined) {
-        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
-      } else {
-        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
-      }
-      vi.useRealTimers();
-    }
+        body: JSON.stringify({ message: "解释缓存局部性", model }),
+      })
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.getProviderApiKey).not.toHaveBeenCalled();
+    expect(mocks.deepseekStream).not.toHaveBeenCalled();
   });
 
   it("adds current server time context for DeepSeek web search without persisting it", async () => {
@@ -993,7 +872,6 @@ describe("Streaming tool loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.deepseekStream.mockReset();
-    mocks.minimaxStream.mockReset();
     mocks.auth.mockResolvedValue({ user: { id: "user-1" } });
     mocks.projectFindFirst.mockResolvedValue({
       id: "project-1",
@@ -1608,77 +1486,6 @@ describe("Streaming tool loop", () => {
     }
   });
 
-  it("executes MiniMax native tool_use blocks and streams the final answer", async () => {
-    const originalFlag = process.env.AGENT_ORCHESTRATOR_ENABLED;
-    process.env.AGENT_ORCHESTRATOR_ENABLED = "0";
-
-    mocks.minimaxStream
-      .mockResolvedValueOnce(
-        makeStreamResult({
-          deltas: [{ content: "我先" }, { content: "查看资料。" }],
-          toolCalls: [
-            {
-              id: "tu-1",
-              name: "project_files.list",
-              input: { projectId: "project-1" },
-            },
-          ],
-        })
-      )
-      .mockResolvedValueOnce(
-        makeStreamResult({
-          deltas: [{ content: "最终" }, { content: "论文提纲" }],
-        })
-      );
-
-    try {
-      const response = await POST(
-        new NextRequest("http://localhost/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: "基于项目资料写论文提纲",
-            model: "minimax-m3.1",
-            skillOff: true,
-            thinkingEnabled: true,
-            reasoningEffort: "max",
-            projectId: "project-1",
-            selectedFileIds: [],
-            mode: "review",
-          }),
-        })
-      );
-
-      expect(response.status).toBe(200);
-      const body = await response.text();
-      expect(body).toContain("最终");
-      expect(body).toContain("论文提纲");
-      expect(body).not.toContain("<tool_calls>");
-      expect(mocks.minimaxStream).toHaveBeenCalledTimes(2);
-      expect(mocks.minimaxStream).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tools: expect.arrayContaining([
-            expect.objectContaining({ name: "project_files.list" }),
-          ]),
-        })
-      );
-      expect(mocks.toolExecutionCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            toolId: "project_files.list",
-            status: "proposed",
-          }),
-        })
-      );
-      expect(body.match(/data:/g)?.length).toBeGreaterThan(2);
-    } finally {
-      if (originalFlag === undefined) {
-        delete process.env.AGENT_ORCHESTRATOR_ENABLED;
-      } else {
-        process.env.AGENT_ORCHESTRATOR_ENABLED = originalFlag;
-      }
-    }
-  });
 });
 
 describe("accumulateAndSave sanitization", () => {

@@ -10,9 +10,9 @@ describe("routeModel", () => {
     });
   });
 
-  it("routes to MiniMax when the user explicitly selects MiniMax M3 without forcing a lock", () => {
+  it("routes a retired model preference to DeepSeek without forcing a lock", () => {
     expect(routeModel(null, [], { requestedModel: "minimax-m3.1" })).toEqual({
-      provider: "minimax",
+      provider: "deepseek",
       shouldLock: false,
     });
   });

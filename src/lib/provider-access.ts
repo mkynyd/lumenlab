@@ -1,6 +1,6 @@
 import { USER_API_KEYS_ENABLED } from "@/lib/config";
 
-export type ProviderName = "deepseek" | "minimax" | "mineru" | "bailian";
+export type ProviderName = "deepseek" | "mineru" | "bailian";
 
 type ProviderAccessRecord = {
   accessStatus: string;

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { parseFileWithMinerU } from "@/lib/parse/mineru";
 import type { DocumentParser, ParseInput, ParseResult, ParsedAsset } from "../types";
 import { PIPELINE_VERSION } from "../version";
-import { extensionOf, MAX_MINERU_FILE_BYTES, MAX_MINIMAX_PDF_BYTES } from "./utils";
+import { extensionOf, MAX_MINERU_FILE_BYTES } from "./utils";
 import { assignAssetIdsToImageBlocks, markdownToBlocks } from "./markdown-to-blocks";
 
 export class MinerUParser implements DocumentParser {
@@ -27,13 +27,11 @@ export class MinerUParser implements DocumentParser {
   canParse(input: ParseInput): boolean {
     const ext = extensionOf(input.filename);
     if (this.officeExtensions.has(ext)) return true;
-    // 大 PDF（超出 MiniMax 单请求上限）分流到 MinerU，但不超过 MinerU 自身 200MB 上限
-    const isPdf = ext === "pdf" || input.mimeType === "application/pdf";
-    return (
-      isPdf &&
-      input.data.length > MAX_MINIMAX_PDF_BYTES &&
-      input.data.length <= MAX_MINERU_FILE_BYTES
-    );
+    return this.isPdf(input) && input.data.length <= MAX_MINERU_FILE_BYTES;
+  }
+
+  private isPdf(input: ParseInput) {
+    return extensionOf(input.filename) === "pdf" || input.mimeType === "application/pdf";
   }
 
   async parse(
@@ -77,15 +75,16 @@ export class MinerUParser implements DocumentParser {
     }
 
     const endedAt = new Date().toISOString();
+    const isPdf = this.isPdf(input);
 
     return {
       blocks,
       assets,
       metadata: {
         ...parsed.metadata,
-        parser: this.parserId,
+        parser: isPdf ? "mineru-pdf" : this.parserId,
         pipelineVersion: PIPELINE_VERSION,
-        sourceKind: this.sourceKind,
+        sourceKind: isPdf ? "pdf" : this.sourceKind,
         assetCount: assets.length,
         parseStartedAt: startedAt,
         parseCompletedAt: endedAt,

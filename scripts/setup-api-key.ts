@@ -16,7 +16,7 @@ import { prisma } from "@/lib/db";
 import { encrypt, maskApiKey } from "@/lib/crypto";
 import { USER_API_KEYS_ENABLED } from "@/lib/config";
 
-const PROVIDERS = ["deepseek", "minimax", "mineru", "bailian"] as const;
+const PROVIDERS = ["deepseek", "mineru", "bailian"] as const;
 type Provider = (typeof PROVIDERS)[number];
 
 function parseArgs() {
@@ -31,7 +31,7 @@ function parseArgs() {
   const key = get("--key");
 
   if (!email || !provider || !key) {
-    console.error("用法: npx tsx scripts/setup-api-key.ts --email=<邮箱> --provider=<deepseek|minimax|mineru|bailian> --key=<API Key>");
+    console.error("用法: npx tsx scripts/setup-api-key.ts --email=<邮箱> --provider=<deepseek|mineru|bailian> --key=<API Key>");
     process.exit(1);
   }
 

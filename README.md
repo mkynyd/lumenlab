@@ -58,7 +58,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 - 题集按学段、学科、专业和考试分类；创建时可上传考试大纲或填写知识范围。
 - 上传图片、PDF、Word、PPT后框选错题；支持多个区域、跨页续题、插图与完整长文。Markdown支持选择原文片段，保留公式。
 - 完整文档只用于临时预览，提交、取消或过期后清除。长期保存所选题目的裁片、文字与解析。
-- 后台展示真实进度：完整识别、题库匹配、联网检索、DeepSeek与第二模型独立解析、MiniMax M3.1核验（Qwen停用时第二模型改用MiniMax M3.1，识别与提取改用DeepSeek）。核验通过采用DeepSeek解析；不完整或未通过则保留待校对状态。
+- 后台展示真实进度：完整识别、题库匹配、联网检索、DeepSeek 和可用的 Qwen 独立解析，由 DeepSeek 核验。Qwen 停用时由 DeepSeek 完成识别、提取和两次独立解析，结果保留待人工核对状态。
 - 题库只展示人工核验发布的资料，附来源和授权；没有预置完整考试题库。发布格式见[学习模块运行说明](docs/study-workspace.md)。
 - 导入图片、Excel、ICS、PDF课表，确认学期起点与各节课钟点后入日历；支持学校补课与不可用时段。
 - 作业可手工输入或从老师要求提取后确认。日历高亮截止日期，任务按截止时间排序。
@@ -80,7 +80,7 @@ LumenLab 围绕“项目”组织学习资料、对话、Agent 任务和可导�
 
 ### 受控 Agent 模式
 
-入口处的 Skill Router 先识别用户意图，从 bundled catalog 中选择普通 Agent Skill；用户也可手动切换或关闭 Skill。Deep Research 使用独立的服务器端方法论编译路径，不走普通 Skill 激活与审批链。普通 Agent 后续统一进入 `AgentRuntime`：DeepSeek、MiniMax 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，三条路径共享同一套工具循环、Policy、自动执行、审计与结构化事件。
+入口处的 Skill Router 先识别用户意图，从 bundled catalog 中选择普通 Agent Skill；用户也可手动切换或关闭 Skill。Deep Research 使用独立的服务器端方法论编译路径，不走普通 Skill 激活与审批链。普通 Agent 后续统一进入 `AgentRuntime`：DeepSeek 与 Qwen 均通过 Responses 原生 Function Calling 接入；工具名在 adapter 边界做可逆编码，两条路径共享同一套工具循环、Policy、自动执行、审计与结构化事件。
 
 服务端 Policy Engine 校验所有 `tool_use` 的权限、允许列表、资源归属、参数和显式禁用策略，通过后直接执行。
 
@@ -135,7 +135,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 
 - `skill_activated` / `skill_suggested` / `skill_deactivated` — Skill 状态变化。
 - `web_access_enabled` — 当前请求启用联网。
-- `model_adapter_selected` — 当前使用的模型 provider（DeepSeek / MiniMax / Bailian Qwen）。
+- `model_adapter_selected` — 当前使用的模型 provider（DeepSeek / Bailian Qwen）。
 - `approval_required` — 历史任务兼容事件，新工具调用通过服务端校验后自动执行。
 - `tool_started` / `tool_completed` / `tool_failed` — 工具执行生命周期。
 
@@ -148,7 +148,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 ### 多模型流式对话
 
 - 新普通会话和新项目默认使用 DeepSeek V4.1 Flash（`deepseek-flash`）。已有会话保留自身选择，已有项目的新对话继承项目默认；历史模型在发起新请求时升级到同供应商的活跃模型，历史账单不改写。
-- 活跃模型包括 Qwen3.8-Flash、DeepSeek V4.1 Flash（`deepseek-flash`）和 MiniMax M3.1，均支持文本与图片输入。DeepSeek 已把 V4 Flash、V4 Flash Vision Exp 与 V4 Pro 统一路由到 V4.1 Flash，平台侧只保留 `deepseek-flash` 用于新请求，历史 ID 仅用于历史消息与账单。Qwen 需启用 `MODEL_QWEN_ENABLED`、配置百炼工作空间，并为目标账号提供有效聊天凭证。不可用或请求失败时显示原因，保留当前选择、草稿和附件，由用户手动选择其他模型。
+- 活跃模型包括 DeepSeek V4.1 Flash（`deepseek-flash`）、Qwen3.8-Flash 和 Qwen3.8-Max，均支持文本与图片输入。DeepSeek 已把 V4 Flash、V4 Flash Vision Exp 与 V4 Pro 统一路由到 V4.1 Flash，平台侧只保留 `deepseek-flash` 用于新请求，历史 ID 仅用于历史消息与账单。Qwen 需启用 `MODEL_QWEN_ENABLED`、配置百炼工作空间，并为目标账号提供有效聊天凭证。不可用或请求失败时显示原因，保留当前选择、草稿和附件，由用户手动选择其他模型。
 - 三个聊天适配器使用 Responses，平台管理历史、工具策略校验和调用结果；原生图片在当前工具回合间保留。
 - PDF/DOCX 聊天输入先提取正文，扫描 PDF 转为有数量上限的页图；Qwen 视频附件走独立的 DashScope 兼容路径。独立文档解析保留。聊天图片附件会持久化并在历史回合中重新鉴权渲染，支持缩略图网格与大图查看器。
 - `AGENT_PROVIDER_ADAPTER=responses` 为默认配置，`legacy` 为兼容别名；旧 Pi POC 不用于当前活跃模型。各供应商可独立暂停，暂停后请求返回 503。
@@ -158,7 +158,7 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 ### 文档解析与转换
 
 - 项目资料上传支持 PDF、Office/WPS/iWork 文档、图片、文本和代码文件，单次最多 50 个文件，单文件 50MB。
-- 项目 PDF 走 MiniMax M3.1 原生文档解析（超过 20MB 或被拒绝时回退 MinerU，上限 200MB）；Office/WPS/iWork 文档走 MinerU 转 Markdown 并保存图片资源；文本和代码本地解析。上传的图片不再单独 OCR，标记为 `direct-image` 后作为原始资源直通所选模型。
+- 项目 PDF（上限 200MB）和 Office/WPS/iWork 文档走 MinerU 转 Markdown 并保存图片资源；文本和代码本地解析。上传的图片不再单独 OCR，标记为 `direct-image` 后作为原始资源直通所选模型。
 - 独立 `/tools` 文档转换继续使用 MinerU Precision，将 PDF 转为含公式、表格和图片的 Markdown。
 - 在线预览完整渲染结果，下载含 Markdown、图片目录、样式 PDF 和 DOCX 的 ZIP 包，并可保存到项目资料。
 
@@ -192,12 +192,12 @@ Agent 事件以 `event: agent` 行的形式注入到 `/api/chat` 的 SSE 流。
 | 语言 | TypeScript 5, React 19 |
 | 数据库 | PostgreSQL 16 + pgvector 0.8 |
 | ORM | Prisma 7.8 |
-| AI 调用 | ProviderAdapter：DeepSeek / MiniMax / Bailian Qwen 三家 Responses 原生 Function Calling |
+| AI 调用 | ProviderAdapter：DeepSeek / Bailian Qwen 两家 Responses 原生 Function Calling |
 | 缓存 | Redis 7 + TanStack Query + React `cache()` |
 | 认证 | NextAuth.js v5 (Credentials Provider, JWT) |
 | 样式 | Tailwind CSS 4 |
 | 虚拟化 | TanStack Virtual |
-| 文件解析 | MiniMax M3.1, MinerU Precision, PDF.js, @napi-rs/canvas, LibreOffice（学习扫描预览 Office） |
+| 文件解析 | MinerU Precision, PDF.js, @napi-rs/canvas, LibreOffice（学习扫描预览 Office） |
 | 文档导出 | Pandoc（DOCX 默认）, docx（备用）, sharp, Playwright/Chromium, unified/remark |
 | 存储 | 七牛云 Kodo 私有对象存储 (生产), 本地文件系统 (开发降级) |
 | 加密 | AES-256-GCM, bcrypt, RSA-OAEP, HMAC-SHA256 |
@@ -252,7 +252,7 @@ src/
 │   │   ├── runtime-events.ts           # 结构化 Runtime 事件
 │   │   ├── runtime-mode.ts             # legacy / shadow / new 显式策略
 │   │   ├── context/                    # 项目/文件归属与视觉上下文组装
-│   │   ├── adapters/                   # Provider Adapter（DeepSeek / MiniMax / Bailian Qwen，Responses 原生）
+│   │   ├── adapters/                   # Provider Adapter（DeepSeek / Bailian Qwen，Responses 原生）
 │   │   ├── providers/                  # Provider delta/usage 规范化
 │   │   ├── loop/agent-loop.ts          # 唯一模型工具循环
 │   │   ├── tools/tool-runner.ts        # Policy/审批/执行/审计状态机
@@ -296,7 +296,6 @@ src/
 │   │   ├── model-catalog.ts            # 活跃/历史模型目录与计费版本
 │   │   ├── compression.ts              # 会话历史自动压缩
 │   │   └── project-conversation-state.ts
-│   ├── vision/minimax.ts               # MiniMax 项目 PDF 原生解析客户端
 │   ├── rag/                            # 文档分块 + 关键词 + 向量 + 项目索引
 │   ├── files/                          # 解析任务、M3.1 文档流水线
 │   ├── parse/                          # MinerU 文本解析（独立 /tools 流程）
@@ -354,7 +353,7 @@ src/
          → AgentRuntime.run(AgentRunInput)
          → ContextAssembler + ConversationPersistence
          → Skill Router / RAG / 确定性 prelude
-         → ProviderAdapter（DeepSeek / MiniMax / Bailian Qwen 均走 Responses 原生 Function Calling）
+         → ProviderAdapter（DeepSeek / Bailian Qwen 均走 Responses 原生 Function Calling）
          → Agent Loop（规范化调用、Policy、ToolRunner、continuation）
          → 结构化 AgentEvent
          → SSE Adapter（保持既有 data/event 格式与响应头）
@@ -388,7 +387,7 @@ Runtime prelude 规划工具，或 ProviderAdapter 规范化模型 tool_use
 | 客户端状态 | TanStack Query | 30s stale, 5min GC, 精确失效 |
 | 请求去重 | React `cache()` 数据层 | 单次 request 内 DB 查询去重 |
 | 应用缓存 | Redis + 内存降级 | 滑动窗口限流, 导出缓存 1h TTL |
-| 外部 API | DeepSeek KV + MiniMax Prompt Cache；Bailian Qwen 用量统计 | 缓存实验默认关闭 |
+| 外部 API | DeepSeek KV；Bailian Qwen 用量统计 | 缓存实验默认关闭 |
 
 ### Agent 数据模型
 
@@ -460,7 +459,7 @@ cp .env.example .env
 | `CHAT_INTELLIGENT_UI_ENABLED` | 持久聊天的交互式回答试用开关，默认 `0` |
 | `CHAT_INTELLIGENT_UI_RENDER` | 显示已校验的交互内容，默认 `1`。设为 `0` 时显示文字正文 |
 | `AGENT_PROVIDER_ADAPTER` | 默认 `responses`；兼容 `legacy` 别名，拒绝旧 `pi` / `pi-ai` 配置 |
-| `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_MINIMAX_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
+| `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
 | `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 开放开关，示例默认 `false`；设为 `true` 前须验证目标账号的实际聊天权限，只有 Embedding 权限不足以开放默认聊天 |
 | `ANYSEARCH_API_KEY` | 平台级联网搜索基础设施密钥（仅服务端读取）。`web.search` 优先走 AnySearch，再回退 Bing RSS 与 DuckDuckGo；留空则跳过 AnySearch，本地开发仍可搜索 |
 | `SCIVERSE_API_TOKEN` | 平台级学术检索基础设施密钥（仅服务端读取）。`sciverse.search` / `sciverse.semantic_search` / `sciverse.read` / `sciverse.paper_relations` / `sciverse.resource` 直连 Sciverse API（`sciverse.search` 的高层 filterIntent 由服务器按 `/meta-catalog` 校验后编译，目录不可用时降级为基础检索）；留空则这些工具返回 `SCIVERSE_NOT_CONFIGURED`，不影响其他工具 |
@@ -491,7 +490,7 @@ DEV_DEEPSEEK_API_KEY='sk-...' \
 npx tsx --env-file=.env scripts/seed-dev-access.ts
 ```
 
-`DEV_USER_PASSWORD` 必须显式设置。项目 PDF 解析另需 MiniMax 凭据，Office 文档解析另需 MinerU 凭据，详见[部署文档](docs/LumenLabDocs/deployment.md)。
+`DEV_USER_PASSWORD` 必须显式设置。项目 PDF 与 Office 文档解析需要 MinerU 凭据，详见[部署文档](docs/LumenLabDocs/deployment.md)。
 
 ## 使用指南
 
@@ -504,7 +503,7 @@ npx tsx --env-file=.env scripts/seed-dev-access.ts
 ### 上传资料
 
 1. 进入项目，在侧边栏上传文件（PNG、JPEG、WebP、PDF、Office/WPS/iWork、TXT、MD、CSV、代码等）。
-2. PDF 使用 MiniMax M3.1 解析（超过 20MB 或被拒时回退 MinerU）；Office/WPS/iWork 文档使用 MinerU 解析并保存图片资源；文本与代码本地读取；图片不单独解析，提问时直接交给所选模型。
+2. PDF（上限 200MB）和 Office/WPS/iWork 文档使用 MinerU 解析并保存图片资源；文本与代码本地读取；图片不单独解析，提问时直接交给所选模型。
 3. 单次最多 50 个文件，单文件上限 50MB，总大小上限 300MB。
 4. 资料解析完成后自动刷新项目索引与向量，可直接用于检索与提问。
 

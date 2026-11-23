@@ -7,10 +7,8 @@ import type {
   ProgressCallback,
 } from "./types";
 import { renderDocumentToMarkdown } from "./renderer";
-import { MiniMaxError } from "@/lib/vision/minimax";
 import { TextLocalParser } from "./parsers/text-local-parser";
 import { MinerUParser } from "./parsers/mineru-parser";
-import { MiniMaxPdfParser } from "./parsers/minimax-pdf-parser";
 import { extensionOf, MAX_MINERU_FILE_BYTES } from "./parsers/utils";
 import { buildParseQualityReport } from "./quality-checker";
 
@@ -28,7 +26,6 @@ export class DocumentPipeline {
   private parsers: DocumentParser[] = [
     new TextLocalParser(),
     new MinerUParser(),
-    new MiniMaxPdfParser(),
   ];
 
   async run(input: ParseInput, onProgress?: ProgressCallback): Promise<PipelineResult> {
@@ -44,7 +41,7 @@ export class DocumentPipeline {
       throw new Error(`不支持的文件类型: .${ext || input.mimeType}`);
     }
 
-    const parseResult = await this.parseWithFallback(parser, input, onProgress);
+    const parseResult = await parser.parse(input, onProgress);
 
     const content = renderDocumentToMarkdown(parseResult.blocks);
     const completedAt = new Date().toISOString();
@@ -77,34 +74,5 @@ export class DocumentPipeline {
       blocks: parseResult.blocks,
       assets: parseResult.assets,
     };
-  }
-
-  /**
-   * MiniMax PDF 解析被端点以请求过大/格式无效（400/413）拒绝时，
-   * 在 MinerU 可用且文件不超过其 200MB 上限的前提下回退到 MinerU 重试一次。
-   */
-  private async parseWithFallback(
-    parser: DocumentParser,
-    input: ParseInput,
-    onProgress?: ProgressCallback
-  ): Promise<ParseResult> {
-    try {
-      return await parser.parse(input, onProgress);
-    } catch (error) {
-      const canFallback =
-        parser instanceof MiniMaxPdfParser &&
-        error instanceof MiniMaxError &&
-        (error.status === 400 || error.status === 413) &&
-        Boolean(input.apiKeys.mineru) &&
-        input.data.length <= MAX_MINERU_FILE_BYTES;
-      if (!canFallback) throw error;
-
-      const message = error instanceof Error ? error.message : String(error);
-      const fallbackResult = await new MinerUParser().parse(input, onProgress);
-      fallbackResult.metadata.parseWarnings.push(
-        `MiniMax PDF 解析失败（${message}），已回退到 MinerU 解析`
-      );
-      return fallbackResult;
-    }
   }
 }

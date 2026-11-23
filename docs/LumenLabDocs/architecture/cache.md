@@ -11,7 +11,7 @@ LumenLab 使用四层缓存策略，从浏览器到外部 API 层层递进：
 | L1 客户端状态 | TanStack Query | 前端组件状态、服务端数据同步与乐观更新 |
 | L2 服务端请求去重 | React `cache()` | 同一次 Next.js 服务端请求内，重复查询自动去重 |
 | L3 应用级缓存 | Redis + 内存 fallback | 速率限制、导出缓存、实验配置、指标计数 |
-| L4 外部 API 提示缓存 | DeepSeek prompt cache + MiniMax 实验骨架 | 利用模型侧提示缓存，降低 token 费用与延迟；Qwen 当前只记录用量，不启用应用侧 prompt-cache 实验 |
+| L4 外部 API 提示缓存 | DeepSeek prompt cache | 利用模型侧提示缓存，降低 token 费用与延迟；Qwen 当前只记录用量，不启用应用侧 prompt-cache 实验 |
 
 ## Redis 接入
 
@@ -60,7 +60,6 @@ Redis 不可用时，各消费者必须优雅降级；核心链路（聊天、�
 | 实验 | 环境变量 | 说明 |
 |---|---|---|
 | 自适应 Prompt 排序 | `CACHE_EXPERIMENT_PROMPT_REORDER=true` | 将 RAG 上下文移动到更利于命中模型 prompt cache 的位置 |
-| MiniMax 主动缓存 | `CACHE_EXPERIMENT_MINIMAX_ACTIVE=true` | 对满足最小 token 数的 MiniMax 请求启用主动缓存，TTL 300 秒 |
 
 具体策略：
 

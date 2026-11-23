@@ -1,6 +1,6 @@
 # 任务路由
 
-> 面向开发者与自托管维护者，介绍 LumenLab 如何选择 DeepSeek V4.1 Flash、MiniMax M3.1 或 Qwen3.8-Flash，以及 Tool / Skill 在不同模型上的分发策略。
+> 面向开发者与自托管维护者，介绍 LumenLab 如何选择 DeepSeek V4.1 Flash 或 Qwen3.8，以及 Tool / Skill 在不同模型上的分发策略。
 
 ## 模型路由入口
 
@@ -17,13 +17,12 @@
 |---|---|---|---|
 | 1 | 用户显式选择某活跃模型 | 该模型的 provider | 否 |
 | 2 | `conversation.modelLock === "qwen"`（旧会话） | Bailian Qwen | 否（只读兼容） |
-| 3 | `conversation.modelLock === "minimax"`（旧会话） | MiniMax | 否（只读兼容） |
 | 默认 | 以上都不满足 | 默认模型所在 provider | 否 |
 
 说明：
 
-- 新普通会话和项目默认使用 `deepseek-flash`；MiniMax 活跃 ID 为 `minimax-m3.1`，上游 ID 为 `MiniMax-M3.1-Flash-Preview`。历史 `minimax-m3` 仅用于旧消息和账单，新请求升级到 M3.1。
-- 任务 05 起附件不再影响路由：三个活跃模型都能读图，因此 `requiresVisionModel` 与「多模态附件锁定 MiniMax」的行为都已删除，`shouldLock` 恒为 `false`。
+- 新普通会话和项目默认使用 `deepseek-flash`。存量 MiniMax 偏好和执行检查点在新调用前回退到 DeepSeek，历史消息和账单保留原模型。
+- 活跃模型均能读图，附件类型不改变模型路由。
 - 旧会话保存的模型在发起新回合时按目录升级：`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro` → `deepseek-flash`，`qwen3.7-plus` → `qwen3.8-flash`；未知 ID 原样保留并明确失败。
 - 未启用 `MODEL_QWEN_ENABLED`、未配置 `BAILIAN_WORKSPACE_ID` 或当前账号缺少 Bailian 凭据时，Qwen 不会出现在模型目录中，直接提交该模型也会被服务端拒绝。
 
@@ -37,7 +36,7 @@
 
 ## 历史消息与思考过程
 
-任务 05 已删除 MiniMax 专用的历史压缩（`summarizeHistoryForMiniMax()`）。当前所有 provider 共用同一条 Responses 消息组装路径：`src/lib/agent/providers/responses/adapter-stream.ts` 的 `prepareResponsesMessages()` 会从历史消息中统一删除 `reasoning_content`，只保留正文与当前回合的媒体引用，因此跨模型切换时不再需要按 provider 压缩历史。
+当前所有 provider 共用同一条 Responses 消息组装路径。`src/lib/agent/providers/responses/adapter-stream.ts` 的 `prepareResponsesMessages()` 会从历史消息中统一删除 `reasoning_content`，只保留正文与当前回合的媒体引用，因此跨模型切换时不再需要按 provider 压缩历史。
 
 普通会话的上下文长度由 `src/lib/chat/compression.ts` 的会话压缩负责，与模型路由相互独立。
 
@@ -68,12 +67,6 @@
 - `DeepSeekAdapter` 把内部 `web.search` 映射为 `web_search`，其余 Tool ID 使用可逆编码满足 Responses 名称限制；返回时全部还原为内部 Tool ID。
 - 所有活跃 Tool 都以原生 `function_call` / `function_call_output` items 续接并按 call_id 区分，不再注入或解析 XML/DSML。
 - `new` 模式还可在首轮模型回答前执行确定性工具前奏，如 `project_files.read`、`project_rag.search`、`web.fetch`；前奏和模型触发调用共用 `ToolRunner` 与去重记录。
-
-### MiniMax
-
-- `MiniMaxAdapter` 将当前允许的 Tool 作为原生 Tool 注入，解析原生 `tool_use`，并用原生 `tool_result` transcript 续跑。
-- continuation 不重复携带首轮图片/PDF 等附件，历史中的 DeepSeek reasoning 也会在 Adapter 边界过滤。
-- MiniMax 同样使用 Responses 原生 function items，并在 Adapter 边界处理工具名编码。
 
 ### Qwen3.8-Flash
 

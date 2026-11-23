@@ -9,7 +9,7 @@ function getEncoder() {
 
 /**
  * 估算单段文本的 token 数。
- * 使用 cl100k_base 做保守估算，适用于 DeepSeek / MiniMax 的 Anthropic 兼容接口。
+ * 使用 cl100k_base 做保守估算，适用于 当前对话模型。
  */
 export function countTokens(text: string): number {
   return getEncoder().encode(text).length;

@@ -15,7 +15,7 @@ vi.mock("@/components/chat/chat-input", () => ({
 }));
 
 vi.mock("@/lib/hooks/use-available-models", () => ({
-  useAvailableChatModels: () => ({ availableModels: ["qwen3.8-flash", "qwen3.8-max", "deepseek-flash", "minimax-m3.1"], catalogError: null }),
+  useAvailableChatModels: () => ({ availableModels: ["qwen3.8-flash", "qwen3.8-max", "deepseek-flash"], catalogError: null }),
 }));
 
 const { ResearchComposer } = await import("./research-composer");
@@ -43,7 +43,7 @@ describe("ResearchComposer", () => {
     render(<ResearchComposer onSend={vi.fn()} />);
     const props = latestChatInputProps();
     expect(props.model).toBe("deepseek-flash");
-    expect(props.availableModels).toEqual(["qwen3.8-flash", "qwen3.8-max", "deepseek-flash", "minimax-m3.1"]);
+    expect(props.availableModels).toEqual(["qwen3.8-flash", "qwen3.8-max", "deepseek-flash"]);
   });
 
   it("submits question, attachments and options, including the domain key only when shown", async () => {

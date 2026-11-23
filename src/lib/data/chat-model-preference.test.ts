@@ -17,8 +17,8 @@ describe("request model inheritance", () => {
   });
 
   it.each([
-    ["minimax-m3.1", "minimax-m3.1"],
-    ["minimax-m3", "minimax-m3.1"],
+    ["minimax-m3.1", "deepseek-flash"],
+    ["minimax-m3", "deepseek-flash"],
     ["deepseek-v4-flash-vision-exp", "deepseek-flash"],
     ["deepseek-v4-flash", "deepseek-flash"],
     ["deepseek-v4-pro", "deepseek-flash"],
@@ -34,7 +34,7 @@ describe("request model inheritance", () => {
 
   it("inherits a project's explicit selection for its new conversations", async () => {
     mocks.project.mockResolvedValue({ defaultModel: "minimax-m3.1" });
-    await expect(resolveStoredChatModel("owner", { projectId: "project" })).resolves.toBe("minimax-m3.1");
+    await expect(resolveStoredChatModel("owner", { projectId: "project" })).resolves.toBe("deepseek-flash");
     expect(mocks.project).toHaveBeenCalledWith({ where: { id: "project", userId: "owner" }, select: { defaultModel: true } });
   });
 

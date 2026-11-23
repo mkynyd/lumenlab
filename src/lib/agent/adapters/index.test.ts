@@ -13,10 +13,14 @@ describe("createProviderAdapter", () => {
     vi.stubEnv("MODEL_QWEN_ENABLED", "false");
     expect(() => createProviderAdapter("bailian", "test")).toThrow("Qwen 模型暂未开放");
   });
-  it.each(["deepseek", "minimax", "bailian"] as const)("can pause %s without falling back to an unverified protocol", (provider) => {
+  it.each(["deepseek", "bailian"] as const)("can pause %s without falling back to an unverified protocol", (provider) => {
     vi.stubEnv(`AGENT_RESPONSES_${provider.toUpperCase()}_ENABLED`, "false");
     expect(() => createProviderAdapter(provider, "test", "responses")).toThrow(/暂停服务/);
   });
+  it.each(["responses", "legacy", "pi"] as const)("blocks retired MiniMax for %s", (layer) => {
+    expect(() => createProviderAdapter("minimax", "old-key", layer)).toThrow("MiniMax 模型已停用");
+  });
+
   it("keeps legacy as an alias for the project Responses adapter", () => {
     expect(createProviderAdapter("deepseek", "sk-test", "legacy")).toBeInstanceOf(
       DeepSeekAdapter
@@ -24,7 +28,7 @@ describe("createProviderAdapter", () => {
   });
 
   it("prevents the old Pi POC from bypassing the active Responses model configuration", () => {
-    expect(() => createProviderAdapter("minimax", "sk-test", "pi")).toThrow(/旧 Pi 协议/);
+    expect(() => createProviderAdapter("deepseek", "sk-test", "pi")).toThrow(/旧 Pi 协议/);
     expect(resolveProviderAdapterLayer("pi")).toBe("pi");
     expect(resolveProviderAdapterLayer("pi-ai")).toBe("pi");
     expect(resolveProviderAdapterLayer("anything-else")).toBe("responses");

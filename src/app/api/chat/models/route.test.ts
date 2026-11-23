@@ -17,7 +17,7 @@ describe("chat model availability", () => {
   it("lists Qwen first when enabled and configured, without exposing credentials", async () => {
     const response = await GET();
     const data = await response.json();
-    expect(data).toEqual({ models: ["qwen3.8-flash", "qwen3.8-max", "deepseek-flash", "minimax-m3.1"], defaultModel: "deepseek-flash", unavailableReasons: {} });
+    expect(data).toEqual({ models: ["qwen3.8-flash", "qwen3.8-max", "deepseek-flash"], defaultModel: "deepseek-flash", unavailableReasons: {} });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(JSON.stringify(data)).not.toContain("secret-not-for-response");
   });
@@ -25,7 +25,7 @@ describe("chat model availability", () => {
     vi.stubEnv("MODEL_QWEN_ENABLED", "false");
     const data = await (await GET()).json();
     expect(data.defaultModel).toBe("deepseek-flash");
-    expect(data.models).toEqual(["deepseek-flash", "minimax-m3.1"]);
+    expect(data.models).toEqual(["deepseek-flash"]);
     expect(data.unavailableReasons["qwen3.8-flash"]).toContain("暂未开放");
     expect(mocks.key).not.toHaveBeenCalled();
   });

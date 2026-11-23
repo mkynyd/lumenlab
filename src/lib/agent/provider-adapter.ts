@@ -1,5 +1,5 @@
 /**
- * Provider adapters normalize DeepSeek, MiniMax, and future model streams
+ * Provider adapters normalize DeepSeek, Qwen, and future model streams
  * into a shared internal shape used by Agent Runtime.
  *
  * Provider-specific tool names, native blocks, XML/DSML fallback parsing, and

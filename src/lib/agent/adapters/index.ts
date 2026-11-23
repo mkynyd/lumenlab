@@ -1,7 +1,5 @@
 import { isQwenModelEnabled } from "@/lib/chat/model-catalog";
 import { DeepSeekAdapter } from "./deepseek-adapter";
-import { MiniMaxAdapter } from "./minimax-adapter";
-import { PiAiAdapter } from "./pi-ai-adapter";
 import { BailianQwenAdapter } from "./bailian-qwen-adapter";
 import type { ProviderAdapter } from "@/lib/agent/provider-adapter";
 import type { ProviderName } from "@/lib/agent/contracts";
@@ -22,6 +20,7 @@ export function createProviderAdapter(
   apiKey: string,
   layer = resolveProviderAdapterLayer()
 ): ProviderAdapter {
+  if (provider === "minimax") throw new ResponsesConfigurationError("MiniMax 模型已停用");
   if (process.env[`AGENT_RESPONSES_${provider.toUpperCase()}_ENABLED`] === "false") {
     throw new ResponsesConfigurationError(`${provider} Responses 暂停服务`);
   }
@@ -31,9 +30,6 @@ export function createProviderAdapter(
   if (provider === "bailian") {
     if (!isQwenModelEnabled()) throw new ResponsesConfigurationError("Qwen 模型暂未开放");
     return new BailianQwenAdapter(apiKey, bailianQwenBaseUrl());
-  }
-  if (provider === "minimax") {
-    return new MiniMaxAdapter(apiKey);
   }
   return new DeepSeekAdapter(apiKey);
 }
@@ -46,5 +42,5 @@ function bailianQwenBaseUrl() {
   return `https://${workspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`;
 }
 
-export { DeepSeekAdapter, MiniMaxAdapter, PiAiAdapter, BailianQwenAdapter };
+export { DeepSeekAdapter, BailianQwenAdapter };
 export type { ProviderAdapter };

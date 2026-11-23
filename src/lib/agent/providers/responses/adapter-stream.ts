@@ -33,7 +33,7 @@ export function responsesOutputBudget(params: Pick<AdapterStreamParams, "model" 
   return Math.min(limit, budget);
 }
 
-export function responsesModel(model: string, provider: "deepseek" | "minimax" | "bailian") {
+export function responsesModel(model: string, provider: "deepseek" | "bailian") {
   const entry = getModelCatalogEntry(model);
   if (!entry?.enabled || entry.provider !== provider) {
     throw new ResponsesModelError(`当前 ${provider} Responses 路径不支持模型：${model}`);
