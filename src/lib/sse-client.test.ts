@@ -32,6 +32,7 @@ describe("durable SSE client", () => {
           "id: 3",
           "data: [DONE]",
           "",
+          "",
         ].join("\n")
       ),
       (chunk) => chunks.push(chunk.content),
@@ -92,5 +93,28 @@ describe("durable SSE client", () => {
     ).rejects.toEqual(
       new SSEExecutionError("执行已取消", "cancelled", "execution_cancelled")
     );
+  });
+});
+
+describe("complete SSE frames", () => {
+  it.each(["id: 9\n", 'id: 9\ndata: {"choices":[]}', 'id: 9\ndata: {"choices":[]}\n'])(
+    "does not advance the cursor for a truncated frame %j",
+    async (source) => {
+      const cursor = vi.fn();
+      const chunk = vi.fn();
+      await readSSEStream(reader(source), chunk, { onEventId: cursor });
+      expect(cursor).not.toHaveBeenCalled();
+      expect(chunk).not.toHaveBeenCalled();
+    },
+  );
+
+  it("consumes a complete UI event before advancing its sequence", async () => {
+    const order: string[] = [];
+    await readSSEStream(
+      reader('id: 4\nevent: intelligent_ui\ndata: {"kind":"reset","messageId":"m1","attempt":1,"round":0}\n\n'),
+      () => order.push("text"),
+      { onEventId: (id) => order.push("id:" + id), onIntelligentUI: (event) => { order.push(event.kind); } },
+    );
+    expect(order).toEqual(["reset", "id:4"]);
   });
 });

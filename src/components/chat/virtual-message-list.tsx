@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import { MessageBubble } from "@/components/chat/message-bubble";
+import type { ChatUIStream } from "@/lib/chat/intelligent-ui/client-state";
 import type { ChatMessage } from "@/lib/hooks/use-chat";
 
 type SaveArtifact = (input: {
@@ -29,10 +30,14 @@ const Bubble = memo(function Bubble({
   message,
   onSaveArtifact,
   onSkillFollowUp,
+  intelligentUIStream,
+  onIntelligentDraft,
 }: {
   message: ChatMessage;
   onSaveArtifact?: SaveArtifact;
   onSkillFollowUp?: SkillFollowUp;
+  intelligentUIStream?: ChatUIStream;
+  onIntelligentDraft?: (text: string) => void;
 }) {
   return (
     <MessageBubble
@@ -48,6 +53,9 @@ const Bubble = memo(function Bubble({
       toolsUsed={message.toolsUsed}
       process={message.process}
       artifactDownloads={message.artifactDownloads}
+      intelligentUI={message.intelligentUI}
+      intelligentUIStream={message.role === "assistant" && (message.isStreaming || message.intelligentUI) ? intelligentUIStream : undefined}
+      onIntelligentDraft={message.role === "assistant" ? onIntelligentDraft : undefined}
       onSaveArtifact={
         message.role === "assistant" ? onSaveArtifact : undefined
       }
@@ -70,12 +78,17 @@ export function VirtualMessageList({
   messages,
   onSaveArtifact,
   onSkillFollowUp,
+  intelligentUIStream,
+  onIntelligentDraft,
 }: {
   messages: ChatMessage[];
   onSaveArtifact?: SaveArtifact;
   onSkillFollowUp?: SkillFollowUp;
+  intelligentUIStream?: ChatUIStream;
+  onIntelligentDraft?: (text: string) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const lastMessage = messages.at(-1);
   const lastContent = lastMessage?.content ?? "";
   const userAtBottomRef = useRef(true);
@@ -145,6 +158,22 @@ export function VirtualMessageList({
     }
   }, [lastContent, messages.length, scrollToBottom]);
 
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      if (userAtBottomRef.current) {
+        frame = requestAnimationFrame(() => {
+          if (userAtBottomRef.current) scrollToBottom(false);
+        });
+      }
+    });
+    observer.observe(content);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, [scrollToBottom]);
+
   // Initial scroll to bottom on mount
   useLayoutEffect(() => {
     if (messages.length > 0) {
@@ -166,13 +195,15 @@ export function VirtualMessageList({
           </p>
         </div>
       ) : null}
-      <div className="w-full">
+      <div ref={contentRef} className="w-full">
         {messages.map((message) => (
           <Bubble
             key={message.id}
             message={message}
             onSaveArtifact={onSaveArtifact}
             onSkillFollowUp={onSkillFollowUp}
+            intelligentUIStream={intelligentUIStream}
+            onIntelligentDraft={onIntelligentDraft}
           />
         ))}
       </div>

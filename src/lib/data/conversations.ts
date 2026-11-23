@@ -1,5 +1,6 @@
 import "server-only";
 import { cache } from "react";
+import { readUISurface } from "@/lib/chat/intelligent-ui/catalog";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { artifactDownloadFormats, artifactDownloadUrl, isArtifactDownloadFormat } from "@/lib/artifacts/download";
@@ -20,6 +21,7 @@ export const chatMessageSelect = (userId: string) => ({
   cacheHitTokens: true,
   cacheMissTokens: true,
   sources: true,
+  metadata: true,
   createdAt: true,
   attachments: CHAT_ATTACHMENT_SELECT,
   artifacts: {
@@ -45,18 +47,25 @@ export const chatMessageSelect = (userId: string) => ({
 } satisfies Prisma.MessageSelect);
 
 export function toChatMessage({
-  attachments, artifacts, agentExecutionsAsAssistantMessage, ...message
+  attachments, artifacts, agentExecutionsAsAssistantMessage, metadata, ...message
 }: Prisma.MessageGetPayload<{select: ReturnType<typeof chatMessageSelect>}>) {
   const execution = agentExecutionsAsAssistantMessage[0];
   const staleApproval = message.role === "assistant" && message.content === "等待用户批准工具操作后继续。";
   const failed = execution?.status === "failed";
   const stillRunning = execution?.status === "running" || execution?.status === "queued" || execution?.status === "waiting_approval";
+  const surface = message.role === "assistant" && !stillRunning && !failed &&
+    process.env.CHAT_INTELLIGENT_UI_RENDER !== "0" &&
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? readUISurface(metadata.intelligentUI) : null;
   return {
     ...message,
+    ...(surface?.surfaceId === message.id && { intelligentUI: surface }),
     content: staleApproval
       ? stillRunning ? "" : "上一次任务未完成，可以重新发送原请求。"
       : failed && !message.content.trim() ? "这次回答没有生成成功，可以重新发送原请求。" : message.content,
     backgroundExecutionId: stillRunning ? execution?.id : undefined,
+    ...(stillRunning && process.env.CHAT_INTELLIGENT_UI_ENABLED === "1" &&
+      process.env.CHAT_INTELLIGENT_UI_RENDER !== "0" && { intelligentUIStreaming: true }),
     sources: Array.isArray(message.sources) ? (message.sources as unknown as AgentSource[]) : null,
     attachments: toChatAttachmentDtos(attachments),
     artifactDownloads: artifacts.flatMap(({ id, title, metadata }) => {

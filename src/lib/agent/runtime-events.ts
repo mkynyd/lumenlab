@@ -1,6 +1,7 @@
 import type { AgentSource } from "./sources";
 import type { AgentEvent as OperationalAgentEvent } from "./types";
 import type { AgentUsage } from "./contracts";
+import type { UIGroup } from "@/lib/chat/intelligent-ui/catalog";
 
 /**
  * Runtime events include the existing operational timeline events plus model
@@ -13,5 +14,6 @@ export type AgentRuntimeEvent =
   | { type: "text_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
   | { type: "usage"; usage: AgentUsage }
+  | { type: "ui_preview"; round: number; groups: UIGroup[]; reset: boolean }
   | { type: "sources_updated"; sources: AgentSource[] }
   | { type: "completed"; conversationId: string; messageId: string };

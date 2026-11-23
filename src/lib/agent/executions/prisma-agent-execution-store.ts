@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { INTELLIGENT_UI_EVENT } from "@/lib/agent/event-stream";
+import { readStoredUI } from "@/lib/chat/intelligent-ui/events";
 import {
   Prisma,
   type AgentExecution,
@@ -11,6 +14,7 @@ import type {
   CreateOrGetAgentExecutionInput,
   CreateOrGetAgentExecutionResult,
   AgentExecutionEventRecord,
+  AgentExecutionReplayPage,
   AgentExecutionRecord,
   AgentExecutionStore,
   AgentCheckpoint,
@@ -334,6 +338,45 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
     return events.map(toEventRecord);
   }
 
+  async getReplayPage(input: {
+    executionId: string; userId: string; afterSequence: number; limit: number;
+  }): Promise<AgentExecutionReplayPage | null> {
+    if (!Number.isInteger(input.afterSequence) || input.afterSequence < 0 ||
+        !Number.isInteger(input.limit) || input.limit <= 0 || input.limit > 500) {
+      throw new Error("Invalid durable replay page");
+    }
+    // One PostgreSQL statement gives replay the event page and its terminal
+    // boundary from the same snapshot. Skip the execution's large checkpoint.
+    const rows = await this.client.$queryRaw<Array<{
+      status: AgentExecutionReplayPage["status"]; lastEventSequence: number;
+      id: string | null; sequence: number | null; key: string | null; type: string | null;
+      payload: Prisma.JsonValue | null; createdAt: Date | null;
+    }>>`
+      SELECT execution.status::text AS status, execution."lastEventSequence",
+        event.id, event.sequence, event.key, event.type, event.payload, event."createdAt"
+      FROM "AgentExecution" execution
+      LEFT JOIN LATERAL (
+        SELECT id, sequence, key, type, payload, "createdAt"
+        FROM "AgentExecutionEvent"
+        WHERE "executionId" = execution.id AND sequence > ${input.afterSequence}
+        ORDER BY sequence ASC LIMIT ${input.limit}
+      ) event ON true
+      WHERE execution.id = ${input.executionId} AND execution."userId" = ${input.userId}
+      ORDER BY event.sequence ASC
+    `;
+    const head = rows[0];
+    if (!head) return null;
+    return {
+      status: head.status,
+      lastEventSequence: head.lastEventSequence,
+      events: rows.flatMap((row) =>
+        row.id !== null && row.sequence !== null && row.key !== null && row.type !== null && row.createdAt !== null
+          ? [{ id: row.id, executionId: input.executionId, sequence: row.sequence, key: row.key,
+              type: row.type, payload: row.payload, createdAt: row.createdAt }]
+          : []),
+    };
+  }
+
   async create(input: {
     userId: string;
     conversationId: string;
@@ -650,6 +693,8 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
     const checkpoint = input.checkpoint
       ? parseAgentCheckpoint(input.checkpoint)
       : undefined;
+    const surface = readStoredUI(checkpoint?.output?.uiSnapshot);
+    const round = checkpoint?.output?.uiRound;
     return this.transitionRunningExecution({
       executionId: input.executionId,
       workerId: input.workerId,
@@ -671,6 +716,42 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         key: "run_completed",
         type: "run_completed",
         payload: {},
+      }),
+      ...(surface && round !== undefined && {
+        beforeEvent: async (transaction, execution) => {
+          const message = await transaction.message.findFirst({
+            where: {
+              id: surface.surfaceId,
+              role: "assistant",
+              agentExecutionsAsAssistantMessage: { some: { id: execution.id } },
+            },
+            select: { id: true, metadata: true },
+          });
+          if (!message) throw new Error("The completed UI message is missing");
+          const metadata = message.metadata && typeof message.metadata === "object" && !Array.isArray(message.metadata)
+            ? message.metadata : {};
+          await transaction.message.update({
+            where: { id: message.id },
+            data: { metadata: { ...metadata, intelligentUI: surface as unknown as Prisma.InputJsonValue } },
+          });
+          await transaction.agentExecutionEvent.create({
+            data: {
+              executionId: execution.id,
+              sequence: execution.lastEventSequence - 1,
+              key: "ui:commit",
+              type: INTELLIGENT_UI_EVENT,
+              payload: {
+                kind: "commit",
+                messageId: message.id,
+                attempt: execution.attempt,
+                round,
+                revision: surface.groups.length,
+                digest: createHash("sha256").update(JSON.stringify(surface)).digest("hex"),
+              },
+              createdAt: input.now,
+            },
+          });
+        },
       }),
       notificationKind: "completed",
     });
@@ -955,6 +1036,9 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
     };
     /** 任务 10：终态转换在同一事务内写入站内通知投影。 */
     notificationKind?: NotificationKind;
+    beforeEvent?: (transaction: Prisma.TransactionClient, execution: {
+      id: string; attempt: number; lastEventSequence: number;
+    }) => Promise<void>;
   }): Promise<boolean> {
     return this.client.$transaction(async (transaction) => {
       const [execution] =
@@ -967,7 +1051,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
           },
           data: {
             ...input.data,
-            lastEventSequence: { increment: 1 },
+            lastEventSequence: { increment: input.beforeEvent ? 2 : 1 },
           },
           select: {
             id: true,
@@ -977,6 +1061,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
         });
       if (!execution) return false;
 
+      if (input.beforeEvent) await input.beforeEvent(transaction, execution);
       const event = input.event(execution);
       await transaction.agentExecutionEvent.create({
         data: {

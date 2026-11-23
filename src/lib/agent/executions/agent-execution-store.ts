@@ -87,6 +87,7 @@ const durableRequestSchema = z
       .enum(["experiment", "review", "coding", "general"])
       .optional(),
     isQuickTask: z.boolean(),
+    intelligentUI: z.boolean().optional(),
     materialScope: z.enum(["project-corpus", "none"]).optional(),
     executionKind: z.enum(["chat", "research", "paper-formatting"]).optional(),
     researchRunId: z.string().min(1).optional(),
@@ -262,6 +263,8 @@ const checkpointBaseSchema = z.object({
       text: z.string(),
       reasoning: z.string(),
       usage: checkpointUsageSchema.nullable(),
+      uiSnapshot: z.string().max(32 * 1024).optional(),
+      uiRound: z.number().int().nonnegative().optional(),
     })
     .strict()
     .optional(),
@@ -359,6 +362,12 @@ export type AgentExecutionEventRecord = {
   createdAt: Date;
 };
 
+export interface AgentExecutionReplayPage {
+  status: AgentExecutionStatus;
+  lastEventSequence: number;
+  events: AgentExecutionEventRecord[];
+}
+
 export class AgentExecutionStoreError extends Error {
   constructor(
     public readonly code: AgentExecutionErrorCode,
@@ -413,6 +422,12 @@ export interface AgentExecutionStore {
     afterSequence: number;
     limit?: number;
   }): Promise<AgentExecutionEventRecord[] | null>;
+  getReplayPage?(input: {
+    executionId: string;
+    userId: string;
+    afterSequence: number;
+    limit: number;
+  }): Promise<AgentExecutionReplayPage | null>;
   claimNext(input: {
     workerId: string;
     now: Date;

@@ -1,3 +1,5 @@
+import { projectFilesForUI, type ProjectFilesProjection } from "@/lib/chat/intelligent-ui/project-data";
+import { INTELLIGENT_UI_PROMPT, PROJECT_UI_PROMPT } from "@/lib/chat/intelligent-ui/authoring";
 import { ResponsesConnectTimeoutError, ResponsesHttpError, ResponsesStreamInterruptedError, ResponsesTimeoutError } from "@/lib/agent/providers/responses/transport";
 import { ResponsesConfigurationError, ResponsesModelError } from "@/lib/agent/providers/responses/adapter-stream";
 import { ResponsesSerializationError } from "@/lib/agent/providers/responses/serialize";
@@ -592,6 +594,14 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     }
   }
 
+  const uiMessageId = input.durable?.intelligentUI && !input.isolatedTurn
+    ? input.durable.assistantMessageId : undefined;
+  if (uiMessageId) {
+    systemPrompt += `\n\n${INTELLIGENT_UI_PROMPT}`;
+    if (project) systemPrompt += `\n${PROJECT_UI_PROMPT}`;
+  }
+  let uiProjectFiles: ProjectFilesProjection | undefined;
+
   if (project && hiddenPrompt) {
     systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
   }
@@ -1008,6 +1018,11 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           };
         },
       });
+      if (uiMessageId && project) {
+        const list = toolRun.results.find(({ call, status }) => status === "succeeded" &&
+          call.name === "project_files.list" && (call.input.projectId === undefined || call.input.projectId === project.id));
+        uiProjectFiles = projectFilesForUI(list?.summary);
+      }
       preludePendingExecutionIds.push(...toolRun.pendingExecutionIds);
       orchestratorToolContext = toolRun.contextMessage;
       preludeAttemptedCalls.push(
@@ -1277,6 +1292,7 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   void (async () => {
     try {
       const forwardModelEvent = (value: ProviderStreamEvent) => {
+        runMetrics.observeProviderEvent(value);
         if (value.type === "usage") {
           emitRuntimeEvent({ type: "usage", usage: normalizeUsage(value.usage) });
         } else {
@@ -1327,6 +1343,14 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
             audit: recordAuditEvent,
             preAttemptedCalls: preludeAttemptedCalls,
             onModelEvent: forwardModelEvent,
+            ...(uiMessageId ? { intelligentUI: {
+              surfaceId: uiMessageId,
+              projectFiles: uiProjectFiles,
+              onPreview: (round, groups, reset) => {
+                if (groups.length > 0) runMetrics.observeIntelligentUIPreview();
+                emitRuntimeEvent({ type: "ui_preview", round, groups, reset });
+              },
+            } } : {}),
           });
         } catch (error) {
           const mapped = mapProviderError(error);
@@ -1373,7 +1397,8 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
           .then(async (result) => {
             runMetrics.recordUsage(result.usage);
             await recordRunMetricOnce(result.status, conversation.id);
-            resolveCompletion(result);
+            resolveCompletion(loopResult.intelligentUI
+              ? { ...result, intelligentUI: loopResult.intelligentUI } : result);
           })
           .catch(async (error) => {
             await recordRunMetricOnce("failed", conversation.id);

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { encodeChatReplayEvent } from "./durable-response-stream";
+import { createDurableReplayResponse, encodeChatReplayEvent } from "./durable-response-stream";
+import type { AgentExecutionRecord } from "./agent-execution-store";
 import type { DurableAgentEvent } from "./event-codec";
 
 function event(
@@ -96,5 +97,36 @@ describe("durable chat replay encoding", () => {
     expect(encoded).toContain('"status":"cancelled"');
     expect(encoded).toContain('"failureCode":"execution_cancelled"');
     expect(encoded).not.toContain('"message"');
+  });
+});
+
+describe("durable response capacity", () => {
+  it("does not page past queued events for a slow reader and stops on cancel", async () => {
+    const execution = {
+      id: "run-1", userId: "u", conversationId: "c", checkpoint: null,
+      status: "completed", lastEventSequence: 102,
+    } as AgentExecutionRecord;
+    const page = vi.fn(async ({ afterSequence }: { afterSequence: number }) => ({
+      status: execution.status,
+      lastEventSequence: execution.lastEventSequence,
+      events: Array.from({ length: Math.min(100, 102 - afterSequence) }, (_, index) => {
+        const sequence = afterSequence + index + 1;
+        return {
+          id: String(sequence), executionId: execution.id, sequence, key: String(sequence),
+          type: sequence === 102 ? "run_completed" : "assistant_text",
+          payload: { text: String(sequence) }, createdAt: new Date(0),
+        };
+      }),
+    }));
+    const response = createDurableReplayResponse({
+      store: { getReplayPage: page, getOwnedExecution: vi.fn(), listEventsAfter: vi.fn() },
+      execution, userId: "u", format: "chat",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(page).toHaveBeenCalledTimes(1);
+    const reader = response.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("id: 1\n");
+    await reader.cancel();
+    expect(page).toHaveBeenCalledTimes(1);
   });
 });

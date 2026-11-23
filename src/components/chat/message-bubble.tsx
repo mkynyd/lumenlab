@@ -1,5 +1,8 @@
 "use client";
 
+import { MessageUI } from "./intelligent-ui/message-ui";
+import type { UISurface } from "@/lib/chat/intelligent-ui/catalog";
+import type { ChatUIStream } from "@/lib/chat/intelligent-ui/client-state";
 import { memo, useState } from "react";
 import { TaskList } from "iconoir-react";
 import {
@@ -54,6 +57,9 @@ interface MessageBubbleProps {
     content: string;
   }) => Promise<void>;
   onSkillFollowUp?: (skillId: string) => void;
+  intelligentUI?: UISurface;
+  intelligentUIStream?: ChatUIStream;
+  onIntelligentDraft?: (text: string) => void;
 }
 
 /** 工具 ID → 流式状态行（标签 + thinking-orbs 动画）；未列出的工具保持静默 */
@@ -187,6 +193,9 @@ function MessageBubbleComponent({
   artifactDownloads,
   onSaveArtifact,
   onSkillFollowUp,
+  intelligentUI,
+  intelligentUIStream,
+  onIntelligentDraft,
 }: MessageBubbleProps) {
   const [showSave, setShowSave] = useState(false);
   const [title, setTitle] = useState(() => suggestArtifactTitle(content));
@@ -291,6 +300,10 @@ function MessageBubbleComponent({
           )}
         </div>
 
+        {isAssistant && id && (intelligentUI || intelligentUIStream) && (
+          <MessageUI id={id} saved={intelligentUI} stream={intelligentUIStream} onDraft={onIntelligentDraft} />
+        )}
+
         {isAssistant && !isStreaming && <MessageSources sources={sources} />}
 
         {isAssistant && !isStreaming && content && sources && sources.length > 0 && (
@@ -367,7 +380,9 @@ function MessageBubbleComponent({
 export const MessageBubble = memo(
   MessageBubbleComponent,
   (previous, next) => {
-    if (previous.id !== next.id || previous.isStreaming !== next.isStreaming) {
+    if (previous.id !== next.id || previous.isStreaming !== next.isStreaming ||
+        previous.intelligentUI !== next.intelligentUI || previous.intelligentUIStream !== next.intelligentUIStream ||
+        previous.onIntelligentDraft !== next.onIntelligentDraft) {
       return false;
     }
     if (next.isStreaming) {

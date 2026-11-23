@@ -26,13 +26,16 @@ export interface SSEParseResult {
 }
 
 import type { AgentEvent } from "@/lib/agent/types";
-import { MESSAGE_ATTACHMENTS_EVENT } from "@/lib/agent/event-stream";
+import { INTELLIGENT_UI_EVENT, MESSAGE_ATTACHMENTS_EVENT } from "@/lib/agent/event-stream";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
+import type { UIEvent } from "@/lib/chat/intelligent-ui/events";
 
 export interface SSEAgentCallbacks {
   onAgentEvent?: (event: AgentEvent) => void;
   onEventId?: (sequence: number) => void;
   onMessageAttachments?: (attachments: ChatAttachmentDto[]) => void;
+  onIntelligentUI?: (event: UIEvent) => void | Promise<void>;
+  onDiscardUIPreview?: () => void;
 }
 
 export class SSEExecutionError extends Error {
@@ -59,107 +62,109 @@ export async function readSSEStream(
 ): Promise<SSEParseResult> {
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
-  let pendingEventName: string | null = null;
+  let eventName = "";
+  let sequence: number | undefined;
+  let dataLines: string[] = [];
   let usage: UsageInfo | null = null;
+
+  function json(data: string) {
+    try { return JSON.parse(data); } catch { return null; }
+  }
+
+  async function applyUI(data: string) {
+    const codec = await import("@/lib/chat/intelligent-ui/events").catch(() => null);
+    const event = codec?.readUIEvent(json(data));
+    if (event) await options.onIntelligentUI?.(event);
+    return false;
+  }
+
+  function apply(name: string, data: string): boolean | Promise<boolean> {
+    if (name === "execution_error") {
+      const payload = json(data) as { status?: "failed" | "cancelled"; failureCode?: string; message?: string } | null;
+      const status = payload?.status === "cancelled" ? "cancelled" : "failed";
+      options.onDiscardUIPreview?.();
+      throw new SSEExecutionError(
+        payload?.message ?? (status === "cancelled" ? "执行已取消" : "执行失败，请重试"),
+        status,
+        payload?.failureCode ?? null,
+      );
+    }
+    if (name === MESSAGE_ATTACHMENTS_EVENT) {
+      const attachments = json(data);
+      if (Array.isArray(attachments)) options.onMessageAttachments?.(attachments as ChatAttachmentDto[]);
+      return false;
+    }
+    if (name === "agent") {
+      const parsed = json(data) as AgentEvent | null;
+      if (parsed) options.onAgentEvent?.(parsed);
+      return false;
+    }
+    if (name === INTELLIGENT_UI_EVENT) {
+      return options.onIntelligentUI ? applyUI(data) : false;
+    }
+    if (name === "durable") {
+      if (options.onDiscardUIPreview) {
+        const type = (json(data) as { type?: string } | null)?.type;
+        if (type === "run_claimed" || type === "run_retry_scheduled" || type === "lease_expired") {
+          options.onDiscardUIPreview();
+        }
+      }
+      return false;
+    }
+    if (name && name !== "message") return false;
+    if (data === "[DONE]") {
+      onChunk({ content: "", reasoningContent: "", done: true });
+      return true;
+    }
+
+    const payload = json(data);
+    if (!payload) return false;
+    const stats = payload.usage;
+    if (stats) {
+      usage = {
+        promptTokens: stats.prompt_tokens ?? 0,
+        completionTokens: stats.completion_tokens ?? 0,
+        totalTokens: stats.total_tokens ?? 0,
+        cacheHitTokens: stats.prompt_cache_hit_tokens ?? 0,
+        cacheMissTokens: stats.prompt_cache_miss_tokens ?? 0,
+      };
+    }
+    const delta = payload.choices?.[0]?.delta;
+    onChunk({ content: delta?.content || "", reasoningContent: delta?.reasoning_content || "", done: false });
+    return false;
+  }
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      buffer = lines.pop() ?? "";
 
       for (const rawLine of lines) {
         const line = rawLine.replace(/\r$/, "");
-        if (line.startsWith("event: ")) {
-          pendingEventName = line.slice(7).trim();
+        if (line === "") {
+          if (dataLines.length > 0) {
+            const result = apply(eventName, dataLines.join("\n"));
+            const complete = typeof result === "boolean" ? result : await result;
+            if (sequence !== undefined) options.onEventId?.(sequence);
+            if (complete) return { content: "", reasoningContent: "", usage, done: true };
+          }
+          eventName = "";
+          sequence = undefined;
+          dataLines = [];
           continue;
         }
-        if (line.startsWith("id: ")) {
-          const sequence = Number(line.slice(4).trim());
-          if (Number.isSafeInteger(sequence) && sequence > 0) {
-            options.onEventId?.(sequence);
-          }
-          continue;
-        }
-        if (!line || !line.startsWith("data: ")) continue;
-
-        const data = line.slice(6);
-        if (pendingEventName === MESSAGE_ATTACHMENTS_EVENT) {
-          pendingEventName = null;
-          try {
-            const attachments = JSON.parse(data) as ChatAttachmentDto[];
-            if (Array.isArray(attachments)) options.onMessageAttachments?.(attachments);
-          } catch {
-            // A malformed attachment frame must not interrupt model output.
-          }
-          continue;
-        }
-        if (pendingEventName === "agent") {
-          pendingEventName = null;
-          try {
-            const parsed = JSON.parse(data) as AgentEvent;
-            options.onAgentEvent?.(parsed);
-          } catch {
-            // ignore malformed agent events
-          }
-          continue;
-        }
-        if (pendingEventName === "execution_error") {
-          pendingEventName = null;
-          let payload: {
-            status?: "failed" | "cancelled";
-            failureCode?: string | null;
-            message?: string;
-          } = {};
-          try {
-            payload = JSON.parse(data) as typeof payload;
-          } catch {
-            // Use the generic failure below.
-          }
-          const status = payload.status ?? "failed";
-          throw new SSEExecutionError(
-            payload.message ??
-              (status === "cancelled" ? "执行已取消" : "执行失败，请重试"),
-            status,
-            payload.failureCode ?? null
-          );
-        }
-        if (pendingEventName === "durable") {
-          pendingEventName = null;
-          continue;
-        }
-        pendingEventName = null;
-
-        if (data === "[DONE]") {
-          onChunk({ content: "", reasoningContent: "", done: true });
-          return { content: "", reasoningContent: "", usage, done: true };
-        }
-
-        try {
-          const json = JSON.parse(data);
-          const delta = json.choices?.[0]?.delta;
-
-          if (json.usage) {
-            usage = {
-              promptTokens: json.usage.prompt_tokens ?? 0,
-              completionTokens: json.usage.completion_tokens ?? 0,
-              totalTokens: json.usage.total_tokens ?? 0,
-              cacheHitTokens: json.usage.prompt_cache_hit_tokens ?? 0,
-              cacheMissTokens: json.usage.prompt_cache_miss_tokens ?? 0,
-            };
-          }
-
-          const chunk = {
-            content: delta?.content || "",
-            reasoningContent: delta?.reasoning_content || "",
-            done: false,
-          };
-          onChunk(chunk);
-        } catch {
-          // skip malformed chunks
+        const separator = line.indexOf(":");
+        if (separator === 0) continue;
+        const field = separator < 0 ? line : line.slice(0, separator);
+        const fieldValue = separator < 0 ? "" : line.slice(separator + 1).replace(/^ /, "");
+        if (field === "event") eventName = fieldValue;
+        if (field === "data") dataLines.push(fieldValue);
+        if (field === "id") {
+          const id = Number(fieldValue);
+          if (Number.isSafeInteger(id) && id > 0) sequence = id;
         }
       }
     }
@@ -167,6 +172,5 @@ export async function readSSEStream(
     reader.releaseLock();
   }
 
-  // If [DONE] was never received but stream ended
   return { content: "", reasoningContent: "", usage, done: false };
 }

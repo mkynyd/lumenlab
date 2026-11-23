@@ -1,5 +1,5 @@
 import type { AgentEvent } from "@/lib/agent/types";
-import { formatAgentEvent, formatMessageAttachmentsEvent } from "@/lib/agent/event-stream";
+import { INTELLIGENT_UI_EVENT, formatAgentEvent, formatMessageAttachmentsEvent } from "@/lib/agent/event-stream";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import { resolveAgentRuntimeMode } from "@/lib/agent/runtime-mode";
 import type {
@@ -18,7 +18,7 @@ const encoder = new TextEncoder();
 
 type ReplayStore = Pick<
   AgentExecutionStore,
-  "getOwnedExecution" | "listEventsAfter"
+  "getOwnedExecution" | "listEventsAfter" | "getReplayPage"
 >;
 
 function withId(sequence: number, body: string) {
@@ -90,6 +90,10 @@ export function encodeChatReplayEvent(event: DurableAgentEvent): string {
       })}\n\n`
     );
   }
+  if (event.type === INTELLIGENT_UI_EVENT) {
+    if (process.env.CHAT_INTELLIGENT_UI_RENDER === "0") return encodeDurable({ ...event, payload: null });
+    return withId(event.sequence, `event: ${INTELLIGENT_UI_EVENT}\ndata: ${JSON.stringify(payload)}\n\n`);
+  }
   const operational = parseOperationalEvent(event);
   if (operational) {
     return withId(event.sequence, formatAgentEvent(operational));
@@ -125,7 +129,16 @@ export function createDurableReplayResponse(input: {
   messageAttachments?: ChatAttachmentDto[];
 }): Response {
   const localAbort = new AbortController();
-  const abort = () => localAbort.abort();
+  let waitingForCapacity: (() => void) | undefined;
+  const resume = () => {
+    waitingForCapacity?.();
+    waitingForCapacity = undefined;
+  };
+  const abort = () => {
+    localAbort.abort();
+    resume();
+  };
+  if (input.signal?.aborted) abort();
   input.signal?.addEventListener("abort", abort, { once: true });
   const replay = replayAgentExecutionEvents({
     store: input.store,
@@ -142,13 +155,19 @@ export function createDurableReplayResponse(input: {
         controller.enqueue(encoder.encode(formatMessageAttachmentsEvent(input.messageAttachments)));
       }
       keepAlive = setInterval(() => {
-        if (!localAbort.signal.aborted) {
+        if (!localAbort.signal.aborted && (controller.desiredSize ?? 0) > 0) {
           controller.enqueue(encoder.encode(": keep-alive\n\n"));
         }
       }, 15_000);
       void (async () => {
         try {
-          for await (const event of replay) {
+          while (!localAbort.signal.aborted) {
+            if ((controller.desiredSize ?? 0) <= 0) {
+              await new Promise<void>((resolve) => { waitingForCapacity = resolve; });
+              if (localAbort.signal.aborted) break;
+            }
+            const { value: event, done } = await replay.next();
+            if (done || localAbort.signal.aborted) break;
             const serialized =
               input.format === "chat"
                 ? encodeChatReplayEvent(event)
@@ -162,11 +181,13 @@ export function createDurableReplayResponse(input: {
           if (keepAlive) clearInterval(keepAlive);
           keepAlive = null;
           input.signal?.removeEventListener("abort", abort);
+          await replay.return(undefined);
         }
       })();
     },
+    pull: resume,
     async cancel() {
-      localAbort.abort();
+      abort();
       if (keepAlive) clearInterval(keepAlive);
       keepAlive = null;
       await replay.return?.(undefined);

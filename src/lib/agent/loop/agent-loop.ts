@@ -1,3 +1,6 @@
+import { projectFilesForUI, type ProjectFilesProjection } from "@/lib/chat/intelligent-ui/project-data";
+import { IntelligentUIAuthoring, type AuthoringUpdate } from "@/lib/chat/intelligent-ui/authoring";
+import type { UIGroup, UISurface } from "@/lib/chat/intelligent-ui/catalog";
 import { sanitizeModelText } from "../tool-call-parser";
 import { toolResultProducedNewContent } from "../orchestrator";
 import { materializePlanUpdate, parsePlanUpdate } from "../plan";
@@ -49,6 +52,11 @@ export interface AgentLoopInput {
    * generating instead of replaying everything after the round completes.
    */
   onModelEvent?: (event: ProviderStreamEvent) => void;
+  intelligentUI?: {
+    surfaceId: string;
+    projectFiles?: ProjectFilesProjection;
+    onPreview(round: number, groups: UIGroup[], reset: boolean): void;
+  };
 }
 
 export interface AgentLoopResult {
@@ -58,6 +66,7 @@ export interface AgentLoopResult {
   stopReason: string | null;
   /** 全部轮次（含初始轮与所有续跑轮）累计的 token 用量。 */
   usage: AdapterUsage | null;
+  intelligentUI?: { surface: UISurface; round: number };
 }
 
 export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResult> {
@@ -79,6 +88,20 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     if (usage) loopUsage = mergeAdapterUsage(loopUsage, usage);
   };
 
+  let roundUI: AgentLoopResult["intelligentUI"];
+  let projectFiles = input.intelligentUI?.projectFiles;
+  const bufferModelRound = async (providerRound: ProviderRound, round: number) => {
+    const ui = input.intelligentUI;
+    const parser = ui ? new IntelligentUIAuthoring(projectFiles) : undefined;
+    const buffered = await bufferRound(providerRound, input.signal, input.onModelEvent, parser,
+      (update) => {
+        if (update.reset || update.groups.length > 0) ui?.onPreview(round, update.groups, update.reset);
+      });
+    const surface = ui && parser?.snapshot(ui.surfaceId);
+    roundUI = surface ? { surface, round } : undefined;
+    return buffered;
+  };
+
   for (let round = 0; round < maxRounds; round += 1) {
     if (input.signal.aborted) {
       void roundResult.events.cancel("request aborted").catch(() => {});
@@ -86,7 +109,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     }
 
     try {
-      roundResult = await bufferRound(roundResult, input.signal, input.onModelEvent);
+      roundResult = await bufferModelRound(roundResult, round);
     } catch (error) {
       if (input.signal.aborted || isAbortError(error)) {
         return cancelled(roundResult, loopUsage);
@@ -119,9 +142,11 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         pendingExecutionIds: [],
         stopReason: previousRoundProducedNewContent ? null : "no_progress",
         usage: loopUsage,
+        ...(roundUI && { intelligentUI: roundUI }),
       };
     }
 
+    if (roundUI) input.intelligentUI?.onPreview(round, [], true);
     const toolResults: ProviderToolResult[] = [];
     let roundProducedNewContent = false;
     for (const call of executable) {
@@ -165,6 +190,10 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
       }
 
       if (result.status === "succeeded") {
+        if (input.intelligentUI && input.context.projectId && call.name === "project_files.list" &&
+            (call.input.projectId === undefined || call.input.projectId === input.context.projectId)) {
+          projectFiles = projectFilesForUI(result.summary);
+        }
         if (call.name === "plan.update") {
           input.emit({
             type: "plan_updated",
@@ -219,7 +248,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
     if (stopInstruction) {
       // 这一轮由 continueRound 产生、尚未经过 bufferRound,内容还没实时转发。
       // 缓冲并转发后再返回,保持"每一轮内容都实时送达"的契约。
-      roundResult = await bufferRound(roundResult, input.signal, input.onModelEvent);
+      roundResult = await bufferModelRound(roundResult, round + 1);
       captureRoundUsage(roundResult);
       return {
         status: "completed",
@@ -227,6 +256,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopResu
         pendingExecutionIds: [],
         stopReason: noProgress ? "no_progress" : "round_limit",
         usage: loopUsage,
+        ...(roundUI && { intelligentUI: roundUI }),
       };
     }
     previousRoundProducedNewContent = roundProducedNewContent;
@@ -290,7 +320,9 @@ async function blockLoopCall(
 async function bufferRound(
   round: ProviderRound,
   signal: AbortSignal,
-  forward?: (event: ProviderStreamEvent) => void
+  forward?: (event: ProviderStreamEvent) => void,
+  parser?: IntelligentUIAuthoring,
+  onUI?: (update: AuthoringUpdate) => void,
 ): Promise<ProviderRound> {
   const reader = round.events.getReader();
   const events: ProviderStreamEvent[] = [];
@@ -323,14 +355,23 @@ async function bufferRound(
       forward?.(event);
     }
   };
+  const emit = (event: ProviderStreamEvent) => {
+    events.push(event);
+    forwardCleaned(event);
+  };
+  const publish = (update: AuthoringUpdate) => {
+    if (update.text) emit({ type: "text_delta", text: update.text });
+    onUI?.(update);
+  };
   try {
     while (true) {
       if (signal.aborted) throw abortError();
       const { done, value } = await reader.read();
       if (done) break;
-      if (value) {
-        events.push(value);
-        forwardCleaned(value);
+      if (value?.type === "text_delta" && parser) {
+        publish(parser.push(value.text));
+      } else if (value) {
+        emit(value);
       }
     }
   } finally {
@@ -338,6 +379,7 @@ async function bufferRound(
     reader.releaseLock();
   }
   if (signal.aborted) throw abortError();
+  if (parser) publish(parser.finish());
   return { ...round, events: replay(events) };
 }
 

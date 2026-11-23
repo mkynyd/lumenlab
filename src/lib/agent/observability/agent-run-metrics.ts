@@ -11,6 +11,7 @@ export interface AgentRunMetrics {
   model: string;
   totalDurationMs: number;
   firstTokenMs: number | null;
+  firstIntelligentUIPreviewMs?: number;
   /** Filled from the ToolExecution lifecycle by the authenticated metrics read model. */
   approvalWaitRatio: number | null;
   approvalsRequested: number;
@@ -35,6 +36,8 @@ export class AgentRunMetricsCollector {
   private model: string;
   private provider: "deepseek" | "minimax" | "bailian";
   private firstTokenAt: number | null = null;
+  private readonly monotonicStart = performance.now();
+  private firstIntelligentUIPreviewMs: number | null = null;
   private approvalsRequested = 0;
   private readonly approvalExecutionIds = new Set<string>();
   private toolProposed = 0;
@@ -116,6 +119,10 @@ export class AgentRunMetricsCollector {
     }
   }
 
+  observeIntelligentUIPreview() {
+    this.firstIntelligentUIPreviewMs ??= Math.max(0, performance.now() - this.monotonicStart);
+  }
+
   recordUsage(usage: AgentUsage | null) {
     if (usage) this.usage = usage;
   }
@@ -137,6 +144,9 @@ export class AgentRunMetricsCollector {
         this.firstTokenAt === null
           ? null
           : Math.max(0, this.firstTokenAt - this.startedAt),
+      ...(this.firstIntelligentUIPreviewMs !== null && {
+        firstIntelligentUIPreviewMs: this.firstIntelligentUIPreviewMs,
+      }),
       approvalWaitRatio: null,
       approvalsRequested: this.approvalsRequested,
       approvalExecutionIds: [...this.approvalExecutionIds],

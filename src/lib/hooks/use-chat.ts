@@ -11,7 +11,10 @@ import {
 import {
   buildChatRequestBody,
 } from "@/lib/chat-request";
+import { ChatUIStream } from "@/lib/chat/intelligent-ui/client-state";
+import type { UIEvent } from "@/lib/chat/intelligent-ui/events";
 import type { FileAttachment } from "@/lib/chat/router";
+import type { UISurface } from "@/lib/chat/intelligent-ui/catalog";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 import { attachmentKindFromMimeType } from "@/lib/files/attachment-kind";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
@@ -64,6 +67,8 @@ export interface ChatMessage {
   process?: AssistantProcessTrace;
   artifactDownloads?: ArtifactDownload[];
   backgroundExecutionId?: string;
+  intelligentUI?: UISurface;
+  intelligentUIStreaming?: boolean;
   /**
    * 任务 08：附件。上传期间是本地乐观 DTO（图片/视频为 blob 预览，
    * status: "uploading"），发送成功后替换为服务端持久化附件的同源鉴权 URL。
@@ -96,6 +101,13 @@ interface UseChatOptions {
   mode?: ProjectType;
 }
 
+async function fetchConversationMessages(id: string, signal: AbortSignal) {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { signal });
+  if (!response.ok) return undefined;
+  const { conversation } = await response.json() as { conversation: { messages: ChatMessage[] } };
+  return conversation.messages;
+}
+
 type ReasoningEffort = NonNullable<UseChatOptions["reasoningEffort"]>;
 
 function hasStreamingMessage(messages: ChatMessage[]) {
@@ -122,6 +134,7 @@ export async function readChatError(response: Response) {
 
 export function useChat(options: UseChatOptions = {}) {
   const queryClient = useQueryClient();
+  const [intelligentUIStream] = useState(() => new ChatUIStream());
   const [messages, setMessages] = useState<ChatMessage[]>(
     options.initialMessages || []
   );
@@ -461,13 +474,27 @@ export function useChat(options: UseChatOptions = {}) {
         let fullContent = "";
         let fullReasoning = "";
         let lastEventSequence = 0;
+        const streamSignal = controller.signal;
+        let pendingUICommit: Promise<void> | undefined;
+        const activeStream = () => streamSessionRef.current === streamSession && !streamSignal.aborted;
+        const handleUI = (event: UIEvent) => {
+          if (!activeStream() || event.messageId !== streamingId) return;
+          if (event.kind === "commit") {
+            const id = newConvId || conversationId;
+            pendingUICommit = intelligentUIStream.commit(event, async () =>
+              id ? (await fetchConversationMessages(id, streamSignal))?.find(({ id }) => id === streamingId)?.intelligentUI : undefined,
+            activeStream);
+          } else {
+            return intelligentUIStream.accept(event, activeStream);
+          }
+        };
 
         const consumeStream = (
           activeReader: ReadableStreamDefaultReader<Uint8Array>
         ) => readSSEStream(
           activeReader,
           (chunk) => {
-            if (chunk.done) return;
+            if (chunk.done || (!chunk.content && !chunk.reasoningContent)) return;
 
             fullContent += chunk.content;
             fullReasoning += chunk.reasoningContent;
@@ -488,6 +515,8 @@ export function useChat(options: UseChatOptions = {}) {
           },
           {
             onMessageAttachments: updatePersistedAttachments,
+            onIntelligentUI: handleUI,
+            onDiscardUIPreview: () => intelligentUIStream.discard(streamingId),
             onEventId: (sequence) => {
               lastEventSequence = Math.max(lastEventSequence, sequence);
             },
@@ -635,6 +664,8 @@ export function useChat(options: UseChatOptions = {}) {
           activeReader = replayReader;
         }
 
+        await pendingUICommit;
+        intelligentUIStream.discard(streamingId);
         // Stream complete
         if (result.usage) {
           setUsage(result.usage);
@@ -646,6 +677,7 @@ export function useChat(options: UseChatOptions = {}) {
               ? {
                   ...m,
                   content: fullContent,
+                  intelligentUI: intelligentUIStream.get(streamingId),
                   reasoningContent: fullReasoning || null,
                   isStreaming: false,
                   streamingSource: undefined,
@@ -674,6 +706,7 @@ export function useChat(options: UseChatOptions = {}) {
           });
         }
       } catch (err) {
+        intelligentUIStream.discard(streamingId);
         const isCancelledExecution =
           err instanceof SSEExecutionError && err.status === "cancelled";
         if (
@@ -743,6 +776,7 @@ export function useChat(options: UseChatOptions = {}) {
     [
       modelBlockedReason,
       conversationId,
+      intelligentUIStream,
       model,
       reasoningEffort,
       options.projectId,
@@ -760,11 +794,76 @@ export function useChat(options: UseChatOptions = {}) {
     [sendMutation]
   );
 
-  const backgroundId = messages.find((message) => message.isStreaming && message.backgroundExecutionId)?.backgroundExecutionId;
+  const background = messages.find((message) => message.isStreaming && message.backgroundExecutionId);
+  const backgroundId = background?.backgroundExecutionId;
+  const backgroundMessageId = background?.id;
+  const recoverUI = background?.intelligentUIStreaming === true;
+  useEffect(() => {
+    if (!recoverUI || !conversationId || !backgroundId || !backgroundMessageId) return;
+    const executionId = backgroundId;
+    const messageId = backgroundMessageId;
+    const controller = new AbortController();
+    const { signal } = controller;
+    const active = () => !signal.aborted;
+    let timer: ReturnType<typeof setTimeout>;
+    let sequence = 0;
+    let loaded: ChatMessage[] | undefined;
+    let commit: Promise<void> | undefined;
+    const load = () => fetchConversationMessages(conversationId, signal);
+    async function refresh() {
+      try {
+        const response = await fetch(
+          `/api/agent/executions/${encodeURIComponent(executionId)}/events?format=chat&afterSequence=${sequence}`, { signal },
+        );
+        if ([401, 404].includes(response.status)) {
+          intelligentUIStream.discard(messageId);
+          if (active()) {
+            setMessages((current) => current.map((message) => message.id === backgroundMessageId
+              ? { ...message, isStreaming: false, streamingSource: undefined, backgroundExecutionId: undefined } : message));
+            setIsStreaming(false);
+          }
+          return;
+        }
+        if (!response.ok || !response.body) throw new Error("Could not recover chat event stream");
+        const result = await readSSEStream(response.body.getReader(), () => {}, {
+          onEventId: (id) => { sequence = Math.max(sequence, id); },
+          onDiscardUIPreview: () => intelligentUIStream.discard(messageId),
+          onIntelligentUI: (event) => {
+            if (!active() || event.messageId !== backgroundMessageId) return;
+            if (event.kind === "commit") {
+              commit = intelligentUIStream.commit(event, async () => {
+                loaded = await load();
+                return loaded?.find(({ id }) => id === backgroundMessageId)?.intelligentUI;
+              }, active);
+            } else {
+              return intelligentUIStream.accept(event, active);
+            }
+          },
+        });
+        if (!result.done) throw new Error("Chat event stream disconnected");
+        await commit;
+        loaded ??= await load();
+      } catch (error) {
+        if (error instanceof SSEExecutionError) {
+          intelligentUIStream.discard(messageId);
+          loaded = await load().catch(() => undefined);
+        }
+      }
+      if (!active()) return;
+      if (loaded) {
+        setMessages(loaded);
+        setIsStreaming(false);
+      } else {
+        timer = setTimeout(() => void refresh(), 1_000);
+      }
+    }
+    void refresh();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [recoverUI, conversationId, backgroundId, backgroundMessageId, intelligentUIStream]);
   useEffect(() => {
     // Project conversations already have a recovery poll. The standalone chat
     // checks the light status DTO and fetches the transcript once at completion.
-    if (!backgroundId || !conversationId || options.projectId) return;
+    if (recoverUI || !backgroundId || !conversationId || options.projectId) return;
     const executionPath = `/api/agent/executions/${encodeURIComponent(backgroundId)}?view=status`;
     const detailPath = `/api/conversations/${encodeURIComponent(conversationId)}`;
     const controller = new AbortController();
@@ -800,7 +899,7 @@ export function useChat(options: UseChatOptions = {}) {
     }
     void refresh();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [backgroundId, conversationId, options.projectId]);
+  }, [backgroundId, conversationId, options.projectId, recoverUI]);
 
   const abort = useCallback(() => {
     // durable 模式下仅断开本地流不会让模型停止：执行跑在后台 worker。
@@ -823,6 +922,7 @@ export function useChat(options: UseChatOptions = {}) {
     abortRef.current = null;
     agentExecutionIdRef.current = null;
     conversationIdRef.current = undefined;
+    intelligentUIStream.clear();
     setModel(chatModelForPreference(options.projectId ? options.model : undefined));
     setMessages([]);
     setConversationId(undefined);
@@ -831,7 +931,7 @@ export function useChat(options: UseChatOptions = {}) {
     setError(null);
     setIsStreaming(false);
     setAgentSession({ suggestions: [] });
-  }, [options.projectId, options.model]);
+  }, [options.projectId, options.model, intelligentUIStream]);
 
   const loadConversation = useCallback(
     (
@@ -841,6 +941,7 @@ export function useChat(options: UseChatOptions = {}) {
     ) => {
       streamSessionRef.current += 1;
       abortRef.current = null;
+      if (conversationIdRef.current !== nextConversationId) intelligentUIStream.clear();
       conversationIdRef.current = nextConversationId;
       setConversationId(nextConversationId);
       setMessages(nextMessages);
@@ -852,11 +953,12 @@ export function useChat(options: UseChatOptions = {}) {
       setIsStreaming(hasStreamingMessage(nextMessages));
       setAgentSession({ suggestions: [] });
     },
-    []
+    [intelligentUIStream]
   );
 
   return {
     messages,
+    intelligentUIStream,
     isStreaming,
     error,
     conversationId,

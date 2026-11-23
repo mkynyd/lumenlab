@@ -1,4 +1,6 @@
 import { readArtifactDownload } from "@/lib/artifacts/download";
+import { permitsIntelligentUI } from "@/lib/chat/intelligent-ui/authoring";
+import { INTELLIGENT_UI_EVENT } from "@/lib/agent/event-stream";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
@@ -110,6 +112,9 @@ export function buildInitialAgentCheckpoint(
       skillOff: input.capabilities.skillOff,
       ...(input.capabilities.mode ? { mode: input.capabilities.mode } : {}),
       isQuickTask: input.capabilities.isQuickTask,
+      ...(process.env.CHAT_INTELLIGENT_UI_ENABLED === "1" &&
+        !input.isolatedTurn && !input.capabilities.isQuickTask && !input.prompt.hiddenPrompt &&
+        permitsIntelligentUI(input.prompt.message) ? { intelligentUI: true } : {}),
       ...(input.capabilities.materialScope
         ? { materialScope: input.capabilities.materialScope }
         : {}),
@@ -261,6 +266,8 @@ async function runInputFromExecution(
       executionId: execution.id,
       userMessageId: execution.userMessageId,
       assistantMessageId: execution.assistantMessageId,
+      ...(request.intelligentUI && process.env.CHAT_INTELLIGENT_UI_ENABLED === "1" ?
+        { intelligentUI: true } : {}),
       ...(checkpoint.usage ? { priorUsage: checkpoint.usage } : {}),
     },
     signal,
@@ -441,6 +448,7 @@ function checkpointWithOutput(input: {
   text: string;
   reasoning: string;
   usage: AgentUsage | null;
+  intelligentUI?: AgentCompletion["intelligentUI"];
 }): AgentCheckpoint {
   const base = { ...input.checkpoint };
   delete base.pendingToolCall;
@@ -454,6 +462,10 @@ function checkpointWithOutput(input: {
       text: sanitizeModelText(input.text) || "（模型未输出正文）",
       reasoning: sanitizeModelText(input.reasoning),
       usage: mergeAgentUsage(input.checkpoint.usage, input.usage),
+      ...(input.intelligentUI && {
+        uiSnapshot: JSON.stringify(input.intelligentUI.surface),
+        uiRound: input.intelligentUI.round,
+      }),
     },
   };
 }
@@ -574,6 +586,7 @@ function isOperationalEvent(event: AgentRuntimeEvent): event is AgentEvent {
     "model_started",
     "text_delta",
     "reasoning_delta",
+    "ui_preview",
     "usage",
     "completed",
   ].includes(event.type);
@@ -921,6 +934,45 @@ export function createDurableAgentExecutionHandler(input: {
     };
 
     let completion: AgentCompletion;
+    let uiRound = -1;
+    let uiRevision = 0;
+    const appendUI = async (event: Extract<AgentRuntimeEvent, { type: "ui_preview" }>) => {
+      if (event.round !== uiRound) {
+        uiRound = event.round;
+        uiRevision = 0;
+      }
+      const common = {
+        messageId: context.execution.assistantMessageId,
+        attempt,
+        round: event.round,
+      };
+      if (event.reset && uiRevision > 0) {
+        await context.appendEvent({
+          key: `ui:reset:${attempt}:${event.round}`,
+          type: INTELLIGENT_UI_EVENT,
+          payload: { ...common, kind: "reset" },
+        });
+      }
+      if (event.groups.length === 0) return;
+      await flushLiveSegment("assistant_text", true);
+      const publish = async (groups: typeof event.groups) => {
+        const from = uiRevision;
+        uiRevision += groups.length;
+        await context.appendEvent({
+          key: `ui:append:${attempt}:${event.round}:${from}`,
+          type: INTELLIGENT_UI_EVENT,
+          payload: {
+            ...common, kind: "append", from, revision: uiRevision,
+            groups: groups.map((group) => JSON.stringify(group)),
+          },
+        });
+      };
+      // Write the first ready group immediately. The current model chunk
+      // may already contain more groups, which can share one event.
+      const remaining = [...event.groups];
+      if (uiRevision === 0) await publish(remaining.splice(0, 1));
+      while (remaining.length > 0) await publish(remaining.splice(0, 2));
+    };
     try {
       for await (const event of agentRun.events) {
         if (event.type === "text_delta") {
@@ -931,6 +983,13 @@ export function createDurableAgentExecutionHandler(input: {
           reasoning += event.text;
           liveBuffers.assistant_reasoning.buffer += event.text;
           await flushLiveSegment("assistant_reasoning");
+        } else if (event.type === "ui_preview") {
+          try {
+            await appendUI(event);
+          } catch (error) {
+            if (error instanceof LeaseLostDuringRun) throw error;
+            logger.warn("durable UI preview append failed", { executionId: context.execution.id });
+          }
         } else if (event.type === "usage") {
           streamedUsage = event.usage;
         } else if (isOperationalEvent(event)) {
@@ -1035,6 +1094,7 @@ export function createDurableAgentExecutionHandler(input: {
       text,
       reasoning,
       usage: completion.usage ?? streamedUsage,
+      intelligentUI: completion.intelligentUI,
     });
     await context.saveCheckpoint(finalCheckpoint);
     await persistCompletedUsage(

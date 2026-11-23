@@ -6,6 +6,7 @@ import type { ProjectType } from "@/lib/quick-actions";
 import type { AgentSource } from "./sources";
 import type { AgentRuntimeEvent } from "./runtime-events";
 import type { AgentRuntimeMode } from "./runtime-mode";
+import type { UISurface } from "@/lib/chat/intelligent-ui/catalog";
 
 export type ProviderName = "deepseek" | "minimax" | "bailian";
 /**
@@ -51,6 +52,7 @@ export interface AgentRunInput {
     userMessageId: string;
     assistantMessageId: string;
     priorUsage?: AgentUsage;
+    intelligentUI?: boolean;
     /** Structured current-turn transcript restored from Checkpoint v2. */
     continuationMessages?: DeepSeekMessage[];
     /** Recovery-only guard for tool calls whose outcomes are already durable. */
@@ -90,6 +92,7 @@ export interface AgentCompletion {
   model: AgentModel;
   usage: AgentUsage | null;
   sources: AgentSource[];
+  intelligentUI?: { surface: UISurface; round: number };
 }
 
 export interface AgentRun {

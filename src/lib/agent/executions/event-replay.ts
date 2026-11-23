@@ -11,7 +11,7 @@ import {
 
 type ReplayStore = Pick<
   AgentExecutionStore,
-  "getOwnedExecution" | "listEventsAfter"
+  "getOwnedExecution" | "listEventsAfter" | "getReplayPage"
 >;
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
@@ -67,13 +67,10 @@ export async function* replayAgentExecutionEvents(input: {
   const sleep = input.sleep ?? defaultSleep;
 
   while (!input.signal?.aborted) {
-    const records = await input.store.listEventsAfter({
-      executionId: input.executionId,
-      userId: input.userId,
-      afterSequence: cursor,
-      limit,
-    });
-    if (records === null) {
+    const pageInput = { executionId: input.executionId, userId: input.userId, afterSequence: cursor, limit };
+    const page = await input.store.getReplayPage?.(pageInput);
+    const records = page === undefined ? await input.store.listEventsAfter(pageInput) : page?.events;
+    if (!records) {
       throw new AgentExecutionStoreError(
         "execution_not_found",
         "AgentExecution does not exist"
@@ -86,7 +83,7 @@ export async function* replayAgentExecutionEvents(input: {
       yield toDurableAgentEvent(record);
     }
 
-    const execution = await input.store.getOwnedExecution({
+    const execution = page ?? await input.store.getOwnedExecution({
       executionId: input.executionId,
       userId: input.userId,
     });

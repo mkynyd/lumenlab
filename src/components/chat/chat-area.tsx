@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { UISurface } from "@/lib/chat/intelligent-ui/catalog";
 import { useChat } from "@/lib/hooks/use-chat";
 import { useWebSearch } from "@/lib/hooks/use-web-search";
 import type { FileAttachment } from "@/lib/chat/router";
@@ -33,6 +34,8 @@ interface ChatAreaProps {
     process?: AssistantProcessTrace;
     artifactDownloads?: ArtifactDownload[];
     backgroundExecutionId?: string;
+    intelligentUI?: UISurface;
+    intelligentUIStreaming?: boolean;
     attachments?: ChatAttachmentDto[];
   }>;
 }
@@ -44,6 +47,7 @@ export function ChatArea({
 }: ChatAreaProps) {
   const {
     messages,
+    intelligentUIStream,
     isStreaming,
     error,
     usage,
@@ -69,6 +73,9 @@ export function ChatArea({
     })),
   });
   const [inputValue, setInputValue] = useState("");
+  const onIntelligentDraft = useCallback((text: string) => {
+    setInputValue((current) => current.trim() ? `${current}\n${text}` : text);
+  }, []);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [userSkillValue, setUserSkillValue] = useState<SkillSelectorValue>("auto");
   const { webSearchActive, toggle: toggleWebSearch } = useWebSearch();
@@ -191,6 +198,8 @@ export function ChatArea({
       ) : (
         <VirtualMessageList
           messages={messages}
+          intelligentUIStream={intelligentUIStream}
+          onIntelligentDraft={onIntelligentDraft}
           onSkillFollowUp={handleSkillFollowUp}
         />
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -144,6 +144,7 @@ export default function ProjectDetailPage() {
   const lastSelectedFileIndexRef = useRef<number | null>(null);
   const {
     messages,
+    intelligentUIStream,
     isStreaming,
     error,
     usage,
@@ -170,9 +171,13 @@ export default function ProjectDetailPage() {
     selectedFileIds: selectedFileIdList,
     mode: (project?.type as ProjectType | undefined) ?? "general",
   });
+  const onIntelligentDraft = useCallback((text: string) => {
+    setChatInputValue((current) => current.trim() ? `${current}\n${text}` : text);
+  }, []);
   const hasParsingFiles = Boolean(
     project?.files.some((file) => file.status === "parsing")
   );
+  const recoverIntelligentUI = messages.some((message) => message.isStreaming && message.intelligentUIStreaming);
   const hasBackgroundPendingMessage = messages.some(
     (message) =>
       message.role === "assistant" &&
@@ -290,7 +295,7 @@ export default function ProjectDetailPage() {
   }, [emptyForegroundPersistedMessageKey]);
 
   useEffect(() => {
-    if (!conversationId || !shouldPollPendingConversation) return;
+    if (!conversationId || !shouldPollPendingConversation || recoverIntelligentUI) return;
 
     const activeConversationId = conversationId;
     let cancelled = false;
@@ -335,6 +340,7 @@ export default function ProjectDetailPage() {
     projectId,
     queryClient,
     shouldPollPendingConversation,
+    recoverIntelligentUI,
   ]);
 
   function handleFileToggle(id: string, intent: FileSelectionIntent) {
@@ -800,6 +806,8 @@ export default function ProjectDetailPage() {
         ) : (
           <VirtualMessageList
             messages={messages}
+            intelligentUIStream={intelligentUIStream}
+            onIntelligentDraft={onIntelligentDraft}
             onSaveArtifact={saveArtifact}
           />
         )}

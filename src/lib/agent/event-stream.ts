@@ -12,6 +12,7 @@
 import type { AgentEvent } from "./types";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 
+export const INTELLIGENT_UI_EVENT = "intelligent_ui";
 export const MESSAGE_ATTACHMENTS_EVENT = "message_attachments";
 export const CHAT_ATTACHMENT_EVENTS_HEADER = "X-Chat-Attachment-Events";
 

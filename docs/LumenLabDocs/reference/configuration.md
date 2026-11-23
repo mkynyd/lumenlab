@@ -31,6 +31,8 @@
 | `AGENT_ORCHESTRATOR_ENABLED` | 已弃用 | — | 仅在未设置 `AGENT_RUNTIME_MODE` 时兼容旧部署：`0` → `legacy`，`1` → `new` |
 | `AGENT_PROVIDER_ADAPTER` | 可选 | `responses` | 模型协议层：`responses` 使用三家 Responses 原生调用；`legacy` 只是同一实现的配置别名；`pi` / `pi-ai` 已被拒绝 |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 可选 | `false` | 持久化 Agent 执行（`AgentExecution` 队列、Worker 租约与断点恢复）开关 |
+| `CHAT_INTELLIGENT_UI_ENABLED` | 可选 | `0` | 设为 `1` 后允许持久化普通聊天和项目聊天生成交互界面 |
+| `CHAT_INTELLIGENT_UI_RENDER` | 可选 | `1` | 设为 `0` 后以正文显示实时和历史回答 |
 | `ADMIN_EMAILS` | 可选 | — | 管理控制台允许访问的邮箱列表（逗号分隔），控制 `/admin` 页面与 `/api/admin/**` 接口 |
 | `TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` | 生产必需 | — | 腾讯云 SES 凭据，用于注册验证、密码重置与反馈通知邮件 |
 | `SES_ENABLED` | 可选 | — | 设为 `1` 启用 SES 发送；未配置时回退为控制台 dry-run |

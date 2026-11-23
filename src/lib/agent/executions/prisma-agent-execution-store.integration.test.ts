@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
@@ -50,6 +50,53 @@ describe("PrismaAgentExecutionStore PostgreSQL concurrency", () => {
   afterAll(async () => {
     await Promise.all([prismaA.$disconnect(), prismaB.$disconnect()]);
     await Promise.all([poolA.end(), poolB.end()]);
+  });
+
+  it("publishes the UI digest immediately before completion and stores the same owner-scoped snapshot", async () => {
+    const { user, conversation } = await fixture();
+    try {
+      const store = new PrismaAgentExecutionStore(prismaA);
+      const now = new Date("2026-07-01T00:00:00Z");
+      const { execution } = await store.createOrGetByClientRunKey({
+        userId: user.id, clientRunKey: randomUUID(), requestHash: "ui-completion",
+        conversation: { id: conversation.id, title: "UI", model: "deepseek-flash", thinkingEnabled: false },
+        userMessageContent: "试验数据",
+        checkpoint: checkpoint(),
+        scheduledAt: now,
+      });
+      const claimed = await store.claimNext({ workerId: "ui-test", now, leaseMs: 30_000 });
+      expect(claimed?.id).toBe(execution.id);
+      const messageId = execution.assistantMessageId!;
+      await prismaA.message.update({ where: { id: messageId }, data: { metadata: { existing: "preserved" } } });
+      const surface = {
+        schemaVersion: 1, catalogVersion: 1, surfaceId: messageId,
+        groups: [{ id: "results", nodes: [{ id: "count", type: "value", props: { label: "样本数", value: 14 } }] }],
+      };
+      const serialized = JSON.stringify(surface);
+      const terminal: AgentCheckpoint = {
+        ...checkpoint(), output: { text: "有十四份样本", reasoning: "", usage: null, uiSnapshot: serialized, uiRound: 2 },
+      };
+      expect(await store.markCompleted({ executionId: execution.id, workerId: "wrong-worker", now, checkpoint: terminal })).toBe(false);
+      expect(await prismaA.message.findUnique({ where: { id: messageId }, select: { metadata: true } })).toEqual({ metadata: { existing: "preserved" } });
+      expect(await store.markCompleted({ executionId: execution.id, workerId: "ui-test", now, checkpoint: terminal })).toBe(true);
+      const snapshot = await prismaA.message.findUnique({ where: { id: messageId }, select: { metadata: true } });
+      expect(snapshot?.metadata).toEqual({ existing: "preserved", intelligentUI: surface });
+      const events = await store.listEventsAfter({ executionId: execution.id, userId: user.id, afterSequence: 0, limit: 10 });
+      expect(events?.slice(-2)).toMatchObject([
+        { type: "intelligent_ui", payload: { kind: "commit", messageId, attempt: 1, round: 2, revision: 1,
+          digest: createHash("sha256").update(serialized).digest("hex") } },
+        { type: "run_completed" },
+      ]);
+      expect(events?.at(-1)?.sequence).toBe(events!.at(-2)!.sequence + 1);
+      const page = await store.getReplayPage({ executionId: execution.id, userId: user.id,
+        afterSequence: events!.at(-2)!.sequence - 1, limit: 1 });
+      expect(page).toEqual({ status: "completed", lastEventSequence: events!.at(-1)!.sequence,
+        events: [events!.at(-2)] });
+      expect(await store.getReplayPage({ executionId: execution.id, userId: randomUUID(), afterSequence: 0, limit: 10 })).toBeNull();
+      expect(await store.listEventsAfter({ executionId: execution.id, userId: randomUUID(), afterSequence: 0, limit: 10 })).toBeNull();
+    } finally {
+      await prismaA.user.delete({ where: { id: user.id } });
+    }
   });
 
   it("creates one run and one message pair for concurrent idempotent dispatch", async () => {

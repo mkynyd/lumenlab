@@ -2,6 +2,7 @@ import type { ChatMessage } from "@/lib/hooks/use-chat";
 import type { ArtifactDownload } from "@/lib/artifacts/download";
 import type { AssistantProcessTrace } from "@/lib/agent/assistant-process";
 import type { AgentSource } from "@/lib/agent/sources";
+import type { UISurface } from "@/lib/chat/intelligent-ui/catalog";
 import type { ChatAttachmentDto } from "@/lib/chat/message-attachments";
 
 export type PersistedConversationMessage = {
@@ -16,6 +17,8 @@ export type PersistedConversationMessage = {
   process?: AssistantProcessTrace;
   artifactDownloads?: ArtifactDownload[];
   backgroundExecutionId?: string;
+  intelligentUI?: UISurface;
+  intelligentUIStreaming?: boolean;
   /** 任务 08：历史消息的持久化图片附件。 */
   attachments?: ChatAttachmentDto[];
   createdAt?: string | Date | null;

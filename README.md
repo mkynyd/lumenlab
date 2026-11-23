@@ -457,6 +457,8 @@ cp .env.example .env
 | `REGISTRATION_SYNC_PRIVATE_KEY_BASE64` | RSA 私钥 (PEM base64) |
 | `AGENT_RUNTIME_MODE` | `legacy` / `shadow` / `new`，默认 `legacy` |
 | `AGENT_DURABLE_EXECUTION_ENABLED` | 持久 Agent Worker 与事件恢复开关，默认 `false` |
+| `CHAT_INTELLIGENT_UI_ENABLED` | 持久聊天的交互式回答试用开关，默认 `0` |
+| `CHAT_INTELLIGENT_UI_RENDER` | 显示已校验的交互内容，默认 `1`。设为 `0` 时显示文字正文 |
 | `AGENT_PROVIDER_ADAPTER` | 默认 `responses`；兼容 `legacy` 别名，拒绝旧 `pi` / `pi-ai` 配置 |
 | `AGENT_RESPONSES_DEEPSEEK_ENABLED` / `AGENT_RESPONSES_MINIMAX_ENABLED` / `AGENT_RESPONSES_BAILIAN_ENABLED` | 默认启用；设为 `false` 暂停对应供应商并返回 503，不自动切换协议 |
 | `MODEL_QWEN_ENABLED` | Qwen3.8-Flash 开放开关，示例默认 `false`；设为 `true` 前须验证目标账号的实际聊天权限，只有 Embedding 权限不足以开放默认聊天 |
