@@ -378,6 +378,24 @@ describe("PrismaAgentExecutionStore", () => {
     ).resolves.toEqual({ execution: existing, created: false });
   });
 
+  it("retries a PostgreSQL adapter serialization conflict during dispatch", async () => {
+    const conflict = Object.assign(new Error("TransactionWriteConflict", {
+      cause: { kind: "TransactionWriteConflict", originalCode: "40001" },
+    }), { name: "DriverAdapterError" });
+    const dispatched = { execution: { id: "run-1" }, created: true };
+    mocks.transaction.mockRejectedValueOnce(conflict).mockResolvedValueOnce(dispatched);
+
+    await expect(new PrismaAgentExecutionStore().createOrGetByClientRunKey({
+      userId: "user-1",
+      clientRunKey: "client-run-1",
+      requestHash: "sha256:request-1",
+      conversation: { id: "conversation-1", title: "Existing", model: "deepseek-flash", thinkingEnabled: true },
+      userMessageContent: "same request",
+      checkpoint: checkpoint(),
+    })).resolves.toEqual(dispatched);
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
+  });
+
   it("maps a different active run unique conflict to the frozen error code", async () => {
     mocks.transaction.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError("unique", {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { INTELLIGENT_UI_EVENT } from "@/lib/agent/event-stream";
 import { readStoredUI } from "@/lib/chat/intelligent-ui/catalog";
 import {
@@ -25,6 +26,7 @@ import {
 } from "./agent-execution-store";
 
 const STALE_APPROVAL_EXECUTION_MS = 5 * 60 * 1_000;
+const DISPATCH_TRANSACTION_ATTEMPTS = 5;
 
 function toExecutionRecord(row: AgentExecution): AgentExecutionRecord {
   return {
@@ -77,6 +79,14 @@ function isKnownPrismaError(
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === code
   );
+}
+
+function isDispatchWriteConflict(error: unknown): boolean {
+  if (isKnownPrismaError(error, "P2034")) return true;
+  if (!(error instanceof Error) || error.name !== "DriverAdapterError") return false;
+  const cause = error.cause;
+  return cause !== null && typeof cause === "object" &&
+    "kind" in cause && cause.kind === "TransactionWriteConflict";
 }
 
 export class PrismaAgentExecutionStore implements AgentExecutionStore {
@@ -227,7 +237,7 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
       );
 
     let lastSerializationError: unknown;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < DISPATCH_TRANSACTION_ATTEMPTS; attempt += 1) {
       try {
         return await executeTransaction();
       } catch (error) {
@@ -238,8 +248,12 @@ export class PrismaAgentExecutionStore implements AgentExecutionStore {
             requestHash,
           });
         }
-        if (isKnownPrismaError(error, "P2034")) {
+        if (isDispatchWriteConflict(error)) {
           lastSerializationError = error;
+          if (attempt + 1 < DISPATCH_TRANSACTION_ATTEMPTS) {
+            const backoffMs = 8 * 2 ** attempt;
+            await delay(backoffMs + Math.random() * backoffMs);
+          }
           continue;
         }
         throw error;
