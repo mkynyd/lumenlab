@@ -66,7 +66,7 @@ export function FeedbackWidget() {
             type="button"
             variant="secondary"
             aria-label="反馈"
-            className={cn("fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+4rem)] z-[60] rounded-full shadow-[var(--shadow-pill)] sm:right-6 sm:bottom-6", open && "invisible")}
+            className={cn("fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+4rem)] z-45 rounded-full shadow-[var(--shadow-pill)] sm:right-6 sm:bottom-6", open && "invisible")}
           >
             <MessageSquarePlus data-icon="inline-start" aria-hidden="true" />反馈
           </Button>
