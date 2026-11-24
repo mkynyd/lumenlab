@@ -33,6 +33,7 @@ describe("ModelSelector", () => {
     render(<Harness />);
     const desktopTrigger = screen.getAllByRole("button", { name: "选择模型" })[0];
     await user.click(desktopTrigger);
+    await user.click(screen.getByRole("button", { name: /切换模型/ }));
     await user.click(screen.getByRole("radio", { name: /Qwen3\.8-Flash/ }));
 
     expect(screen.getByRole("dialog")).toBeVisible();
@@ -91,7 +92,8 @@ describe("ModelSelector", () => {
     await user.click(triggers.at(-1)!);
 
     expect(screen.getByRole("dialog")).toHaveTextContent("配置");
-    const deepseekOption = screen.getByRole("button", {
+    await user.click(screen.getByRole("button", { name: /切换模型/ }));
+    const deepseekOption = screen.getByRole("radio", {
       name: /DeepSeek V4\.1 Flash/,
     });
     expect(deepseekOption).toHaveTextContent("DeepSeek V4.1 Flash");
@@ -117,7 +119,8 @@ describe("ModelSelector", () => {
 
     const triggers = screen.getAllByRole("button", { name: "选择模型" });
     await user.click(triggers.at(-1)!);
-    await user.click(screen.getByRole("button", { name: /Qwen3\.8-Flash/ }));
+    await user.click(screen.getByRole("button", { name: /切换模型/ }));
+    await user.click(screen.getByRole("radio", { name: /Qwen3\.8-Flash/ }));
 
     expect(onChange).toHaveBeenCalledWith("qwen3.8-flash");
     expect(onReasoningEffortChange).not.toHaveBeenCalled();

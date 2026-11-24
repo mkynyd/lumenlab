@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { Check, ChevronDown, Gauge, Layers, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { DEFAULT_CHAT_MODELS, MODEL_CATALOG_ENTRIES, type ModelCatalogEntry, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
+import { DEFAULT_CHAT_MODELS, MODEL_CATALOG_ENTRIES, providerForChatModel, type ModelCatalogEntry, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -100,6 +100,7 @@ export function ModelSelector({
   const models = MODELS.filter((item) => availableModels.includes(item.value));
   const current = models.find((item) => item.value === model) ?? MODELS.find((item) => item.value === model);
   const triggerLabel = current?.label ?? model;
+  const hasReasoningModelPicker = Boolean(onReasoningEffortChange && providerForChatModel(model) === "deepseek");
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -133,31 +134,40 @@ export function ModelSelector({
           side={compact ? "top" : "bottom"}
           sideOffset={8}
           aria-label="模型与思考深度"
-          className="chat-composer-popover max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[var(--radius-xl)] border-0 p-2"
+          className="chat-composer-popover w-80 max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[var(--radius-xl)] border-0 p-2"
         >
-          <ToggleGroup
-            type="single"
-            value={current?.value ?? ""}
-            onValueChange={(value) => { if (value) onChange(value); }}
-            aria-label="模型"
-            orientation="vertical"
-            spacing={1}
-            className="grid w-full gap-0.5"
-          >
-            {models.map((item) => (
-              <ToggleGroupItem
-                key={item.value}
-                value={item.value}
-                className="h-10 w-full justify-between rounded-[var(--radius-md)] px-2.5 text-sm data-[state=on]:bg-[var(--color-interaction-active)]"
+          {!hasReasoningModelPicker && (
+              <ToggleGroup
+                type="single"
+                value={current?.value ?? ""}
+                onValueChange={(value) => { if (value) onChange(value); }}
+                aria-label="模型"
+                orientation="vertical"
+                spacing={1}
+                className="grid w-full gap-0.5"
               >
-                {item.label}
-                {current?.value === item.value && <Check className="size-4" aria-hidden />}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+                {models.map((item) => (
+                  <ToggleGroupItem
+                    key={item.value}
+                    value={item.value}
+                    className="h-10 w-full justify-between rounded-[var(--radius-md)] px-2.5 text-sm data-[state=on]:bg-[var(--color-interaction-active)]"
+                  >
+                    {item.label}
+                    {current?.value === item.value && <Check className="size-4" aria-hidden />}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+          )}
           {onReasoningEffortChange && (
-            <div className="mt-2">
-              <ReasoningControls model={model} value={reasoningEffort} onChange={onReasoningEffortChange} disabled={disabled} />
+            <div className={cn(!hasReasoningModelPicker && "mt-2")}>
+              <ReasoningControls
+                model={model}
+                models={models}
+                onModelChange={onChange}
+                value={reasoningEffort}
+                onChange={onReasoningEffortChange}
+                disabled={disabled}
+              />
             </div>
           )}
           {detailEntry && (
@@ -210,6 +220,7 @@ export function ModelSelector({
         <DialogHeader>
           <DialogTitle>配置</DialogTitle>
         </DialogHeader>
+        {!hasReasoningModelPicker && (
         <div className="grid gap-1">
           {models.map((item) => {
             const active = current?.value === item.value;
@@ -230,8 +241,16 @@ export function ModelSelector({
             );
           })}
         </div>
+        )}
         {onReasoningEffortChange && (
-          <ReasoningControls model={model} value={reasoningEffort} onChange={onReasoningEffortChange} disabled={disabled} />
+          <ReasoningControls
+            model={model}
+            models={models}
+            onModelChange={onChange}
+            value={reasoningEffort}
+            onChange={onReasoningEffortChange}
+            disabled={disabled}
+          />
         )}
         <Button
           type="button"

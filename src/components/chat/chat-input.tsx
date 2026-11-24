@@ -21,7 +21,7 @@ import { ModelSelector } from "@/components/chat/model-selector";
 import { SkillSelector, type SkillSelectorValue } from "@/components/chat/skill-selector";
 import { useMeasuredTextareaHeight } from "@/lib/hooks/use-measured-textarea-height";
 import { modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
-import { MODEL_CATALOG_ENTRIES, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
+import { MODEL_CATALOG_ENTRIES, providerForChatModel, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import {
   Dialog,
   DialogClose,
@@ -388,6 +388,7 @@ export function ChatInput({
     updateAttachments(attachments.filter((attachment) => attachment.id !== id));
   }
 
+  const hasReasoningModelPicker = Boolean(onReasoningEffortChange && model && providerForChatModel(model) === "deepseek");
   const mobileModels = MOBILE_MODEL_OPTIONS.filter((option) =>
     (
       availableModels ??
@@ -655,7 +656,7 @@ export function ChatInput({
               </Button>
             )}
           </div>
-          {model && onModelChange && mobileModels.length > 0 && (
+          {!hasReasoningModelPicker && model && onModelChange && mobileModels.length > 0 && (
             <div className="space-y-2">
               <p className="px-1 text-xs text-[var(--color-text-tertiary)]">模型</p>
               <div className="flex flex-col gap-1">
@@ -680,6 +681,8 @@ export function ChatInput({
           {onReasoningEffortChange && (
             <ReasoningControls
               model={model}
+              models={mobileModels}
+              onModelChange={onModelChange}
               value={reasoningEffort ?? "max"}
               onChange={onReasoningEffortChange}
               disabled={disabled || isStreaming}

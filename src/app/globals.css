@@ -1371,7 +1371,7 @@ pre code {
 }
 
 .chat-reasoning-slider-track {
-  background-color: color-mix(in oklab, var(--effort-color) 16%, var(--color-panel-muted));
+  background-color: color-mix(in oklab, var(--effort-color) 8%, var(--color-panel-muted));
   transition: background-color 260ms var(--composer-ease);
 }
 
@@ -1381,10 +1381,19 @@ pre code {
   transition: background-color 260ms var(--composer-ease);
 }
 
+.chat-reasoning-slider-mark {
+  background-color: color-mix(in oklab, var(--color-text-secondary) 40%, var(--color-surface));
+}
+
 .chat-reasoning-slider-thumb {
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-pill), 0 2px 6px color-mix(in oklab, var(--effort-color) 32%, transparent);
+  transition: box-shadow 260ms var(--composer-ease), transform 240ms var(--composer-spring);
+}
+
+.chat-reasoning-slider-indicator {
   background-color: var(--effort-color);
-  box-shadow: var(--shadow-pill);
-  transition: background-color 260ms var(--composer-ease), transform 240ms var(--composer-spring);
+  transition: background-color 260ms var(--composer-ease);
 }
 
 .chat-reasoning-slider-thumb:focus-visible {
@@ -1401,13 +1410,8 @@ pre code {
 }
 
 .chat-reasoning-slider-label {
-  color: var(--color-text-secondary);
+  color: var(--effort-color);
   transition: color 260ms var(--composer-ease);
-}
-
-.chat-reasoning-slider-label[data-selected="true"] {
-  color: var(--color-text-primary);
-  font-weight: 650;
 }
 
 @media (prefers-reduced-motion: reduce) {
