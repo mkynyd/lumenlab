@@ -231,6 +231,11 @@ describe("toResponsesFunctionTool", () => {
 });
 
 describe("buildDeepSeekResponsesBody", () => {
+  it.each(["low", "high", "max"] as const)("passes %s to the DeepSeek Responses API", (reasoningEffort) => {
+    const body = buildDeepSeekResponsesBody(baseInput({ thinkingEnabled: true, reasoningEffort }));
+    expect(body.reasoning).toEqual({ effort: reasoningEffort });
+  });
+
   it("explicitly controls thinking and never sends unsupported state fields", () => {
     const on = buildDeepSeekResponsesBody(
       baseInput({

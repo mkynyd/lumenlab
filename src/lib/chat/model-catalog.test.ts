@@ -76,7 +76,7 @@ describe("chat model catalog", () => {
       inputTypes: ["text", "image"],
       contextWindowTokens: 1_000_000,
       maxOutputTokens: 384_000,
-      reasoningEffort: { high: "high", max: "max" },
+      reasoningEffort: { low: "low", high: "high", max: "max" },
       enabled: true,
       billingVersion: MODEL_BILLING_VERSION,
     });

@@ -1,10 +1,19 @@
 import { useState } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ModelSelector } from "@/components/chat/model-selector";
 
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 describe("ModelSelector", () => {
+  beforeEach(() => vi.stubGlobal("ResizeObserver", ResizeObserverStub));
+  afterEach(() => vi.unstubAllGlobals());
+
   it("keeps the desktop picker open and reflects the selected model", async () => {
     const user = userEvent.setup();
 
@@ -29,9 +38,11 @@ describe("ModelSelector", () => {
     expect(screen.getByRole("dialog")).toBeVisible();
     expect(screen.getByRole("radio", { name: /Qwen3\.8-Flash/ })).toBeChecked();
     expect(desktopTrigger).toHaveTextContent("Qwen3.8-Flash");
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "深度" })).toBeChecked();
   });
 
-  it("shows the catalog-backed model detail and reasoning meter on desktop", async () => {
+  it("shows the catalog-backed model detail and a three-stop reasoning slider on desktop", async () => {
     const user = userEvent.setup();
     const onReasoningEffortChange = vi.fn();
     render(
@@ -53,11 +64,15 @@ describe("ModelSelector", () => {
     expect(details).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("1M tokens")).toBeInTheDocument();
     expect(screen.getByText("最大输出")).toBeInTheDocument();
-    expect(screen.getAllByRole("radio", { name: "深度" })[0]).toBeChecked();
-    expect(screen.getByTestId("reasoning-meter").children).toHaveLength(5);
+    const slider = screen.getByRole("slider", { name: "思考深度" });
+    expect(slider).toHaveAttribute("aria-valuetext", "最高");
+    expect(slider).toHaveAttribute("aria-valuemax", "2");
 
-    await user.click(screen.getAllByRole("radio", { name: "快速" })[0]);
-    expect(onReasoningEffortChange).toHaveBeenCalledWith("high");
+    slider.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(onReasoningEffortChange).toHaveBeenLastCalledWith("high");
+    await user.keyboard("{Home}");
+    expect(onReasoningEffortChange).toHaveBeenLastCalledWith("low");
   });
 
   it("provides a mobile bottom-sheet selector with touch-sized choices", async () => {
@@ -83,7 +98,7 @@ describe("ModelSelector", () => {
     expect(screen.queryByText("最大输出")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "模型详情" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "快速" })).toHaveClass("h-8");
+    expect(screen.getByRole("slider", { name: "思考深度" })).toHaveAttribute("aria-valuetext", "最高");
   });
 
   it("keeps model and reasoning effort independent", async () => {

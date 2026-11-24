@@ -1,3 +1,4 @@
+import type { ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import { createHash } from "node:crypto";
 
 type JsonScalar = null | boolean | number | string;
@@ -9,7 +10,7 @@ export interface AgentExecutionRequestHashInput {
   hiddenPrompt?: string;
   model: string;
   thinkingEnabled: boolean;
-  reasoningEffort: "high" | "max";
+  reasoningEffort: ReasoningEffortLevel;
   projectId?: string;
   selectedFiles: Array<{
     id: string;

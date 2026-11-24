@@ -1438,6 +1438,19 @@ describe("PrismaAgentExecutionStore", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
+  it("retains low reasoning effort when reading a durable request", () => {
+    const request = {
+      message: "简答",
+      model: "deepseek-flash",
+      thinkingEnabled: true,
+      reasoningEffort: "low",
+      skillOff: true,
+      webSearchActive: false,
+      isQuickTask: false,
+    };
+    expect(parseAgentCheckpoint({ ...checkpoint(), request }).request).toMatchObject(request);
+  });
+
   it("accepts completed checkpoints with non-secret token usage counters", () => {
     expect(() =>
       parseAgentCheckpoint({

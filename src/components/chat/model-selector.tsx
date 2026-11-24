@@ -1,9 +1,9 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Check, ChevronDown, Gauge, Layers, Paperclip, Zap } from "lucide-react";
+import { Check, ChevronDown, Gauge, Layers, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { DEFAULT_CHAT_MODELS, MODEL_CATALOG_ENTRIES, type ModelCatalogEntry } from "@/lib/chat/model-catalog";
+import { DEFAULT_CHAT_MODELS, MODEL_CATALOG_ENTRIES, type ModelCatalogEntry, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,14 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-
-type ReasoningEffort = "high" | "max";
+import { ReasoningControls } from "@/components/chat/reasoning-controls";
 
 interface ModelSelectorProps {
   model: string;
   onChange: (model: string) => void;
-  reasoningEffort?: ReasoningEffort;
-  onReasoningEffortChange?: (effort: ReasoningEffort) => void;
+  reasoningEffort?: ReasoningEffortLevel;
+  onReasoningEffortChange?: (effort: ReasoningEffortLevel) => void;
   disabled?: boolean;
   compact?: boolean;
   className?: string;
@@ -34,11 +33,6 @@ const MODELS = MODEL_CATALOG_ENTRIES.map((entry) => ({
   value: entry.id,
   label: entry.displayName,
 }));
-
-const EFFORTS: Array<{ value: ReasoningEffort; label: string; hint: string }> = [
-  { value: "high", label: "快速", hint: "跳过深度思考，直接回答。" },
-  { value: "max", label: "深度", hint: "回答前进行更完整的推理。" },
-];
 
 function catalogEntry(id: string): ModelCatalogEntry | undefined {
   return MODEL_CATALOG_ENTRIES.find((entry) => entry.id === id);
@@ -90,60 +84,6 @@ function ModelDetail({ entry }: { entry: ModelCatalogEntry }) {
         )}
       </dl>
     </div>
-  );
-}
-
-function ReasoningControls({
-  reasoningEffort,
-  onReasoningEffortChange,
-}: {
-  reasoningEffort: ReasoningEffort;
-  onReasoningEffortChange: (effort: ReasoningEffort) => void;
-}) {
-  const effortSegments = reasoningEffort === "max" ? 5 : 2;
-  return (
-    <div className="flex flex-col gap-2 rounded-[var(--radius-lg)] bg-[var(--color-control)] p-3">
-    <p className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-[var(--color-text-tertiary)]">
-      <Zap className="size-3.5" strokeWidth={2} />
-      思考深度
-    </p>
-    <div className="flex gap-1" aria-hidden="true" data-testid="reasoning-meter">
-      {[0, 1, 2, 3, 4].map((segment) => (
-        <span
-          key={segment}
-          className={cn(
-            "h-1.5 flex-1 rounded-full transition-colors duration-200 ease-out motion-reduce:transition-none",
-            segment < effortSegments
-              ? "bg-[var(--color-accent)]"
-              : "bg-[var(--color-border-light)]"
-          )}
-        />
-      ))}
-    </div>
-    <ToggleGroup
-      type="single"
-      value={reasoningEffort}
-      onValueChange={(value) => {
-        if (value) onReasoningEffortChange(value as ReasoningEffort);
-      }}
-      spacing={1}
-      className="grid grid-cols-2 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] p-1"
-      aria-label="思考深度"
-    >
-      {EFFORTS.map((item) => (
-        <ToggleGroupItem
-          key={item.value}
-          value={item.value}
-          className="h-9 rounded-full text-xs data-[state=on]:bg-[var(--color-surface)] data-[state=on]:text-[var(--color-text-primary)]"
-        >
-          {item.label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-    <p className="text-xs leading-relaxed text-[var(--color-text-tertiary)]">
-      {EFFORTS.find((item) => item.value === reasoningEffort)?.hint}
-    </p>
-  </div>
   );
 }
 
@@ -217,7 +157,7 @@ export function ModelSelector({
           </ToggleGroup>
           {onReasoningEffortChange && (
             <div className="mt-2">
-              <ReasoningControls reasoningEffort={reasoningEffort} onReasoningEffortChange={onReasoningEffortChange} />
+              <ReasoningControls model={model} value={reasoningEffort} onChange={onReasoningEffortChange} disabled={disabled} />
             </div>
           )}
           {detailEntry && (
@@ -291,29 +231,7 @@ export function ModelSelector({
           })}
         </div>
         {onReasoningEffortChange && (
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-[var(--color-text-secondary)]">思考深度</span>
-            <ToggleGroup
-              type="single"
-              value={reasoningEffort}
-              onValueChange={(value) => {
-                if (value) onReasoningEffortChange(value as ReasoningEffort);
-              }}
-              spacing={1}
-              className="grid grid-cols-2 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] p-1"
-              aria-label="思考深度"
-            >
-              {EFFORTS.map((item) => (
-                <ToggleGroupItem
-                  key={item.value}
-                  value={item.value}
-                  className="h-8 rounded-[var(--radius-sm)] px-4 text-sm data-[state=on]:bg-[var(--color-surface)] data-[state=on]:text-[var(--color-text-primary)]"
-                >
-                  {item.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
+          <ReasoningControls model={model} value={reasoningEffort} onChange={onReasoningEffortChange} disabled={disabled} />
         )}
         <Button
           type="button"

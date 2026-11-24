@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { normalizeEmail, parseLoginIdentifier } from "@/lib/auth/identifier";
-import { ALL_CHAT_MODELS, DEFAULT_CHAT_MODEL, isChatModelEnabled } from "@/lib/chat/model-catalog";
+import { ALL_CHAT_MODELS, REASONING_EFFORT_LEVELS, DEFAULT_CHAT_MODEL, isChatModelEnabled } from "@/lib/chat/model-catalog";
 
 export const sendMessageSchema = z.object({
   clientRunKey: z.string().uuid().optional(),
@@ -14,7 +14,7 @@ export const sendMessageSchema = z.object({
       message: "Qwen 模型暂未开放",
     }),
   thinkingEnabled: z.boolean().default(true),
-  reasoningEffort: z.enum(["high", "max"]).default("high"),
+  reasoningEffort: z.enum(REASONING_EFFORT_LEVELS).default("high"),
   // Project context (optional — preserves backward compatibility)
   projectId: z.string().optional(),
   selectedFileIds: z.array(z.string().min(1).max(100)).max(50).optional(),

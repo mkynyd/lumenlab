@@ -1,3 +1,4 @@
+import type { ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import type { ProjectType } from "@/components/chat/quick-task-bar";
 
 export interface ChatRequestInput {
@@ -7,7 +8,7 @@ export interface ChatRequestInput {
   hiddenPrompt?: string;
   model: string;
   thinkingEnabled: boolean;
-  reasoningEffort: "high" | "max";
+  reasoningEffort: ReasoningEffortLevel;
   projectId?: string;
   selectedFileIds?: string[];
   mode?: ProjectType;

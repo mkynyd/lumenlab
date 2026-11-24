@@ -1,3 +1,4 @@
+import type { ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import { projectFilesForUI, type ProjectFilesProjection } from "@/lib/chat/intelligent-ui/project-data";
 import { IntelligentUIAuthoring, type AuthoringUpdate } from "@/lib/chat/intelligent-ui/authoring";
 import type { UIGroup, UISurface } from "@/lib/chat/intelligent-ui/catalog";
@@ -22,7 +23,7 @@ export interface AgentLoopInput {
   initialRound: ProviderRound;
   model: string;
   thinkingEnabled: boolean;
-  reasoningEffort: "high" | "max";
+  reasoningEffort: ReasoningEffortLevel;
   activeTools: ToolMetadata[];
   messages: DeepSeekMessage[];
   context: {

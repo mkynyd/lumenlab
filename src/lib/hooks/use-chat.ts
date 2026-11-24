@@ -1,6 +1,6 @@
 "use client";
 
-import { chatModelForPreference, chatModelLabel, DEFAULT_CHAT_MODELS } from "@/lib/chat/model-catalog";
+import { chatModelForPreference, chatModelLabel, DEFAULT_CHAT_MODELS, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -95,7 +95,7 @@ interface UseChatOptions {
   initialConversationId?: string;
   model?: string;
   thinkingEnabled?: boolean;
-  reasoningEffort?: "high" | "max";
+  reasoningEffort?: ReasoningEffortLevel;
   modelLoading?: boolean;
   projectId?: string;
   selectedFileIds?: string[];

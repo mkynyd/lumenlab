@@ -81,6 +81,12 @@ describe("resetPasswordSchema", () => {
 });
 
 describe("sendMessageSchema", () => {
+  it("accepts low reasoning effort and retains the high default", () => {
+    expect(sendMessageSchema.parse({ message: "hello", reasoningEffort: "low" }).reasoningEffort).toBe("low");
+    expect(sendMessageSchema.parse({ message: "hello" }).reasoningEffort).toBe("high");
+    expect(sendMessageSchema.safeParse({ message: "hello", reasoningEffort: "medium" }).success).toBe(false);
+  });
+
   it("defaults to DeepSeek while rejecting explicitly disabled Qwen", () => {
     const previous = process.env.MODEL_QWEN_ENABLED;
     try {

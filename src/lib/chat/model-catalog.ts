@@ -13,7 +13,8 @@ export type ModelInputType = "text" | "image" | "video" | "audio";
 
 export type ChatModelProvider = "deepseek" | "minimax" | "bailian";
 
-export type ReasoningEffortLevel = "high" | "max";
+export const REASONING_EFFORT_LEVELS = ["low", "high", "max"] as const;
+export type ReasoningEffortLevel = (typeof REASONING_EFFORT_LEVELS)[number];
 
 export type ModelCatalogEntry = {
   /** 平台内部模型 ID（消息、TokenUsage、账单中的标识） */
@@ -38,7 +39,7 @@ export type ModelCatalogEntry = {
   /** 单次最大输出（tokens） */
   maxOutputTokens: number;
   /** 内部 reasoningEffort → 供应商 effort 值；null 表示不支持思考调节 */
-  reasoningEffort: Record<ReasoningEffortLevel, string> | null;
+  reasoningEffort: Partial<Record<ReasoningEffortLevel, string>> | null;
   /** true = 活跃（新请求可用）；false = 历史别名（仅展示与历史结算） */
   enabled: boolean;
   /** 计费规则版本：供应商价格或平台权重调整时递增 */
@@ -138,7 +139,7 @@ export const MODEL_CATALOG_ENTRIES: readonly ModelCatalogEntry[] = [
     inputTypes: ["text", "image"],
     contextWindowTokens: 1_000_000,
     maxOutputTokens: 384_000,
-    reasoningEffort: { high: "high", max: "max" },
+    reasoningEffort: { low: "low", high: "high", max: "max" },
     enabled: true,
     billingVersion: MODEL_BILLING_VERSION,
   },

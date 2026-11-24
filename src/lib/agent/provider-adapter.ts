@@ -7,6 +7,7 @@
  * receives normalized calls and provider-neutral round operations.
  */
 
+import type { ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import type { DeepSeekMessage } from "@/lib/deepseek";
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import type { ToolMetadata } from "@/lib/agent/types";
@@ -38,7 +39,7 @@ export interface AdapterStreamParams {
   model: string;
   messages: DeepSeekMessage[];
   thinkingEnabled: boolean;
-  reasoningEffort: "high" | "max";
+  reasoningEffort: ReasoningEffortLevel;
   signal?: AbortSignal;
   tools?: Array<{ type?: string; name: string; description?: string; input_schema?: Record<string, unknown>; [key: string]: unknown }>;
   attachments?: ServerFileAttachment[];

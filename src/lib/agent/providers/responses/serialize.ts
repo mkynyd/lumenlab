@@ -18,6 +18,7 @@
  * - EOF without a terminal event throws `ResponsesStreamInterruptedError`;
  *   a truncated stream is never reported as success.
  */
+import type { ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import type { AdapterUsage } from "@/lib/agent/provider-adapter";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
 import { isTextAttachment, type ServerFileAttachment } from "@/lib/chat/router";
@@ -739,7 +740,7 @@ export interface BuildResponsesBodyInput {
   messages: DeepSeekMessage[];
   attachments?: ServerFileAttachment[];
   thinkingEnabled: boolean;
-  reasoningEffort: "high" | "max";
+  reasoningEffort: ReasoningEffortLevel;
   tools?: ResponsesToolSpecInput[];
   toolChoice?: ResponsesToolChoice;
   temperature?: number;
@@ -848,9 +849,9 @@ export function buildQwenResponsesBody(
 }
 
 /**
- * The internal `high` is the platform default and maps to each provider's
+ * The existing Qwen presets retain the provider's
  * documented default (`medium`); explicit `max` maps to `high`.
  */
-function mapNonNoneEffort(effort: "high" | "max"): ResponsesReasoningEffort {
+function mapNonNoneEffort(effort: ReasoningEffortLevel): ResponsesReasoningEffort {
   return effort === "max" ? "high" : "medium";
 }

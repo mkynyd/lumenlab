@@ -16,11 +16,12 @@ import { formatFileSize } from "@/lib/files/format-file-size";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ReasoningControls } from "@/components/chat/reasoning-controls";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { SkillSelector, type SkillSelectorValue } from "@/components/chat/skill-selector";
 import { useMeasuredTextareaHeight } from "@/lib/hooks/use-measured-textarea-height";
 import { modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
-import { MODEL_CATALOG_ENTRIES } from "@/lib/chat/model-catalog";
+import { MODEL_CATALOG_ENTRIES, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import {
   Dialog,
   DialogClose,
@@ -50,8 +51,8 @@ interface ChatInputProps {
   blockedReason?: string;
   model?: string;
   onModelChange?: (model: string) => void;
-  reasoningEffort?: "high" | "max";
-  onReasoningEffortChange?: (effort: "high" | "max") => void;
+  reasoningEffort?: ReasoningEffortLevel;
+  onReasoningEffortChange?: (effort: ReasoningEffortLevel) => void;
   availableModels?: readonly string[];
   webSearchActive?: boolean;
   onWebSearchToggle?: () => void;
@@ -65,11 +66,6 @@ const MOBILE_MODEL_OPTIONS = MODEL_CATALOG_ENTRIES.map((entry) => ({
   label: entry.displayName,
   enabled: entry.enabled,
 }));
-
-const MOBILE_EFFORT_OPTIONS = [
-  { value: "high", label: "快速" },
-  { value: "max", label: "深度" },
-] as const;
 
 function clipboardFile(file: File) {
   const extension = Object.keys(IMAGE_EXTENSIONS).find(
@@ -682,26 +678,12 @@ export function ChatInput({
             </div>
           )}
           {onReasoningEffortChange && (
-            <div className="space-y-2">
-              <p className="px-1 text-xs text-[var(--color-text-tertiary)]">思考深度</p>
-              <div className="grid grid-cols-2 gap-2">
-                {MOBILE_EFFORT_OPTIONS.map((option) => (
-                  <Button
-                    key={option.value}
-                    type="button"
-                    variant="ghost"
-                    disabled={disabled || isStreaming}
-                    onClick={() => onReasoningEffortChange(option.value)}
-                    className={cn(
-                      "h-11 justify-start rounded-[var(--radius-md)] px-3 font-normal",
-                      reasoningEffort === option.value && "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]"
-                    )}
-                  >
-                    {option.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
+            <ReasoningControls
+              model={model}
+              value={reasoningEffort ?? "max"}
+              onChange={onReasoningEffortChange}
+              disabled={disabled || isStreaming}
+            />
           )}
           {onSkillChange && (
             <div className="flex min-h-12 items-center justify-between gap-3 px-3 pt-2">

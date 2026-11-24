@@ -1,7 +1,7 @@
 import type { ServerFileAttachment } from "@/lib/chat/router";
 import type { MediaRef } from "./context/media-ref";
 import type { DeepSeekMessage } from "@/lib/deepseek";
-import type { CatalogModelId } from "@/lib/chat/model-catalog";
+import type { CatalogModelId, ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import type { ProjectType } from "@/lib/quick-actions";
 import type { AgentSource } from "./sources";
 import type { AgentRuntimeEvent } from "./runtime-events";
@@ -36,7 +36,7 @@ export interface AgentRunInput {
   model: {
     requestedModel: AgentModel;
     thinkingEnabled: boolean;
-    reasoningEffort: "high" | "max";
+    reasoningEffort: ReasoningEffortLevel;
   };
   capabilities: {
     webSearchActive: boolean;

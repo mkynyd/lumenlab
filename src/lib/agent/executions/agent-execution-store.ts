@@ -1,6 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
-import { ALL_CHAT_MODELS, LEGACY_CHAT_MODELS } from "@/lib/chat/model-catalog";
+import { ALL_CHAT_MODELS, REASONING_EFFORT_LEVELS, LEGACY_CHAT_MODELS } from "@/lib/chat/model-catalog";
 import type { AgentExecutionErrorCode } from "./contracts";
 
 export const AGENT_EXECUTION_STATUSES = [
@@ -79,7 +79,7 @@ const durableRequestSchema = z
     // 需要能解析恢复；新请求由 sendMessageSchema 限定为活跃模型。
     model: z.enum([...ALL_CHAT_MODELS, ...LEGACY_CHAT_MODELS]),
     thinkingEnabled: z.boolean(),
-    reasoningEffort: z.enum(["high", "max"]),
+    reasoningEffort: z.enum(REASONING_EFFORT_LEVELS),
     webSearchActive: z.boolean(),
     manualSkillId: z.string().min(1).optional(),
     skillOff: z.boolean(),

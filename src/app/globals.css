@@ -1349,6 +1349,77 @@ pre code {
   animation: chat-composer-popover-out 140ms ease-in both;
 }
 
+.chat-reasoning-slider {
+  --effort-low: oklch(0.62 0.13 170);
+  --effort-high: oklch(0.58 0.18 247);
+  --effort-max: oklch(0.58 0.19 306);
+  --effort-color: var(--effort-high);
+}
+
+.dark .chat-reasoning-slider {
+  --effort-low: oklch(0.75 0.12 170);
+  --effort-high: oklch(0.73 0.14 247);
+  --effort-max: oklch(0.74 0.15 306);
+}
+
+.chat-reasoning-slider[data-effort="low"] {
+  --effort-color: var(--effort-low);
+}
+
+.chat-reasoning-slider[data-effort="max"] {
+  --effort-color: var(--effort-max);
+}
+
+.chat-reasoning-slider-track {
+  background-color: color-mix(in oklab, var(--effort-color) 16%, var(--color-panel-muted));
+  transition: background-color 260ms var(--composer-ease);
+}
+
+.chat-reasoning-slider-range {
+  background-color: var(--effort-color);
+  background-image: linear-gradient(105deg, color-mix(in oklab, white 18%, transparent), transparent);
+  transition: background-color 260ms var(--composer-ease);
+}
+
+.chat-reasoning-slider-thumb {
+  background-color: var(--effort-color);
+  box-shadow: var(--shadow-pill);
+  transition: background-color 260ms var(--composer-ease), transform 240ms var(--composer-spring);
+}
+
+.chat-reasoning-slider-thumb:focus-visible {
+  box-shadow: var(--shadow-pill), 0 0 0 3px color-mix(in oklab, var(--effort-color) 23%, transparent);
+}
+
+.chat-reasoning-slider-control:active .chat-reasoning-slider-thumb {
+  transform: scale(1.1);
+}
+
+.chat-reasoning-slider-control:not(:active) > span:has(.chat-reasoning-slider-thumb),
+.chat-reasoning-slider-control:not(:active) .chat-reasoning-slider-range {
+  transition: left 220ms var(--composer-spring), right 220ms var(--composer-spring), background-color 260ms var(--composer-ease);
+}
+
+.chat-reasoning-slider-label {
+  color: var(--color-text-secondary);
+  transition: color 260ms var(--composer-ease);
+}
+
+.chat-reasoning-slider-label[data-selected="true"] {
+  color: var(--color-text-primary);
+  font-weight: 650;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-reasoning-slider * {
+    transition: none !important;
+  }
+
+  .chat-reasoning-slider-control:active .chat-reasoning-slider-thumb {
+    transform: none;
+  }
+}
+
 .chat-model-details {
   display: grid;
   grid-template-rows: 0fr;

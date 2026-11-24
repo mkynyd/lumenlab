@@ -14,7 +14,7 @@ import type {
   ResponsesToolChoice,
 } from "@/lib/agent/providers/responses/types";
 import { sanitizeModelText } from "@/lib/agent/tool-call-parser";
-import { DEEPSEEK_CHAT_MODEL } from "@/lib/chat/model-catalog";
+import { DEEPSEEK_CHAT_MODEL, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 
 const DEEPSEEK_RESPONSES_BASE_URL = "https://api.deepseek.com";
 const ACTIVE_DEEPSEEK_MODEL = DEEPSEEK_CHAT_MODEL;
@@ -36,7 +36,7 @@ export interface DeepSeekRequest {
   model: string;
   messages: DeepSeekMessage[];
   thinking?: { type: "enabled" | "disabled" };
-  reasoning_effort?: "high" | "max";
+  reasoning_effort?: ReasoningEffortLevel;
   max_tokens?: number;
   tools?: Array<{ type?: string; name: string; description?: string; input_schema?: Record<string, unknown>; [key: string]: unknown }>;
   tool_choice?: { type: "auto" | "any" | "tool" | "none"; name?: string };
