@@ -24,10 +24,10 @@ describe("ModelSelector", () => {
     render(<Harness />);
     const desktopTrigger = screen.getAllByRole("button", { name: "选择模型" })[0];
     await user.click(desktopTrigger);
-    await user.click(screen.getByRole("menuitemradio", { name: /Qwen3\.8-Flash/ }));
+    await user.click(screen.getByRole("radio", { name: /Qwen3\.8-Flash/ }));
 
-    expect(screen.getByRole("menu")).toBeVisible();
-    expect(screen.getByRole("menuitemradio", { name: /Qwen3\.8-Flash/ })).toBeChecked();
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(screen.getByRole("radio", { name: /Qwen3\.8-Flash/ })).toBeChecked();
     expect(desktopTrigger).toHaveTextContent("Qwen3.8-Flash");
   });
 
@@ -46,9 +46,13 @@ describe("ModelSelector", () => {
 
     await user.click(screen.getAllByRole("button", { name: "选择模型" })[0]);
 
+    expect(screen.queryByRole("term", { name: "上下文" })).not.toBeInTheDocument();
+    const details = screen.getByRole("button", { name: "模型详情" });
+    expect(details).toHaveAttribute("aria-expanded", "false");
+    await user.click(details);
+    expect(details).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("1M tokens")).toBeInTheDocument();
     expect(screen.getByText("最大输出")).toBeInTheDocument();
-    expect(screen.getByTestId("model-detail-card")).toHaveClass("rounded-[var(--radius-xl)]");
     expect(screen.getAllByRole("radio", { name: "深度" })[0]).toBeChecked();
     expect(screen.getByTestId("reasoning-meter").children).toHaveLength(5);
 
@@ -75,8 +79,9 @@ describe("ModelSelector", () => {
     const deepseekOption = screen.getByRole("button", {
       name: /DeepSeek V4\.1 Flash/,
     });
-    // 模型名下方带一行官方口径小字介绍
-    expect(deepseekOption).toHaveTextContent("多模态视觉理解");
+    expect(deepseekOption).toHaveTextContent("DeepSeek V4.1 Flash");
+    expect(screen.queryByText("最大输出")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "模型详情" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "快速" })).toHaveClass("h-8");
   });

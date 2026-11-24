@@ -707,9 +707,9 @@ export default function ProjectDetailPage() {
             <button
               onClick={toggleProjectSidebar}
               className={cn(
-                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)]",
+                "inline-flex size-11 shrink-0 items-center justify-center rounded-full md:size-8",
                 "text-[var(--color-text-tertiary)] hover:bg-[var(--color-project-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:bg-[var(--color-project-surface-hover)]",
-                "transition-colors duration-150"
+                "transition-[background-color,color,transform] duration-200 ease-[cubic-bezier(0.26,1.24,0.42,1)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
               )}
               aria-label="切换项目侧边栏"
             >
@@ -730,11 +730,11 @@ export default function ProjectDetailPage() {
             </button>
             <div
               className={cn(
-                "flex min-w-0 max-w-[12rem] shrink-0 items-baseline gap-2 sm:max-w-[16rem]",
+                "flex min-w-0 max-w-[16rem] items-center gap-2",
                 desktopProjectSidebarOpen && "md:hidden"
               )}
             >
-              <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
+              <span className="truncate text-sm font-semibold leading-none text-[var(--color-text-primary)]">
                 {project.name}
               </span>
               <span className="hidden shrink-0 text-[11px] text-[var(--color-text-tertiary)] lg:inline">

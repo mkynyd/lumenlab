@@ -30,7 +30,7 @@ describe("ResearchComposer", () => {
     render(<ResearchComposer onSend={vi.fn()} showDomainSelect />);
     expect(screen.getByLabelText("研究强度")).toHaveTextContent("Deep · 深入");
     expect(screen.getByLabelText("研究领域 Profile")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/输入一个研究问题/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("输入研究问题")).toBeInTheDocument();
   });
 
   it("hides the domain select by default", () => {

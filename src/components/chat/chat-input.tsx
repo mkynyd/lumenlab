@@ -5,6 +5,8 @@ import { ArrowUp, Globe, Paperclip, Plus, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
 import {
   ACCEPT_ATTRIBUTE,
+  extensionOf,
+  IMAGE_EXTENSIONS,
   MAX_FILES_PER_REQUEST,
   MAX_TOTAL_SIZE,
   validateUploadFile,
@@ -25,6 +27,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Tooltip,
@@ -67,6 +70,14 @@ const MOBILE_EFFORT_OPTIONS = [
   { value: "high", label: "快速" },
   { value: "max", label: "深度" },
 ] as const;
+
+function clipboardFile(file: File) {
+  const extension = Object.keys(IMAGE_EXTENSIONS).find(
+    (key) => IMAGE_EXTENSIONS[key] === file.type
+  );
+  if (!extension || IMAGE_EXTENSIONS[extensionOf(file.name)] === file.type) return file;
+  return new File([file], `粘贴的图片.${extension}`, { type: file.type });
+}
 
 /**
  * 任务 08：上传期间的本地预览。图片用 blob URL 显示缩略图（随预览退出回收），
@@ -183,6 +194,7 @@ export function ChatInput({
   }, []);
   const latestDraft = useRef({ value: "", attachments });
   const [internalValue, setInternalValue] = useState("");
+  const [inputFocused, setInputFocused] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   // 附件校验的非阻断提示：自动消隐，不阻塞输入与发送。
   const [attachmentNotice, setAttachmentNotice] = useState<string[]>([]);
@@ -200,6 +212,7 @@ export function ChatInput({
     latestDraft.current = { value: currentValue, attachments };
   }, [currentValue, attachments]);
   const hasSendableContent = currentValue.trim().length > 0 || attachments.length > 0;
+  const compactOnMobile = !inputFocused && !hasSendableContent && !isDragActive;
   const webSearchSupported = modelSupportsWebSearch(model);
   const { ref: textareaRef, style: textareaStyle } = useMeasuredTextareaHeight({
     value: currentValue,
@@ -207,6 +220,8 @@ export function ChatInput({
     maxHeight: 160,
     fontSize: 16,
     lineHeight: 24,
+    paddingX: 28,
+    paddingY: 20,
     fontFamily: '"Noto Sans SC"',
   });
 
@@ -243,7 +258,7 @@ export function ChatInput({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSubmit(e);
     }
@@ -267,11 +282,12 @@ export function ChatInput({
       }
     }
     if (accepted.length > 0) {
+      const currentAttachments = attachmentsRef.current;
       // 按选择顺序在剩余数量与总大小额度内接受，放不下的逐份拒绝。
-      let countLeft = Math.max(0, MAX_FILES_PER_REQUEST - attachments.length);
+      let countLeft = Math.max(0, MAX_FILES_PER_REQUEST - currentAttachments.length);
       let sizeLeft = Math.max(
         0,
-        MAX_TOTAL_SIZE - attachments.reduce((sum, attachment) => sum + attachment.size, 0)
+        MAX_TOTAL_SIZE - currentAttachments.reduce((sum, attachment) => sum + attachment.size, 0)
       );
       const kept: File[] = [];
       for (const file of accepted) {
@@ -305,7 +321,9 @@ export function ChatInput({
           }
           return attachment;
         });
-        updateAttachments([...attachments, ...nextFiles]);
+        const nextAttachments = [...currentAttachments, ...nextFiles];
+        attachmentsRef.current = nextAttachments;
+        updateAttachments(nextAttachments);
       }
     }
     if (rejected.length > 0) setAttachmentNotice(rejected);
@@ -315,12 +333,20 @@ export function ChatInput({
   }
 
   function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const files = e.clipboardData?.files;
-    if (!files || files.length === 0) return;
-    // 截图/文件直接粘贴是高频入口；只接管含文件的粘贴，纯文本走默认行为。
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
+    const files = Array.from(clipboard.files ?? []);
+    if (files.length === 0) {
+      for (const item of Array.from(clipboard.items ?? [])) {
+        if (item.kind !== "file") continue;
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length === 0) return;
     e.preventDefault();
     if (disabled || isStreaming) return;
-    addFiles(files);
+    addFiles(files.map(clipboardFile));
   }
 
   function hasFilesInTransfer(dataTransfer: DataTransfer) {
@@ -375,6 +401,7 @@ export function ChatInput({
 
   return (
     <TooltipProvider>
+      <Dialog open={mobileToolsOpen} onOpenChange={setMobileToolsOpen}>
       <form
         onSubmit={handleSubmit}
         autoComplete="off"
@@ -417,8 +444,14 @@ export function ChatInput({
           </button>
         </div>
       )}
+      {contextHint && (
+        <p className="truncate px-3 text-xs text-[var(--color-text-tertiary)]">
+          {contextHint}
+        </p>
+      )}
       <div
-        className="workbench-input-dock relative rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-control)] transition-colors focus-within:border-[var(--color-border-strong)]"
+        className="workbench-input-dock chat-composer relative bg-[var(--color-control)]"
+        data-compact={compactOnMobile}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -435,7 +468,7 @@ export function ChatInput({
           </div>
         )}
         {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">
+          <div className="chat-composer-attachments flex max-h-36 flex-wrap gap-1.5 overflow-y-auto px-3.5 pt-3">
             {attachments.map((attachment) => (
               <AttachmentPreviewChip
                 key={attachment.id}
@@ -453,11 +486,6 @@ export function ChatInput({
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
-        {contextHint && (
-          <p className="truncate px-3.5 pt-2.5 text-xs text-[var(--color-text-tertiary)]">
-            {contextHint}
-          </p>
-        )}
           <Textarea
             ref={textareaRef}
             aria-label="消息内容"
@@ -465,31 +493,33 @@ export function ChatInput({
             onChange={(e) => updateValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
             placeholder={placeholder}
             rows={1}
             disabled={disabled}
             autoComplete="off"
             className={cn(
-              "block max-h-40 min-h-14 w-full resize-none border-0 bg-transparent! px-3.5 pb-1 pt-3 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0",
+              "chat-composer-field block max-h-40 min-h-10 w-full resize-none field-sizing-fixed border-0 bg-transparent! px-3.5 pb-2 pt-2 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 md:min-h-14 md:pt-3",
               "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
               "focus:outline-none disabled:opacity-50"
             )}
             style={textareaStyle}
           />
-        <div className="flex items-center gap-1.5 px-3 pb-3 pt-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            disabled={disabled || isStreaming}
-            onClick={() => setMobileToolsOpen(true)}
-            className="shrink-0 rounded-[var(--radius-md)] sm:hidden"
-            aria-label="更多输入选项"
-            aria-expanded={mobileToolsOpen}
-          >
-            <Plus />
-          </Button>
-          <div className="hidden min-w-0 items-center gap-1.5 sm:flex">
+        <div className="chat-composer-actions flex items-center gap-1.5">
+          <DialogTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={disabled || isStreaming}
+              className="size-11 shrink-0 rounded-full md:hidden"
+              aria-label="更多输入选项"
+            >
+              <Plus />
+            </Button>
+          </DialogTrigger>
+          <div className="hidden min-w-0 items-center gap-1.5 md:flex">
             {model && onModelChange && (
               <ModelSelector
                 model={model}
@@ -558,7 +588,7 @@ export function ChatInput({
                   onClick={onStop}
                   variant="destructive"
                   size="icon-sm"
-                  className="ml-auto shrink-0 rounded-[var(--radius-md)]"
+                  className="ml-auto size-11 shrink-0 rounded-full max-md:bg-clip-content max-md:p-1.5 md:size-8"
                   aria-label="停止生成"
                 >
                   <StopCircle />
@@ -574,7 +604,7 @@ export function ChatInput({
                   disabled={!hasSendableContent || disabled || isSubmitting || Boolean(blockedReason)}
                   variant="primary"
                   size="icon-sm"
-                  className="ml-auto shrink-0 rounded-[var(--radius-md)]"
+                  className="ml-auto size-11 shrink-0 rounded-full max-md:bg-clip-content max-md:p-1.5 md:size-8"
                   aria-label="发送消息"
                 >
                   <ArrowUp />
@@ -585,10 +615,11 @@ export function ChatInput({
           )}
         </div>
       </div>
-      <Dialog open={mobileToolsOpen} onOpenChange={setMobileToolsOpen}>
+      </form>
         <DialogContent
           showCloseButton={false}
-          className="top-auto bottom-0 left-0 max-w-none -translate-x-0 -translate-y-0 gap-3 rounded-t-[20px] rounded-b-none border-x-0 border-b-0 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-none sm:hidden"
+          className="chat-composer-sheet top-auto bottom-0 left-0 max-h-[85dvh] max-w-none -translate-x-0 -translate-y-0 gap-3 overflow-y-auto rounded-t-[24px] rounded-b-none border-0 p-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-input)] sm:max-w-none"
+          aria-describedby={undefined}
         >
           <DialogHeader className="flex-row items-center justify-between gap-3">
             <DialogTitle>对话选项</DialogTitle>
@@ -673,7 +704,7 @@ export function ChatInput({
             </div>
           )}
           {onSkillChange && (
-            <div className="flex min-h-12 items-center justify-between gap-3 border-t border-[var(--color-border-light)] px-3 pt-2">
+            <div className="flex min-h-12 items-center justify-between gap-3 px-3 pt-2">
               <span className="text-sm text-[var(--color-text-secondary)]">智能方式</span>
               <SkillSelector
                 value={skillValue}
@@ -685,7 +716,6 @@ export function ChatInput({
           )}
         </DialogContent>
       </Dialog>
-      </form>
     </TooltipProvider>
   );
 }

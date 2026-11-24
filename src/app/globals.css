@@ -1250,6 +1250,142 @@ pre code {
   background-color: transparent;
 }
 
+/* Composer surfaces and motion are scoped to the chat workbench. */
+.chat-composer,
+.chat-composer-sheet,
+.chat-composer-popover {
+  --composer-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --composer-spring: cubic-bezier(0.26, 1.24, 0.42, 1);
+}
+
+.chat-composer {
+  border-radius: var(--radius-xl);
+  transition: border-radius 260ms var(--composer-ease);
+}
+
+.chat-composer-actions {
+  padding: 0.25rem 0.75rem 0.75rem;
+}
+
+:is(.chat-composer-actions, .chat-composer-sheet, .chat-composer-popover) button {
+  transition: transform 240ms var(--composer-spring), scale 240ms var(--composer-spring), background-color 150ms ease-out;
+}
+
+:is(.chat-composer-actions, .chat-composer-sheet, .chat-composer-popover) button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.chat-composer-attachments > * {
+  animation: chat-attachment-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.chat-composer-sheet[data-state="open"] {
+  animation: chat-sheet-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.chat-composer-sheet[data-state="closed"] {
+  animation: chat-sheet-out 160ms ease-in both;
+}
+
+@keyframes chat-attachment-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+}
+
+@keyframes chat-sheet-in {
+  from { opacity: 0; transform: translateY(1.25rem); }
+}
+
+@keyframes chat-sheet-out {
+  to { opacity: 0; transform: translateY(0.75rem); }
+}
+
+@media (width < 48rem) {
+  .chat-composer {
+    padding-bottom: 3.25rem;
+    transition: padding-bottom 260ms var(--composer-ease), border-radius 260ms var(--composer-ease);
+  }
+
+  .chat-composer[data-compact="true"] {
+    padding-bottom: 0;
+    border-radius: 999px;
+  }
+
+  .chat-composer-field {
+    transition: padding 260ms var(--composer-ease), height 220ms var(--composer-ease);
+  }
+
+  .chat-composer[data-compact="true"] .chat-composer-field {
+    height: 3.25rem !important;
+    padding: 0.875rem 3.375rem 0.875rem 3.25rem;
+  }
+
+  .chat-composer-actions {
+    position: absolute;
+    inset: auto 0 0;
+    height: 3.25rem;
+    padding: 0 0.375rem;
+    pointer-events: none;
+  }
+
+  .chat-composer-actions button {
+    pointer-events: auto;
+  }
+}
+
+.chat-composer-popover {
+  box-shadow: var(--shadow-pill), var(--shadow-input);
+  transform-origin: var(--radix-popper-transform-origin, center);
+}
+
+.chat-composer-popover[data-state="open"] {
+  animation: chat-composer-popover-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.chat-composer-popover[data-state="closed"] {
+  animation: chat-composer-popover-out 140ms ease-in both;
+}
+
+.chat-model-details {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 230ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease-out;
+}
+
+.chat-model-details[data-expanded="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+@keyframes chat-composer-popover-in {
+  from { opacity: 0; transform: scale(0.97); }
+}
+
+@keyframes chat-composer-popover-out {
+  to { opacity: 0; transform: scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-composer,
+  .chat-composer-field,
+  .chat-model-details,
+  :is(.chat-composer-actions, .chat-composer-sheet, .chat-composer-popover) button {
+    transition: none;
+  }
+
+  :is(.chat-composer-actions, .chat-composer-sheet, .chat-composer-popover) button:active:not(:disabled) {
+    transform: none;
+    translate: none;
+    scale: none;
+  }
+
+  .chat-composer-attachments > *,
+  .chat-composer-sheet[data-state],
+  .chat-composer-popover[data-state] {
+    animation: none;
+  }
+}
+
 /* The landing owns one fixed, composited canvas. Individual scenes remain
    transparent, so their transitions never expose a flat page background. */
 .landing-atmosphere {

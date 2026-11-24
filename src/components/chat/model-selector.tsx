@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, ChevronUp, Gauge, Layers, Paperclip, Zap } from "lucide-react";
+import { useId, useState } from "react";
+import { Check, ChevronDown, Gauge, Layers, Paperclip, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_CHAT_MODELS, MODEL_CATALOG_ENTRIES, type ModelCatalogEntry } from "@/lib/chat/model-catalog";
 import { Button } from "@/components/ui/button";
@@ -12,14 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 type ReasoningEffort = "high" | "max";
@@ -51,30 +44,16 @@ function catalogEntry(id: string): ModelCatalogEntry | undefined {
   return MODEL_CATALOG_ENTRIES.find((entry) => entry.id === id);
 }
 
-/** 详情栏内容：官方口径简介 + 可核实的参数（上下文/输入/价格）。
- * 三个区域各用固定高度插槽：不同模型的文字换行数不同，
- * 若区域高度跟随内容，悬浮切换时会引起上下浮动。 */
-function ModelDetail({
-  entry,
-  reasoningEffort,
-  onReasoningEffortChange,
-}: {
-  entry: ModelCatalogEntry;
-  reasoningEffort: ReasoningEffort;
-  onReasoningEffortChange?: (effort: ReasoningEffort) => void;
-}) {
-  const effortSegments = reasoningEffort === "max" ? 5 : 2;
-
+function ModelDetail({ entry }: { entry: ModelCatalogEntry }) {
   return (
-    <div className="flex h-full w-full flex-col gap-3.5">
+    <div className="flex flex-col gap-3 px-2 pb-2 pt-1">
       <div className="shrink-0">
         <p className="text-sm font-medium text-[var(--color-text-primary)]">
           {entry.detailName ?? entry.displayName}
         </p>
         <p className="text-xs text-[var(--color-text-tertiary)]">{entry.vendor}</p>
       </div>
-      {/* 介绍区：固定三行，价格行移除后可完整展示 */}
-      <p className="h-[69px] shrink-0 text-sm leading-relaxed text-[var(--color-text-secondary)] line-clamp-3">
+      <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
         {entry.description}
       </p>
       <dl className="flex shrink-0 flex-col gap-1.5 text-sm">
@@ -110,59 +89,64 @@ function ModelDetail({
           </div>
         )}
       </dl>
-      {/* 思考深度：固定在卡片底部，与顶部介绍保持相同间距 */}
-      {onReasoningEffortChange && (
-        <div className="mt-auto flex flex-col gap-2 rounded-[var(--radius-lg)] bg-[var(--color-control)] p-3">
-          <p className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-[var(--color-text-tertiary)]">
-            <Zap className="size-3.5" strokeWidth={2} />
-            思考深度
-          </p>
-          <div className="flex gap-1" aria-hidden="true" data-testid="reasoning-meter">
-            {[0, 1, 2, 3, 4].map((segment) => (
-              <span
-                key={segment}
-                className={cn(
-                  "h-1.5 flex-1 rounded-full transition-colors",
-                  segment < effortSegments
-                    ? "bg-[var(--color-accent)]"
-                    : "bg-[var(--color-border-light)]"
-                )}
-              />
-            ))}
-          </div>
-          <ToggleGroup
-            type="single"
-            value={reasoningEffort}
-            onValueChange={(value) => {
-              if (value) onReasoningEffortChange(value as ReasoningEffort);
-            }}
-            spacing={1}
-            className="grid grid-cols-2 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] p-1"
-            aria-label="思考深度"
-          >
-            {EFFORTS.map((item) => (
-              <ToggleGroupItem
-                key={item.value}
-                value={item.value}
-                className="h-7 rounded-[var(--radius-sm)] text-xs data-[state=on]:bg-[var(--color-surface)] data-[state=on]:text-[var(--color-text-primary)]"
-              >
-                {item.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <p className="text-xs leading-relaxed text-[var(--color-text-tertiary)]">
-            {EFFORTS.find((item) => item.value === reasoningEffort)?.hint}
-          </p>
-        </div>
-      )}
     </div>
   );
 }
 
-/**
- * 模型选择器：左侧模型列表 + 右侧官方口径详情栏（悬浮预览，选中即详情）。
- * 模型与思考深度是两个独立分组，切换模型不动思考深度，反之亦然。
- */
+function ReasoningControls({
+  reasoningEffort,
+  onReasoningEffortChange,
+}: {
+  reasoningEffort: ReasoningEffort;
+  onReasoningEffortChange: (effort: ReasoningEffort) => void;
+}) {
+  const effortSegments = reasoningEffort === "max" ? 5 : 2;
+  return (
+    <div className="flex flex-col gap-2 rounded-[var(--radius-lg)] bg-[var(--color-control)] p-3">
+    <p className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-[var(--color-text-tertiary)]">
+      <Zap className="size-3.5" strokeWidth={2} />
+      思考深度
+    </p>
+    <div className="flex gap-1" aria-hidden="true" data-testid="reasoning-meter">
+      {[0, 1, 2, 3, 4].map((segment) => (
+        <span
+          key={segment}
+          className={cn(
+            "h-1.5 flex-1 rounded-full transition-colors duration-200 ease-out motion-reduce:transition-none",
+            segment < effortSegments
+              ? "bg-[var(--color-accent)]"
+              : "bg-[var(--color-border-light)]"
+          )}
+        />
+      ))}
+    </div>
+    <ToggleGroup
+      type="single"
+      value={reasoningEffort}
+      onValueChange={(value) => {
+        if (value) onReasoningEffortChange(value as ReasoningEffort);
+      }}
+      spacing={1}
+      className="grid grid-cols-2 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] p-1"
+      aria-label="思考深度"
+    >
+      {EFFORTS.map((item) => (
+        <ToggleGroupItem
+          key={item.value}
+          value={item.value}
+          className="h-9 rounded-full text-xs data-[state=on]:bg-[var(--color-surface)] data-[state=on]:text-[var(--color-text-primary)]"
+        >
+          {item.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+    <p className="text-xs leading-relaxed text-[var(--color-text-tertiary)]">
+      {EFFORTS.find((item) => item.value === reasoningEffort)?.hint}
+    </p>
+  </div>
+  );
+}
+
 export function ModelSelector({
   model,
   onChange,
@@ -178,11 +162,12 @@ export function ModelSelector({
   const triggerLabel = current?.label ?? model;
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [previewed, setPreviewed] = useState<string | null>(null);
-  const detailEntry = catalogEntry(previewed ?? current?.value ?? "");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = useId();
+  const detailEntry = catalogEntry(current?.value ?? "");
 
   const triggerClassName = cn(
-    "h-8 shrink-0 rounded-[var(--radius-md)] bg-[var(--color-panel-muted)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-[background-color,color,transform] hover:bg-[var(--color-interaction-hover)] active:scale-[0.97] focus-visible:bg-[var(--color-interaction-active)]",
+    "h-8 shrink-0 rounded-full bg-[var(--color-panel-muted)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-[background-color,color,transform] hover:bg-[var(--color-interaction-hover)] active:scale-[0.97] focus-visible:bg-[var(--color-interaction-active)]",
     compact && "max-w-[min(72vw,14rem)]",
     className
   );
@@ -190,81 +175,78 @@ export function ModelSelector({
   return (
     <>
     <div className="hidden md:block">
-    <DropdownMenu
-      open={desktopOpen}
-      onOpenChange={(open) => {
+      <Popover open={desktopOpen} onOpenChange={(open) => {
         setDesktopOpen(open);
-        if (!open) setPreviewed(null);
-      }}
-    >
-      <DropdownMenuTrigger asChild disabled={disabled}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={disabled}
-          className={triggerClassName}
-          aria-label="选择模型"
+        if (!open) setDetailsOpen(false);
+      }}>
+        <PopoverTrigger asChild disabled={disabled}>
+          <Button type="button" variant="ghost" size="sm" className={triggerClassName} aria-label="选择模型">
+            <span className="truncate">{triggerLabel}</span>
+            <ChevronDown
+              data-icon="inline-end"
+              className={cn("transition-transform motion-reduce:transition-none", desktopOpen && "rotate-180")}
+            />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          side={compact ? "top" : "bottom"}
+          sideOffset={8}
+          aria-label="模型与思考深度"
+          className="chat-composer-popover max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[var(--radius-xl)] border-0 p-2"
         >
-          <span className="truncate">{triggerLabel}</span>
-          <ChevronUp
-            data-icon="inline-end"
-            className={cn("transition-transform", !desktopOpen && "rotate-180")}
-          />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={8}
-        className="h-auto w-auto max-h-none max-w-[calc(100vw-2rem)] overflow-visible border-0 bg-transparent p-0 shadow-none"
-      >
-        <div className="flex items-stretch gap-2">
-          <div className="min-h-[24rem] w-56 shrink-0 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-popover py-2">
-            <DropdownMenuLabel className="px-3 py-2 text-sm font-normal text-[var(--color-text-tertiary)]">
-              模型
-            </DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={current?.value}
-              onValueChange={onChange}
-            >
-              {models.map((item) => {
-                const entry = catalogEntry(item.value);
-                return (
-                  <DropdownMenuRadioItem
-                    key={item.value}
-                    value={item.value}
-                    onSelect={(event) => event.preventDefault()}
-                    onMouseEnter={() => setPreviewed(item.value)}
-                    onFocus={() => setPreviewed(item.value)}
-                    className="h-12 rounded-[var(--radius-md)] px-3"
-                  >
-                    <span className="flex flex-col gap-0.5">
-                      <span className="text-base leading-tight">{item.label}</span>
-                      <span className="text-xs leading-tight text-[var(--color-text-tertiary)]">
-                        {entry?.vendor}
-                      </span>
-                    </span>
-                  </DropdownMenuRadioItem>
-                );
-              })}
-            </DropdownMenuRadioGroup>
-          </div>
-          {detailEntry && (
-            <div
-              data-testid="model-detail-card"
-              className="min-h-[24rem] w-80 shrink-0 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-popover p-4"
-            >
-              <ModelDetail
-                entry={detailEntry}
-                reasoningEffort={reasoningEffort}
-                onReasoningEffortChange={onReasoningEffortChange}
-              />
+          <ToggleGroup
+            type="single"
+            value={current?.value ?? ""}
+            onValueChange={(value) => { if (value) onChange(value); }}
+            aria-label="模型"
+            orientation="vertical"
+            spacing={1}
+            className="grid w-full gap-0.5"
+          >
+            {models.map((item) => (
+              <ToggleGroupItem
+                key={item.value}
+                value={item.value}
+                className="h-10 w-full justify-between rounded-[var(--radius-md)] px-2.5 text-sm data-[state=on]:bg-[var(--color-interaction-active)]"
+              >
+                {item.label}
+                {current?.value === item.value && <Check className="size-4" aria-hidden />}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          {onReasoningEffortChange && (
+            <div className="mt-2">
+              <ReasoningControls reasoningEffort={reasoningEffort} onReasoningEffortChange={onReasoningEffortChange} />
             </div>
           )}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {detailEntry && (
+            <div className="mt-1">
+              <button
+                type="button"
+                aria-controls={detailsId}
+                aria-expanded={detailsOpen}
+                onClick={() => setDetailsOpen((open) => !open)}
+                className="flex h-9 w-full items-center justify-between rounded-[var(--radius-md)] px-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-interaction-hover)] focus-visible:bg-[var(--color-interaction-active)] focus-visible:outline-none"
+              >
+                模型详情
+                <ChevronDown className={cn("size-4 transition-transform motion-reduce:transition-none", detailsOpen && "rotate-180")} aria-hidden />
+              </button>
+              <div
+                id={detailsId}
+                inert={!detailsOpen}
+                aria-hidden={!detailsOpen}
+                data-expanded={detailsOpen}
+                className="chat-model-details"
+              >
+                <div className="min-h-0 overflow-hidden" data-testid="model-detail-card">
+                  <ModelDetail entry={detailEntry} />
+                </div>
+              </div>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
 
     <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -278,36 +260,31 @@ export function ModelSelector({
           aria-label="选择模型"
         >
           <span className="truncate">{triggerLabel}</span>
-          <ChevronUp data-icon="inline-end" className="rotate-180" />
+          <ChevronDown data-icon="inline-end" />
         </Button>
       </DialogTrigger>
       <DialogContent
-        className="top-auto bottom-0 left-0 max-w-none -translate-x-0 -translate-y-0 gap-4 rounded-t-xl rounded-b-none p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-w-none"
+        className="chat-composer-sheet top-auto bottom-0 left-0 max-h-[85dvh] max-w-none -translate-x-0 -translate-y-0 gap-4 overflow-y-auto rounded-t-[24px] rounded-b-none border-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-input)] sm:max-w-none"
+        aria-describedby={undefined}
       >
         <DialogHeader>
           <DialogTitle>配置</DialogTitle>
         </DialogHeader>
-        {/* 模型分组：扁平列表 + 细分隔线，选中项右侧打勾；单行小字介绍 */}
-        <div className="divide-y divide-[var(--color-border-light)]">
+        <div className="grid gap-1">
           {models.map((item) => {
-            const entry = catalogEntry(item.value);
             const active = current?.value === item.value;
             return (
               <button
                 key={item.value}
                 type="button"
                 className={cn(
-                  "flex w-full items-center justify-between gap-3 py-3 text-left",
-                  active ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"
+                  "flex min-h-11 w-full items-center justify-between gap-3 rounded-[var(--radius-md)] px-3 text-left hover:bg-[var(--color-interaction-hover)]",
+                  active ? "bg-[var(--color-interaction-active)] text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"
                 )}
+                aria-pressed={active}
                 onClick={() => onChange(item.value)}
               >
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-base">{item.label}</span>
-                  <span className="truncate text-xs text-[var(--color-text-tertiary)]">
-                    {entry?.description ?? entry?.vendor}
-                  </span>
-                </span>
+                <span className="truncate text-sm">{item.label}</span>
                 {active && <Check className="size-4 shrink-0" strokeWidth={2} />}
               </button>
             );

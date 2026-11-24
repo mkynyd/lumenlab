@@ -20,9 +20,8 @@ interface ModePillBox {
   height: number;
 }
 
-// 与侧边栏保持同一弹簧手感：胶囊行程短（约 88px），同样收在 250ms 量级，
-// 避免文字配色（150ms）先于指示器到位而出现白字白底的空窗。
-const MODE_PILL_SPRING = { type: "spring" as const, stiffness: 1300, damping: 70 };
+// 指示胶囊用短行程弹簧跟随选中项。
+const MODE_PILL_SPRING = { type: "spring" as const, stiffness: 460, damping: 30, mass: 0.72 };
 
 /**
  * 移动端悬浮式导航：左侧悬浮菜单按钮 + 居中的「聊天 / 项目」胶囊。
@@ -55,15 +54,13 @@ export function MobileFloatingNav({
     if (!nav) return;
     const measure = () => {
       const active = nav.querySelector<HTMLElement>('a[aria-current="page"]');
-      const navRect = nav.getBoundingClientRect();
-      const activeRect = active?.getBoundingClientRect();
       setModePill(
-        activeRect
+        active
           ? {
-              x: activeRect.left - navRect.left,
-              y: activeRect.top - navRect.top,
-              width: activeRect.width,
-              height: activeRect.height,
+              x: active.offsetLeft,
+              y: active.offsetTop,
+              width: active.offsetWidth,
+              height: active.offsetHeight,
             }
           : null
       );
@@ -74,12 +71,8 @@ export function MobileFloatingNav({
     observer.observe(nav);
     return () => observer.disconnect();
   }, [activeMode, learningNavigationVisible]);
-  // 加入「资料」后最多四项，收窄单项宽度让 390px 宽度下胶囊仍不与左侧
-  // 菜单按钮重叠（菜单按钮绝对定位在 left-3，胶囊居中）。
-  const modeClassName = cn(
-    "relative inline-flex h-9 items-center justify-center rounded-full px-3 text-[13px] font-medium transition-[color,transform] duration-200 active:scale-[0.98] motion-reduce:transition-none",
-    learningNavigationVisible ? "min-w-[3.75rem]" : "min-w-[4.5rem]"
-  );
+  const modeClassName =
+    "relative inline-flex h-10 min-w-0 flex-1 items-center justify-center whitespace-nowrap rounded-full px-1.5 text-[13px] font-medium leading-none transition-[color,transform] duration-200 active:scale-[0.97] focus-visible:bg-[var(--color-interaction-hover)] focus-visible:outline-none motion-reduce:transition-none min-[400px]:min-w-14 min-[400px]:px-3";
 
   function renderModeLink(
     mode: "learning" | "chat" | "projects" | "files",
@@ -104,14 +97,19 @@ export function MobileFloatingNav({
   }
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-3 z-40 flex items-center justify-center px-3 lg:hidden">
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+      className="pointer-events-none fixed inset-x-0 top-3 z-40 grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-1 px-3 lg:hidden"
+    >
       <button
         type="button"
         onClick={onMenuToggle}
         className={cn(
-          "pointer-events-auto absolute left-3 inline-flex h-10 w-10 items-center justify-center rounded-full",
+          "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full",
           "bg-[var(--color-panel)] text-[var(--color-text-secondary)] shadow-[var(--shadow-pill)]",
-          "transition-[background-color,color,transform] duration-150 hover:text-[var(--color-text-primary)] active:scale-[0.96] motion-reduce:transition-none"
+          "transition-[background-color,color,transform] duration-200 ease-[cubic-bezier(0.26,1.24,0.42,1)] hover:text-[var(--color-text-primary)] active:scale-[0.96] focus-visible:bg-[var(--color-interaction-hover)] focus-visible:outline-none motion-reduce:transition-none"
         )}
         aria-label={mobileSidebarOpen ? "关闭导航" : "打开导航"}
         aria-expanded={mobileSidebarOpen}
@@ -119,13 +117,10 @@ export function MobileFloatingNav({
         <PanelLeftOpen size={17} strokeWidth={1.8} />
       </button>
 
-      <motion.nav
+      <nav
         ref={navRef}
         aria-label="主要工作模式"
-        initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.25, ease: "easeOut" }}
-        className="pointer-events-auto relative flex items-center rounded-full bg-[var(--color-interaction-active)] p-0.5 shadow-[var(--shadow-pill)]"
+        className="pointer-events-auto relative flex w-full max-w-72 items-center justify-self-center rounded-full bg-[var(--color-interaction-active)] p-0.5 shadow-[var(--shadow-pill)]"
       >
         {modePill && (
           <motion.span
@@ -146,7 +141,7 @@ export function MobileFloatingNav({
         {renderModeLink("chat", "/chat", "聊天")}
         {renderModeLink("projects", "/projects", "项目")}
         {renderModeLink("files", "/files", "资料")}
-      </motion.nav>
-    </div>
+      </nav>
+    </motion.div>
   );
 }

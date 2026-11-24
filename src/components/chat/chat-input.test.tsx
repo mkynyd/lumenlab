@@ -134,6 +134,23 @@ describe("ChatInput", () => {
     expect(next[0].previewUrl).toBe("blob:mock-preview");
   });
 
+  it("accepts an image exposed only as a clipboard item with no extension", () => {
+    const onAttachmentsChange = vi.fn();
+    render(<ChatInput onSend={vi.fn()} onAttachmentsChange={onAttachmentsChange} />);
+
+    const file = new File(["image"], "image", { type: "image/png" });
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: { files: [], items: [{ kind: "file", getAsFile: () => file }] },
+    });
+    fireEvent(screen.getByRole("textbox"), event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onAttachmentsChange).toHaveBeenCalledWith([
+      expect.objectContaining({ name: "粘贴的图片.png", mimeType: "image/png", size: file.size }),
+    ]);
+  });
+
   it("rejects pasted files with disallowed extensions and shows a non-blocking notice", () => {
     const onAttachmentsChange = vi.fn();
     render(<ChatInput onSend={vi.fn()} onAttachmentsChange={onAttachmentsChange} />);

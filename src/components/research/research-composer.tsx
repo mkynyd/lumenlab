@@ -82,7 +82,7 @@ export function ResearchComposer({
             <SelectTrigger aria-label="研究领域 Profile" size="sm" className="min-w-36 bg-[var(--color-bg)] text-xs text-[var(--color-text-secondary)]">
               <SelectValue placeholder="选择研究领域" />
             </SelectTrigger>
-            <SelectContent position="popper" align="start">
+            <SelectContent position="popper" align="start" className="chat-composer-popover border-0">
               <SelectGroup>
                 <SelectLabel>研究领域</SelectLabel>
                 {domainProfiles.map((profile) => (
@@ -98,7 +98,7 @@ export function ResearchComposer({
           <SelectTrigger aria-label="研究强度" size="sm" className="min-w-36 bg-[var(--color-bg)] text-xs text-[var(--color-text-secondary)]">
             <SelectValue placeholder="选择研究强度" />
           </SelectTrigger>
-          <SelectContent position="popper" align="start">
+          <SelectContent position="popper" align="start" className="chat-composer-popover border-0">
             <SelectGroup>
               <SelectLabel>研究强度</SelectLabel>
               {BUDGET_OPTIONS.map((option) => (
@@ -123,7 +123,7 @@ export function ResearchComposer({
         onModelChange={setCommanderModel}
         availableModels={availableModels ?? undefined}
         contextHint={contextHint}
-        placeholder="输入一个研究问题，例如：比较两种方法在近五年公开证据中的适用边界"
+        placeholder="输入研究问题"
       />
     </div>
   );

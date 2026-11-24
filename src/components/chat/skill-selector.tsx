@@ -187,7 +187,7 @@ export function SkillSelector({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="workbench-border-glow min-w-40">
+      <DropdownMenuContent align="start" className="chat-composer-popover min-w-40 border-0">
         <DropdownMenuGroup>
           {allOptions.map((option) => {
             const Icon = getSkillIcon(option.value);
