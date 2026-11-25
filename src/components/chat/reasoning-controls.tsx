@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import { motion, useReducedMotion, useSpring, type MotionStyle, type MotionValue } from "motion/react";
-import { Check, ChevronDown, RotateCcw, Zap } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { Slider as SliderPrimitive } from "radix-ui";
 import {
   chatModelLabel,
@@ -130,49 +130,35 @@ export function ReasoningControls({
       className="chat-reasoning-slider rounded-[var(--radius-lg)] px-4 pb-2 pt-2"
       style={sliderStyle}
     >
-      <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-start gap-1">
-        <Zap aria-hidden className="mt-2 size-4 justify-self-center text-[var(--color-text-tertiary)]" strokeWidth={1.75} />
-        <div className="flex min-w-0 flex-col items-center">
-          <span aria-hidden className="chat-reasoning-slider-label relative h-7 w-full overflow-hidden text-center text-lg font-semibold leading-7">
-            {REASONING_EFFORT_LEVELS.map((effort, index) => (
-              <span key={effort} className="absolute inset-0" style={{ "--effort-step": index } as React.CSSProperties}>
-                {EFFORT_LABELS[effort]}
-              </span>
-            ))}
-          </span>
-          {canChooseModel ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={disabled}
-              aria-label={`切换模型：${modelLabel}`}
-              aria-controls={modelsId}
-              aria-expanded={modelsOpen}
-              onClick={() => setModelsOpen((open) => !open)}
-              className="h-8 max-w-full rounded-full px-2 text-[var(--color-text-secondary)]"
-            >
-              <span className="truncate">{modelLabel}</span>
-              <ChevronDown
-                aria-hidden
-                className={cn("size-3 transition-transform motion-reduce:transition-none", modelsOpen && "rotate-180")}
-              />
-            </Button>
-          ) : (
-            modelLabel && <span className="truncate text-sm text-[var(--color-text-secondary)]">{modelLabel}</span>
-          )}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          disabled={disabled || value === "max"}
-          aria-label="重置思考深度"
-          onClick={() => onChange("max")}
-          className="size-9 justify-self-center rounded-full text-[var(--color-text-secondary)]"
-        >
-          <RotateCcw aria-hidden />
-        </Button>
+      <div className="flex w-full min-w-0 flex-col items-center">
+        <span aria-hidden className="chat-reasoning-slider-label relative h-7 w-full overflow-hidden text-center text-lg font-semibold leading-7">
+          {REASONING_EFFORT_LEVELS.map((effort, index) => (
+            <span key={effort} className="absolute inset-0" style={{ "--effort-step": index } as React.CSSProperties}>
+              {EFFORT_LABELS[effort]}
+            </span>
+          ))}
+        </span>
+        {canChooseModel ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            aria-label={`切换模型：${modelLabel}`}
+            aria-controls={modelsId}
+            aria-expanded={modelsOpen}
+            onClick={() => setModelsOpen((open) => !open)}
+            className="h-8 max-w-full rounded-full px-2 text-[var(--color-text-secondary)]"
+          >
+            <span className="truncate">{modelLabel}</span>
+            <ChevronDown
+              aria-hidden
+              className={cn("size-3 transition-transform motion-reduce:transition-none", modelsOpen && "rotate-180")}
+            />
+          </Button>
+        ) : (
+          modelLabel && <span className="truncate text-sm text-[var(--color-text-secondary)]">{modelLabel}</span>
+        )}
       </div>
       {canChooseModel && (
         <div
