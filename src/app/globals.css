@@ -69,6 +69,8 @@
   --color-panel-muted: oklch(0.965 0 0);
   --color-control: oklch(1 0 0);
   --color-control-menu: oklch(1 0 0);
+  /* 思考滑块圆钮在浅色和深色主题下都保持纯白，避免深色表面透出轨道。 */
+  --color-slider-thumb: oklch(1 0 0);
   --color-interaction-hover: oklch(0.145 0 0 / 0.05);
   --color-interaction-active: oklch(0.145 0 0 / 0.08);
   /* Selected fill follows the accent-soft convention used by selected rows,

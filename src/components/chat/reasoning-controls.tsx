@@ -210,7 +210,7 @@ export function ReasoningControls({
         </div>
         <span
           ref={thumb}
-          className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 size-[2.375rem] -translate-y-1/2 rounded-full border-0 bg-[var(--color-surface)]"
+          className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 size-[2.375rem] -translate-y-1/2 rounded-full border-0 bg-[var(--color-slider-thumb)]"
         />
         <SliderPrimitive.Root
           value={[selectedIndex]}
