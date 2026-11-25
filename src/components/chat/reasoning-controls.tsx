@@ -145,7 +145,7 @@ export function ReasoningControls({
             className="h-7 max-w-full rounded-full px-2 text-[15px] font-normal text-[var(--color-text-primary)]"
           >
             <span className="max-w-[min(62vw,16rem)] truncate font-medium">{modelLabel}</span>
-            <span className="text-[var(--color-text-secondary)]">{levelLabel}</span>
+            <span className="chat-reasoning-effort-label">{levelLabel}</span>
             <ChevronDown
               aria-hidden
               className={cn("size-3 text-[var(--color-text-tertiary)] transition-transform motion-reduce:transition-none", modelsOpen && "rotate-180")}
@@ -154,7 +154,7 @@ export function ReasoningControls({
         ) : (
           <span className="flex max-w-full items-center gap-1.5 truncate text-[15px] text-[var(--color-text-secondary)]">
             {modelLabel && <span className="truncate">{modelLabel}</span>}
-            <span>{levelLabel}</span>
+            <span className="chat-reasoning-effort-label">{levelLabel}</span>
           </span>
         )}
       </div>
@@ -206,11 +206,11 @@ export function ReasoningControls({
               <span key={effort} className="chat-reasoning-slider-mark size-1.5 rounded-full bg-[var(--color-text-tertiary)]/45" />
             ))}
           </span>
-          <span className="chat-reasoning-slider-range absolute bottom-[0.3125rem] left-[0.3125rem] top-[0.3125rem] rounded-full bg-[var(--color-accent)]" />
+          <span className="chat-reasoning-slider-range absolute bottom-[0.3125rem] left-[0.3125rem] top-[0.3125rem] rounded-full bg-[var(--effort-color)]" />
         </div>
         <span
           ref={thumb}
-          className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 size-[2.375rem] -translate-y-1/2 rounded-full border-2 border-[var(--color-accent)] bg-[var(--color-surface)]"
+          className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 size-[2.375rem] -translate-y-1/2 rounded-full border-2 border-[var(--effort-color)] bg-[var(--color-surface)]"
         />
         <SliderPrimitive.Root
           value={[selectedIndex]}
