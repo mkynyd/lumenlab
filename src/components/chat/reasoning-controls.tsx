@@ -201,7 +201,7 @@ export function ReasoningControls({
         onLostPointerCapture={(event) => finishDrag(event, false)}
       >
         <div aria-hidden className="chat-reasoning-slider-track relative h-full w-full rounded-full border border-[var(--color-border-light)] bg-[var(--color-surface)]">
-          <span className="chat-reasoning-slider-range absolute bottom-[0.3125rem] left-[0.3125rem] top-[0.3125rem] rounded-full bg-[var(--effort-color)]" />
+          <span className="chat-reasoning-slider-range absolute bottom-[0.375rem] left-[0.3125rem] top-[0.375rem] rounded-l-full bg-[var(--effort-color)]" />
           <span className="pointer-events-none absolute inset-y-0 inset-x-[1.3125rem] flex items-center justify-between">
             {REASONING_EFFORT_LEVELS.map((effort) => (
               <span key={effort} className="chat-reasoning-slider-mark size-1.5 rounded-full bg-[var(--color-text-tertiary)]/45" />
