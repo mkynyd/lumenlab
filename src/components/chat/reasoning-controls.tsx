@@ -201,16 +201,16 @@ export function ReasoningControls({
         onLostPointerCapture={(event) => finishDrag(event, false)}
       >
         <div aria-hidden className="chat-reasoning-slider-track relative h-full w-full rounded-full border border-[var(--color-border-light)] bg-[var(--color-surface)]">
+          <span className="chat-reasoning-slider-range absolute bottom-[0.3125rem] left-[0.3125rem] top-[0.3125rem] rounded-full bg-[var(--effort-color)]" />
           <span className="pointer-events-none absolute inset-y-0 inset-x-[1.3125rem] flex items-center justify-between">
             {REASONING_EFFORT_LEVELS.map((effort) => (
               <span key={effort} className="chat-reasoning-slider-mark size-1.5 rounded-full bg-[var(--color-text-tertiary)]/45" />
             ))}
           </span>
-          <span className="chat-reasoning-slider-range absolute bottom-[0.3125rem] left-[0.3125rem] top-[0.3125rem] rounded-full bg-[var(--effort-color)]" />
         </div>
         <span
           ref={thumb}
-          className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 size-[2.375rem] -translate-y-1/2 rounded-full border-2 border-[var(--effort-color)] bg-[var(--color-surface)]"
+          className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 size-[2.375rem] -translate-y-1/2 rounded-full border-0 bg-[var(--color-surface)]"
         />
         <SliderPrimitive.Root
           value={[selectedIndex]}
