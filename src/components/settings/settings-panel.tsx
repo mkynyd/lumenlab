@@ -42,7 +42,7 @@ const TOKEN_CHART_COLORS = {
   output: "var(--color-accent)"
 };
 const FIELD_CLASS =
-  "rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] transition-colors duration-150 focus:border-[var(--color-accent)] motion-reduce:transition-none";
+  "rounded-[10px] border border-transparent bg-[var(--color-panel-muted)] transition-colors duration-150 focus:border-[var(--color-accent)] focus:bg-[var(--color-surface)] motion-reduce:transition-none";
 
 function formatTokenCount(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -136,24 +136,24 @@ export function SettingsPanel({
   const activeTab = tabs.find((item) => item.id === tab) ?? tabs[0];
 
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)] sm:h-[min(640px,calc(100vh-3rem))] sm:flex-row">
-      <aside className="flex w-full flex-1 shrink-0 flex-col overflow-y-auto bg-[var(--color-panel)] sm:w-[17.5rem] sm:flex-none sm:overflow-visible sm:border-r sm:border-[var(--color-border-light)]">
+    <div className="relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)] sm:h-[min(600px,calc(100vh-3rem))] sm:flex-row">
+      <aside className="flex w-full flex-1 shrink-0 flex-col overflow-y-auto bg-[var(--color-panel)] sm:w-[13.75rem] sm:flex-none sm:overflow-visible sm:border-r sm:border-[var(--color-border-light)]">
         {/* 移动端：设置标题 */}
         <div className="flex h-11 shrink-0 items-center justify-center sm:hidden">
           <p className="text-sm font-semibold text-[var(--color-text-primary)]">设置</p>
         </div>
 
         {/* 桌面端：分栏标题 */}
-        <div className="hidden px-5 pb-4 pt-5 sm:block">
-          <p className="text-base font-semibold tracking-tight text-[var(--color-text-primary)]">
+        <div className="hidden px-4 pb-3 pt-4 sm:block">
+          <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">
             设置
           </p>
-          <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+          <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">
             管理服务、用量与偏好
           </p>
         </div>
 
-        <div className="flex shrink-0 flex-col gap-5 px-3 pb-4 sm:gap-4 sm:px-3">
+        <div className="flex shrink-0 flex-col gap-5 px-3 pb-4 sm:gap-3 sm:px-2.5">
           {tabGroups.map((group) => (
             <section key={group.id} aria-labelledby={`settings-group-${group.id}`}>
               <p
@@ -180,10 +180,10 @@ export function SettingsPanel({
                       className="size-8 shrink-0 rounded-full text-sm"
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-[var(--color-text-primary)]">
+                      <span className="block truncate text-[13px] font-medium text-[var(--color-text-primary)]">
                         {accountName}
                       </span>
-                      <span className="mt-0.5 block truncate text-xs text-[var(--color-text-tertiary)]">
+                      <span className="mt-0.5 block truncate text-[11px] text-[var(--color-text-tertiary)]">
                         {accountEmail || "个人资料"}
                       </span>
                     </span>
@@ -215,7 +215,7 @@ export function SettingsPanel({
                         setMobileDetail(true);
                       }}
                       className={cn(
-                        "flex h-12 w-full shrink-0 items-center gap-3 px-4 text-left text-sm outline-none sm:h-10 sm:gap-2.5 sm:rounded-lg sm:px-3",
+                        "flex h-12 w-full shrink-0 items-center gap-3 px-4 text-left text-[13px] outline-none sm:h-9 sm:gap-2.5 sm:rounded-lg sm:px-2.5",
                         group.id === "account" || index > 0
                           ? "border-t border-[var(--color-border-light)] sm:border-t-0"
                           : "border-t-0",
@@ -310,7 +310,7 @@ export function SettingsPanel({
           )}
           <span aria-hidden className="h-9" />
         </div>
-        <div className="mx-auto min-w-0 max-w-3xl px-5 pb-6 pt-2 sm:px-8 sm:py-7">
+        <div className="mx-auto min-w-0 max-w-[40rem] px-5 pb-6 pt-2 sm:px-7 sm:py-5">
           {tab === "alpha" && <AlphaSection />}
           {tab === "tokens" && <TokensSection />}
           {tab === "personalization" && <PersonalizationSection />}
@@ -340,16 +340,16 @@ function SectionShell({
   return (
     <div
       id={id}
-      className="space-y-7"
+      className="space-y-5"
       role="tabpanel"
       aria-labelledby={id.replace("panel", "tab")}
     >
       <div>
-        <h2 className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)] max-sm:sr-only">
+        <h2 className="text-[15px] font-semibold text-[var(--color-text-primary)] max-sm:sr-only">
           {title}
         </h2>
         {description && (
-          <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
+          <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-text-tertiary)]">
             {description}
           </p>
         )}
@@ -1421,18 +1421,17 @@ function PersonalizationSection() {
     <SectionShell
       id="settings-panel-personalization"
       title="个性化"
-      description="让 AI 更懂你。修改会自动保存，也可以手动保存。"
     >
       <section aria-labelledby="ai-profile-heading">
         <div className="mb-3">
           <h3
             id="ai-profile-heading"
-            className="text-sm font-medium text-[var(--color-text-primary)]"
+            className="text-[13px] font-medium text-[var(--color-text-primary)]"
           >
             关于你
           </h3>
           <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
-            这些信息会帮助 AI 理解你的背景与使用场景，只影响表达方式。
+            只影响 AI 的表达方式。
           </p>
         </div>
 

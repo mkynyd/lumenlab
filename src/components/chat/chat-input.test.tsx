@@ -93,31 +93,30 @@ describe("ChatInput", () => {
     expect(screen.getByRole("textbox", { name: "消息内容" })).toBeInTheDocument();
   });
 
-  it("puts mobile-only secondary controls behind the compact action button", async () => {
+  it("opens the mobile add-source sheet with sources and tools", async () => {
     const user = userEvent.setup();
-    const onModelChange = vi.fn();
 
     render(
       <ChatInput
         onSend={vi.fn()}
         model="deepseek-v4-pro"
-        onModelChange={onModelChange}
+        onModelChange={vi.fn()}
         availableModels={["deepseek-v4-flash", "deepseek-v4-pro"]}
         onSkillChange={vi.fn()}
         onWebSearchToggle={vi.fn()}
       />
     );
 
+    expect(screen.getAllByRole("button", { name: "选择模型" }).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "更多输入选项" }));
 
-    const tools = await screen.findByRole("dialog", { name: "对话选项" });
-    expect(within(tools).getByRole("button", { name: "文件" })).toBeInTheDocument();
-    expect(within(tools).getByRole("button", { name: "联网" })).toBeInTheDocument();
-
-    await user.click(within(tools).getByRole("button", { name: "DeepSeek V4 Flash" }));
-    expect(onModelChange).toHaveBeenCalledWith("deepseek-v4-flash");
-    // 选项变更不再自动关闭展开栏，由用户自行关闭
-    expect(screen.getByRole("dialog", { name: "对话选项" })).toBeInTheDocument();
+    const sources = await screen.findByRole("dialog", { name: "添加来源" });
+    expect(within(sources).getByRole("button", { name: "拍照" })).toBeInTheDocument();
+    expect(within(sources).getByRole("button", { name: "照片" })).toBeInTheDocument();
+    expect(within(sources).getByRole("button", { name: "文件" })).toBeInTheDocument();
+    expect(within(sources).getByRole("button", { name: /联网搜索/ })).toBeInTheDocument();
+    expect(within(sources).getByRole("button", { name: /模型与思考/ })).toBeInTheDocument();
+    expect(within(sources).queryByText("DeepSeek V4 Flash")).not.toBeInTheDocument();
   });
 
   it("appends pasted image files as attachments with a local preview", () => {

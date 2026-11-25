@@ -125,19 +125,13 @@ export function ReasoningControls({
   }
 
   const canChooseModel = Boolean(onModelChange && models?.length);
+  const levelLabel = EFFORT_LABELS[value];
   return (
     <motion.div
-      className="chat-reasoning-slider rounded-[var(--radius-lg)] px-4 pb-2 pt-2"
+      className="chat-reasoning-slider w-full px-0 pb-1 pt-1"
       style={sliderStyle}
     >
-      <div className="flex w-full min-w-0 flex-col items-center">
-        <span aria-hidden className="chat-reasoning-slider-label relative h-7 w-full overflow-hidden text-center text-lg font-semibold leading-7">
-          {REASONING_EFFORT_LEVELS.map((effort, index) => (
-            <span key={effort} className="absolute inset-0" style={{ "--effort-step": index } as React.CSSProperties}>
-              {EFFORT_LABELS[effort]}
-            </span>
-          ))}
-        </span>
+      <div className="flex w-full min-w-0 flex-col items-center gap-1.5">
         {canChooseModel ? (
           <Button
             type="button"
@@ -148,16 +142,20 @@ export function ReasoningControls({
             aria-controls={modelsId}
             aria-expanded={modelsOpen}
             onClick={() => setModelsOpen((open) => !open)}
-            className="h-8 max-w-full rounded-full px-2 text-[var(--color-text-secondary)]"
+            className="h-7 max-w-full rounded-full px-2 text-[15px] font-normal text-[var(--color-text-primary)]"
           >
-            <span className="truncate">{modelLabel}</span>
+            <span className="max-w-[min(62vw,16rem)] truncate font-medium">{modelLabel}</span>
+            <span className="text-[var(--color-text-secondary)]">{levelLabel}</span>
             <ChevronDown
               aria-hidden
-              className={cn("size-3 transition-transform motion-reduce:transition-none", modelsOpen && "rotate-180")}
+              className={cn("size-3 text-[var(--color-text-tertiary)] transition-transform motion-reduce:transition-none", modelsOpen && "rotate-180")}
             />
           </Button>
         ) : (
-          modelLabel && <span className="truncate text-sm text-[var(--color-text-secondary)]">{modelLabel}</span>
+          <span className="flex max-w-full items-center gap-1.5 truncate text-[15px] text-[var(--color-text-secondary)]">
+            {modelLabel && <span className="truncate">{modelLabel}</span>}
+            <span>{levelLabel}</span>
+          </span>
         )}
       </div>
       {canChooseModel && (
@@ -184,7 +182,7 @@ export function ReasoningControls({
               }}
             >
               {models?.map((option) => (
-                <ToggleGroupItem key={option.value} value={option.value} className="h-11 w-full justify-between rounded-xl px-3 md:h-9">
+                <ToggleGroupItem key={option.value} value={option.value} className="h-10 w-full justify-between rounded-[10px] px-2.5 text-[13px] md:h-9">
                   <span className="truncate">{option.label}</span>
                   {model === option.value && <Check aria-hidden className="size-4" />}
                 </ToggleGroupItem>
@@ -194,7 +192,7 @@ export function ReasoningControls({
         </div>
       )}
       <div
-        className="chat-reasoning-slider-control relative mt-1 flex h-14 w-full touch-pan-y select-none items-center data-disabled:opacity-50"
+        className="chat-reasoning-slider-control relative mt-2 flex h-12 w-full touch-pan-y select-none items-center data-disabled:opacity-50"
         data-disabled={disabled || undefined}
         onPointerDown={startDrag}
         onPointerMove={moveDrag}
@@ -202,19 +200,18 @@ export function ReasoningControls({
         onPointerCancel={(event) => finishDrag(event, false)}
         onLostPointerCapture={(event) => finishDrag(event, false)}
       >
-        <div aria-hidden className="chat-reasoning-slider-track relative h-8 w-full overflow-hidden rounded-full">
-          <span className="chat-reasoning-slider-range absolute inset-0 origin-left rounded-full" />
-          <span className="pointer-events-none absolute inset-y-0 inset-x-[1.0625rem] flex items-center justify-between">
-            {REASONING_EFFORT_LEVELS.map((level) => (
-              <span key={level} className="chat-reasoning-slider-mark size-1.5 rounded-full" />
+        <div aria-hidden className="chat-reasoning-slider-track relative h-full w-full rounded-full border border-[var(--color-border-light)] bg-[var(--color-surface)]">
+          <span className="pointer-events-none absolute inset-y-0 inset-x-[1.3125rem] flex items-center justify-between">
+            {REASONING_EFFORT_LEVELS.map((effort) => (
+              <span key={effort} className="chat-reasoning-slider-mark size-1.5 rounded-full bg-[var(--color-text-tertiary)]/45" />
             ))}
           </span>
+          <span className="chat-reasoning-slider-range absolute bottom-[0.3125rem] left-[0.3125rem] top-[0.3125rem] rounded-full bg-[var(--color-accent)]" />
         </div>
-        <span aria-hidden className="chat-reasoning-slider-thumb-lane pointer-events-none absolute inset-y-0 inset-x-5">
-          <span ref={thumb} className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 grid size-10 place-items-center rounded-full">
-            <span className="chat-reasoning-slider-indicator size-2.5 rounded-full" />
-          </span>
-        </span>
+        <span
+          ref={thumb}
+          className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 size-[2.375rem] -translate-y-1/2 rounded-full border-2 border-[var(--color-accent)] bg-[var(--color-surface)]"
+        />
         <SliderPrimitive.Root
           value={[selectedIndex]}
           min={0}

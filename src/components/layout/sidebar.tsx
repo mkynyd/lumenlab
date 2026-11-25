@@ -1166,7 +1166,7 @@ export function Sidebar({
             }
           }}
         >
-          <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none [&>[data-slot=dialog-close]]:z-20 [&>[data-slot=dialog-close]]:right-[max(0.5rem,env(safe-area-inset-right))] [&>[data-slot=dialog-close]]:top-[max(0.5rem,env(safe-area-inset-top))] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-auto sm:max-w-[960px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[20px] sm:pb-0 sm:pt-0 sm:[&>[data-slot=dialog-close]]:right-2 sm:[&>[data-slot=dialog-close]]:top-2">
+          <DialogContent className="inset-0 h-dvh max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-none [&>[data-slot=dialog-close]]:z-20 [&>[data-slot=dialog-close]]:right-[max(0.5rem,env(safe-area-inset-right))] [&>[data-slot=dialog-close]]:top-[max(0.5rem,env(safe-area-inset-top))] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:h-auto sm:max-w-[860px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[16px] sm:pb-0 sm:pt-0 sm:[&>[data-slot=dialog-close]]:right-2 sm:[&>[data-slot=dialog-close]]:top-2">
             <DialogTitle className="sr-only">设置</DialogTitle>
             <SettingsPanel
               initialTab={settingsInitialTab}

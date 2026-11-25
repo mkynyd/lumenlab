@@ -91,7 +91,7 @@ describe("ModelSelector", () => {
     });
     await user.click(triggers.at(-1)!);
 
-    expect(screen.getByRole("dialog")).toHaveTextContent("配置");
+    expect(screen.getByRole("dialog")).toHaveTextContent("模型与思考");
     await user.click(screen.getByRole("button", { name: /切换模型/ }));
     const deepseekOption = screen.getByRole("radio", {
       name: /DeepSeek V4\.1 Flash/,
@@ -99,7 +99,7 @@ describe("ModelSelector", () => {
     expect(deepseekOption).toHaveTextContent("DeepSeek V4.1 Flash");
     expect(screen.queryByText("最大输出")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "模型详情" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "思考深度" })).toHaveAttribute("aria-valuetext", "最高");
   });
 

@@ -26,6 +26,10 @@ interface ModelSelectorProps {
   className?: string;
   /** Authenticated server catalog; Qwen is omitted until its rollout is enabled. */
   availableModels?: readonly string[];
+  /** Controlled mobile sheet, for opening from the composer's add sheet. */
+  mobileDialogOpen?: boolean;
+  onMobileDialogOpenChange?: (open: boolean) => void;
+  hideMobileTrigger?: boolean;
 }
 
 // 选项来自服务端模型目录：活跃模型在前，历史别名保留标签供旧会话展示
@@ -96,19 +100,27 @@ export function ModelSelector({
   compact = false,
   className,
   availableModels = DEFAULT_CHAT_MODELS,
+  mobileDialogOpen,
+  onMobileDialogOpenChange,
+  hideMobileTrigger = false,
 }: ModelSelectorProps) {
   const models = MODELS.filter((item) => availableModels.includes(item.value));
   const current = models.find((item) => item.value === model) ?? MODELS.find((item) => item.value === model);
   const triggerLabel = current?.label ?? model;
   const hasReasoningModelPicker = Boolean(onReasoningEffortChange && providerForChatModel(model) === "deepseek");
   const [desktopOpen, setDesktopOpen] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileOpenState, setMobileOpenState] = useState(false);
+  const mobileOpen = mobileDialogOpen ?? mobileOpenState;
+  function setMobileOpen(open: boolean) {
+    setMobileOpenState(open);
+    onMobileDialogOpenChange?.(open);
+  }
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsId = useId();
   const detailEntry = catalogEntry(current?.value ?? "");
 
   const triggerClassName = cn(
-    "h-8 shrink-0 rounded-full bg-[var(--color-panel-muted)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-[background-color,color,transform] hover:bg-[var(--color-interaction-hover)] active:scale-[0.97] focus-visible:bg-[var(--color-interaction-active)]",
+    "h-8 shrink-0 rounded-full bg-transparent px-2 text-[13px] font-normal text-[var(--color-text-secondary)] transition-[background-color,color,transform] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] active:scale-[0.97] focus-visible:bg-[var(--color-interaction-active)] focus-visible:text-[var(--color-text-primary)]",
     compact && "max-w-[min(72vw,14rem)]",
     className
   );
@@ -134,7 +146,7 @@ export function ModelSelector({
           side={compact ? "top" : "bottom"}
           sideOffset={8}
           aria-label="模型与思考深度"
-          className="chat-composer-popover w-80 max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[var(--radius-xl)] border-0 p-2"
+          className="chat-composer-popover w-[19rem] max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[16px] border border-[var(--color-border-light)] p-2.5"
         >
           {!hasReasoningModelPicker && (
               <ToggleGroup
@@ -150,7 +162,7 @@ export function ModelSelector({
                   <ToggleGroupItem
                     key={item.value}
                     value={item.value}
-                    className="h-10 w-full justify-between rounded-[var(--radius-md)] px-2.5 text-sm data-[state=on]:bg-[var(--color-interaction-active)]"
+                    className="h-10 w-full justify-between rounded-[10px] px-2.5 text-[13px] data-[state=on]:bg-[var(--color-interaction-active)]"
                   >
                     {item.label}
                     {current?.value === item.value && <Check className="size-4" aria-hidden />}
@@ -200,28 +212,29 @@ export function ModelSelector({
     </div>
 
     <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-      <DialogTrigger asChild disabled={disabled}>
+      {!hideMobileTrigger && <DialogTrigger asChild disabled={disabled}>
         <Button
           type="button"
           variant="ghost"
           size="sm"
           disabled={disabled}
-          className={cn("h-10 max-w-[min(56vw,15rem)] md:hidden", triggerClassName)}
+          className={cn("h-9 max-w-[min(56vw,13rem)] px-1.5 md:hidden", triggerClassName)}
           aria-label="选择模型"
         >
           <span className="truncate">{triggerLabel}</span>
           <ChevronDown data-icon="inline-end" />
         </Button>
-      </DialogTrigger>
+      </DialogTrigger>}
       <DialogContent
-        className="chat-composer-sheet top-auto bottom-0 left-0 max-h-[85dvh] max-w-none -translate-x-0 -translate-y-0 gap-4 overflow-y-auto rounded-t-[24px] rounded-b-none border-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-input)] sm:max-w-none"
+        className="chat-composer-sheet top-auto bottom-0 left-0 max-h-[85dvh] max-w-none -translate-x-0 -translate-y-0 gap-2 overflow-y-auto rounded-t-[24px] rounded-b-none border-0 p-0 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-input)] sm:max-w-none"
         aria-describedby={undefined}
       >
-        <DialogHeader>
-          <DialogTitle>配置</DialogTitle>
+        <div aria-hidden className="mx-auto mt-2 h-1 w-9 rounded-full bg-[var(--color-border-light)]" />
+        <DialogHeader className="px-4 pb-1 pr-10 pt-2">
+          <DialogTitle className="text-[15px] font-semibold">模型与思考</DialogTitle>
         </DialogHeader>
         {!hasReasoningModelPicker && (
-        <div className="grid gap-1">
+        <div className="grid gap-1 px-3">
           {models.map((item) => {
             const active = current?.value === item.value;
             return (
@@ -243,22 +256,17 @@ export function ModelSelector({
         </div>
         )}
         {onReasoningEffortChange && (
-          <ReasoningControls
-            model={model}
-            models={models}
-            onModelChange={onChange}
-            value={reasoningEffort}
-            onChange={onReasoningEffortChange}
-            disabled={disabled}
-          />
+          <div className="px-6 pb-2">
+            <ReasoningControls
+              model={model}
+              models={models}
+              onModelChange={onChange}
+              value={reasoningEffort}
+              onChange={onReasoningEffortChange}
+              disabled={disabled}
+            />
+          </div>
         )}
-        <Button
-          type="button"
-          className="h-11 w-full rounded-full text-base"
-          onClick={() => setMobileOpen(false)}
-        >
-          完成
-        </Button>
       </DialogContent>
     </Dialog>
     </>
