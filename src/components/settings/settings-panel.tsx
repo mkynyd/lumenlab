@@ -98,7 +98,7 @@ export function SettingsPanel({
 }) {
   const [tab, setTab] = useState<TabId>(initialTab ?? "alpha");
   // 移动端：菜单页 → 详情页（ChatGPT 式 push 导航）；桌面端恒为分栏
-  const [mobileDetail, setMobileDetail] = useState(false);
+  const [mobileDetail, setMobileDetail] = useState(Boolean(initialTab));
   const { data: session } = useSession();
   const accountName = session?.user?.name || session?.user?.email || "账户";
   const accountEmail = session?.user?.email || "";
@@ -113,37 +113,38 @@ export function SettingsPanel({
     { id: "security", label: "账号安全", icon: Shield },
     { id: "appearance", label: "外观", icon: Palette }
   ];
+  // 分组参照 ChatGPT 设置页：账户 / 服务 / 应用
+  const tabGroups = [
+    {
+      id: "account",
+      label: "账户",
+      items: tabs.filter(
+        (item) => item.id === "personalization" || item.id === "security"
+      )
+    },
+    {
+      id: "service",
+      label: "服务",
+      items: tabs.filter((item) => item.id === "alpha" || item.id === "tokens")
+    },
+    {
+      id: "app",
+      label: "应用",
+      items: tabs.filter((item) => item.id === "appearance")
+    }
+  ];
+  const activeTab = tabs.find((item) => item.id === tab) ?? tabs[0];
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)] sm:h-[min(640px,calc(100vh-3rem))] sm:flex-row">
       <aside className="flex w-full flex-1 shrink-0 flex-col overflow-y-auto bg-[var(--color-panel)] sm:w-[17.5rem] sm:flex-none sm:overflow-visible sm:border-r sm:border-[var(--color-border-light)]">
-        {/* 移动端：资料头，点击进入个人资料 */}
-        <div className="flex flex-col items-center pb-7 pt-9 sm:hidden">
-          <button
-            type="button"
-            onClick={onOpenProfile}
-            aria-label="编辑个人资料"
-            className="rounded-full outline-none transition-transform duration-150 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-[var(--color-accent-muted)] motion-reduce:transition-none"
-          >
-            <AvatarMark
-              presetId={accountAvatarPreset}
-              src={accountAvatarUrl}
-              alt={`${accountName} 的头像`}
-              className="size-16 rounded-full text-xl"
-            />
-          </button>
-          <p className="mt-3 text-base font-semibold text-[var(--color-text-primary)]">
-            {accountName}
-          </p>
-          {accountEmail && (
-            <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">
-              {accountEmail}
-            </p>
-          )}
+        {/* 移动端：设置标题 */}
+        <div className="flex h-11 shrink-0 items-center justify-center sm:hidden">
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">设置</p>
         </div>
 
         {/* 桌面端：分栏标题 */}
-        <div className="hidden px-5 pb-3 pt-5 sm:block">
+        <div className="hidden px-5 pb-4 pt-5 sm:block">
           <p className="text-base font-semibold tracking-tight text-[var(--color-text-primary)]">
             设置
           </p>
@@ -152,86 +153,135 @@ export function SettingsPanel({
           </p>
         </div>
 
-        <p className="px-5 pb-1.5 text-xs text-[var(--color-text-tertiary)] sm:hidden">
-          偏好
-        </p>
-        <div
-          className="mx-3 flex shrink-0 flex-col gap-0 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:mx-0 sm:gap-1 sm:overflow-visible sm:rounded-none sm:bg-transparent sm:px-3 sm:pb-3"
-          role="tablist"
-          aria-label="设置标签页"
-        >
-          {tabs.map((item, index) => (
-            <button
-              key={item.id}
-              id={`settings-tab-${item.id}`}
-              role="tab"
-              aria-selected={tab === item.id}
-              aria-controls={`settings-panel-${item.id}`}
-              onClick={() => {
-                setTab(item.id);
-                setMobileDetail(true);
-              }}
+        <div className="flex shrink-0 flex-col gap-5 px-3 pb-4 sm:gap-4 sm:px-3">
+          {tabGroups.map((group) => (
+            <section key={group.id} aria-labelledby={`settings-group-${group.id}`}>
+              <p
+                id={`settings-group-${group.id}`}
+                className="px-2 pb-1.5 text-xs font-medium text-[var(--color-text-tertiary)]"
+              >
+                {group.label}
+              </p>
+              <div className="overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:overflow-visible sm:rounded-none sm:bg-transparent">
+                {group.id === "account" && (
+                  <button
+                    type="button"
+                    onClick={onOpenProfile}
+                    className={cn(
+                      "flex min-h-[3.25rem] w-full items-center gap-3 px-4 py-2 text-left outline-none sm:min-h-10 sm:gap-2.5 sm:rounded-lg sm:px-3 sm:py-1.5",
+                      "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] active:bg-[var(--color-interaction-active)] active:duration-75 motion-reduce:transition-none",
+                      "sm:hover:bg-[var(--color-interaction-hover)]"
+                    )}
+                  >
+                    <AvatarMark
+                      presetId={accountAvatarPreset}
+                      src={accountAvatarUrl}
+                      alt={`${accountName} 的头像`}
+                      className="size-8 shrink-0 rounded-full text-sm"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-[var(--color-text-primary)]">
+                        {accountName}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-[var(--color-text-tertiary)]">
+                        {accountEmail || "个人资料"}
+                      </span>
+                    </span>
+                    <ChevronRight
+                      size={15}
+                      strokeWidth={1.8}
+                      className="shrink-0 text-[var(--color-text-tertiary)]"
+                    />
+                  </button>
+                )}
+                <div
+                  role="tablist"
+                  aria-label={`设置标签页 · ${group.label}`}
+                  className={cn(
+                    "flex flex-col sm:gap-1",
+                    group.id === "account" &&
+                      "border-t border-[var(--color-border-light)] sm:border-t-0"
+                  )}
+                >
+                  {group.items.map((item, index) => (
+                    <button
+                      key={item.id}
+                      id={`settings-tab-${item.id}`}
+                      role="tab"
+                      aria-selected={tab === item.id}
+                      aria-controls={`settings-panel-${item.id}`}
+                      onClick={() => {
+                        setTab(item.id);
+                        setMobileDetail(true);
+                      }}
+                      className={cn(
+                        "flex h-12 w-full shrink-0 items-center gap-3 px-4 text-left text-sm outline-none sm:h-10 sm:gap-2.5 sm:rounded-lg sm:px-3",
+                        group.id === "account" || index > 0
+                          ? "border-t border-[var(--color-border-light)] sm:border-t-0"
+                          : "border-t-0",
+                        "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] active:bg-[var(--color-interaction-active)] active:duration-75 motion-reduce:transition-none",
+                        tab === item.id
+                          ? "font-medium text-[var(--color-text-primary)] sm:bg-[var(--color-interaction-active)]"
+                          : "text-[var(--color-text-primary)] sm:text-[var(--color-text-secondary)] sm:hover:bg-[var(--color-interaction-hover)] sm:hover:text-[var(--color-text-primary)]"
+                      )}
+                    >
+                      <item.icon
+                        size={16}
+                        strokeWidth={1.5}
+                        className="text-[var(--color-text-secondary)]"
+                      />
+                      <span className="flex-1">{item.label}</span>
+                      <ChevronRight
+                        size={15}
+                        strokeWidth={1.8}
+                        className="text-[var(--color-text-tertiary)] sm:hidden"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <section className="mt-auto px-3 pb-4 pt-5">
+          <p className="px-2 pb-1.5 text-xs font-medium text-[var(--color-text-tertiary)]">
+            更多
+          </p>
+          <div className="overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:overflow-visible sm:rounded-none sm:bg-transparent">
+            <Link
+              href="/home"
               className={cn(
-                "flex h-12 shrink-0 items-center gap-3 px-4 text-left text-sm outline-none sm:h-10 sm:w-full sm:gap-2.5 sm:rounded-lg sm:px-3",
-                index > 0 &&
-                  "border-t border-[var(--color-border-light)] sm:border-t-0",
-                "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] active:bg-[var(--color-interaction-active)] active:duration-75 motion-reduce:transition-none",
-                tab === item.id
-                  ? "font-medium text-[var(--color-text-primary)] sm:bg-[var(--color-interaction-active)]"
-                  : "text-[var(--color-text-primary)] sm:text-[var(--color-text-secondary)] sm:hover:bg-[var(--color-interaction-hover)] sm:hover:text-[var(--color-text-primary)]"
+                "flex h-12 shrink-0 items-center gap-3 px-4 text-left text-sm sm:h-10 sm:gap-2.5 sm:rounded-lg sm:px-3",
+                "text-[var(--color-text-primary)] sm:text-[var(--color-text-secondary)] sm:hover:bg-[var(--color-interaction-hover)] sm:hover:text-[var(--color-text-primary)]",
+                "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] focus-visible:outline-none motion-reduce:transition-none"
               )}
             >
-              <item.icon
+              <Sparkles
                 size={16}
                 strokeWidth={1.5}
                 className="text-[var(--color-text-secondary)]"
               />
-              <span className="flex-1">{item.label}</span>
-              <ChevronRight
-                size={15}
-                strokeWidth={1.8}
-                className="text-[var(--color-text-tertiary)] sm:hidden"
+              <span className="flex-1">网站介绍</span>
+              <ArrowUpRight
+                size={12}
+                strokeWidth={1.5}
+                className="text-[var(--color-text-tertiary)]"
               />
+            </Link>
+          </div>
+
+          <div className="mt-3 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:hidden">
+            <button
+              type="button"
+              onClick={() => void signOut({ callbackUrl: "/login" })}
+              className="flex h-12 w-full items-center gap-3 px-4 text-left text-sm text-[var(--color-error)] transition-colors duration-150 active:bg-[var(--color-interaction-hover)] motion-reduce:transition-none"
+            >
+              <LogOut size={16} strokeWidth={1.6} />
+              退出登录
             </button>
-          ))}
-        </div>
-
-        <p className="px-5 pb-1.5 pt-6 text-xs text-[var(--color-text-tertiary)] sm:hidden">
-          更多
-        </p>
-        <div className="mx-3 mb-3 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:mt-auto sm:rounded-none sm:bg-transparent">
-          <Link
-            href="/home"
-            className={cn(
-              "flex h-12 shrink-0 items-center gap-3 px-4 text-left text-sm sm:h-10 sm:gap-2.5 sm:rounded-lg sm:px-3",
-              "text-[var(--color-text-primary)] sm:text-[var(--color-text-secondary)] sm:hover:bg-[var(--color-interaction-hover)] sm:hover:text-[var(--color-text-primary)]",
-              "transition-colors duration-150 focus-visible:bg-[var(--color-interaction-active)] focus-visible:outline-none motion-reduce:transition-none"
-            )}
-          >
-            <Sparkles
-              size={16}
-              strokeWidth={1.5}
-              className="text-[var(--color-text-secondary)]"
-            />
-            <span className="flex-1">网站介绍</span>
-            <ArrowUpRight
-              size={12}
-              strokeWidth={1.5}
-              className="text-[var(--color-text-tertiary)]"
-            />
-          </Link>
-        </div>
-
-        <div className="mx-3 mb-6 mt-5 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:hidden">
-          <button
-            type="button"
-            onClick={() => void signOut({ callbackUrl: "/login" })}
-            className="flex h-12 w-full items-center gap-3 px-4 text-left text-sm text-[var(--color-error)] transition-colors duration-150 active:bg-[var(--color-interaction-hover)] motion-reduce:transition-none"
-          >
-            <LogOut size={16} strokeWidth={1.6} />
-            退出登录
-          </button>
-        </div>
+          </div>
+        </section>
       </aside>
 
       <div
@@ -242,15 +292,23 @@ export function SettingsPanel({
           mobileDetail ? "max-sm:translate-x-0" : "max-sm:translate-x-full"
         )}
       >
-        <div className="sticky top-0 z-10 flex items-center bg-[var(--color-surface-solid)] px-2 py-2 sm:hidden">
+        <div className="sticky top-0 z-10 grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center bg-[var(--color-surface-solid)] px-2 py-2 sm:hidden">
           <button
             type="button"
             onClick={() => setMobileDetail(false)}
-            className="inline-flex h-9 items-center gap-0.5 rounded-[var(--radius-md)] px-2 text-sm text-[var(--color-text-secondary)] transition-colors duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
+            className="inline-flex h-9 items-center gap-0.5 justify-self-start rounded-[var(--radius-md)] px-2 text-sm text-[var(--color-text-secondary)] transition-colors duration-150 hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)]"
           >
             <ChevronLeft size={16} strokeWidth={1.8} />
             返回
           </button>
+          {mobileDetail ? (
+            <p className="truncate text-center text-sm font-medium text-[var(--color-text-primary)]">
+              {activeTab.label}
+            </p>
+          ) : (
+            <span aria-hidden />
+          )}
+          <span aria-hidden className="h-9" />
         </div>
         <div className="mx-auto min-w-0 max-w-3xl px-5 pb-6 pt-2 sm:px-8 sm:py-7">
           {tab === "alpha" && <AlphaSection />}
@@ -271,10 +329,12 @@ export function SettingsPanel({
 function SectionShell({
   id,
   title,
+  description,
   children
 }: {
   id: string;
   title: string;
+  description?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -285,9 +345,14 @@ function SectionShell({
       aria-labelledby={id.replace("panel", "tab")}
     >
       <div>
-        <h2 className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+        <h2 className="text-xl font-semibold tracking-tight text-[var(--color-text-primary)] max-sm:sr-only">
           {title}
         </h2>
+        {description && (
+          <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-text-tertiary)]">
+            {description}
+          </p>
+        )}
       </div>
       <div className="space-y-7">{children}</div>
     </div>
@@ -333,7 +398,7 @@ function AlphaSection() {
   }
 
   return (
-    <SectionShell id="settings-panel-alpha" title="Alpha 服务访问">
+    <SectionShell id="settings-panel-alpha" title="Alpha 服务访问" description="查看当前访问方式，或更换注册码。">
       <section aria-labelledby="alpha-access-status">
         <h3
           id="alpha-access-status"
@@ -768,7 +833,7 @@ function TokensSection() {
       : 50;
 
   return (
-    <SectionShell id="settings-panel-tokens" title="用量统计">
+    <SectionShell id="settings-panel-tokens" title="用量统计" description="按周期查看模型调用、缓存命中与费用。">
       <p className="-mt-4 text-sm text-[var(--color-text-secondary)]">
         本计费周期的额度、Token 与缓存命中情况
       </p>
@@ -1101,7 +1166,7 @@ function TokensSection() {
 
 function AppearanceSection() {
   return (
-    <SectionShell id="settings-panel-appearance" title="外观">
+    <SectionShell id="settings-panel-appearance" title="外观" description="选择浅色、深色或跟随系统。">
       <div className="flex items-center justify-between gap-4 border-y border-[var(--color-border-light)] py-4">
         <div>
           <p className="text-sm font-medium text-[var(--color-text-primary)]">
@@ -1145,16 +1210,26 @@ function PersonalizationSection() {
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+  const [dirty, setDirty] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
   const personaRef = useRef(persona);
+  const promptRef = useRef(profilePrompt);
   const lastSavedRef = useRef<PersonaFields | null>(null);
+  const lastSavedPromptRef = useRef<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const queuedRef = useRef(false);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     personaRef.current = persona;
   }, [persona]);
+
+  useEffect(() => {
+    promptRef.current = profilePrompt;
+  }, [profilePrompt]);
 
   // 挂载时回填已保存的画像字段与已生成的个人描述
   useEffect(() => {
@@ -1170,10 +1245,15 @@ function PersonalizationSection() {
           profileProfession: data.profileProfession ?? "",
           profileDetails: data.profileDetails ?? ""
         };
+        const loadedPrompt =
+          typeof data.profilePrompt === "string" ? data.profilePrompt : "";
         setPersona(loaded);
         personaRef.current = loaded;
+        setProfilePrompt(loadedPrompt);
+        promptRef.current = loadedPrompt;
         lastSavedRef.current = loaded;
-        setProfilePrompt(data.profilePrompt ?? "");
+        lastSavedPromptRef.current = loadedPrompt;
+        setDirty(false);
       } catch {
         if (!cancelled) setLoadFailed(true);
       } finally {
@@ -1182,37 +1262,115 @@ function PersonalizationSection() {
     })();
     return () => {
       cancelled = true;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
 
-  async function persistPersona() {
+  // 离开页面时把尚未落库的修改用 keepalive 发送，避免切标签/关弹窗丢改动
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const saved = lastSavedRef.current;
+      const current = personaRef.current;
+      const prompt = promptRef.current;
+      if (!saved) return;
+      if (
+        samePersona(saved, current) &&
+        prompt === (lastSavedPromptRef.current ?? "")
+      ) {
+        return;
+      }
+      void fetch("/api/user/persona", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...current, profilePrompt: prompt }),
+        keepalive: true
+      }).catch(() => {});
+    };
+  }, []);
+
+  async function persistPersona(): Promise<boolean> {
     const current = personaRef.current;
-    if (lastSavedRef.current && samePersona(lastSavedRef.current, current)) {
-      return;
+    const prompt = promptRef.current;
+    const saved = lastSavedRef.current;
+    if (
+      saved &&
+      samePersona(saved, current) &&
+      prompt === (lastSavedPromptRef.current ?? "")
+    ) {
+      return true;
     }
-    setSaveStatus("saving");
+    // 同一时间只允许一个写入；期间的新改动排队，完成后再保存最新值
+    if (savingRef.current) {
+      queuedRef.current = true;
+      return true;
+    }
+    savingRef.current = true;
+    if (mountedRef.current) setSaveStatus("saving");
     try {
       const res = await fetch("/api/user/persona", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(current)
+        body: JSON.stringify({ ...current, profilePrompt: prompt })
       });
       if (!res.ok) throw new Error("save failed");
-      lastSavedRef.current = current;
-      setSaveStatus("saved");
+      const data = await res.json().catch(() => null);
+      lastSavedRef.current = { ...current };
+      lastSavedPromptRef.current =
+        typeof data?.profilePrompt === "string" ? data.profilePrompt : prompt;
+      savingRef.current = false;
+      if (mountedRef.current) {
+        const stillDirty =
+          !samePersona(current, personaRef.current) ||
+          promptRef.current !== (lastSavedPromptRef.current ?? "");
+        setDirty(stillDirty);
+        setSaveStatus(stillDirty ? "idle" : "saved");
+      }
+      return true;
     } catch {
-      setSaveStatus("error");
+      savingRef.current = false;
+      if (mountedRef.current) setSaveStatus("error");
+      return false;
+    } finally {
+      savingRef.current = false;
+      if (queuedRef.current) {
+        queuedRef.current = false;
+        void persistPersona();
+      }
     }
   }
 
-  // 失焦后 debounce 自动保存
-  function handleFieldBlur() {
+  function scheduleSave(delay = 700) {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
       void persistPersona();
-    }, 800);
+    }, delay);
+  }
+
+  function flushSave() {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    void persistPersona();
+  }
+
+  function updatePersona(patch: Partial<PersonaFields>) {
+    setPersona((prev) => ({ ...prev, ...patch }));
+    setDirty(true);
+    setSaveStatus("idle");
+    scheduleSave();
+  }
+
+  function updatePrompt(value: string) {
+    setProfilePrompt(value);
+    setDirty(true);
+    setSaveStatus("idle");
+    scheduleSave();
   }
 
   async function handleGeneratePrompt() {
@@ -1233,7 +1391,8 @@ function PersonalizationSection() {
     setGenerateError(null);
     try {
       // 先确保三个字段落库，再生成
-      await persistPersona();
+      const saved = await persistPersona();
+      if (!saved) throw new Error("保存资料失败，请重试");
       const res = await fetch("/api/user/generate-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1245,7 +1404,12 @@ function PersonalizationSection() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "生成失败");
-      setProfilePrompt(data.profilePrompt || "");
+      const nextPrompt = data.profilePrompt || "";
+      setProfilePrompt(nextPrompt);
+      promptRef.current = nextPrompt;
+      lastSavedPromptRef.current = nextPrompt;
+      setDirty(false);
+      if (mountedRef.current) setSaveStatus("saved");
     } catch (err) {
       setGenerateError(err instanceof Error ? err.message : "生成失败");
     } finally {
@@ -1254,17 +1418,21 @@ function PersonalizationSection() {
   }
 
   return (
-    <SectionShell id="settings-panel-personalization" title="个性化">
+    <SectionShell
+      id="settings-panel-personalization"
+      title="个性化"
+      description="让 AI 更懂你。修改会自动保存，也可以手动保存。"
+    >
       <section aria-labelledby="ai-profile-heading">
         <div className="mb-3">
           <h3
             id="ai-profile-heading"
             className="text-sm font-medium text-[var(--color-text-primary)]"
           >
-            AI 画像
+            关于你
           </h3>
           <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
-            AI 会根据这些信息更好地理解你的使用场景
+            这些信息会帮助 AI 理解你的背景与使用场景，只影响表达方式。
           </p>
         </div>
 
@@ -1282,8 +1450,8 @@ function PersonalizationSection() {
             加载失败，请重新打开设置
           </p>
         ) : (
-          <div className="divide-y divide-[var(--color-border-light)] border-y border-[var(--color-border-light)]">
-            <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+          <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-surface)]">
+            <div className="grid gap-1.5 px-4 py-3.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-5">
               <label
                 htmlFor="personalization-name"
                 className="text-sm font-medium text-[var(--color-text-primary)]"
@@ -1293,19 +1461,14 @@ function PersonalizationSection() {
               <Input
                 id="personalization-name"
                 value={persona.profileName}
-                onChange={(e) =>
-                  setPersona((prev) => ({
-                    ...prev,
-                    profileName: e.target.value
-                  }))
-                }
-                onBlur={handleFieldBlur}
+                onChange={(e) => updatePersona({ profileName: e.target.value })}
+                onBlur={flushSave}
                 placeholder="你的名字"
                 maxLength={60}
                 className={cn("h-9", FIELD_CLASS)}
               />
             </div>
-            <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-5">
+            <div className="grid gap-1.5 border-t border-[var(--color-border-light)] px-4 py-3.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-5">
               <label
                 htmlFor="personalization-profession"
                 className="text-sm font-medium text-[var(--color-text-primary)]"
@@ -1316,110 +1479,125 @@ function PersonalizationSection() {
                 id="personalization-profession"
                 value={persona.profileProfession}
                 onChange={(e) =>
-                  setPersona((prev) => ({
-                    ...prev,
-                    profileProfession: e.target.value
-                  }))
+                  updatePersona({ profileProfession: e.target.value })
                 }
-                onBlur={handleFieldBlur}
+                onBlur={flushSave}
                 placeholder="例如：计算机学院本科生"
                 maxLength={100}
                 className={cn("h-9", FIELD_CLASS)}
               />
             </div>
-            <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-start sm:gap-5">
+            <div className="grid gap-1.5 border-t border-[var(--color-border-light)] px-4 py-3.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-5">
               <label
                 htmlFor="personalization-details"
                 className="pt-2 text-sm font-medium text-[var(--color-text-primary)]"
               >
                 你的详情
               </label>
-              <Textarea
-                id="personalization-details"
-                value={persona.profileDetails}
-                onChange={(e) =>
-                  setPersona((prev) => ({
-                    ...prev,
-                    profileDetails: e.target.value
-                  }))
-                }
-                onBlur={handleFieldBlur}
-                placeholder="描述你的学习目标、使用习惯等"
-                maxLength={500}
-                className={cn("h-24 resize-none", FIELD_CLASS)}
-              />
-            </div>
-            {profilePrompt && (
-              <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-start sm:gap-5">
-                <label
-                  htmlFor="personalization-prompt"
-                  className="pt-2 text-sm font-medium text-[var(--color-text-primary)]"
-                >
-                  个人描述
-                </label>
+              <div className="min-w-0">
                 <Textarea
-                  id="personalization-prompt"
-                  value={profilePrompt}
-                  readOnly
-                  aria-readonly
-                  className={cn(
-                    "h-24 resize-none text-[var(--color-text-secondary)]",
-                    FIELD_CLASS
-                  )}
+                  id="personalization-details"
+                  value={persona.profileDetails}
+                  onChange={(e) =>
+                    updatePersona({ profileDetails: e.target.value })
+                  }
+                  onBlur={flushSave}
+                  placeholder="描述你的学习目标、使用习惯等"
+                  maxLength={500}
+                  className={cn("h-24 resize-none", FIELD_CLASS)}
                 />
+                <p className="mt-1 text-right text-[11px] text-[var(--color-text-tertiary)]">
+                  {persona.profileDetails.length}/500
+                </p>
               </div>
-            )}
+            </div>
           </div>
         )}
+      </section>
 
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
-          {saveStatus === "saving" && (
-            <p
-              className="mr-auto text-xs text-[var(--color-text-tertiary)]"
-              role="status"
+      <section aria-labelledby="profile-prompt-heading">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h3
+              id="profile-prompt-heading"
+              className="text-sm font-medium text-[var(--color-text-primary)]"
             >
-              保存中...
+              个人描述
+            </h3>
+            <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+              会写入每次对话的系统提示，可以直接编辑。
             </p>
-          )}
-          {saveStatus === "saved" && (
-            <p
-              className="mr-auto text-xs text-[var(--color-success)]"
-              role="status"
-            >
-              已保存
-            </p>
-          )}
-          {saveStatus === "error" && (
-            <p
-              className="mr-auto text-xs text-[var(--color-error)]"
-              role="alert"
-            >
-              保存失败，请重试
-            </p>
-          )}
-          {generateError && (
-            <p
-              className="mr-auto text-xs text-[var(--color-error)]"
-              role="alert"
-            >
-              {generateError}
-            </p>
-          )}
+          </div>
           <Button
-            variant="primary"
-            size="md"
+            variant="ghost"
+            size="sm"
             onClick={handleGeneratePrompt}
-            disabled={generating || loading}
-            className="rounded-lg px-4"
+            disabled={generating || loading || saveStatus === "saving"}
+            className="shrink-0 rounded-lg px-2.5"
           >
             {generating
               ? "生成中..."
               : profilePrompt
                 ? "重新生成"
-                : "生成个人描述"}
+                : "生成"}
           </Button>
         </div>
+
+        <Textarea
+          id="personalization-prompt"
+          value={profilePrompt}
+          onChange={(e) => updatePrompt(e.target.value)}
+          onBlur={flushSave}
+          placeholder="点击上方「生成」根据资料自动生成，也可以直接填写。"
+          maxLength={2000}
+          aria-label="个人描述"
+          className={cn("h-32 resize-none", FIELD_CLASS)}
+        />
+        <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-tertiary)]">
+          <span aria-live="polite">
+            {generating
+              ? "正在根据资料生成..."
+              : generateError
+                ? generateError
+                : "支持手动修改"}
+          </span>
+          <span>{profilePrompt.length}/2000</span>
+        </div>
       </section>
+
+      <div className="flex flex-col gap-3 border-t border-[var(--color-border-light)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-h-5 flex-wrap items-center gap-2 text-xs">
+          {saveStatus === "saving" && (
+            <p className="text-[var(--color-text-tertiary)]" role="status">
+              保存中...
+            </p>
+          )}
+          {saveStatus === "saved" && (
+            <p className="text-[var(--color-success)]" role="status">
+              已保存
+            </p>
+          )}
+          {saveStatus === "error" && (
+            <p className="text-[var(--color-error)]" role="alert">
+              保存失败，请重试
+            </p>
+          )}
+          {saveStatus === "idle" && (
+            <p className="text-[var(--color-text-tertiary)]">
+              修改会自动保存
+            </p>
+          )}
+        </div>
+        <Button
+          variant="primary"
+          size="md"
+          onClick={flushSave}
+          disabled={loading || !dirty || saveStatus === "saving"}
+          className="w-full rounded-lg px-4 sm:w-auto"
+        >
+          保存更改
+        </Button>
+      </div>
     </SectionShell>
   );
 }
@@ -1469,7 +1647,7 @@ function SecuritySection() {
   }
 
   return (
-    <SectionShell id="settings-panel-security" title="账号安全">
+    <SectionShell id="settings-panel-security" title="账号安全" description="管理个人资料、登录方式与密码。">
       <IdentitySettings />
       <section aria-labelledby="change-password-heading">
         <div className="mb-3">

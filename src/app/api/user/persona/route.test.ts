@@ -97,6 +97,38 @@ describe("/api/user/persona", () => {
     });
   });
 
+  it("persists an edited profilePrompt when provided", async () => {
+    const response = await PUT(
+      makePutRequest({
+        profileName: "殷同学",
+        profileProfession: "计算机学院本科生",
+        profileDetails: "正在学习操作系统",
+        profilePrompt: "  你是一名计算机学院本科生，请用简洁的步骤回答。  ",
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.userUpdate).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: {
+        profileName: "殷同学",
+        profileProfession: "计算机学院本科生",
+        profileDetails: "正在学习操作系统",
+        profilePrompt: "你是一名计算机学院本科生，请用简洁的步骤回答。",
+      },
+      select: personaSelect,
+    });
+  });
+
+  it("rejects an over-length profilePrompt", async () => {
+    const response = await PUT(
+      makePutRequest({ profilePrompt: "x".repeat(2001) })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+  });
+
   it("rejects over-length fields", async () => {
     const response = await PUT(
       makePutRequest({ profileName: "x".repeat(61) })

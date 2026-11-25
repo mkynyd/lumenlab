@@ -16,6 +16,7 @@ const personaSchema = z.object({
     .max(100, "职业不能超过 100 个字符")
     .default(""),
   profileDetails: z.string().max(500, "详情不能超过 500 个字符").default(""),
+  profilePrompt: z.string().max(2000, "个人描述不能超过 2000 个字符").optional(),
 });
 
 const personaSelect = {
@@ -80,6 +81,9 @@ export async function PUT(request: Request) {
       profileName: parsed.data.profileName.trim() || null,
       profileProfession: parsed.data.profileProfession.trim() || null,
       profileDetails: parsed.data.profileDetails.trim() || null,
+      ...(parsed.data.profilePrompt !== undefined
+        ? { profilePrompt: parsed.data.profilePrompt.trim() || null }
+        : {}),
     },
     select: personaSelect,
   });

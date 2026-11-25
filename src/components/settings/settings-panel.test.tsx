@@ -154,7 +154,7 @@ describe("SettingsPanel token usage", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "个性化" }));
 
-    expect(screen.getByText("AI 画像")).toBeInTheDocument();
+    expect(screen.getByText("关于你")).toBeInTheDocument();
     expect(screen.queryByText("账户信息")).not.toBeInTheDocument();
     // 移动端设置首页提供 ChatGPT 式的退出登录入口（桌面端仍在侧边栏菜单里）
     expect(screen.getByText("退出登录")).toBeInTheDocument();
@@ -331,7 +331,8 @@ describe("PersonalizationSection persistence", () => {
             body: JSON.stringify({
               profileName: "新名字",
               profileProfession: "计算机学院本科生",
-              profileDetails: "正在学习操作系统"
+              profileDetails: "正在学习操作系统",
+              profilePrompt: "已有的个人描述"
             })
           })
         );
@@ -359,6 +360,51 @@ describe("PersonalizationSection persistence", () => {
           (init as RequestInit | undefined)?.method === "PUT"
       )
     ).toHaveLength(0);
+  });
+
+  it("saves edits to the profile prompt with the explicit save button", async () => {
+    mockPersonaFetch();
+    render(<SettingsPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "个性化" }));
+
+    const promptBox = await screen.findByRole("textbox", { name: "个人描述" });
+    fireEvent.change(promptBox, { target: { value: "我自己写的描述" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+
+    await waitFor(() => {
+      expect(mocks.fetch).toHaveBeenCalledWith(
+        "/api/user/persona",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({
+            profileName: "殷同学",
+            profileProfession: "计算机学院本科生",
+            profileDetails: "正在学习操作系统",
+            profilePrompt: "我自己写的描述"
+          })
+        })
+      );
+    });
+  });
+
+  it("flushes pending edits when switching tabs", async () => {
+    mockPersonaFetch();
+    render(<SettingsPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "个性化" }));
+
+    const nameInput = await screen.findByDisplayValue("殷同学");
+    fireEvent.change(nameInput, { target: { value: "切页前的名字" } });
+    fireEvent.click(screen.getByRole("tab", { name: "外观" }));
+
+    await waitFor(() => {
+      expect(mocks.fetch).toHaveBeenCalledWith(
+        "/api/user/persona",
+        expect.objectContaining({
+          method: "PUT",
+          keepalive: true
+        })
+      );
+    });
   });
 
   it("displays the generated profile prompt returned by the API", async () => {
