@@ -1,4 +1,3 @@
-import { FeedbackWidget } from "@/components/feedback/feedback-widget";
 import { ChatShell } from "@/components/layout/chat-shell";
 
 export default function ChatLayout({
@@ -11,7 +10,6 @@ export default function ChatLayout({
       learningNavigationVisible={true}
     >
       {children}
-      <FeedbackWidget />
     </ChatShell>
   );
 }

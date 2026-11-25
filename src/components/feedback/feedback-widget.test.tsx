@@ -18,17 +18,14 @@ describe("FeedbackWidget", () => {
     fireEvent.click(screen.getByRole("button", { name: "反馈" }));
   }
 
-  it("opens Feedback 1 from a viewport-anchored button outside the workbench stacking context", () => {
-    localStorage.setItem("feedback-widget-pos", JSON.stringify({ x: 12, y: 300 }));
+  it("renders a settings row trigger instead of a floating viewport button", () => {
     render(<FeedbackWidget />);
     const button = screen.getByRole("button", { name: "反馈" });
-    expect(button.parentElement).toBe(document.body);
-    expect(button).toHaveClass("fixed", "right-4");
-    expect(button.style.left).toBe("");
+    expect(button).toHaveClass("h-12", "w-full");
+    expect(button).not.toHaveClass("fixed");
     fireEvent.click(button);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "发送反馈" })).toBeInTheDocument();
-    expect(localStorage.getItem("feedback-widget-pos")).toBeTruthy();
   });
 
   it("submits category, content, contact and current path through the existing API", async () => {

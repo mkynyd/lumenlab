@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { IdentitySettings } from "./identity-settings";
+import { FeedbackWidget } from "@/components/feedback/feedback-widget";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -269,6 +270,7 @@ export function SettingsPanel({
                 className="text-[var(--color-text-tertiary)]"
               />
             </Link>
+            <FeedbackWidget className="border-t border-[var(--color-border-light)] sm:border-t-0" />
           </div>
 
           <div className="mt-3 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] sm:hidden">
