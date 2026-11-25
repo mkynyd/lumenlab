@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
+import { motion, useReducedMotion, useSpring, type MotionStyle, type MotionValue } from "motion/react";
 import { Check, ChevronDown, RotateCcw, Zap } from "lucide-react";
 import { Slider as SliderPrimitive } from "radix-ui";
 import {
@@ -18,6 +19,9 @@ const EFFORT_LABELS: Record<ReasoningEffortLevel, string> = {
   high: "高",
   max: "最高",
 };
+
+const LAST_EFFORT_INDEX = REASONING_EFFORT_LEVELS.length - 1;
+const EFFORT_SPRING = { stiffness: 480, damping: 38, mass: 0.8, restDelta: 0.001, restSpeed: 0.01 };
 
 export function ReasoningControls({
   model,
@@ -37,6 +41,69 @@ export function ReasoningControls({
   const modelsId = useId();
   const [modelsOpen, setModelsOpen] = useState(false);
   const modelLabel = model ? chatModelLabel(model) : undefined;
+  const selectedIndex = REASONING_EFFORT_LEVELS.indexOf(value);
+  const reducedMotion = useReducedMotion();
+  const position = useSpring(selectedIndex, EFFORT_SPRING);
+  const sliderStyle: MotionStyle & { "--effort-position": MotionValue<number> } = { "--effort-position": position };
+  const thumb = useRef<HTMLSpanElement>(null);
+  const keyboardThumb = useRef<HTMLSpanElement>(null);
+  const drag = useRef<{ id: number; start: number; span: number; offset: number } | null>(null);
+
+  useEffect(() => {
+    if (drag.current) return;
+    if (reducedMotion) position.jump(selectedIndex);
+    else position.set(selectedIndex);
+  }, [position, reducedMotion, selectedIndex]);
+
+  function pointerPosition(clientX: number, gesture: NonNullable<typeof drag.current>) {
+    const index = ((clientX - gesture.start - gesture.offset) / gesture.span) * LAST_EFFORT_INDEX;
+    return Math.max(0, Math.min(LAST_EFFORT_INDEX, index));
+  }
+
+  function startDrag(event: PointerEvent<HTMLDivElement>) {
+    if (disabled || event.button !== 0 || drag.current) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const handle = thumb.current;
+    if (!handle) return;
+    const thumbBounds = handle.getBoundingClientRect();
+    const inset = handle.offsetWidth / 2;
+    const span = bounds.width - inset * 2;
+    if (span <= 0) return;
+    const grabbed = event.target instanceof Node && handle.contains(event.target);
+    const center = thumbBounds.left + thumbBounds.width / 2;
+    const gesture = {
+      id: event.pointerId, start: bounds.left + inset, span,
+      offset: grabbed ? event.clientX - center : 0,
+    };
+    drag.current = gesture;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    keyboardThumb.current?.focus({ preventScroll: true });
+    const current = position.get();
+    position.jump(current);
+    if (!grabbed) {
+      const next = pointerPosition(event.clientX, gesture);
+      if (reducedMotion) position.jump(next);
+      else position.set(next);
+    }
+  }
+
+  function moveDrag(event: PointerEvent<HTMLDivElement>) {
+    const gesture = drag.current;
+    if (!disabled && gesture?.id === event.pointerId) {
+      position.jump(pointerPosition(event.clientX, gesture));
+    }
+  }
+
+  function finishDrag(event: PointerEvent<HTMLDivElement>, commit: boolean) {
+    const gesture = drag.current;
+    if (gesture?.id !== event.pointerId) return;
+    drag.current = null;
+    const index = commit && !disabled ? Math.round(pointerPosition(event.clientX, gesture)) : selectedIndex;
+    if (reducedMotion) position.jump(index);
+    else position.set(index);
+    if (index !== selectedIndex) onChange(REASONING_EFFORT_LEVELS[index]);
+  }
+
 
   if (model && providerForChatModel(model) !== "deepseek") {
     return (
@@ -59,11 +126,20 @@ export function ReasoningControls({
 
   const canChooseModel = Boolean(onModelChange && models?.length);
   return (
-    <div className="chat-reasoning-slider rounded-[var(--radius-lg)] px-4 pb-2 pt-2" data-effort={value}>
+    <motion.div
+      className="chat-reasoning-slider rounded-[var(--radius-lg)] px-4 pb-2 pt-2"
+      style={sliderStyle}
+    >
       <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-start gap-1">
         <Zap aria-hidden className="mt-2 size-4 justify-self-center text-[var(--color-text-tertiary)]" strokeWidth={1.75} />
         <div className="flex min-w-0 flex-col items-center">
-          <span className="chat-reasoning-slider-label text-lg font-semibold leading-7">{EFFORT_LABELS[value]}</span>
+          <span aria-hidden className="chat-reasoning-slider-label relative h-7 w-full overflow-hidden text-center text-lg font-semibold leading-7">
+            {REASONING_EFFORT_LEVELS.map((effort, index) => (
+              <span key={effort} className="absolute inset-0" style={{ "--effort-step": index } as React.CSSProperties}>
+                {EFFORT_LABELS[effort]}
+              </span>
+            ))}
+          </span>
           {canChooseModel ? (
             <Button
               type="button"
@@ -131,34 +207,48 @@ export function ReasoningControls({
           </div>
         </div>
       )}
-      <SliderPrimitive.Root
-        value={[REASONING_EFFORT_LEVELS.indexOf(value)]}
-        min={0}
-        max={REASONING_EFFORT_LEVELS.length - 1}
-        step={1}
-        disabled={disabled}
-        onValueChange={([index]) => {
-          const next = REASONING_EFFORT_LEVELS[index];
-          if (next) onChange(next);
-        }}
-        className="chat-reasoning-slider-control relative mt-1 flex h-14 w-full touch-none select-none items-center data-disabled:opacity-50"
+      <div
+        className="chat-reasoning-slider-control relative mt-1 flex h-14 w-full touch-pan-y select-none items-center data-disabled:opacity-50"
+        data-disabled={disabled || undefined}
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={(event) => finishDrag(event, true)}
+        onPointerCancel={(event) => finishDrag(event, false)}
+        onLostPointerCapture={(event) => finishDrag(event, false)}
       >
-        <SliderPrimitive.Track className="chat-reasoning-slider-track relative h-8 w-full overflow-hidden rounded-full">
-          <SliderPrimitive.Range className="chat-reasoning-slider-range absolute inset-y-0 rounded-full" />
-          <div aria-hidden className="pointer-events-none absolute inset-y-0 inset-x-[1.125rem] flex items-center justify-between">
+        <div aria-hidden className="chat-reasoning-slider-track relative h-8 w-full overflow-hidden rounded-full">
+          <span className="chat-reasoning-slider-range absolute inset-0 origin-left rounded-full" />
+          <span className="pointer-events-none absolute inset-y-0 inset-x-[1.0625rem] flex items-center justify-between">
             {REASONING_EFFORT_LEVELS.map((level) => (
               <span key={level} className="chat-reasoning-slider-mark size-1.5 rounded-full" />
             ))}
-          </div>
-        </SliderPrimitive.Track>
-        <SliderPrimitive.Thumb
-          aria-label="思考深度"
-          aria-valuetext={EFFORT_LABELS[value]}
-          className="chat-reasoning-slider-thumb grid size-10 place-items-center rounded-full outline-none"
+          </span>
+        </div>
+        <span aria-hidden className="chat-reasoning-slider-thumb-lane pointer-events-none absolute inset-y-0 inset-x-5">
+          <span ref={thumb} className="chat-reasoning-slider-thumb pointer-events-auto absolute top-1/2 grid size-10 place-items-center rounded-full">
+            <span className="chat-reasoning-slider-indicator size-2.5 rounded-full" />
+          </span>
+        </span>
+        <SliderPrimitive.Root
+          value={[selectedIndex]}
+          min={0}
+          max={LAST_EFFORT_INDEX}
+          step={1}
+          disabled={disabled}
+          onValueChange={([index]) => {
+            const next = REASONING_EFFORT_LEVELS[index];
+            if (next) onChange(next);
+          }}
+          className="pointer-events-none absolute inset-0 opacity-0"
         >
-          <span aria-hidden className="chat-reasoning-slider-indicator size-2.5 rounded-full" />
-        </SliderPrimitive.Thumb>
-      </SliderPrimitive.Root>
-    </div>
+          <SliderPrimitive.Thumb
+            ref={keyboardThumb}
+            aria-label="思考深度"
+            aria-valuetext={EFFORT_LABELS[value]}
+            className="block size-10"
+          />
+        </SliderPrimitive.Root>
+      </div>
+    </motion.div>
   );
 }

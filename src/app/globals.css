@@ -1284,11 +1284,11 @@ pre code {
 }
 
 .chat-composer-sheet[data-state="open"] {
-  animation: chat-sheet-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: chat-sheet-in 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
 .chat-composer-sheet[data-state="closed"] {
-  animation: chat-sheet-out 160ms ease-in both;
+  animation: chat-sheet-out 220ms var(--composer-ease) both;
 }
 
 @keyframes chat-attachment-in {
@@ -1296,11 +1296,11 @@ pre code {
 }
 
 @keyframes chat-sheet-in {
-  from { opacity: 0; transform: translateY(1.25rem); }
+  from { transform: translateY(100%); }
 }
 
 @keyframes chat-sheet-out {
-  to { opacity: 0; transform: translateY(0.75rem); }
+  to { transform: translateY(100%); }
 }
 
 @media (width < 48rem) {
@@ -1353,7 +1353,9 @@ pre code {
   --effort-low: oklch(0.62 0.13 170);
   --effort-high: oklch(0.58 0.18 247);
   --effort-max: oklch(0.58 0.19 306);
-  --effort-color: var(--effort-high);
+  --effort-progress: clamp(0, var(--effort-position, 2), 2);
+  --effort-first-color: color-mix(in oklab, var(--effort-low), var(--effort-high) clamp(0%, calc(var(--effort-progress) * 100%), 100%));
+  --effort-color: color-mix(in oklab, var(--effort-first-color), var(--effort-max) clamp(0%, calc((var(--effort-progress) - 1) * 100%), 100%));
 }
 
 .dark .chat-reasoning-slider {
@@ -1362,64 +1364,62 @@ pre code {
   --effort-max: oklch(0.74 0.15 306);
 }
 
-.chat-reasoning-slider[data-effort="low"] {
-  --effort-color: var(--effort-low);
-}
-
-.chat-reasoning-slider[data-effort="max"] {
-  --effort-color: var(--effort-max);
-}
-
 .chat-reasoning-slider-track {
   background-color: color-mix(in oklab, var(--effort-color) 8%, var(--color-panel-muted));
-  transition: background-color 260ms var(--composer-ease);
 }
 
 .chat-reasoning-slider-range {
+  transform: scaleX(calc(var(--effort-progress) * 0.5));
   background-color: var(--effort-color);
   background-image: linear-gradient(105deg, color-mix(in oklab, white 18%, transparent), transparent);
-  transition: background-color 260ms var(--composer-ease);
 }
 
 .chat-reasoning-slider-mark {
   background-color: color-mix(in oklab, var(--color-text-secondary) 40%, var(--color-surface));
 }
 
+.chat-reasoning-slider-thumb-lane {
+  translate: calc(var(--effort-progress) * 50%);
+}
+
 .chat-reasoning-slider-thumb {
+  translate: -50% -50%;
   background-color: var(--color-surface);
-  transition: transform 240ms var(--composer-spring);
+  transition: scale 200ms var(--composer-spring);
 }
 
 .chat-reasoning-slider-indicator {
   background-color: var(--effort-color);
-  transition: background-color 260ms var(--composer-ease), scale 200ms var(--composer-ease);
+  transition: scale 200ms var(--composer-ease);
 }
 
-.chat-reasoning-slider-thumb:focus-visible .chat-reasoning-slider-indicator {
+.chat-reasoning-slider-control:has([role="slider"]:focus-visible) .chat-reasoning-slider-indicator {
   scale: 1.25;
 }
 
 .chat-reasoning-slider-control:active .chat-reasoning-slider-thumb {
-  transform: scale(1.1);
-}
-
-.chat-reasoning-slider-control:not(:active) > span:has(.chat-reasoning-slider-thumb),
-.chat-reasoning-slider-control:not(:active) .chat-reasoning-slider-range {
-  transition: left 220ms var(--composer-spring), right 220ms var(--composer-spring), background-color 260ms var(--composer-ease);
+  scale: 1.07;
 }
 
 .chat-reasoning-slider-label {
   color: var(--effort-color);
-  transition: color 260ms var(--composer-ease);
+}
+
+.chat-reasoning-slider-label > span {
+  --effort-label-offset: calc(var(--effort-step) - var(--effort-progress));
+  --effort-label-distance: max(var(--effort-label-offset), calc(-1 * var(--effort-label-offset)));
+  opacity: clamp(0, calc(1 - var(--effort-label-distance)), 1);
+  translate: 0 calc(var(--effort-label-offset) * 0.875rem);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-reasoning-slider * {
-    transition: none !important;
+  .chat-reasoning-slider-thumb,
+  .chat-reasoning-slider-indicator {
+    transition: none;
   }
 
   .chat-reasoning-slider-control:active .chat-reasoning-slider-thumb {
-    transform: none;
+    scale: none;
   }
 }
 

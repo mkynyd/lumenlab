@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, FileText, Globe, Paperclip, Send } from "luc
 import { MarkdownContent } from "@/components/markdown/markdown-content";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ModelSelector } from "@/components/chat/model-selector";
+import type { ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import { cn } from "@/lib/utils";
 import { MOCK_CHAT_MESSAGES, type MockChatMessage } from "@/lib/mock/landing-fixtures";
 
@@ -102,6 +103,7 @@ function MockBubble({ message }: { message: MockChatMessage }) {
  * 输入框与按钮全部 disabled，纯展示。
  */
 function ChatDemoInputDock() {
+  const [effort, setEffort] = useState<ReasoningEffortLevel>("max");
   return (
     <div className="shrink-0 bg-[var(--color-bg)] px-3 pb-3 sm:px-5 sm:pb-5">
       <div className="workbench-input-dock rounded-[24px] border border-[var(--color-border-light)] bg-[var(--color-surface)] p-2">
@@ -121,8 +123,8 @@ function ChatDemoInputDock() {
             <ModelSelector
               model="deepseek-flash"
               onChange={() => {}}
-              reasoningEffort="max"
-              onReasoningEffortChange={() => {}}
+              reasoningEffort={effort}
+              onReasoningEffortChange={setEffort}
               compact
             />
             <button
