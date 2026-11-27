@@ -1246,7 +1246,7 @@ pre code {
   background-color: transparent;
 }
 
-.workbench-input-dock button[data-variant="ghost"]:hover:not(:disabled) {
+.workbench-input-dock button[data-variant="ghost"]:hover:not(:disabled):not([aria-pressed="true"]):not([aria-expanded="true"]) {
   background-color: transparent;
 }
 
@@ -1261,6 +1261,12 @@ pre code {
 .chat-composer {
   border-radius: 28px;
   transition: border-radius 260ms var(--composer-ease);
+}
+
+@media (width >= 48rem) and (any-hover: hover) {
+  .chat-composer button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled):not([aria-pressed="true"]):not([aria-expanded="true"]) {
+    background-color: var(--color-interaction-hover);
+  }
 }
 
 :is(.chat-composer-sheet, .chat-composer-popover) button {
