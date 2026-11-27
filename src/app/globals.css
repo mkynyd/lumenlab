@@ -1263,6 +1263,10 @@ pre code {
   transition: border-radius 260ms var(--composer-ease);
 }
 
+.chat-composer-field::placeholder {
+  transform: translateX(4px);
+}
+
 @media (width >= 48rem) and (any-hover: hover) {
   .chat-composer button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled):not([aria-pressed="true"]):not([aria-expanded="true"]) {
     background-color: var(--color-interaction-hover);
@@ -1303,7 +1307,7 @@ pre code {
 
 @media (width < 48rem) {
   .chat-composer {
-    border-radius: 24px;
+    border-radius: 26px;
   }
 
   .chat-composer-field {
