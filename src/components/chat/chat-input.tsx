@@ -195,10 +195,10 @@ export function ChatInput({
   const webSearchSupported = modelSupportsWebSearch(model);
   const { ref: textareaRef, style: textareaStyle } = useMeasuredTextareaHeight({
     value: currentValue,
-    minHeight: 20,
+    minHeight: 24,
     maxHeight: 144,
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 24,
     paddingX: 0,
     paddingY: 0,
     fontFamily: '"Noto Sans SC"',
@@ -463,7 +463,7 @@ export function ChatInput({
           onChange={(event) => addFiles(event.target.files)}
         />
 
-        <div className="flex min-h-[3.25rem] items-center gap-2 px-2.5 py-1 md:min-h-14 md:gap-2.5 md:px-3 md:py-2.5">
+        <div className="flex min-h-14 items-center gap-2 px-2.5 py-1.5 md:min-h-[3.75rem] md:gap-2.5 md:px-3 md:py-3">
           <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -582,7 +582,7 @@ export function ChatInput({
               disabled={disabled}
               autoComplete="off"
               className={cn(
-                "chat-composer-field block min-h-5 w-full resize-none field-sizing-fixed border-0 bg-transparent! px-0 py-0 text-base leading-5 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 md:text-base",
+                "chat-composer-field block min-h-6 w-full resize-none field-sizing-fixed border-0 bg-transparent! px-0 py-0 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 md:text-base",
                 "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
                 "focus:outline-none disabled:opacity-50"
               )}
