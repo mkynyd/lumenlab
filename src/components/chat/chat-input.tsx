@@ -483,14 +483,6 @@ export function ChatInput({
               aria-label="添加来源"
               className="chat-composer-popover w-[min(18rem,calc(100vw-1.25rem))] border-0 p-2"
             >
-              <div className="flex items-center justify-between px-2 pb-2 pt-1">
-                <span className="text-[13px] font-medium text-[var(--color-text-primary)]">
-                  添加来源
-                </span>
-                <span className="text-[11px] text-[var(--color-text-tertiary)]">
-                  附件与能力
-                </span>
-              </div>
               <div className="grid grid-cols-3 gap-1.5">
                 <Button
                   type="button"
