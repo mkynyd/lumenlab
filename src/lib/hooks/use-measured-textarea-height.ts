@@ -63,6 +63,7 @@ export function useMeasuredTextareaHeight({
     height: measuredHeight,
     style: {
       height: measuredHeight,
+      overflowX: "hidden" as const,
       overflowY: measuredHeight >= maxHeight ? ("auto" as const) : ("hidden" as const),
     },
   };
