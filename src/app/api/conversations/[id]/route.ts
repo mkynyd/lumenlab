@@ -35,6 +35,48 @@ export async function GET(
   });
 }
 
+// PATCH — 重命名对话（用户手动命名后，标题生成不再覆盖）
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
+  }
+  const rawTitle =
+    typeof payload === "object" && payload !== null && "title" in payload
+      ? (payload as { title?: unknown }).title
+      : undefined;
+  if (typeof rawTitle !== "string") {
+    return NextResponse.json({ error: "标题不能为空" }, { status: 400 });
+  }
+  const title = Array.from(rawTitle.replace(/\s+/g, " ").trim())
+    .slice(0, 40)
+    .join("");
+  if (!title) {
+    return NextResponse.json({ error: "标题不能为空" }, { status: 400 });
+  }
+
+  const updated = await prisma.conversation.updateMany({
+    where: { id, userId: session.user.id },
+    data: { title },
+  });
+  if (updated.count === 0) {
+    return NextResponse.json({ error: "对话不存在" }, { status: 404 });
+  }
+
+  return NextResponse.json({ title });
+}
+
 // DELETE — 删除对话
 export async function DELETE(
   request: Request,

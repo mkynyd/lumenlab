@@ -53,6 +53,55 @@ export function useConversation(id: string | undefined) {
   });
 }
 
+export function useRenameConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      fetchJson<{ title: string }>(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      }),
+    onMutate: async ({ id, title }) => {
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.conversations.all,
+      });
+      const previous = queryClient.getQueryData<ConversationSummary[]>(
+        queryKeys.conversations.all
+      );
+      queryClient.setQueryData<ConversationSummary[]>(
+        queryKeys.conversations.all,
+        (current = []) =>
+          current.map((item) =>
+            item.id === id ? { ...item, title } : item
+          )
+      );
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(
+          queryKeys.conversations.all,
+          context.previous
+        );
+      }
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData<ConversationDetail>(
+        queryKeys.conversations.detail(id),
+        (current) => (current ? { ...current, title: data.title } : current)
+      );
+    },
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.conversations.all,
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.all }),
+      ]),
+  });
+}
+
 export function useDeleteConversation() {
   const queryClient = useQueryClient();
   return useMutation({

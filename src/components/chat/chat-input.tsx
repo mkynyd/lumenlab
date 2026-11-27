@@ -1,7 +1,7 @@
 "use client";
 
 import { createElement, useEffect, useRef, useState } from "react";
-import { ArrowUp, Camera, ChevronRight, Globe, Image as ImageIcon, Paperclip, Plus, SlidersHorizontal, Sparkles, StopCircle, X } from "lucide-react";
+import { ArrowUp, Camera, Globe, Image as ImageIcon, Paperclip, Plus, Sparkles, StopCircle, X } from "lucide-react";
 import type { FileAttachment } from "@/lib/chat/router";
 import {
   ACCEPT_ATTRIBUTE,
@@ -20,21 +20,12 @@ import { ModelSelector } from "@/components/chat/model-selector";
 import { SkillSelector, type SkillSelectorValue } from "@/components/chat/skill-selector";
 import { useMeasuredTextareaHeight } from "@/lib/hooks/use-measured-textarea-height";
 import { modelSupportsWebSearch } from "@/lib/chat/model-capabilities";
-import { chatModelLabel, type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
+import { type ReasoningEffortLevel } from "@/lib/chat/model-catalog";
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface ChatInputProps {
   onSend: (message: string, attachments: FileAttachment[], onAccepted?: () => void) => void | boolean | Promise<void | boolean>;
@@ -182,9 +173,7 @@ export function ChatInput({
   }, []);
   const latestDraft = useRef({ value: "", attachments });
   const [internalValue, setInternalValue] = useState("");
-  const [inputFocused, setInputFocused] = useState(false);
-  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
-  const [mobileModelOpen, setMobileModelOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   // 附件校验的非阻断提示：自动消隐，不阻塞输入与发送。
   const [attachmentNotice, setAttachmentNotice] = useState<string[]>([]);
   useEffect(() => {
@@ -203,16 +192,15 @@ export function ChatInput({
     latestDraft.current = { value: currentValue, attachments };
   }, [currentValue, attachments]);
   const hasSendableContent = currentValue.trim().length > 0 || attachments.length > 0;
-  const compactOnMobile = !inputFocused && !hasSendableContent && !isDragActive;
   const webSearchSupported = modelSupportsWebSearch(model);
   const { ref: textareaRef, style: textareaStyle } = useMeasuredTextareaHeight({
     value: currentValue,
-    minHeight: 40,
-    maxHeight: 160,
+    minHeight: 24,
+    maxHeight: 144,
     fontSize: 16,
     lineHeight: 24,
-    paddingX: 28,
-    paddingY: 20,
+    paddingX: 0,
+    paddingY: 0,
     fontFamily: '"Noto Sans SC"',
   });
 
@@ -384,25 +372,14 @@ export function ChatInput({
   }
 
   return (
-    <TooltipProvider>
-      <Dialog open={mobileToolsOpen} onOpenChange={setMobileToolsOpen}>
-      <form
-        onSubmit={handleSubmit}
-        autoComplete="off"
-        className="mx-auto flex w-full max-w-[48rem] shrink-0 flex-col gap-2 bg-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pb-4"
-      >
+    <form
+      onSubmit={handleSubmit}
+      autoComplete="off"
+      className="mx-auto flex w-full max-w-[48rem] shrink-0 flex-col gap-2 bg-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pb-4"
+    >
       {blockedReason && (
-        <div
-          className={cn(
-            "flex min-h-7 flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] px-2 py-1",
-            blockedReason
-              ? "bg-[var(--color-warning-muted)] text-[var(--color-warning)]"
-              : "bg-[var(--color-surface)] text-[var(--color-text-secondary)]"
-          )}
-        >
-          <span className="min-w-0 truncate text-xs">
-            {blockedReason}
-          </span>
+        <div className="flex min-h-7 flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] bg-[var(--color-warning-muted)] px-2 py-1 text-[var(--color-warning)]">
+          <span className="min-w-0 truncate text-xs">{blockedReason}</span>
         </div>
       )}
       {attachmentNotice.length > 0 && (
@@ -435,7 +412,6 @@ export function ChatInput({
       )}
       <div
         className="workbench-input-dock chat-composer relative bg-[var(--color-control)]"
-        data-compact={compactOnMobile}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -486,6 +462,121 @@ export function ChatInput({
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
+
+        <div className="flex min-h-14 items-end gap-2 px-2.5 py-2 md:min-h-16 md:gap-2.5 md:px-3 md:py-3">
+          <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={disabled || isStreaming}
+                className="size-10 shrink-0 rounded-full bg-[var(--color-panel-muted)] text-[var(--color-text-secondary)] md:size-9"
+                aria-label="更多输入选项"
+              >
+                <Plus />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              side="top"
+              align="start"
+              sideOffset={8}
+              aria-label="添加来源"
+              className="chat-composer-popover w-[min(18rem,calc(100vw-1.25rem))] border-0 p-2"
+            >
+              <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                <span className="text-[13px] font-medium text-[var(--color-text-primary)]">
+                  添加来源
+                </span>
+                <span className="text-[11px] text-[var(--color-text-tertiary)]">
+                  附件与能力
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={disabled || isStreaming}
+                  onClick={() => {
+                    setToolsOpen(false);
+                    cameraInputRef.current?.click();
+                  }}
+                  className="flex h-16 flex-col items-center justify-center gap-1 rounded-[10px] px-1 text-[12px] font-normal text-[var(--color-text-secondary)]"
+                >
+                  <Camera size={18} strokeWidth={1.8} />
+                  拍照
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={disabled || isStreaming}
+                  onClick={() => {
+                    setToolsOpen(false);
+                    photoInputRef.current?.click();
+                  }}
+                  className="flex h-16 flex-col items-center justify-center gap-1 rounded-[10px] px-1 text-[12px] font-normal text-[var(--color-text-secondary)]"
+                >
+                  <ImageIcon size={18} strokeWidth={1.8} />
+                  照片
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={disabled || isStreaming}
+                  onClick={() => {
+                    setToolsOpen(false);
+                    fileInputRef.current?.click();
+                  }}
+                  className="flex h-16 flex-col items-center justify-center gap-1 rounded-[10px] px-1 text-[12px] font-normal text-[var(--color-text-secondary)]"
+                >
+                  <Paperclip size={18} strokeWidth={1.8} />
+                  文件
+                </Button>
+              </div>
+              {((onWebSearchToggle && webSearchSupported) || onSkillChange) && (
+                <div className="my-2 h-px bg-[var(--color-border-light)]" />
+              )}
+              <div className="flex flex-col gap-0.5">
+                {onWebSearchToggle && webSearchSupported && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={disabled || isStreaming}
+                    onClick={onWebSearchToggle}
+                    aria-pressed={webSearchActive}
+                    aria-label={webSearchActive ? "关闭联网搜索" : "打开联网搜索"}
+                    className="h-10 w-full justify-start gap-3 rounded-[10px] px-2 text-[13px] font-normal"
+                  >
+                    <Globe
+                      size={18}
+                      strokeWidth={1.8}
+                      className={webSearchActive ? "text-[var(--color-accent)]" : "text-[var(--color-text-secondary)]"}
+                    />
+                    <span className="flex-1 text-left text-[var(--color-text-primary)]">
+                      联网搜索
+                    </span>
+                    <span className="text-[11px] text-[var(--color-text-tertiary)]">
+                      {webSearchActive ? "默认开启" : "已关闭"}
+                    </span>
+                  </Button>
+                )}
+                {onSkillChange && (
+                  <div className="flex h-10 items-center gap-2 rounded-[10px] px-2">
+                    <Sparkles size={18} strokeWidth={1.8} className="text-[var(--color-text-secondary)]" />
+                    <span className="flex-1 text-[13px] text-[var(--color-text-primary)]">
+                      智能方式
+                    </span>
+                    <SkillSelector
+                      value={skillValue}
+                      onChange={onSkillChange}
+                      disabled={isStreaming || disabled}
+                      compact={false}
+                    />
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <Textarea
             ref={textareaRef}
             aria-label="消息内容"
@@ -493,243 +584,54 @@ export function ChatInput({
             onChange={(e) => updateValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            onFocus={() => setInputFocused(true)}
-            onBlur={() => setInputFocused(false)}
             placeholder={placeholder}
             rows={1}
             disabled={disabled}
             autoComplete="off"
             className={cn(
-              "chat-composer-field block max-h-40 min-h-10 w-full resize-none field-sizing-fixed border-0 bg-transparent! px-3.5 pb-2 pt-2 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 md:min-h-14 md:pt-3",
+              "chat-composer-field block min-h-6 flex-1 resize-none field-sizing-fixed border-0 bg-transparent! px-0 py-0 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0",
               "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
               "focus:outline-none disabled:opacity-50"
             )}
             style={textareaStyle}
           />
-        <div className="chat-composer-actions flex items-center gap-1.5">
-          <DialogTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              disabled={disabled || isStreaming}
-              className="size-11 shrink-0 rounded-full bg-[var(--color-panel-muted)] md:hidden"
-              aria-label="更多输入选项"
-            >
-              <Plus />
-            </Button>
-          </DialogTrigger>
-          {model && onModelChange && (
-            <ModelSelector
-              model={model}
-              onChange={onModelChange}
-              reasoningEffort={reasoningEffort}
-              onReasoningEffortChange={onReasoningEffortChange}
-              availableModels={availableModels}
-              disabled={isStreaming || disabled}
-              compact
-              hideMobileTrigger
-              mobileDialogOpen={mobileModelOpen}
-              onMobileDialogOpenChange={setMobileModelOpen}
-            />
-          )}
-          <div className="hidden min-w-0 items-center gap-1.5 md:flex">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  disabled={disabled || isStreaming}
-                  onClick={() => fileInputRef.current?.click()}
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 rounded-[var(--radius-md)]"
-                  aria-label="添加附件"
-                >
-                  <Paperclip />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">添加附件</TooltipContent>
-            </Tooltip>
-            {onSkillChange && (
-              <SkillSelector
-                value={skillValue}
-                onChange={onSkillChange}
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            {model && onModelChange && (
+              <ModelSelector
+                model={model}
+                onChange={onModelChange}
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={onReasoningEffortChange}
+                availableModels={availableModels}
                 disabled={isStreaming || disabled}
                 compact
               />
             )}
-            {onWebSearchToggle && webSearchSupported && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={onWebSearchToggle}
-                    disabled={isStreaming || disabled}
-                    className={cn(
-                      "shrink-0 rounded-[var(--radius-md)]",
-                      webSearchActive && "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                    )}
-                    aria-label={webSearchActive ? "关闭联网搜索" : "打开联网搜索"}
-                    aria-pressed={webSearchActive}
-                  >
-                    <Globe strokeWidth={webSearchActive ? 2.5 : 2} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  {webSearchActive ? "关闭联网搜索" : "联网搜索"}
-                </TooltipContent>
-              </Tooltip>
+            {isStreaming ? (
+              <Button
+                type="button"
+                onClick={onStop}
+                variant="destructive"
+                className="size-10 shrink-0 rounded-full md:size-9"
+                aria-label="停止生成"
+              >
+                <StopCircle />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                disabled={!hasSendableContent || disabled || isSubmitting || Boolean(blockedReason)}
+                variant="primary"
+                className="size-10 shrink-0 rounded-full md:size-9"
+                aria-label="发送消息"
+              >
+                <ArrowUp />
+              </Button>
             )}
           </div>
-          {isStreaming ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  onClick={onStop}
-                  variant="destructive"
-                  size="icon-sm"
-                  className="ml-auto size-11 shrink-0 rounded-full max-md:bg-clip-content max-md:p-1.5 md:size-8"
-                  aria-label="停止生成"
-                >
-                  <StopCircle />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">停止生成</TooltipContent>
-            </Tooltip>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="submit"
-                  disabled={!hasSendableContent || disabled || isSubmitting || Boolean(blockedReason)}
-                  variant="primary"
-                  size="icon-sm"
-                  className="ml-auto size-11 shrink-0 rounded-full max-md:bg-clip-content max-md:p-1.5 md:size-8"
-                  aria-label="发送消息"
-                >
-                  <ArrowUp />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">发送消息</TooltipContent>
-            </Tooltip>
-          )}
         </div>
       </div>
-      </form>
-        <DialogContent
-          showCloseButton={false}
-          className="chat-composer-sheet top-auto bottom-0 left-0 max-h-[85dvh] max-w-none -translate-x-0 -translate-y-0 gap-0 overflow-y-auto rounded-t-[24px] rounded-b-none border-0 p-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-input)] sm:max-w-none"
-          aria-describedby={undefined}
-        >
-          <div aria-hidden className="mx-auto mt-2 h-1 w-9 rounded-full bg-[var(--color-border-light)]" />
-          <DialogHeader className="flex-row items-center justify-between gap-3 px-4 pb-1 pt-2">
-            <DialogTitle className="text-[15px] font-semibold">添加来源</DialogTitle>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost" size="icon-sm" className="size-9 rounded-full" aria-label="关闭添加来源">
-                <X size={16} strokeWidth={1.8} />
-              </Button>
-            </DialogClose>
-          </DialogHeader>
-          <div className="px-2 pb-2">
-            <div className="flex flex-col">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={disabled || isStreaming}
-                onClick={() => {
-                  setMobileToolsOpen(false);
-                  cameraInputRef.current?.click();
-                }}
-                className="h-12 justify-start gap-3 rounded-[10px] px-3 text-[13px] font-normal"
-              >
-                <Camera size={18} strokeWidth={1.8} className="text-[var(--color-text-secondary)]" />
-                拍照
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={disabled || isStreaming}
-                onClick={() => {
-                  setMobileToolsOpen(false);
-                  photoInputRef.current?.click();
-                }}
-                className="h-12 justify-start gap-3 rounded-[10px] px-3 text-[13px] font-normal"
-              >
-                <ImageIcon size={18} strokeWidth={1.8} className="text-[var(--color-text-secondary)]" />
-                照片
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={disabled || isStreaming}
-                onClick={() => {
-                  setMobileToolsOpen(false);
-                  fileInputRef.current?.click();
-                }}
-                className="h-12 justify-start gap-3 rounded-[10px] px-3 text-[13px] font-normal"
-              >
-                <Paperclip size={18} strokeWidth={1.8} className="text-[var(--color-text-secondary)]" />
-                文件
-              </Button>
-            </div>
-            {(onWebSearchToggle || onSkillChange || (model && onModelChange)) && (
-              <div className="my-2 h-px bg-[var(--color-border-light)]" />
-            )}
-            {model && onModelChange && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={disabled || isStreaming}
-                onClick={() => {
-                  setMobileToolsOpen(false);
-                  window.setTimeout(() => setMobileModelOpen(true), 260);
-                }}
-                className="h-12 w-full justify-start gap-3 rounded-[10px] px-3 text-[13px] font-normal"
-              >
-                <SlidersHorizontal size={18} strokeWidth={1.8} className="text-[var(--color-text-secondary)]" />
-                <span className="flex-1 text-left">模型与思考</span>
-                <span className="max-w-[45%] truncate text-[var(--color-text-tertiary)]">
-                  {chatModelLabel(model)} · {reasoningEffort === "low" ? "低" : reasoningEffort === "high" ? "高" : "最高"}
-                </span>
-                <ChevronRight size={15} strokeWidth={1.8} className="shrink-0 text-[var(--color-text-tertiary)]" />
-              </Button>
-            )}
-            {onWebSearchToggle && webSearchSupported && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={disabled || isStreaming}
-                onClick={onWebSearchToggle}
-                aria-pressed={webSearchActive}
-                className={cn(
-                  "h-12 w-full justify-start gap-3 rounded-[10px] px-3 text-[13px] font-normal",
-                  webSearchActive && "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                )}
-              >
-                <Globe size={18} strokeWidth={1.8} />
-                <span className="flex-1 text-left">联网搜索</span>
-                <span className="text-[var(--color-text-tertiary)]">
-                  {webSearchActive ? "已开启" : "已关闭"}
-                </span>
-              </Button>
-            )}
-            {onSkillChange && (
-              <div className="flex h-12 items-center gap-3 rounded-[10px] px-3">
-                <Sparkles size={18} strokeWidth={1.8} className="text-[var(--color-text-secondary)]" />
-                <span className="flex-1 text-[13px] text-[var(--color-text-primary)]">智能方式</span>
-                <SkillSelector
-                  value={skillValue}
-                  onChange={onSkillChange}
-                  disabled={isStreaming || disabled}
-                  compact={false}
-                />
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>    </TooltipProvider>
+    </form>
   );
 }

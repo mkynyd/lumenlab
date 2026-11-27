@@ -107,6 +107,12 @@ export function ModelSelector({
   const models = MODELS.filter((item) => availableModels.includes(item.value));
   const current = models.find((item) => item.value === model) ?? MODELS.find((item) => item.value === model);
   const triggerLabel = current?.label ?? model;
+  // 移动端单行坞空间有限：DeepSeek 只显示版本名，避免模型名挤掉输入区。
+  const mobileTriggerLabel =
+    providerForChatModel(current?.value ?? model) === "deepseek" &&
+    triggerLabel.startsWith("DeepSeek ")
+      ? triggerLabel.slice("DeepSeek ".length)
+      : triggerLabel;
   const hasReasoningModelPicker = Boolean(onReasoningEffortChange && providerForChatModel(model) === "deepseek");
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [mobileOpenState, setMobileOpenState] = useState(false);
@@ -120,8 +126,8 @@ export function ModelSelector({
   const detailEntry = catalogEntry(current?.value ?? "");
 
   const triggerClassName = cn(
-    "h-8 shrink-0 rounded-full bg-transparent px-2 text-[13px] font-normal text-[var(--color-text-secondary)] transition-[background-color,color,transform] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] active:scale-[0.97] focus-visible:bg-[var(--color-interaction-active)] focus-visible:text-[var(--color-text-primary)]",
-    compact && "max-w-[min(72vw,14rem)]",
+    "h-9 shrink-0 rounded-full bg-transparent px-2 text-[13px] font-normal text-[var(--color-text-secondary)] transition-[background-color,color,transform] hover:bg-[var(--color-interaction-hover)] hover:text-[var(--color-text-primary)] active:scale-[0.97] focus-visible:bg-[var(--color-interaction-active)] focus-visible:text-[var(--color-text-primary)]",
+    compact && "md:max-w-[14rem]",
     className
   );
 
@@ -218,10 +224,10 @@ export function ModelSelector({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          className={cn("h-9 max-w-[min(56vw,13rem)] px-1.5 md:hidden", triggerClassName)}
+          className={cn("h-9 max-w-[7.5rem] px-1.5 md:hidden", triggerClassName)}
           aria-label="选择模型"
         >
-          <span className="truncate">{triggerLabel}</span>
+          <span className="truncate">{mobileTriggerLabel}</span>
           <ChevronDown data-icon="inline-end" />
         </Button>
       </DialogTrigger>}

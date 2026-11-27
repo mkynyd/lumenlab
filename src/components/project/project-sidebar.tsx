@@ -57,8 +57,10 @@ import {
   InfoCircle,
   Box3dCenter,
   Network,
+  PageEdit,
 } from "iconoir-react";
 import { ProjectDetailModal } from "@/components/project/project-detail-modal";
+import { RenameConversationDialog } from "@/components/chat/rename-conversation-dialog";
 import { useProjectFiles } from "@/lib/hooks/use-project-files";
 import { useProjectArtifacts } from "@/lib/hooks/use-artifacts";
 
@@ -130,6 +132,10 @@ export function ProjectSidebar({
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [conversationDeleteTarget, setConversationDeleteTarget] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [conversationRenameTarget, setConversationRenameTarget] = useState<{
     id: string;
     title: string;
   } | null>(null);
@@ -430,6 +436,12 @@ export function ProjectSidebar({
                             打开
                           </ContextMenuItem>
                           <ContextMenuItem
+                            onSelect={() => setConversationRenameTarget(conv)}
+                          >
+                            <PageEdit strokeWidth={2} />
+                            重命名
+                          </ContextMenuItem>
+                          <ContextMenuItem
                             variant="destructive"
                             onSelect={() => setConversationDeleteTarget(conv)}
                           >
@@ -448,6 +460,12 @@ export function ProjectSidebar({
               )}
             </ScrollArea>
           </SidebarGroupContent>
+          <RenameConversationDialog
+            conversation={conversationRenameTarget}
+            onOpenChange={(open) => {
+              if (!open) setConversationRenameTarget(null);
+            }}
+          />
           <AlertDialog
             open={conversationDeleteTarget !== null}
             onOpenChange={(open) => {

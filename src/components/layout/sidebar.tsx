@@ -82,6 +82,7 @@ import {
   useConversations,
   useDeleteConversation,
 } from "@/lib/hooks/use-conversations";
+import { RenameConversationDialog } from "@/components/chat/rename-conversation-dialog";
 import { useDeleteProject, useProjects } from "@/lib/hooks/use-projects";
 import {
   useConversions,
@@ -296,6 +297,10 @@ export function Sidebar({
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountPointerHandledRef = useRef(false);
   const [conversationDeleteTarget, setConversationDeleteTarget] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [conversationRenameTarget, setConversationRenameTarget] = useState<{
     id: string;
     title: string;
   } | null>(null);
@@ -767,6 +772,12 @@ export function Sidebar({
                           打开对话
                         </ContextMenuItem>
                         <ContextMenuItem
+                          onSelect={() => setConversationRenameTarget(conversation)}
+                        >
+                          <PageEdit strokeWidth={2} />
+                          重命名
+                        </ContextMenuItem>
+                        <ContextMenuItem
                           variant="destructive"
                           onSelect={() => setConversationDeleteTarget(conversation)}
                         >
@@ -1054,6 +1065,12 @@ export function Sidebar({
           </DropdownMenu>
           </div>
         </SidebarFooter>
+        <RenameConversationDialog
+          conversation={conversationRenameTarget}
+          onOpenChange={(open) => {
+            if (!open) setConversationRenameTarget(null);
+          }}
+        />
         <AlertDialog
           open={conversationDeleteTarget !== null}
           onOpenChange={(open) => {

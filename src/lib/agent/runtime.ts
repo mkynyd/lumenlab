@@ -57,6 +57,7 @@ import {
   DEFAULT_PROTECTED_WINDOW,
 } from "@/lib/chat/compression";
 import { effectiveWebSearchActive } from "@/lib/chat/model-capabilities";
+import { conversationBootstrapTitle } from "@/lib/conversation-title";
 import {
   buildPlannedToolCalls,
   executePlannedToolCalls,
@@ -105,6 +106,29 @@ function shouldPreInject(route: { source: string; confidence: number }): boolean
   if (route.source === "manual") return true;
   if (route.source === "rule" && route.confidence >= 0.85) return true;
   return false;
+}
+
+/**
+ * 把已注册技能压缩成一份短目录注入系统提示词。
+ * 渐进披露：这里只给“技能名 + 一句适用说明”，完整 instructions 仍由
+ * skill.activate 返回；没有目录时模型只能看到枚举 id，无法可靠自动选择。
+ */
+function buildSkillCatalogPrompt() {
+  const skills = skillRegistry.list().filter((skill) => skill.description?.trim());
+  if (skills.length === 0) return "";
+  const lines = skills.slice(0, 24).map((skill) => {
+    const name = skill.displayName
+      ? `${skill.displayName}（${skill.skillId}）`
+      : skill.skillId;
+    const description = skill.description.replace(/\s+/g, " ").trim().slice(0, 96);
+    return `- ${name}：${description}`;
+  });
+  return [
+    "【可用技能】",
+    ...lines,
+    "技能由系统按任务自动匹配；当任务明确匹配某个技能的专门流程时，你可以调用 skill.activate。",
+    "不要因为用户没有指定技能而停下；只有缺少关键输入时才追问。",
+  ].join("\n");
 }
 
 function getServerTimeZone() {
@@ -508,9 +532,9 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   } else {
     conversation = await conversationPersistence.createConversation({
       userId,
-      // The visible title is generated asynchronously after the stream begins.
-      // Never expose a full user prompt as a navigation label in the meantime.
-      title: "新对话",
+      // 先用首条消息/附件生成确定性标题，避免会话一创建就显示“新对话”；
+      // 首轮回答结束后，标题接口再在后台精修，失败时保留这条标题。
+      title: conversationBootstrapTitle(message, effectiveAttachments),
       model,
       thinkingEnabled,
       ...(project?.id ? { projectId: project.id } : {}),
@@ -575,9 +599,13 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
     systemPrompt = `${systemPrompt}\n\n【快捷任务指令】\n${hiddenPrompt}`;
   }
 
-  // Skill pre-injection（渐进披露优化）:
-  // Router 高置信度或用户手动选择时，在首轮调用前直接注入完整 skill instructions，
-  // 不走 activate_skill tool 往返，保证首轮质量。
+  // Skill 预注入（渐进披露优化）:
+  // 低置信度时不强行选技能，但先给模型一份短目录，让它自己调用
+  // skill.activate；高置信度或手动选择才在首轮前直接注入完整 instructions。
+  if (!input.isolatedTurn && !skillOff) {
+    const skillCatalog = buildSkillCatalogPrompt();
+    if (skillCatalog) systemPrompt = `${systemPrompt}\n\n${skillCatalog}`;
+  }
   if (skillRoute.activeSkillId && shouldPreInject(skillRoute)) {
     const activeSkill = skillRegistry.get(skillRoute.activeSkillId);
     if (activeSkill?.instructions) {
@@ -751,8 +779,8 @@ export async function runAgentRuntime(input: AgentRunInput): Promise<AgentRun> {
   if (webSearchActive) {
     emitAgentEvent({
       type: "web_access_enabled",
-      mode: manualWebSearchActive ? "manual" : "auto",
-      reason: manualWebSearchActive ? "用户手动开启联网搜索" : skillRoute.reason,
+      mode: "auto",
+      reason: "联网能力已默认开放，模型按需检索",
     });
   }
 

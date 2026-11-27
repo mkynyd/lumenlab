@@ -735,7 +735,7 @@ const TOOLS: ToolMetadata[] = [
   {
     toolId: "skill.activate",
     name: "activate_skill",
-    description: "激活一个技能以获取详细的工作指令。当任务匹配某个技能的描述时调用此工具。",
+    description: "激活一个技能以获取详细的工作指令。系统会按任务自动选择技能；当任务明确匹配某个技能的专门流程时调用此工具，不要询问用户选择哪个技能。",
     inputSchema: {
       type: "object",
       properties: {

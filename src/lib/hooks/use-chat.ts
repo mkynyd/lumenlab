@@ -347,6 +347,7 @@ export function useChat(options: UseChatOptions = {}) {
 
       let controller: AbortController | null = null;
       let accepted = false;
+      let createdConversationId: string | null = null;
       try {
         controller = new AbortController();
         abortRef.current = controller;
@@ -423,6 +424,7 @@ export function useChat(options: UseChatOptions = {}) {
         if (newConvId && !conversationId) {
           conversationIdRef.current = newConvId;
           setConversationId(newConvId);
+          createdConversationId = newConvId;
           if (!options.projectId) {
             // Move /chat to /chat/<id> in place: /chat and /chat/[id] are
             // separate route segments, so router.push would swap page
@@ -431,27 +433,8 @@ export function useChat(options: UseChatOptions = {}) {
             // precedent: use-hash-dialog.ts)
             window.history.replaceState(null, "", `/chat/${newConvId}`);
           }
-          // Keep the response stream on the critical path; title generation is
-          // a best-effort background refinement of the neutral "新对话" label.
-          void fetch(`/api/conversations/${newConvId}/title`, {
-            method: "POST",
-          })
-            .then((titleResponse) => {
-              if (!titleResponse.ok) return;
-              return Promise.all([
-                queryClient.invalidateQueries({
-                  queryKey: queryKeys.conversations.all,
-                }),
-                ...(options.projectId
-                  ? [
-                      queryClient.invalidateQueries({
-                        queryKey: queryKeys.projects.detail(options.projectId),
-                      }),
-                    ]
-                  : []),
-              ]);
-            })
-            .catch(() => {});
+          // 标题不在建会话时生成：服务器已写入首条消息的确定性标题，
+          // 等首轮回答完成后再请求精修，这样模型能看到回答主题。
         }
 
         const reader = response.body?.getReader();
@@ -706,6 +689,29 @@ export function useChat(options: UseChatOptions = {}) {
               newConvId || conversationId || ""
             ),
           });
+        }
+        if (createdConversationId) {
+          // 首轮回答已完成：此时才让模型基于“首条消息 + 首轮回答”精修标题。
+          // 服务端校验失败会保留确定性标题，不会写入拒答文案。
+          void fetch(`/api/conversations/${createdConversationId}/title`, {
+            method: "POST",
+          })
+            .then((titleResponse) => {
+              if (!titleResponse.ok) return;
+              return Promise.all([
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.conversations.all,
+                }),
+                ...(options.projectId
+                  ? [
+                      queryClient.invalidateQueries({
+                        queryKey: queryKeys.projects.detail(options.projectId),
+                      }),
+                    ]
+                  : []),
+              ]);
+            })
+            .catch(() => {});
         }
       } catch (err) {
         intelligentUIStream.discard(streamingId);

@@ -93,7 +93,7 @@ describe("ChatInput", () => {
     expect(screen.getByRole("textbox", { name: "消息内容" })).toBeInTheDocument();
   });
 
-  it("opens the mobile add-source sheet with sources and tools", async () => {
+  it("opens the compact add-source panel with attachments and auto capabilities", async () => {
     const user = userEvent.setup();
 
     render(
@@ -104,9 +104,11 @@ describe("ChatInput", () => {
         availableModels={["deepseek-v4-flash", "deepseek-v4-pro"]}
         onSkillChange={vi.fn()}
         onWebSearchToggle={vi.fn()}
+        webSearchActive
       />
     );
 
+    // 模型在输入坞右侧常驻，不再藏进加号面板。
     expect(screen.getAllByRole("button", { name: "选择模型" }).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "更多输入选项" }));
 
@@ -114,9 +116,9 @@ describe("ChatInput", () => {
     expect(within(sources).getByRole("button", { name: "拍照" })).toBeInTheDocument();
     expect(within(sources).getByRole("button", { name: "照片" })).toBeInTheDocument();
     expect(within(sources).getByRole("button", { name: "文件" })).toBeInTheDocument();
-    expect(within(sources).getByRole("button", { name: /联网搜索/ })).toBeInTheDocument();
-    expect(within(sources).getByRole("button", { name: /模型与思考/ })).toBeInTheDocument();
-    expect(within(sources).queryByText("DeepSeek V4 Flash")).not.toBeInTheDocument();
+    expect(within(sources).getByRole("button", { name: "关闭联网搜索" })).toHaveTextContent("默认开启");
+    expect(within(sources).getByText("智能方式")).toBeInTheDocument();
+    expect(within(sources).queryByText("模型与思考")).not.toBeInTheDocument();
   });
 
   it("appends pasted image files as attachments with a local preview", () => {
