@@ -195,12 +195,12 @@ export function ChatInput({
   const webSearchSupported = modelSupportsWebSearch(model);
   const { ref: textareaRef, style: textareaStyle } = useMeasuredTextareaHeight({
     value: currentValue,
-    minHeight: 24,
-    maxHeight: 144,
+    minHeight: 28,
+    maxHeight: 148,
     fontSize: 16,
     lineHeight: 24,
-    paddingX: 0,
-    paddingY: 0,
+    paddingX: 4,
+    paddingY: 4,
     fontFamily: '"Noto Sans SC"',
   });
 
@@ -582,7 +582,7 @@ export function ChatInput({
               disabled={disabled}
               autoComplete="off"
               className={cn(
-                "chat-composer-field block min-h-6 w-full resize-none field-sizing-fixed border-0 bg-transparent! px-0 py-0 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 md:text-base",
+                "chat-composer-field block min-h-7 w-full resize-none field-sizing-fixed border-0 bg-transparent! p-0.5 text-base leading-6 shadow-none outline-none ring-0 focus:outline-none focus-visible:ring-0 md:text-base",
                 "text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
                 "focus:outline-none disabled:opacity-50"
               )}

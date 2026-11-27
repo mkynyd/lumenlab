@@ -48,14 +48,16 @@ export function useMeasuredTextareaHeight({
 
   const measuredHeight = (() => {
     if (width === 0 || !fontsReady) return minHeight;
-    const { height } = measureText(value || "", {
+    const { height } = measureText(value, {
       maxWidth: Math.max(0, width - paddingX),
       fontSize,
       lineHeight,
       fontFamily,
       whiteSpace: "pre-wrap",
     });
-    return Math.min(maxHeight, Math.max(minHeight, height + paddingY));
+    // Pretext omits the empty line after a trailing newline in pre-wrap mode.
+    const caretLineHeight = value.endsWith("\n") ? lineHeight : 0;
+    return Math.min(maxHeight, Math.max(minHeight, height + caretLineHeight + paddingY));
   })();
 
   return {
